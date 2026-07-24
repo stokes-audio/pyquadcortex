@@ -100,3 +100,14 @@ device actually requires.
   domain model built on it.
 - **Scene labels and colors as first-class scene properties**, rather than
   index-addressed setters.
+
+## Looked at and set aside
+
+Recorded so nobody spends a weekend rediscovering a dead end.
+
+- **Wi-Fi / network control.** The Quad Cortex has network connectivity, and
+  driving it that way was considered rather than overlooked. It was not feasible
+  without access this project does not have, so USB is the only transport
+  implemented. The specific blocker is not written down here; if you are picking
+  this up, treat "someone already found this closed" as the starting point rather
+  than an answer, and please record what you learn.
