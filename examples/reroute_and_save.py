@@ -22,8 +22,8 @@ import pyquadcortex
 from pyquadcortex import Input, Instrument, Setlist
 
 # --- edit to taste -----------------------------------------------------------
-SOURCE_POSITION = 212               # a factory preset (find one with list_presets.py)
-DEST_SLOT = "27A"                   # overwritten when --write is given
+SOURCE_NAME = "Cali Basswalk"       # any factory preset (see list_presets.py)
+DEST_SLOT = "30A"                   # OVERWRITTEN when --write is given
 DEST_NAME = "Cali Basswalk [Ret1]"
 TO_INPUT = Input.RETURN_1           # re-point the preset's input here
 INSTRUMENT = Instrument.BASS
@@ -36,13 +36,13 @@ def input_ports(preset):
 
 def main():
     write = "--write" in sys.argv[1:]
-    dest_position = pyquadcortex.slot_to_position(DEST_SLOT)
 
     with pyquadcortex.connect() as qc:
-        # Recall the source preset - this loads it onto the grid.
-        source = qc.read_preset(Setlist.FACTORY, SOURCE_POSITION, is_factory=True)
+        # Look the source preset up by name, then recall it onto the grid.
+        entry = qc.find_preset(SOURCE_NAME, Setlist.FACTORY)
+        source = qc.read_preset(Setlist.FACTORY, entry.index)
         rows = pyquadcortex.input_chain_rows(source, Input.INPUT_1)
-        print(f"Recalled factory preset {SOURCE_POSITION}: {source.name!r}")
+        print(f"Recalled factory preset {source.name!r}")
         print(f"  inputs currently {[Input(p).name for p in input_ports(source)]}")
         print(f"  {'re-pointing' if write else 'would re-point'} rows {rows} to "
               f"{TO_INPUT.name}, saving to {DEST_SLOT} as {DEST_NAME!r}")
@@ -54,12 +54,12 @@ def main():
         # Re-point each input row, then snapshot the grid into the slot.
         qc.reroute_grid_input(source, TO_INPUT)
         time.sleep(2.0)
-        qc.save_current_preset(Setlist.USER, dest_position, DEST_NAME,
+        qc.save_current_preset(Setlist.USER, DEST_SLOT, DEST_NAME,
                                instrument=INSTRUMENT)
         time.sleep(2.0)
 
         # Confirm by reading the slot back.
-        saved = qc.read_preset(Setlist.USER, dest_position)
+        saved = qc.read_preset(Setlist.USER, DEST_SLOT)
         ports = input_ports(saved)
         ok = TO_INPUT in ports and Input.INPUT_1 not in ports
         print(f"\nSaved {saved.name!r}; inputs now {[Input(p).name for p in ports]} "

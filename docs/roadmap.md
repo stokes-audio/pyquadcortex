@@ -38,6 +38,7 @@ instead.
 | Setlist paths | The factory path needs a trailing slash for recalls but not for listing keys | Refer to the factory library |
 | Slot addressing | Slots are linear positions; `"28C"` must be converted | Use the slot name shown on the unit |
 | Empty slots | A setlist always reports 256 entries, most of them placeholders | Iterate the presets that exist, or ask for free slots |
+| Saved names | Saving silently renames on a name collision, so the name you asked for may not be the name you get | Save, and be told what it was called - or be warned before it happens |
 | The write STALL | Writes "fail" and the error must be ignored | Nothing. This one is already absorbed by the transport |
 
 That last row is the model for all the others: the benign write stall is a

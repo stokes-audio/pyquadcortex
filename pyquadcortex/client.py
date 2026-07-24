@@ -149,11 +149,35 @@ class QuadCortex:
             pa.VersionMessage(action=pa.MessageAction.READ), timeout=timeout
         )
 
+    def find_preset(self, name: str, setlist: str = Setlist.USER,
+                    timeout: float = 25.0):
+        """Look a preset up by the name shown on the unit.
+
+        Returns its listing entry, whose ``index`` is the position the recall and
+        read methods take::
+
+            cali = qc.find_preset("Cali Basswalk", Setlist.FACTORY)
+            preset = qc.read_preset(Setlist.FACTORY, cali.index)
+
+        Matching is exact but case-insensitive. Raises ``KeyError`` if no preset
+        of that name exists in the setlist.
+        """
+        wanted = name.strip().lower()
+        entries = self.list_presets(setlist, timeout=timeout)
+        for entry in entries:
+            if entry.name.strip().lower() == wanted:
+                return entry
+        raise KeyError(f"no preset named {name!r} in {str(setlist)!r}")
+
     def read_preset(
-        self, setlist_path: str, position: int, is_factory: bool = False,
+        self, setlist_path: str, position, is_factory: bool = None,
         timeout: float = 40.0,
     ) -> preset.BinaryPreset:
-        """Recall the preset at ``position`` and return its full ``BinaryPreset``.
+        """Recall a preset and return its full ``BinaryPreset``.
+
+        ``position`` is either the linear slot index or the slot name shown on
+        the unit (``"28C"``); :meth:`find_preset` turns a preset name into one.
+        ``is_factory`` is inferred from ``setlist_path``.
 
         Confirmed by capture and live probe: there is NO
         host-initiated "read preset" request - a ``GridMessage``/``RecallPreset``
@@ -233,33 +257,40 @@ class QuadCortex:
     def recall_preset(
         self,
         setlist_path: str,
-        position: int,
-        is_factory: bool = False,
+        position,
+        is_factory: bool = None,
         request_id: int = None,
     ):
-        """Recall the preset at ``position`` within the setlist at ``setlist_path``.
+        """Recall a preset within the setlist at ``setlist_path``.
 
-        Confirmed by capture: recall is a
-        ``SetlistPositionMessage`` UPDATE. The setlist is addressed by its
-        device filesystem path in ``folder_key`` (e.g.
-        ``"/media/p4/Presets/My Presets"``) and the preset by its LINEAR index
-        in ``position``: bank*8 + letter, zero-based, so preset "28C" is
-        ``(28-1)*8 + 2 == 218``. Cortex Control recalling 28C sent exactly
-        ``{folder_key: "/media/p4/Presets/My Presets", position: 218,
-        is_factory: false}``.
+        ``position`` is either the linear slot index or the slot name shown on
+        the unit (``"28C"``). ``is_factory`` is inferred from ``setlist_path``
+        and only needs passing for a setlist this library does not know about.
+
+        Confirmed by capture: recall is a ``SetlistPositionMessage`` UPDATE. The
+        setlist is addressed by its device filesystem path in ``folder_key`` and
+        the preset by its LINEAR index in ``position``: bank*8 + letter,
+        zero-based, so preset "28C" is ``(28-1)*8 + 2 == 218``. Cortex Control
+        recalling 28C sent exactly ``{folder_key: "/media/p4/Presets/My
+        Presets", position: 218, is_factory: false}``.
         """
         msg = pa.SetlistPositionMessage(action=pa.MessageAction.UPDATE)
         msg.folder_key = setlist_path
-        msg.position = position
-        msg.is_factory = is_factory
+        msg.position = _as_position(position)
+        msg.is_factory = _is_factory_setlist(setlist_path) if is_factory is None \
+            else is_factory
         if request_id is not None:
             msg.request_id = request_id
         return self._t.send(msg)
 
-    def switch_scene(self, scene_index: int):
-        """Switch the active scene to ``scene_index``."""
+    def switch_scene(self, scene: int):
+        """Switch the active scene.
+
+        Takes a :class:`~pyquadcortex.enums.Scene` (``Scene.B``); scenes are
+        numbered from zero, so a bare integer works too.
+        """
         msg = pa.SceneMessage(action=pa.MessageAction.UPDATE)
-        msg.selected_scene = scene_index
+        msg.selected_scene = int(scene)
         return self._t.send(msg)
 
     def copy_scene(self, from_index: int, to_index: int, swap: bool = False):
@@ -415,11 +446,22 @@ class QuadCortex:
     def save_current_preset(
         self,
         setlist_path: str,
-        position: int,
+        position,
         name: str,
         instrument: int = 0,
     ):
         """Save the preset currently on the grid into a setlist slot ("Save As").
+
+        ``position`` is either the linear slot index or the slot name shown on
+        the unit (``"30A"``). Saving OVERWRITES whatever occupies that slot.
+
+        **The device may not use the name you asked for.** If the setlist already
+        contains a preset of that name, it de-duplicates: the base is truncated as
+        needed and a ``_N`` suffix appended, to 20 characters total, so saving a
+        second ``"Cali Basswalk [Ret1]"`` yields ``"Cali Basswalk [Ret_1"``. A
+        unique name is stored verbatim and is not length-limited (36 characters
+        was stored intact). If the resulting name matters, read the slot back and
+        use what the device reports.
 
         Confirmed by capture: Cortex Control's "Save As" is a
         ``FileMessage`` with action CREATE (unset, the default), ``type: 0``,
@@ -436,7 +478,7 @@ class QuadCortex:
         msg.folder.key = setlist_path
         msg.folder.is_factory = False
         entry = msg.folder.files.add()
-        entry.index = position
+        entry.index = _as_position(position)
         entry.name = name
         entry.instrument = instrument
         return self._t.request(msg)
@@ -456,8 +498,11 @@ class QuadCortex:
         msg.folder.files.add().key = f"{setlist_path}/{name}.pb"
         return self._t.request(msg)
 
-    def move_preset(self, setlist_path: str, name: str, to_position: int):
+    def move_preset(self, setlist_path: str, name: str, to_position):
         """Move the preset named ``name`` to slot ``to_position`` (same setlist).
+
+        ``to_position`` is either the linear slot index or the slot name shown on
+        the unit (``"28D"``).
 
         Confirmed by capture: dragging "Darkglass AO900
         2_1" onto slot 28D sent ``File{action: MOVE, type: 0, folder{key:
@@ -470,8 +515,24 @@ class QuadCortex:
         msg.folder.is_factory = False
         msg.folder.files.add().key = f"{setlist_path}/{name}.pb"
         msg.to_folder.key = setlist_path
-        msg.to_folder.files.add().index = to_position
+        msg.to_folder.files.add().index = _as_position(to_position)
         return self._t.request(msg)
+
+
+def _is_factory_setlist(setlist_path: str) -> bool:
+    """Whether ``setlist_path`` is the factory library.
+
+    Compared with trailing slashes normalized: the factory path carries one for
+    recalls but the device omits it elsewhere (see :class:`Setlist`).
+    """
+    return str(setlist_path).rstrip("/") == str(Setlist.FACTORY).rstrip("/")
+
+
+def _as_position(position) -> int:
+    """Accept either a linear slot index or a slot name like ``"28C"``."""
+    if isinstance(position, str):
+        return slot_to_position(position)
+    return int(position)
 
 
 def slot_to_position(slot: str) -> int:

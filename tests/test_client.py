@@ -8,6 +8,8 @@ client can be exercised without a device.
 
 import itertools
 
+import pytest
+
 from pyquadcortex import client
 from pyquadcortex.enums import Input, Instrument, Output, Setlist
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
@@ -469,3 +471,74 @@ def test_hello_performs_full_connect_handshake():
         isinstance(m, pa.VersionMessage) and m.action == pa.MessageAction.READ
         for m in sent
     )
+
+
+# -- ergonomics: no magic numbers at the call site -----------------------------
+
+
+def test_switch_scene_accepts_a_scene_enum():
+    from pyquadcortex.enums import Scene
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.switch_scene(Scene.B)
+    assert fake.sent[-1].selected_scene == 1
+    # Scene letters map to the device's zero-based numbering.
+    assert (Scene.A, Scene.B, Scene.D, Scene.H) == (0, 1, 3, 7)
+
+
+def test_recall_infers_is_factory_from_the_setlist():
+    # A caller should not have to remember to pass is_factory alongside the
+    # factory setlist; the two always agree.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+
+    qc.recall_preset(Setlist.FACTORY, 212)
+    assert fake.sent[-1].is_factory is True
+
+    qc.recall_preset(Setlist.USER, 218)
+    assert fake.sent[-1].is_factory is False
+
+    # An explicit value still wins, for a setlist we do not know about.
+    qc.recall_preset("/some/other/setlist", 0, is_factory=True)
+    assert fake.sent[-1].is_factory is True
+
+
+def test_recall_accepts_a_slot_name():
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.recall_preset(Setlist.USER, "28C")
+    assert fake.sent[-1].position == 218          # (28-1)*8 + 2
+    qc.recall_preset(Setlist.USER, 218)
+    assert fake.sent[-1].position == 218
+
+
+def test_find_preset_looks_a_preset_up_by_name():
+    listing = pa.FileMessage()
+    listing.folder.key = str(Setlist.FACTORY)
+    for index, name in ((7, "D-Cell H4 Ch3"), (212, "Cali Basswalk")):
+        pd = listing.folder.files.add()
+        pd.index = index
+        pd.name = name
+    fake = FakeTransport()
+    fake.broadcast = listing
+    qc = client.QuadCortex(fake)
+
+    found = qc.find_preset("Cali Basswalk", Setlist.FACTORY)
+    assert found.index == 212
+    # Case and surrounding whitespace should not matter.
+    assert qc.find_preset("  cali basswalk ", Setlist.FACTORY).index == 212
+
+    with pytest.raises(KeyError, match="No Such Preset"):
+        qc.find_preset("No Such Preset", Setlist.FACTORY)
+
+
+def test_save_and_move_accept_slot_names():
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+
+    qc.save_current_preset(Setlist.USER, "30A", "Some Preset")
+    assert fake.sent[-1].folder.files[0].index == 232      # (30-1)*8 + 0
+
+    qc.move_preset(Setlist.USER, "Some Preset", "28D")
+    assert fake.sent[-1].to_folder.files[0].index == 219   # (28-1)*8 + 3

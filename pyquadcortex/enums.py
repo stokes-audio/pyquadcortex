@@ -66,6 +66,25 @@ class Output(IntEnum):
     USB_3_4 = 22
 
 
+class Scene(IntEnum):
+    """The eight scenes within a preset, as labelled on the unit.
+
+    The device numbers scenes from zero, so ``Scene.A`` is 0. Use these rather
+    than bare integers::
+
+        qc.switch_scene(Scene.B)
+    """
+
+    A = 0
+    B = 1
+    C = 2
+    D = 3
+    E = 4
+    F = 5
+    G = 6
+    H = 7
+
+
 class Instrument(IntEnum):
     """Instrument category tag for a saved preset (``ProductData.instrument``).
 

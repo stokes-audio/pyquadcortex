@@ -11,6 +11,7 @@ Run it with the unit connected by USB and Cortex Control quit:
 import time
 
 import pyquadcortex
+from pyquadcortex import Scene
 
 
 def main():
@@ -20,10 +21,9 @@ def main():
             print(f"      {n} ...")
             time.sleep(1.0)
 
-        # Scenes are 0-based: A=0, B=1, C=2, D=3.
-        for index, label in [(1, "B"), (2, "C"), (3, "D"), (0, "A")]:
-            qc.switch_scene(index)
-            print(f"      -> scene {label}")
+        for scene in (Scene.B, Scene.C, Scene.D, Scene.A):
+            qc.switch_scene(scene)
+            print(f"      -> scene {scene.name}")
             time.sleep(2.5)
 
         print(">>> Done. The active scene should have moved B, C, D, A.")

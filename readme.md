@@ -60,9 +60,11 @@ no difference. The Quad Cortex just has to be plugged in over USB.)
 
 ## Quickstart
 
+Everything here uses the factory library, so it works on any unit.
+
 ```python
 import pyquadcortex
-from pyquadcortex import Input, Instrument, Setlist
+from pyquadcortex import Input, Instrument, Scene, Setlist
 
 with pyquadcortex.connect() as qc:
     # What are we talking to?
@@ -70,24 +72,29 @@ with pyquadcortex.connect() as qc:
 
     # What is in the factory library?
     for entry in qc.list_presets(Setlist.FACTORY)[:5]:
-        print(entry.index, entry.name)
+        print(entry.name)
 
-    # Jump to a preset, then to a scene.
-    qc.recall_preset(Setlist.USER, pyquadcortex.slot_to_position("28C"))
-    qc.switch_scene(1)                       # scenes are 0-based: A=0, B=1, ...
+    # Recall a preset by the name shown on the unit, then switch scenes.
+    amp = qc.find_preset("Brit 2203", Setlist.FACTORY)
+    qc.recall_preset(Setlist.FACTORY, amp.index)
+    qc.switch_scene(Scene.B)
 
     # Re-point a preset's input to Return 1 and save it as your own.
-    preset = qc.read_preset(Setlist.FACTORY, 212, is_factory=True)
+    # (Pick an empty slot; this overwrites whatever is in it.)
+    bass = qc.find_preset("Cali Basswalk", Setlist.FACTORY)
+    preset = qc.read_preset(Setlist.FACTORY, bass.index)
     qc.reroute_grid_input(preset, Input.RETURN_1)
-    qc.save_current_preset(Setlist.USER,
-                           pyquadcortex.slot_to_position("27A"),
-                           "Cali Basswalk [Ret1]",
+    qc.save_current_preset(Setlist.USER, "30A", "Cali Basswalk [Ret1]",
                            instrument=Instrument.BASS)
 ```
 
 `connect()` finds the device, opens it, and completes the handshake the device
 requires, so what you get back is ready to use. As a context manager it also
 releases the device when the block ends; otherwise call `qc.close()`.
+
+Presets are addressed by name via `find_preset()`, or directly by the slot name
+shown on the unit (`"30A"`), or by linear index. Scenes, inputs, outputs, and
+instrument tags all have readable names, so nothing here is a bare number.
 
 More runnable examples are in **[examples/](examples/)**: listing presets,
 switching scenes, and re-routing and saving a preset.
@@ -98,23 +105,26 @@ These are all methods on the object `connect()` returns.
 
 | | |
 |---|---|
-| **Inspect** | `version()`, `list_presets(setlist)`, `read_preset(setlist, position)` |
-| **Navigate** | `recall_preset(setlist, position)`, `switch_scene(index)` |
+| **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
+| **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(row, column, param_index, value)`, `set_bypass(row, column, bypassed)` |
-| **Scenes** | `copy_scene(from_index, to_index)`, `set_scene_label(index, label)`, `set_scene_color(index, argb)` |
-| **Manage presets** | `save_current_preset(setlist, position, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_position)` |
+| **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
+| **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 
-Presets are addressed by a setlist (`Setlist.USER` or `Setlist.FACTORY`) and a
-position. `slot_to_position("28C")` converts the slot names shown on the unit
-into the position number the device uses.
+Presets live in a setlist (`Setlist.USER` or `Setlist.FACTORY`). Identify one by
+**name** with `find_preset()`, or by the **slot name shown on the unit** (`"28C"`),
+or by linear index if you have it. Scenes are `Scene.A` through `Scene.H`; inputs,
+outputs, and instrument tags likewise have readable names (`Input.RETURN_1`,
+`Output.XLR_1_2`, `Instrument.BASS`), so nothing needs a bare number.
 
-Inputs, outputs, and instrument tags have readable names - `Input.RETURN_1`,
-`Output.XLR_1_2`, `Instrument.BASS` - so you never pass a bare number.
+Two things worth knowing:
 
-One thing worth knowing when editing: the device saves **whatever is currently on
-the grid**, so an edit means recall the preset, change it, then save. The methods
-above are built for that order, and [docs/protocol.md](docs/protocol.md) explains
-why.
+- **Editing goes recall, change, save.** The device saves whatever is currently on
+  the grid, so an edit means recalling the preset first. The methods above are
+  built for that order; [docs/protocol.md](docs/protocol.md) explains why.
+- **Saving may rename.** If the setlist already holds a preset of that name, the
+  device appends a `_N` suffix (trimming the base to fit). Read the slot back if
+  the final name matters.
 
 ## Command line
 

@@ -546,6 +546,21 @@ issued within about 2 seconds can still show the pre-mutation state; about
 5 seconds was reliable. Re-enumerate after a short wait rather than trusting the
 first listing after a mutation.
 
+**The device renames a saved preset if the name collides.** Saving is not
+name-preserving. Within a setlist:
+
+- A **unique** name is stored verbatim, with no length limit observed (a
+  36-character name came back intact).
+- A name that **already exists** in that setlist is de-duplicated: the base is
+  truncated as needed and a `_N` suffix appended, to 20 characters in total.
+  Saving a second `Cali Basswalk [Ret1]` produced `Cali Basswalk [Ret_1`, and a
+  second 36-character `ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789` produced
+  `ABCDEFGHIJKLMNOPQR_1`.
+
+A client that cares what the preset ended up called must read the slot back
+rather than assume the requested name. (Names like `Cali Basswalk_1` appearing in
+a user setlist are this mechanism, not the user's doing.)
+
 ### 7.4 Scenes
 
 Scene indices are zero-based (scene A is 0). A preset has 8 scenes.

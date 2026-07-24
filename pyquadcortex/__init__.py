@@ -20,7 +20,7 @@ __version__ = "0.1.0"
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from pyquadcortex.client import QuadCortex, input_chain_rows, slot_to_position  # noqa: E402
-from pyquadcortex.enums import Input, Instrument, Output, Setlist
+from pyquadcortex.enums import Input, Instrument, Output, Scene, Setlist
 from pyquadcortex.session import DeviceNotFoundError, connect, open_device
 
 __all__ = [
@@ -31,6 +31,7 @@ __all__ = [
     "QuadCortex",
     "Input",
     "Output",
+    "Scene",
     "Instrument",
     "Setlist",
     "slot_to_position",
