@@ -134,6 +134,9 @@ qcctl dump-preset --slot 28C
   framing, the connect handshake, each operation, and what has been verified.
 - **[docs/architecture.md](docs/architecture.md)** - how this library is put
   together, and how to add support for something it does not do yet.
+- **[docs/roadmap.md](docs/roadmap.md)** - where this is meant to go, including
+  the object model of the device that should eventually hide the protocol's rough
+  edges entirely.
 - **[contributing.md](contributing.md)** - development setup and how to submit a
   change.
 

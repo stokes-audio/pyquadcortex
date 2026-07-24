@@ -44,8 +44,8 @@ def main():
         rows = pyquadcortex.input_chain_rows(source, Input.INPUT_1)
         print(f"Recalled factory preset {SOURCE_POSITION}: {source.name!r}")
         print(f"  inputs currently {[Input(p).name for p in input_ports(source)]}")
-        print(f"  would re-point rows {rows} to {TO_INPUT.name}, "
-              f"saving to {DEST_SLOT} as {DEST_NAME!r}")
+        print(f"  {'re-pointing' if write else 'would re-point'} rows {rows} to "
+              f"{TO_INPUT.name}, saving to {DEST_SLOT} as {DEST_NAME!r}")
 
         if not write:
             print("\nDRY RUN - nothing changed. Re-run with --write to save.")

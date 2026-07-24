@@ -277,7 +277,14 @@ class Transport:
                 and report[2] & framing.FLAG_FIRST
                 and self._rx_buffer
             ):
-                log.warning(
+                # Debug, not warning: this is routine. The device interleaves
+                # bursts of pushes (one File READ produces dozens of folder
+                # listings), so a new message beginning while a partial is still
+                # buffered is expected, and recovery is automatic. A partial that
+                # someone was actually waiting for surfaces as a request timeout,
+                # which is the real failure signal - the same principle applied to
+                # the benign write stall.
+                log.debug(
                     "FIRST-flagged report with %d buffered report(s) pending; "
                     "dropping stale partial message",
                     len(self._rx_buffer),

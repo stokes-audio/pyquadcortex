@@ -358,6 +358,10 @@ device, and add a test that the new module imports cleanly without hidapi.
 
 ## What is not implemented yet
 
+For where the library is *meant* to go - in particular an object model of the
+device that would absorb the protocol quirks listed here rather than documenting
+them - see [roadmap.md](roadmap.md).
+
 Being honest about the gaps is more useful than a feature list. Places to look
 next, roughly in order of how well the ground is prepared:
 

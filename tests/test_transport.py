@@ -380,3 +380,28 @@ def test_next_request_id_is_monotonic_and_shared_with_request():
     a = t.next_request_id()
     b = t.next_request_id()
     assert b == a + 1
+
+
+# -- logging hygiene ----------------------------------------------------------
+
+
+def test_library_does_not_print_to_the_console_by_default(capsys):
+    """A library must stay silent unless the application configures logging.
+
+    Without a NullHandler on the package logger, Python's handler of last resort
+    prints WARNING and above straight to stderr, so an internal transport message
+    would surface uninvited in a caller's output.
+    """
+    import logging
+
+    import pyquadcortex  # noqa: F401  (import installs the NullHandler)
+
+    pkg_logger = logging.getLogger("pyquadcortex")
+    assert any(isinstance(h, logging.NullHandler) for h in pkg_logger.handlers), \
+        "the pyquadcortex logger needs a NullHandler"
+
+    capsys.readouterr()  # discard anything captured so far
+    logging.getLogger("pyquadcortex.transport").warning("should not reach the console")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
