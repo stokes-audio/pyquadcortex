@@ -15,11 +15,10 @@ Field semantics were confirmed against real Cortex Control 4.0.1 sessions:
 session connect, preset recall (user AND factory setlists), scene switch, grid
 bypass/param writes, Save As, delete, and move are all reproduced verbatim from
 observed traffic. ``copy_scene`` came from a different source, because Cortex
-Control has no scene-copy feature to observe: its shape was read off the
-device's own broadcast when a scene was copied on the unit, and sending it
-host-to-device is confirmed working on hardware. Its ``swap`` variant is the one
-thing not exercised. See ``docs/protocol.md`` for the per-operation coverage
-table.
+Control has no scene-copy feature to observe: its shape was read off the device's
+own broadcast when a scene was copied on the unit. It too is confirmed on
+hardware, including its ``from_index``; only its ``swap`` variant is unexercised.
+See ``docs/protocol.md`` for the per-operation coverage table.
 """
 
 import time
@@ -252,9 +251,15 @@ class QuadCortex:
         Cortex Control has no scene-copy feature, so this message was not learned
         from its traffic. Instead, copying a scene ON THE UNIT broadcasts
         ``SceneCopy{action: UPDATE, to_index: N}`` (note the action is UPDATE,
-        not COPY), and that is the shape sent here. Confirmed working
-        host-to-device on hardware: ``copy_scene(0, 3)`` makes scene D take on
-        scene A's state.
+        not COPY), and that is the shape sent here.
+
+        Confirmed working host-to-device on hardware, ``from_index`` included:
+        ``copy_scene(1, 3)`` on a preset whose scenes A and B differ made scene D
+        an exact copy of scene B (not of scene A, which is what a device ignoring
+        ``from_index`` would have produced).
+
+        The copy carries the scene's LABEL as well as its bypass and parameter
+        state - after the call above, scene D was renamed to scene B's label.
 
         The ``swap=True`` variant sets ``is_swap`` on the same message but has
         not been exercised on hardware.

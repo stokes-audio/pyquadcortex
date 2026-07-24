@@ -563,12 +563,21 @@ SceneCopy{action: UPDATE, from_index: 0, to_index: 3, is_swap: false}
 Note the action is `UPDATE`, not `COPY`. Cortex Control provides no way to copy a
 scene, so this message could not be learned from its traffic. Instead the shape
 was read off the device's own broadcast when a scene was copied **on the unit**,
-and sending that shape host to device is confirmed working on hardware (copying
-scene A onto scene D took effect on the unit).
+and sending that shape host to device is confirmed working on hardware.
 
-Two details remain unexercised: `is_swap`, and a nonzero `from_index` (the
-observed broadcast left it at its default 0, so a nonzero value rests on the
-symmetry of the protocol rather than on an observation).
+**`from_index` is honored.** This was checked with a discriminating test, because
+`from_index: 0` is also the protobuf default, so copying scene A would not
+distinguish "the field works" from "the field is ignored". Sending
+`SceneCopy{UPDATE, from_index: 1, to_index: 3}` against a preset whose scenes A
+and B differ made scene D an exact copy of **scene B**, not of scene A. Verified
+by saving the resulting grid and reading it back: across every block that follows
+scenes, scene D matched scene B and differed from scene A.
+
+**The copy includes the scene label.** After the copy above, scene D's label had
+been replaced with scene B's. So `SceneCopy` moves the label along with the
+bypass and parameter state; it is not limited to the audible state.
+
+`is_swap` remains unexercised.
 
 A scene copy can also be done entirely client-side without this message: read
 the preset, copy the per-scene `param_values[from]` and per-scene bypass entries
@@ -638,9 +647,27 @@ Grid{action: UPDATE,
 
 Bypass is per scene, indexed by scene within `sceneBypass`.
 
+**`ColBypass.sceneMode` decides whether the per-scene values mean anything.** A
+block whose `sceneMode` is true follows the scenes: its `sceneBypass` array is
+live, and switching scenes changes whether that block is engaged. A block whose
+`sceneMode` is false has a single global bypass state that is the same in every
+scene, and its stored `sceneBypass` entries are **not maintained** - they can hold
+stale or contradictory values that do not match what the unit displays.
+
+This is easy to trip over when reading a preset: a block can appear from its
+`sceneBypass` array to differ between scenes while the unit shows it identical in
+all of them. In one observed preset, only 5 of the 32 grid positions had
+`sceneMode` set. Filter on `sceneMode` before comparing scenes, or drawing
+conclusions from a diff.
+
 A useful corollary for locating rows: in a preset read back from a recall, a
 chain's grid row equals its **index in `chains`** when the explicit `row` field
 is absent. `client.input_chain_rows()` relies on this.
+
+Note also that in a recalled preset the `Model.column` fields come back unset
+(all zero), just as `Chain.row` does. Grid position has to be inferred from
+ordering: `bypass` arrives as one group per row, each with one `colBypass` entry
+per column.
 
 ### Grid block move
 
@@ -809,7 +836,7 @@ visually on the device's own screen.
 | `set_param` | `Grid{UPDATE, preset{chains{row, models{column, params{index, param_values[scene]{float_value}}}}}}` | read-back | value round-trips 0.0 to 1.0; param index is positional; not every index is a visible knob |
 | `set_bypass` | `Grid{UPDATE, preset{bypass{row, colBypass{column, sceneBypass[scene]{bypass}}}}}` | on-unit | block greyed out on the unit |
 | `set_scene_label` / `set_scene_color` | `SceneLabel` / `SceneColor{UPDATE, index, label/color}` | read-back | color is ARGB uint32; exact round-trip |
-| `copy_scene` | `SceneCopy{UPDATE, from_index, to_index}` | on-unit | confirmed host-to-device (scene D took on scene A). Cortex Control cannot copy a scene, so the shape came from the device's own broadcast when copying on the unit. `is_swap` untested |
+| `copy_scene` | `SceneCopy{UPDATE, from_index, to_index}` | read-back + on-unit | confirmed including `from_index` (copying B onto D produced B, not A) and that the scene LABEL is copied too. Cortex Control cannot copy a scene, so the shape came from the device's own broadcast when copying on the unit. `is_swap` untested |
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the GRID; `preset_payload` is IGNORED for CREATE |
 | `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | works, but asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
@@ -828,8 +855,8 @@ Stated explicitly so nobody builds on a guess:
   exact field layout and semantics are unconfirmed.
 - **`FileMessage.type`** was always `0` in every observation. What other values
   select is unknown.
-- **`SceneCopy.is_swap`** and a nonzero `SceneCopy.from_index` have not been
-  exercised on hardware.
+- **`SceneCopy.is_swap`** has not been exercised on hardware. (`from_index` has;
+  see [section 7.4](#74-scenes).)
 - **`delete_from_library`** (on `FileMessage`) exists in the schema but was never
   sent. Its effect is unknown.
 - **Most output port ids** are schema-derived rather than hardware-confirmed
