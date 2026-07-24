@@ -1,0 +1,71 @@
+[project]
+name = "pyquadcortex"
+dynamic = ["version"]
+description = "Programmatic control of the Neural DSP Quad Cortex over USB HID"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Stokes", email = "jonathanstokes@users.noreply.github.com" }]
+keywords = [
+  "quad-cortex",
+  "neural-dsp",
+  "guitar",
+  "audio",
+  "hid",
+  "usb",
+  "protobuf",
+  "cortex-control",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Sound/Audio",
+  "Topic :: System :: Hardware :: Hardware Drivers",
+]
+dependencies = [
+  "hid>=1.0.6",          # ctypes binding to hidapi (also install the hidapi C lib, see README)
+  "protobuf>=7.35.1,<8", # must match the shipped *_pb2 gencode major; protobuf enforces runtime >= gencode
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "grpcio-tools>=1.68"]
+
+[project.scripts]
+qcctl = "pyquadcortex.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/stokes-audio/pyquadcortex"
+Repository = "https://github.com/stokes-audio/pyquadcortex"
+Issues = "https://github.com/stokes-audio/pyquadcortex/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "pyquadcortex/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pyquadcortex"]
+
+[tool.hatch.build.targets.sdist]
+# Ship the source needed to rebuild the bindings, run the offline tests, and
+# read the examples. The .proto schema lives inside the repo now, so a plain
+# include is enough (no force-include).
+include = [
+  "/pyquadcortex",
+  "/tests",
+  "/examples",
+  "/scripts/compile_protos.sh",
+  "/protocol/proto",
+  "/README.md",
+  "/LICENSE",
+]

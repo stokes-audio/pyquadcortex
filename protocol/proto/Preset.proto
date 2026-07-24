@@ -1,0 +1,187 @@
+syntax = "proto3";
+// Recovered from Cortex Control.app  (file: Preset.proto)
+message BinaryPreset {
+  repeated Chain chains = 11;
+  repeated string tags = 12;
+  repeated LegacyStompModeStompData legacy_stomp_mode_stomp_data = 13;
+  repeated uint32 scene_tempo = 14;
+  repeated string scene_labels = 15;
+  repeated MidiMessageInfo midi_messages = 16;
+  repeated MidiMessageInfo midi_messages_general = 17;
+  repeated Bypass bypass = 18;
+  repeated Model tempoProgramData = 19;
+  repeated uint32 layout_code_1 = 20;
+  repeated uint32 layout_code_2 = 21;
+  repeated string created_version = 22;
+  repeated string modified_version = 23;
+  repeated string oldest_compatible_version = 24;
+  repeated string cloud_id = 25;
+  repeated string description = 26;
+  repeated StompModeAssignment stomp_mode_assignments = 27;
+  repeated SlotNotification model_update_notifications = 28;
+  repeated uint32 recompile_code_1 = 29;
+  repeated uint32 recompile_code_2 = 30;
+  repeated uint32 scene_colors = 31;
+  map<uint32, string> stomp_labels = 32;
+  repeated MidiMessageInfo midi_messages_general_v2 = 33;
+  map<uint32, string> single_stomp_labels = 34;
+  map<uint32, bool> stomp_is_momentary = 35;
+  oneof _name {
+    string name = 2;
+  }
+  oneof _hash {
+    uint32 hash = 3;
+  }
+  oneof _date {
+    string date = 4;
+  }
+  oneof _volume {
+    float volume = 5;
+  }
+  oneof _pan {
+    float pan = 6;
+  }
+  oneof _default_scene {
+    uint32 default_scene = 7;
+  }
+  oneof _author_name {
+    string author_name = 8;
+  }
+  oneof _author_id {
+    string author_id = 9;
+  }
+  oneof _tempo {
+    uint32 tempo = 10;
+  }
+  oneof _side_chain_follow_exists {
+    bool side_chain_follow_exists = 36;
+  }
+  oneof _zsk_7182_applied {
+    bool zsk_7182_applied = 37;
+  }
+}
+message Chain {
+  repeated Model models = 5;
+  repeated SplitControlPoints split_control_points = 6;
+  repeated Model splitter = 7;
+  repeated Model mixer = 8;
+  repeated Model output_control = 9;
+  repeated SceneBypass splitBypass = 10;
+  repeated SceneBypass mixBypass = 11;
+  repeated Model combined_splitter = 12;
+  repeated Model input_control = 13;
+  oneof _in_portid {
+    uint32 in_portid = 1;
+  }
+  oneof _out_portid {
+    uint32 out_portid = 2;
+  }
+  oneof _row {
+    uint32 row = 14;
+  }
+}
+message Model {
+  repeated Param params = 2;
+  repeated Expression bypass_expression = 3;
+  repeated ExpressionBypassInfo expression_bypass_info = 4;
+  oneof _hash {
+    uint32 hash = 1;
+  }
+  oneof _column {
+    uint32 column = 5;
+  }
+  oneof _notify_flag {
+    bool notify_flag = 6;
+  }
+  oneof _sidechain_sink_flag {
+    bool sidechain_sink_flag = 7;
+  }
+  oneof _sidechain_source_flag {
+    bool sidechain_source_flag = 8;
+  }
+}
+message SplitControlPoints {
+  int32 split = 1;
+  int32 mix = 2;
+}
+message Bypass {
+  repeated ColBypass colBypass = 1;
+  oneof _row {
+    uint32 row = 2;
+  }
+}
+message ColBypass {
+  repeated SceneBypass sceneBypass = 1;
+  oneof _column {
+    uint32 column = 2;
+  }
+  oneof _sceneMode {
+    bool sceneMode = 3;
+  }
+}
+message SceneBypass {
+  bool bypass = 1;
+}
+message Param {
+  repeated ParamValue param_values = 5;
+  repeated string dynamic_steps = 8;
+  repeated string dynamic_icons = 9;
+  repeated string dynamic_metadata = 10;
+  oneof _expression {
+    int32 expression = 1;
+  }
+  oneof _expression_min {
+    float expression_min = 2;
+  }
+  oneof _expression_max {
+    float expression_max = 3;
+  }
+  oneof _scene_mode {
+    bool scene_mode = 4;
+  }
+  oneof _index {
+    uint32 index = 6;
+  }
+  oneof _is_led {
+    bool is_led = 7;
+  }
+}
+message ParamValue {
+  oneof value {
+    int32 int_value = 1;
+    float float_value = 2;
+    string string_value = 3;
+  }
+}
+message LegacyStompModeStompData {
+  uint32 row = 1;
+  uint32 column = 2;
+}
+message StompModeAssignment {
+  uint32 row = 1;
+  uint32 column = 2;
+  uint32 stomp_index = 3;
+}
+message MidiMessageInfo {
+  uint32 type = 1;
+  uint32 channel = 2;
+  uint32 param1 = 3;
+  uint32 param2 = 4;
+  uint32 param3 = 5;
+}
+message Expression {
+  int32 expression = 1;
+  float expression_min = 2;
+  float expression_max = 3;
+}
+message ExpressionBypassInfo {
+  uint32 type = 1;
+  bool invert = 2;
+  uint32 delay_ms = 3;
+  bool latch_emulation = 4;
+}
+message SlotNotification {
+  uint32 row = 1;
+  uint32 column = 2;
+}
+
