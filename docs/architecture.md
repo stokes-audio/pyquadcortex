@@ -377,12 +377,11 @@ next, roughly in order of how well the ground is prepared:
   wrappers, and the production/test-farm messages. Nothing about these has been
   observed on the wire by this project, so treat the schema as a starting
   hypothesis and verify.
-- **`copy_scene`'s swap variant is unexercised.** The operation itself is
-  confirmed working on hardware, `from_index` included, but it is the one message
-  whose shape did not come from Cortex Control's traffic - Cortex Control cannot
-  copy a scene at all, so the shape was read off the device's own broadcast when a
-  scene was copied on the unit (see [protocol.md](protocol.md#74-scenes)).
-  `is_swap` has not been tried; if you exercise it, update that section.
+- **`copy_scene` is the one message whose shape did not come from Cortex Control's
+  traffic**, because Cortex Control cannot copy a scene at all. It was read off the
+  device's own broadcast when a scene was copied on the unit, and is now fully
+  verified on hardware (see [protocol.md](protocol.md#74-scenes)). Nothing is
+  outstanding; noted only so the different provenance is not a surprise.
 - **`GridMove`** is registered and its captured shape is documented in
   [protocol.md](protocol.md#grid-block-move), but there is no client method for
   moving a block between grid positions.

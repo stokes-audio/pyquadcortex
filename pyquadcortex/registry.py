@@ -28,7 +28,7 @@ _BY_NAME = {
     "KeepAlive": pa.KeepAliveMessage,
     "GlobalTempo": pa.GlobalTempoMessage,
     "MasterVolume": pa.MasterVolumeMessage,
-    # Session hello (confirmed in the 2026-07-22 Windows capture).
+    # Session hello (confirmed by capture).
     "ResetCommsBuffers": pa.ResetCommsBuffersMessage,
     "Connection": pa.ConnectionMessage,
     "SceneLabel": pa.SceneLabelMessage,

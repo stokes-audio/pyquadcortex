@@ -1,7 +1,7 @@
 """Tests for the HID frame codec (pyquadcortex.framing).
 
 Pure, no-device tests against the CONFIRMED envelope (Windows USBPcap capture
-of Cortex Control 4.0.1, 2026-07-22; docs/protocol.md "Confirmed
+of Cortex Control 4.0.1; docs/protocol.md "Confirmed
 framing"). The golden fixtures under fixtures/frames/ are REAL captured frames:
 host-encoded fixtures are exercised in both directions; device-emitted ones are
 decode-only (the device fills trailer bytes the host leaves zero).

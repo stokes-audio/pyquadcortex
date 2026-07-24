@@ -16,9 +16,9 @@ session connect, preset recall (user AND factory setlists), scene switch, grid
 bypass/param writes, Save As, delete, and move are all reproduced verbatim from
 observed traffic. ``copy_scene`` came from a different source, because Cortex
 Control has no scene-copy feature to observe: its shape was read off the device's
-own broadcast when a scene was copied on the unit. It too is confirmed on
-hardware, including its ``from_index``; only its ``swap`` variant is unexercised.
-See ``docs/protocol.md`` for the per-operation coverage table.
+own broadcast when a scene was copied on the unit. It too is fully confirmed on
+hardware, including its ``from_index`` and ``swap`` behaviour. See
+``docs/protocol.md`` for the per-operation coverage table.
 """
 
 import time
@@ -66,7 +66,7 @@ class QuadCortex:
 
     # State types the device only PUSHES to a client that has subscribed by
     # sending a READ for them during connect. Order/content mirror Cortex
-    # Control's connect burst (windows-session-01). RecallPreset is the one
+    # Control's connect burst. RecallPreset is the one
     # that matters for read_preset, but the device appears to want the whole
     # set before it treats the client as fully connected.
     _SUBSCRIBE_TYPES = (
@@ -89,7 +89,7 @@ class QuadCortex:
         never has to. It is only separate so the handshake can be tested and so
         an advanced caller wiring their own transport can still drive it.
 
-        CONFIRMED (Windows captures + live probe, 2026-07-22/23): the device
+        Confirmed by capture and live probe: the device
         will not push state (no RecallPreset preset dumps, no Grid/Scene sync)
         to a client that has only opened the pipe - a minimal
         ResetCommsBuffers+Connection is NOT enough (proven live: recalls
@@ -155,7 +155,7 @@ class QuadCortex:
     ) -> preset.BinaryPreset:
         """Recall the preset at ``position`` and return its full ``BinaryPreset``.
 
-        CONFIRMED (session-03 capture + live probe, 2026-07-23): there is NO
+        Confirmed by capture and live probe: there is NO
         host-initiated "read preset" request - a ``GridMessage``/``RecallPreset``
         READ gets no reply. Instead the device BROADCASTS a ``RecallPreset``
         push (its ``preset`` field carrying the full BinaryPreset, often
@@ -165,7 +165,7 @@ class QuadCortex:
         side-effect-free read); the device services the push lazily (10-25s
         observed), hence the generous timeout.
 
-        CORRELATION (CONFIRMED, device 2026-07-23): the RecallPreset push a host
+        Correlation, confirmed on hardware: the RecallPreset push a host
         recall triggers echoes that recall's ``request_id``, while the
         unsolicited seed push (hello's subscription grid state) carries none.
         Without matching on the id, the waiter returns whatever RecallPreset
@@ -186,30 +186,47 @@ class QuadCortex:
         )
         return push.preset
 
-    def list_presets(self, setlist: str = Setlist.USER, timeout: float = 25.0) -> list:
-        """List the presets in a setlist.
+    def list_presets(self, setlist: str = Setlist.USER, timeout: float = 25.0,
+                     include_empty: bool = False) -> list:
+        """List the presets in a setlist, in slot order.
 
-        Returns the setlist's entries in slot order - each a ``ProductData``
-        with ``index`` (the linear slot position), ``name``, and ``instrument``
-        (see :class:`~pyquadcortex.enums.Instrument`).
+        Each entry is a ``ProductData`` with ``index`` (the linear slot position,
+        see :func:`slot_to_position`), ``name``, and ``instrument`` (see
+        :class:`~pyquadcortex.enums.Instrument`).
+
+        The device always reports a setlist as its full complement of 256 slots,
+        most of which are typically empty. By default only occupied slots are
+        returned; pass ``include_empty=True`` for the complete slot map, e.g. to
+        find a free slot to save into.
 
         Unlike :meth:`read_preset`, this does not change what is loaded on the
-        grid. There is no host-initiated "list" request: a ``File`` READ makes
-        the device push a folder listing per setlist, so this sends that READ and
-        waits for the listing whose key matches ``setlist``.
+        grid. There is no host-initiated "list" request: a ``File`` READ makes the
+        device push a folder listing per setlist, so this sends that READ and
+        waits for the listing whose key matches ``setlist``. (The device sends
+        each setlist's listing more than once; the first is complete, so the
+        duplicates are ignored.)
+
+        Note the trailing-slash asymmetry the match has to absorb: recalls need
+        the factory path WITH its trailing slash (Cortex Control sends it that
+        way), but the device reports that same folder's listing key WITHOUT one.
+        Keys are therefore compared with trailing slashes normalized away.
         """
+        wanted = str(setlist).rstrip("/")
         listing = self._t.await_broadcast(
             pa.FileMessage,
             lambda: self._t.send(pa.FileMessage(action=pa.MessageAction.READ)),
             timeout=timeout,
             match=lambda m: (
-                m.folder.key.startswith(str(setlist)) and len(m.folder.files) > 0
+                m.folder.key.rstrip("/") == wanted and len(m.folder.files) > 0
             ),
         )
-        return sorted(
+        entries = sorted(
             listing.folder.files,
             key=lambda pd: pd.index if pd.HasField("index") else -1,
         )
+        if include_empty:
+            return entries
+        return [pd for pd in entries if pd.HasField("name") and pd.name]
 
     # -- navigation ----------------------------------------------------------
 
@@ -222,7 +239,7 @@ class QuadCortex:
     ):
         """Recall the preset at ``position`` within the setlist at ``setlist_path``.
 
-        CONFIRMED (Windows capture, 2026-07-22): recall is a
+        Confirmed by capture: recall is a
         ``SetlistPositionMessage`` UPDATE. The setlist is addressed by its
         device filesystem path in ``folder_key`` (e.g.
         ``"/media/p4/Presets/My Presets"``) and the preset by its LINEAR index
@@ -258,11 +275,12 @@ class QuadCortex:
         an exact copy of scene B (not of scene A, which is what a device ignoring
         ``from_index`` would have produced).
 
-        The copy carries the scene's LABEL as well as its bypass and parameter
-        state - after the call above, scene D was renamed to scene B's label.
+        ``swap=True`` is also confirmed: it exchanges the two scenes rather than
+        overwriting one, so scene B ends up holding scene D's former state and
+        vice versa.
 
-        The ``swap=True`` variant sets ``is_swap`` on the same message but has
-        not been exercised on hardware.
+        Either way the scene's LABEL travels with its bypass and parameter state:
+        a copy renames the destination scene, and a swap exchanges both labels.
         """
         return self._t.send(
             pa.SceneCopyMessage(
@@ -274,7 +292,7 @@ class QuadCortex:
         )
 
     def set_scene_label(self, scene_index: int, label: str):
-        """Rename a scene. CONFIRMED shape (session-03): ``SceneLabel{action:
+        """Rename a scene. Confirmed shape: ``SceneLabel{action:
         UPDATE, index, label}`` (observed as the device's broadcast when a
         scene was renamed on the unit)."""
         return self._t.send(
@@ -284,7 +302,7 @@ class QuadCortex:
         )
 
     def set_scene_color(self, scene_index: int, color: int):
-        """Recolor a scene. CONFIRMED shape (session-03): ``SceneColor{action:
+        """Recolor a scene. Confirmed shape: ``SceneColor{action:
         UPDATE, index, color}`` with ``color`` an ARGB uint32 (recoloring a
         scene pinkish on the unit broadcast 0xFFFF02C2)."""
         return self._t.send(
@@ -306,7 +324,7 @@ class QuadCortex:
         :meth:`set_bypass` build exactly such presets and are the usual entry
         points.
 
-        WARNING (CONFIRMED on device 2026-07-23): a preset freshly read from a
+        WARNING, confirmed on hardware: a preset freshly read from a
         recall carries NO explicit
         ``row``, so writing it back WHOLESALE does nothing - a full-preset write
         that re-pointed ``in_portid`` read back UNCHANGED. Do not expect a
@@ -318,7 +336,7 @@ class QuadCortex:
     def set_chain_input(self, row: int, in_portid: int):
         """Re-point one grid ``row``'s input to ``in_portid`` (row-keyed update).
 
-        CONFIRMED (device 2026-07-23): a ``Grid`` UPDATE carrying a single chain
+        Confirmed on hardware: a ``Grid`` UPDATE carrying a single chain
         ``{row, in_portid}`` re-points that grid row's input; the device then
         saves it with ``save_current_preset`` (which snapshots the grid). This
         is the ONLY shape that actually moved an input on the wire - a
@@ -336,7 +354,7 @@ class QuadCortex:
                   value: float, scene: int = 0):
         """Set one block parameter on the grid (row/column-keyed sparse update).
 
-        CONFIRMED shape (Windows capture): a knob change streams
+        Confirmed shape: a knob change streams
         ``Grid{UPDATE, preset{chains{row, models{column, params{index,
         param_values[scene]{float_value}}}}}}``. This is the ONLY way an edit
         persists - a full-preset write is dropped (chains carry no row). Save
@@ -358,7 +376,7 @@ class QuadCortex:
     def set_bypass(self, row: int, column: int, bypassed: bool, scene: int = 0):
         """Bypass/enable one block on the grid (row/column-keyed sparse update).
 
-        CONFIRMED shape (Windows capture): ``Grid{UPDATE, preset{bypass{row,
+        Confirmed shape: ``Grid{UPDATE, preset{bypass{row,
         colBypass{column, sceneBypass[scene]{bypass}}}}}``. Save the grid to
         persist. Per-scene bypass is indexed by ``scene`` in ``sceneBypass``.
         """
@@ -403,7 +421,7 @@ class QuadCortex:
     ):
         """Save the preset currently on the grid into a setlist slot ("Save As").
 
-        CONFIRMED (Windows capture, 2026-07-22): Cortex Control's "Save As" is a
+        Confirmed by capture: Cortex Control's "Save As" is a
         ``FileMessage`` with action CREATE (unset, the default), ``type: 0``,
         and NO preset payload - the device saves the preset it already has on
         the grid. The target slot is addressed inside ``folder``: the setlist's
@@ -426,7 +444,7 @@ class QuadCortex:
     def delete_preset(self, setlist_path: str, name: str):
         """Delete the preset named ``name`` from the setlist at ``setlist_path``.
 
-        CONFIRMED (Windows capture 2, 2026-07-23): deleting "Test save to user
+        Confirmed by capture: deleting "Test save to user
         sl" from slot 28E sent ``File{action: DELETE, type: 0, folder{key:
         <setlist path>, is_factory: false, files{key: "<setlist
         path>/<name>.pb"}}}`` - the preset is addressed by its device FILE
@@ -441,7 +459,7 @@ class QuadCortex:
     def move_preset(self, setlist_path: str, name: str, to_position: int):
         """Move the preset named ``name`` to slot ``to_position`` (same setlist).
 
-        CONFIRMED (Windows capture 2, 2026-07-23): dragging "Darkglass AO900
+        Confirmed by capture: dragging "Darkglass AO900
         2_1" onto slot 28D sent ``File{action: MOVE, type: 0, folder{key:
         <setlist path>, files{key: "<setlist path>/<name>.pb"}},
         to_folder{key: <setlist path>, files{index: 219}}}`` - source by FILE
@@ -459,7 +477,7 @@ class QuadCortex:
 def slot_to_position(slot: str) -> int:
     """Convert a QC slot name like ``"28C"`` to its linear wire position.
 
-    CONFIRMED (Windows capture): the wire ``position`` is zero-based
+    Confirmed by capture: the wire ``position`` is zero-based
     ``(bank - 1) * 8 + letter`` with A=0..H=7; recalling "28C" sent 218 and
     saving to "28E" sent 220.
     """
@@ -476,7 +494,7 @@ def input_chain_rows(p: preset.BinaryPreset, from_port: int = Input.INPUT_1) -> 
     """Return the grid rows whose input chain is on ``from_port``.
 
     A chain's grid row is its explicit ``row`` when set, else its index in
-    ``p.chains`` (CONFIRMED: chains read back from a recall carry no ``row``, and
+    ``p.chains`` (confirmed: chains read back from a recall carry no ``row``, and
     chain index == grid row - the 28A read-back had chain[0]=Input 2 on row 1
     and chain[2]=Input 1 on row 3). Feed each returned row to
     :meth:`QuadCortex.set_chain_input` to re-point it, then save.

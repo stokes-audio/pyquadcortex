@@ -58,7 +58,7 @@ def test_read_preset_recalls_then_returns_broadcast_preset():
 
 
 def test_read_preset_correlates_the_push_by_request_id():
-    # CONFIRMED (device, 2026-07-23): a host recall echoes its request_id on the
+    # Confirmed on hardware: a host recall echoes its request_id on the
     # RecallPreset push, while the unsolicited seed push carries none. read_preset
     # must recall WITH a request_id and match the push by it, so it never returns
     # a stale/lagging push (the lag-by-one bug).
@@ -106,6 +106,43 @@ def test_list_presets_sends_file_read_and_returns_entries_in_slot_order():
     assert [pd.name for pd in entries] == ["First", "Second", "Third"]
 
 
+def test_list_presets_omits_empty_slots_by_default():
+    # The device reports a setlist as all 256 slots; most are usually empty. The
+    # default should be the occupied ones, with the full map available on request.
+    listing = pa.FileMessage()
+    listing.folder.key = str(Setlist.USER)
+    for index, name in ((0, ""), (1, "Real Preset"), (2, ""), (3, "Another")):
+        pd = listing.folder.files.add()
+        pd.index = index
+        if name:
+            pd.name = name
+    fake = FakeTransport()
+    fake.broadcast = listing
+    qc = client.QuadCortex(fake)
+
+    assert [pd.name for pd in qc.list_presets(Setlist.USER)] == ["Real Preset", "Another"]
+    full = qc.list_presets(Setlist.USER, include_empty=True)
+    assert len(full) == 4
+    assert [pd.index for pd in full] == [0, 1, 2, 3]
+
+
+def test_list_presets_matches_the_factory_listing_despite_the_trailing_slash():
+    # Setlist.FACTORY carries a trailing slash because RECALLS require it, but the
+    # device reports that same folder's LISTING key without one. A naive
+    # startswith() match therefore never fires and list_presets times out. This
+    # regression test locks in the normalized comparison.
+    assert str(Setlist.FACTORY).endswith("/"), "premise: the recall path has a slash"
+    fake = FakeTransport()
+    fake.broadcast = pa.FileMessage()
+    qc = client.QuadCortex(fake)
+    qc.list_presets(Setlist.FACTORY)
+
+    as_device_sends_it = pa.FileMessage()
+    as_device_sends_it.folder.key = "/opt/neuraldsp/Factory Library"   # no slash
+    as_device_sends_it.folder.files.add().index = 0
+    assert fake.last_match(as_device_sends_it) is True
+
+
 def test_list_presets_ignores_listings_for_other_setlists():
     fake = FakeTransport()
     fake.broadcast = pa.FileMessage()
@@ -134,7 +171,7 @@ def test_list_presets_ignores_listings_for_other_setlists():
 
 def test_input_port_constants_match_schema_enum():
     # Chain.in_portid uses GainCalInputPortParameter.InputPortId verbatim -
-    # CONFIRMED exhaustively on-device 2026-07-23 (ids 0-14; 15 rejected).
+    # confirmed exhaustively on hardware (ids 0-14 accepted; 15 rejected).
     InP = pa.GainCalInputPortParameter.InputPortId
     assert Input.INPUT_1 == InP.INPUT_1
     assert Input.INPUT_2 == InP.INPUT_2
@@ -148,20 +185,21 @@ def test_input_port_constants_match_schema_enum():
     assert Input.USB_5_6 == InP.USB_IN_5_6
     assert Input.USB_7_8 == InP.USB_IN_7_8
     assert Input.SIDECHAIN_BUFFER == InP.SIDECHAIN_BUFFER
-    # Owner-confirmed anchors (the rig): Input 1, Input 2, Return 1.
+    # Anchors confirmed against the unit's own display: Input 1, Input 2, Return 1.
     assert (Input.INPUT_1, Input.INPUT_2, Input.RETURN_1) == (1, 2, 4)
 
 
 def test_output_port_constants_match_schema_enum():
     # Chain.out_portid uses GainCalOutputPortParameter.OutputPortId verbatim -
-    # anchored by owner's 28F (out 4="Output 1", 1="Output 1/2") and spot-
-    # confirmed 2026-07-23 (2="Output 3/4", 3="Send 1/2", 10="USB 5").
+    # anchored by a preset read back from the unit (out 4="Output 1",
+    # 1="Output 1/2") and spot-confirmed on hardware (2="Output 3/4",
+    # 3="Send 1/2", 10="USB 5").
     OutP = pa.GainCalOutputPortParameter.OutputPortId
-    assert Output.XLR_1_2 == OutP.XLR_1_2      # "Output 1/2" (owner)
-    assert Output.XLR_1 == OutP.XLR_1          # "Output 1"   (owner)
-    assert Output.OUT_3_4 == OutP.OUTPUT_3_4       # "Output 3/4" (owner)
-    assert Output.SEND_1_2 == OutP.SEND_1_2    # "Send 1/2"   (owner)
-    assert Output.USB_5 == OutP.USB_OUT_5      # "USB 5"      (owner)
+    assert Output.XLR_1_2 == OutP.XLR_1_2      # "Output 1/2"
+    assert Output.XLR_1 == OutP.XLR_1          # "Output 1"
+    assert Output.OUT_3_4 == OutP.OUTPUT_3_4       # "Output 3/4"
+    assert Output.SEND_1_2 == OutP.SEND_1_2    # "Send 1/2"
+    assert Output.USB_5 == OutP.USB_OUT_5      # "USB 5"
     assert Output.USB_7_8 == OutP.USB_OUT_7_8
     assert Output.MULTIPLE == OutP.MULTIPLE_OUTS  # factory Cali's output
 
@@ -194,7 +232,7 @@ def test_input_chain_rows_honors_explicit_row():
 
 
 def test_set_chain_input_sends_row_keyed_sparse_grid_update():
-    # CONFIRMED (device 2026-07-23): only a Grid UPDATE carrying a chain with an
+    # Confirmed on hardware: only a Grid UPDATE carrying a chain with an
     # explicit `row` re-points that row's input; a full preset whose chains lack
     # `row` is NOT applied. So set_chain_input sends exactly one chain {row,
     # in_portid} - the minimal proven shape.

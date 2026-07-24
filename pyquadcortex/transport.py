@@ -12,7 +12,7 @@ speaks the Quad Cortex framed protocol. It:
     keeps the session alive.
 
 The transport deals only in ``framing`` (bytes <-> ``(type, payload)``) and
-``registry`` (type tag <-> protobuf class). The envelope is CONFIRMED against
+``registry`` (type tag <-> protobuf class). The envelope is confirmed against
 a real Cortex Control session (see docs/protocol.md).
 Write errors are EXPECTED: the QC stalls every SET_REPORT's status stage after
 consuming the data (see ``_write_report``), so writes that "fail" succeeded.
@@ -141,7 +141,7 @@ class Transport:
     def _write_report(self, report):
         """Write one HID output report, tolerating the QC's status-stage STALL.
 
-        CONFIRMED (Windows capture + live Windows probe, 2026-07-22): the QC
+        Confirmed by capture and live probe: the QC
         accepts the 128-byte data stage of every SET_REPORT and then STALLs the
         status stage - for Cortex Control too (all 273 of its writes in the
         capture completed with USBD_STATUS_STALL_PID, yet every one was acted
@@ -174,7 +174,7 @@ class Transport:
         seconds. Raises ``TimeoutError`` if no correlated response arrives.
 
         Correlation is BY MESSAGE TYPE, checked against ``request_id`` when the
-        reply carries one (CONFIRMED, Windows capture 2026-07-22): the device
+        reply carries one (confirmed by capture): the device
         answers a request with a message of the SAME type, but READ replies
         (e.g. Version) carry no ``request_id`` echo, and a state-changing
         request triggers a cascade of OTHER-type messages that all echo the
@@ -224,7 +224,7 @@ class Transport:
         for which ``match`` returns False is IGNORED (left undelivered), so the
         waiter keeps waiting for the right one. This is how ``read_preset``
         skips a stale/seed RecallPreset push (no request_id) and accepts only the
-        push echoing its own recall's request_id (CONFIRMED: host recalls echo
+        push echoing its own recall's request_id (confirmed: host recalls echo
         the id on the push). The device services large pushes lazily (10-25s
         observed), hence the generous default timeout. Raises ``TimeoutError``
         on no matching broadcast.
@@ -328,7 +328,7 @@ class Transport:
         """
         try:
             msg_type, payload = framing.decode_reports(reports)
-            # CONFIRMED (session-03 capture): the device gzip-compresses some
+            # Confirmed by capture: the device gzip-compresses some
             # payloads at the frame level (e.g. RecallPreset pushes carrying a
             # full BinaryPreset). The decompressed bytes are the ordinary
             # protobuf message for that type.

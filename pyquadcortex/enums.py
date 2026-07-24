@@ -82,5 +82,9 @@ class Setlist(StrEnum):
 
     USER = "/media/p4/Presets/My Presets"
     # Note the trailing slash: Cortex Control sends it verbatim for factory
-    # recalls. Pair this with ``is_factory=True``.
+    # recalls, so a recall needs it. Pair this with ``is_factory=True``.
+    #
+    # Beware the asymmetry: the device reports this same folder's LISTING key
+    # WITHOUT the trailing slash, so anything matching a folder key against this
+    # value must normalize it (see QuadCortex.list_presets).
     FACTORY = "/opt/neuraldsp/Factory Library/"

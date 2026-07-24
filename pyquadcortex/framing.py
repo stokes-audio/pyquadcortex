@@ -4,8 +4,8 @@ This module converts between logical messages ``(message_type, protobuf_bytes)``
 and the raw 129-byte HID reports exchanged with the device. It deals ONLY in
 bytes and integers: no hidapi, no protobuf. ``message_type`` is just an int.
 
-CONFIRMED wire format (Windows USBPcap capture of Cortex Control 4.0.1,
-2026-07-22; see docs/protocol.md):
+Confirmed wire format (USBPcap capture of Cortex Control 4.0.1; see
+docs/protocol.md):
 
   Report (129 bytes over hidapi, report-ID byte + 128-byte body)::
 
@@ -26,12 +26,12 @@ CONFIRMED wire format (Windows USBPcap capture of Cortex Control 4.0.1,
 There is no total-length field: reassembly is driven purely by the flags.
 """
 
-# --- CONFIRMED HID-layer constants -------------------------------------------
+# --- Confirmed HID-layer constants -------------------------------------------
 REPORT_SIZE = 128  # body bytes per report (report-ID byte is separate)
 OUT_REPORT_ID = 0x02  # host -> device (OUTPUT reports)
 IN_REPORT_ID = 0x01  # device -> host (INPUT reports)
 
-# --- CONFIRMED envelope constants --------------------------------------------
+# --- Confirmed envelope constants --------------------------------------------
 FLAG_FIRST = 0x40
 FLAG_LAST = 0x80
 # Per-report data capacity: the 128-byte body minus the [len][flags] prefix.

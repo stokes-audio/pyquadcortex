@@ -436,9 +436,16 @@ name:
 | User ("My Presets") | `/media/p4/Presets/My Presets` | `false` |
 | Factory Library | `/opt/neuraldsp/Factory Library/` | `true` |
 
-**Note the factory path's trailing slash.** Cortex Control sends it verbatim,
-and user setlist paths have none. `enums.Setlist` carries both strings so
+**Note the factory path's trailing slash.** Cortex Control sends it verbatim on a
+recall, and user setlist paths have none. `enums.Setlist` carries both strings so
 callers do not have to remember this.
+
+**The slash is not consistent across operations.** A factory *recall* needs the
+trailing slash, but the device reports that same folder's *listing* key as
+`/opt/neuraldsp/Factory Library`, with no slash. Any code matching a pushed
+`folder.key` against a setlist constant must normalize trailing slashes on both
+sides; comparing them raw silently matches nothing (which surfaces as a listing
+that never arrives, not as an error).
 
 Individual presets exist as files inside the setlist directory, named
 `<setlist path>/<preset name>.pb`. That path is how `File` DELETE and MOVE
@@ -514,11 +521,25 @@ File{folder{key: <setlist path>, is_factory, files: [ProductData, ...]}}
 
 Each `ProductData` entry carries `index` (the linear slot position), `name`,
 `instrument`, and metadata fields such as `author`, `coros_version`, `date`, and
-`cloud_id`. A setlist lists 256 slots. The factory listing arrives
-gzip-compressed at the frame level.
+`cloud_id`. The factory listing arrives gzip-compressed at the frame level.
 
-A client must match the listing it wants by `folder.key`, and should require
-`len(folder.files) > 0`, because the device also pushes empty folder messages.
+Three things to expect from that push:
+
+- **A single `File` READ pushes every folder the device knows about**, not only
+  the setlist of interest: both setlists, each installed plugin's artist preset
+  folders, the impulse-response library, and several internal keys. Match the one
+  you want by `folder.key` (normalizing trailing slashes, see
+  [6.1](#61-setlist-paths)) and ignore the rest.
+- **A setlist always lists its full 256 slots**, occupied or not. Empty slots
+  appear as entries with an `index` and no `name`, so a caller that wants real
+  presets has to filter them out. A user setlist holding a dozen presets still
+  reports 256 entries.
+- **Each setlist's listing is pushed more than once** (twice, in observation),
+  with identical contents. The first push is already complete, so the duplicates
+  can be ignored.
+
+A client should also require `len(folder.files) > 0`, because the device pushes
+empty folder messages for keys with no contents.
 
 **Listings are eventually consistent.** After a `File` DELETE or MOVE, a listing
 issued within about 2 seconds can still show the pre-mutation state; about
@@ -573,11 +594,14 @@ and B differ made scene D an exact copy of **scene B**, not of scene A. Verified
 by saving the resulting grid and reading it back: across every block that follows
 scenes, scene D matched scene B and differed from scene A.
 
-**The copy includes the scene label.** After the copy above, scene D's label had
-been replaced with scene B's. So `SceneCopy` moves the label along with the
-bypass and parameter state; it is not limited to the audible state.
+**`is_swap` exchanges the two scenes.** Also confirmed by read-back: with
+`is_swap: true`, scene B ended up holding scene D's former state and scene D held
+scene B's, rather than one overwriting the other.
 
-`is_swap` remains unexercised.
+**The scene LABEL travels with the state**, in both modes. A copy renames the
+destination scene to the source scene's label; a swap exchanges the two labels.
+So `SceneCopy` is not limited to the audible state - a caller who only wants the
+sound copied should expect the label to move as well.
 
 A scene copy can also be done entirely client-side without this message: read
 the preset, copy the per-scene `param_values[from]` and per-scene bypass entries
@@ -836,7 +860,7 @@ visually on the device's own screen.
 | `set_param` | `Grid{UPDATE, preset{chains{row, models{column, params{index, param_values[scene]{float_value}}}}}}` | read-back | value round-trips 0.0 to 1.0; param index is positional; not every index is a visible knob |
 | `set_bypass` | `Grid{UPDATE, preset{bypass{row, colBypass{column, sceneBypass[scene]{bypass}}}}}` | on-unit | block greyed out on the unit |
 | `set_scene_label` / `set_scene_color` | `SceneLabel` / `SceneColor{UPDATE, index, label/color}` | read-back | color is ARGB uint32; exact round-trip |
-| `copy_scene` | `SceneCopy{UPDATE, from_index, to_index}` | read-back + on-unit | confirmed including `from_index` (copying B onto D produced B, not A) and that the scene LABEL is copied too. Cortex Control cannot copy a scene, so the shape came from the device's own broadcast when copying on the unit. `is_swap` untested |
+| `copy_scene` | `SceneCopy{UPDATE, from_index, to_index, is_swap}` | read-back + on-unit | fully confirmed: `from_index` (copying B onto D produced B, not A), `is_swap` (scenes exchanged), and that the scene LABEL travels with the state. Cortex Control cannot copy a scene, so the shape came from the device's own broadcast when copying on the unit |
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the GRID; `preset_payload` is IGNORED for CREATE |
 | `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | works, but asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
@@ -855,8 +879,6 @@ Stated explicitly so nobody builds on a guess:
   exact field layout and semantics are unconfirmed.
 - **`FileMessage.type`** was always `0` in every observation. What other values
   select is unknown.
-- **`SceneCopy.is_swap`** has not been exercised on hardware. (`from_index` has;
-  see [section 7.4](#74-scenes).)
 - **`delete_from_library`** (on `FileMessage`) exists in the schema but was never
   sent. Its effect is unknown.
 - **Most output port ids** are schema-derived rather than hardware-confirmed
