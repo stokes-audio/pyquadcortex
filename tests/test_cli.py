@@ -2,21 +2,22 @@
 
 These tests exercise ONLY argument parsing. They must never touch hidapi or open
 a device: importing ``pyquadcortex.cli`` and calling ``build_parser()`` has to be
-import-safe and device-free (the ``import hid`` lives lazily inside ``_connect``/
-``main``). If any of these tests start requiring hidapi, the lazy-import contract
-has been broken.
+import-safe and device-free (device opening is deferred to
+``pyquadcortex.session``, whose ``import hid`` is itself lazy). If any of these
+tests start requiring hidapi, the lazy-import contract has been broken.
 """
 
 import pytest
 
 from pyquadcortex import cli, client
+from pyquadcortex.enums import Setlist
 
 
 def test_parse_recall_args():
     ns = cli.build_parser().parse_args(["recall", "--slot", "28C"])
     assert ns.command == "recall" and ns.slot == "28C"
     # Setlist defaults to the confirmed user "My Presets" device path.
-    assert ns.setlist == client.USER_PRESETS_PATH
+    assert ns.setlist == Setlist.USER
 
 
 def test_parse_recall_custom_setlist():
@@ -50,7 +51,7 @@ def test_parse_version_args():
 def test_parse_dump_preset_args():
     ns = cli.build_parser().parse_args(["dump-preset", "--slot", "28C"])
     assert ns.command == "dump-preset" and ns.slot == "28C"
-    assert ns.setlist == client.USER_PRESETS_PATH
+    assert ns.setlist == Setlist.USER
 
 
 def test_missing_subcommand_exits_nonzero():

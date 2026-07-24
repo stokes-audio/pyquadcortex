@@ -9,6 +9,7 @@ client can be exercised without a device.
 import itertools
 
 from pyquadcortex import client
+from pyquadcortex.enums import Input, Instrument, Output, Setlist
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
@@ -82,6 +83,52 @@ def test_read_preset_correlates_the_push_by_request_id():
     assert fake.last_match(wrong) is False
 
 
+# -- listing a setlist --------------------------------------------------------
+
+
+def test_list_presets_sends_file_read_and_returns_entries_in_slot_order():
+    listing = pa.FileMessage()
+    listing.folder.key = str(Setlist.USER)
+    for index, name in ((2, "Third"), (0, "First"), (1, "Second")):
+        pd = listing.folder.files.add()
+        pd.index = index
+        pd.name = name
+    fake = FakeTransport()
+    fake.broadcast = listing
+    qc = client.QuadCortex(fake)
+
+    entries = qc.list_presets(Setlist.USER)
+
+    # It triggers a File READ (no host-initiated "list" request exists).
+    assert [type(m).__name__ for m in fake.sent] == ["FileMessage"]
+    assert fake.sent[0].action == pa.MessageAction.READ
+    # Returned in slot order, not wire order.
+    assert [pd.name for pd in entries] == ["First", "Second", "Third"]
+
+
+def test_list_presets_ignores_listings_for_other_setlists():
+    fake = FakeTransport()
+    fake.broadcast = pa.FileMessage()
+    qc = client.QuadCortex(fake)
+    qc.list_presets(Setlist.FACTORY)
+
+    # The match predicate must accept only the requested setlist, and only a
+    # listing that actually carries entries (the device pushes empty ones).
+    wanted = pa.FileMessage()
+    wanted.folder.key = str(Setlist.FACTORY)
+    wanted.folder.files.add().index = 0
+    assert fake.last_match(wanted) is True
+
+    other = pa.FileMessage()
+    other.folder.key = str(Setlist.USER)
+    other.folder.files.add().index = 0
+    assert fake.last_match(other) is False
+
+    empty = pa.FileMessage()
+    empty.folder.key = str(Setlist.FACTORY)
+    assert fake.last_match(empty) is False
+
+
 # -- input rerouting (Phase B) ------------------------------------------------
 
 
@@ -89,20 +136,20 @@ def test_input_port_constants_match_schema_enum():
     # Chain.in_portid uses GainCalInputPortParameter.InputPortId verbatim -
     # CONFIRMED exhaustively on-device 2026-07-23 (ids 0-14; 15 rejected).
     InP = pa.GainCalInputPortParameter.InputPortId
-    assert client.INPUT_1 == InP.INPUT_1
-    assert client.INPUT_2 == InP.INPUT_2
-    assert client.INPUT_1_2 == InP.INPUT_1_2
-    assert client.RETURN_1 == InP.RETURN_1
-    assert client.RETURN_2 == InP.RETURN_2
-    assert client.RETURN_1_2 == InP.RETURN_1_2
-    assert client.PREV_ROW == InP.PREV_ROW
-    assert client.USB_IN_5 == InP.USB_IN_5
-    assert client.USB_IN_8 == InP.USB_IN_8
-    assert client.USB_IN_5_6 == InP.USB_IN_5_6
-    assert client.USB_IN_7_8 == InP.USB_IN_7_8
-    assert client.SIDECHAIN_BUFFER == InP.SIDECHAIN_BUFFER
+    assert Input.INPUT_1 == InP.INPUT_1
+    assert Input.INPUT_2 == InP.INPUT_2
+    assert Input.INPUT_1_2 == InP.INPUT_1_2
+    assert Input.RETURN_1 == InP.RETURN_1
+    assert Input.RETURN_2 == InP.RETURN_2
+    assert Input.RETURN_1_2 == InP.RETURN_1_2
+    assert Input.PREV_ROW == InP.PREV_ROW
+    assert Input.USB_5 == InP.USB_IN_5
+    assert Input.USB_8 == InP.USB_IN_8
+    assert Input.USB_5_6 == InP.USB_IN_5_6
+    assert Input.USB_7_8 == InP.USB_IN_7_8
+    assert Input.SIDECHAIN_BUFFER == InP.SIDECHAIN_BUFFER
     # Owner-confirmed anchors (the rig): Input 1, Input 2, Return 1.
-    assert (client.INPUT_1, client.INPUT_2, client.RETURN_1) == (1, 2, 4)
+    assert (Input.INPUT_1, Input.INPUT_2, Input.RETURN_1) == (1, 2, 4)
 
 
 def test_output_port_constants_match_schema_enum():
@@ -110,40 +157,40 @@ def test_output_port_constants_match_schema_enum():
     # anchored by owner's 28F (out 4="Output 1", 1="Output 1/2") and spot-
     # confirmed 2026-07-23 (2="Output 3/4", 3="Send 1/2", 10="USB 5").
     OutP = pa.GainCalOutputPortParameter.OutputPortId
-    assert client.OUT_XLR_1_2 == OutP.XLR_1_2      # "Output 1/2" (owner)
-    assert client.OUT_XLR_1 == OutP.XLR_1          # "Output 1"   (owner)
-    assert client.OUT_3_4 == OutP.OUTPUT_3_4       # "Output 3/4" (owner)
-    assert client.OUT_SEND_1_2 == OutP.SEND_1_2    # "Send 1/2"   (owner)
-    assert client.OUT_USB_5 == OutP.USB_OUT_5      # "USB 5"      (owner)
-    assert client.OUT_USB_7_8 == OutP.USB_OUT_7_8
-    assert client.OUT_MULTIPLE == OutP.MULTIPLE_OUTS  # factory Cali's output
+    assert Output.XLR_1_2 == OutP.XLR_1_2      # "Output 1/2" (owner)
+    assert Output.XLR_1 == OutP.XLR_1          # "Output 1"   (owner)
+    assert Output.OUT_3_4 == OutP.OUTPUT_3_4       # "Output 3/4" (owner)
+    assert Output.SEND_1_2 == OutP.SEND_1_2    # "Send 1/2"   (owner)
+    assert Output.USB_5 == OutP.USB_OUT_5      # "USB 5"      (owner)
+    assert Output.USB_7_8 == OutP.USB_OUT_7_8
+    assert Output.MULTIPLE == OutP.MULTIPLE_OUTS  # factory Cali's output
 
 
 def test_instrument_tag_constants():
     # ProductData.instrument tag, confirmed against the factory library:
     # 1=guitar (block 0-15), 2=bass (16-23, 191-231), 4=vocal (AutoWah, Vocal 58,
     # Vocal Synth). Values are powers of two (3 unused) - likely bit flags.
-    assert client.INSTRUMENT_GUITAR == 1
-    assert client.INSTRUMENT_BASS == 2
-    assert client.INSTRUMENT_VOCAL == 4
+    assert Instrument.GUITAR == 1
+    assert Instrument.BASS == 2
+    assert Instrument.VOCAL == 4
 
 
 def test_input_chain_rows_returns_rows_on_from_port():
     # Grid row == chain index when chains carry no explicit row (CONFIRMED via
     # the 28A read-back: chain[0]=Input 2 on row 1, chain[2]=Input 1 on row 3).
     p = preset.BinaryPreset()
-    p.chains.add().in_portid = client.INPUT_1  # index 0
+    p.chains.add().in_portid = Input.INPUT_1  # index 0
     p.chains.add().in_portid = 0               # index 1 - internally fed
-    p.chains.add().in_portid = client.INPUT_1  # index 2
-    assert client.input_chain_rows(p, client.INPUT_1) == [0, 2]
+    p.chains.add().in_portid = Input.INPUT_1  # index 2
+    assert client.input_chain_rows(p, Input.INPUT_1) == [0, 2]
 
 
 def test_input_chain_rows_honors_explicit_row():
     p = preset.BinaryPreset()
     c = p.chains.add()
-    c.in_portid = client.INPUT_1
+    c.in_portid = Input.INPUT_1
     c.row = 3
-    assert client.input_chain_rows(p, client.INPUT_1) == [3]
+    assert client.input_chain_rows(p, Input.INPUT_1) == [3]
 
 
 def test_set_chain_input_sends_row_keyed_sparse_grid_update():
@@ -152,14 +199,14 @@ def test_set_chain_input_sends_row_keyed_sparse_grid_update():
     # `row` is NOT applied. So set_chain_input sends exactly one chain {row,
     # in_portid} - the minimal proven shape.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_chain_input(row=2, in_portid=client.RETURN_1)
+    qc.set_chain_input(row=2, in_portid=Input.RETURN_1)
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.UPDATE
     assert len(sent.preset.chains) == 1
     ch = sent.preset.chains[0]
     assert ch.row == 2
-    assert ch.in_portid == client.RETURN_1
+    assert ch.in_portid == Input.RETURN_1
 
 
 def test_set_param_sends_row_column_keyed_grid_update():
@@ -214,24 +261,24 @@ def test_reroute_grid_input_sends_set_chain_input_per_matching_row():
     # Given a preset (as read from the grid) with input rows on Input 1,
     # reroute_grid_input sends one row-keyed Grid update per matching row.
     p = preset.BinaryPreset()
-    p.chains.add().in_portid = client.INPUT_1   # row 0
+    p.chains.add().in_portid = Input.INPUT_1   # row 0
     p.chains.add().in_portid = 0                # row 1 internal
-    p.chains.add().in_portid = client.INPUT_1   # row 2
+    p.chains.add().in_portid = Input.INPUT_1   # row 2
     qc = client.QuadCortex(FakeTransport())
-    rows = qc.reroute_grid_input(p, client.RETURN_1)
+    rows = qc.reroute_grid_input(p, Input.RETURN_1)
     assert rows == [0, 2]
     grids = [m for m in qc._t.sent if isinstance(m, pa.GridMessage)]
     assert len(grids) == 2
     moved = {(g.preset.chains[0].row, g.preset.chains[0].in_portid) for g in grids}
-    assert moved == {(0, client.RETURN_1), (2, client.RETURN_1)}
+    assert moved == {(0, Input.RETURN_1), (2, Input.RETURN_1)}
 
 
 def test_reroute_grid_input_raises_when_no_matching_row():
     p = preset.BinaryPreset()
-    p.chains.add().in_portid = client.RETURN_1
+    p.chains.add().in_portid = Input.RETURN_1
     qc = client.QuadCortex(FakeTransport())
     try:
-        qc.reroute_grid_input(p, client.INPUT_2)
+        qc.reroute_grid_input(p, Input.INPUT_2)
         assert False, "expected KeyError"
     except KeyError:
         pass
@@ -353,7 +400,7 @@ def test_move_preset_sends_file_move():
 def test_hello_performs_full_connect_handshake():
     canned = {"ResetCommsBuffersMessage": pa.ResetCommsBuffersMessage(session_id="ab")}
     qc = client.QuadCortex(FakeTransport(canned))
-    reply = qc.hello(settle=0)
+    reply = qc._hello(settle=0)
     assert reply.session_id == "ab"
     sent = qc._t.sent
     # ResetCommsBuffers goes via request() (recorded first), then the burst.

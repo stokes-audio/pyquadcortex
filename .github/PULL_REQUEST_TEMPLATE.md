@@ -8,12 +8,13 @@
 
 ## Testing
 
-<!-- How did you verify this? Note whether you tested on real hardware (which firmware?)
-     or offline only. -->
+<!-- How did you verify this? If you tested on real hardware, say which CorOS /
+     Cortex Control version and how you checked (read-back, or watching the unit).
+     Offline-only is fine for many changes - just say so. -->
 
 ## Checklist
 
-- [ ] Tests pass locally (`cd qcctl && python -m pytest -q`)
+- [ ] Tests pass locally (`python -m pytest -q`)
 - [ ] Added or updated tests for the change
 - [ ] Updated documentation if behavior or the public API changed
 - [ ] No unrelated changes bundled in

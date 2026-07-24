@@ -11,19 +11,21 @@ The client deliberately knows NOTHING about hidapi, HID reports, or the framing
 layer: it only speaks protobuf messages. That keeps this layer testable with a
 fake transport and keeps all wire concerns in ``framing``/``transport``.
 
-Field semantics were CONFIRMED against real Cortex Control 4.0.1 sessions
-(Windows USBPcap captures + live Windows probe, 2026-07-22/23; framing_spec.md
-"Phase 2 CONFIRMED framing"): session hello, preset recall (user AND factory
-setlists), scene switch, grid bypass/param writes, Save As, delete, and move
-are all captured verbatim. The one remaining UNVERIFIED method is
-``copy_scene`` (SceneCopy was never observed on the wire; Cortex Control's UI
-does not obviously expose it).
+Field semantics were confirmed against real Cortex Control 4.0.1 sessions:
+session connect, preset recall (user AND factory setlists), scene switch, grid
+bypass/param writes, Save As, delete, and move are all reproduced verbatim from
+observed traffic. ``copy_scene`` is the one operation Cortex Control was never
+seen to send, so its message shape comes from the device's own broadcast; the
+host-to-device direction works on hardware, but its ``swap`` behaviour and a
+nonzero ``from_index`` are untested. See ``docs/protocol.md`` for the full
+per-operation coverage table.
 """
 
 import time
 import uuid
 
 from pyquadcortex import registry
+from pyquadcortex.enums import Input, Instrument, Output, Setlist  # noqa: F401
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
@@ -31,8 +33,34 @@ from pyquadcortex.proto import Preset_pb2 as preset
 class QuadCortex:
     """Ergonomic control surface over a request/response transport."""
 
-    def __init__(self, transport):
+    def __init__(self, transport, _owned_resources=None):
         self._t = transport
+        # Set by pyquadcortex.connect() so close() can tear down the transport
+        # and HID device it opened on the caller's behalf. When a caller wires
+        # their own transport, they own its lifecycle and this stays empty.
+        self._owned = _owned_resources or []
+
+    # -- lifecycle -----------------------------------------------------------
+
+    def close(self):
+        """Release the device, if this object opened it.
+
+        Safe to call more than once. A :class:`QuadCortex` built around a
+        caller-supplied transport does not own it, so this is then a no-op.
+        """
+        while self._owned:
+            closer = self._owned.pop()
+            try:
+                closer()
+            except Exception:  # pragma: no cover - best-effort teardown
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
 
     # -- session -------------------------------------------------------------
 
@@ -54,8 +82,12 @@ class QuadCortex:
     # this is the version captured on the wire.
     CC_VERSION = "4.0.1"
 
-    def hello(self, timeout: float = 5.0, settle: float = 2.0):
+    def _hello(self, timeout: float = 5.0, settle: float = 2.0):
         """Perform the full connect handshake Cortex Control performs.
+
+        Internal: :func:`pyquadcortex.connect` calls this for you, so a caller
+        never has to. It is only separate so the handshake can be tested and so
+        an advanced caller wiring their own transport can still drive it.
 
         CONFIRMED (Windows captures + live probe, 2026-07-22/23): the device
         will not push state (no RecallPreset preset dumps, no Grid/Scene sync)
@@ -103,6 +135,20 @@ class QuadCortex:
 
     # -- read ----------------------------------------------------------------
 
+    def version(self, timeout: float = 10.0):
+        """Read the device's version info.
+
+        Returns the device's ``VersionMessage``, whose fields include
+        ``app_fw_version`` (the firmware version), ``device_type``,
+        ``device_serial_number``, and ``comms_version``.
+
+        Works without the connect handshake, so it is a good first call to
+        confirm the device is talking.
+        """
+        return self._t.request(
+            pa.VersionMessage(action=pa.MessageAction.READ), timeout=timeout
+        )
+
     def read_preset(
         self, setlist_path: str, position: int, is_factory: bool = False,
         timeout: float = 40.0,
@@ -139,6 +185,31 @@ class QuadCortex:
             match=lambda m: m.HasField("request_id") and m.request_id == rid,
         )
         return push.preset
+
+    def list_presets(self, setlist: str = Setlist.USER, timeout: float = 25.0) -> list:
+        """List the presets in a setlist.
+
+        Returns the setlist's entries in slot order - each a ``ProductData``
+        with ``index`` (the linear slot position), ``name``, and ``instrument``
+        (see :class:`~pyquadcortex.enums.Instrument`).
+
+        Unlike :meth:`read_preset`, this does not change what is loaded on the
+        grid. There is no host-initiated "list" request: a ``File`` READ makes
+        the device push a folder listing per setlist, so this sends that READ and
+        waits for the listing whose key matches ``setlist``.
+        """
+        listing = self._t.await_broadcast(
+            pa.FileMessage,
+            lambda: self._t.send(pa.FileMessage(action=pa.MessageAction.READ)),
+            timeout=timeout,
+            match=lambda m: (
+                m.folder.key.startswith(str(setlist)) and len(m.folder.files) > 0
+            ),
+        )
+        return sorted(
+            listing.folder.files,
+            key=lambda pd: pd.index if pd.HasField("index") else -1,
+        )
 
     # -- navigation ----------------------------------------------------------
 
@@ -300,12 +371,12 @@ class QuadCortex:
         ``p`` is the preset currently on the grid (from :meth:`read_preset`); the
         rows to move are found with :func:`input_chain_rows` and each is sent as
         a row-keyed :meth:`set_chain_input` update. Returns the rows moved.
-        ``from_port`` defaults to :data:`INPUT_1` (factory presets are all on
-        Input 1). Raises ``KeyError`` if no row is on ``from_port``. Save the
+        ``from_port`` defaults to :attr:`Input.INPUT_1` (factory presets are all
+        on Input 1). Raises ``KeyError`` if no row is on ``from_port``. Save the
         grid to persist.
         """
         if from_port is None:
-            from_port = INPUT_1
+            from_port = Input.INPUT_1
         rows = input_chain_rows(p, from_port)
         if not rows:
             raise KeyError(f"no grid input row on port {from_port}")
@@ -377,75 +448,6 @@ class QuadCortex:
         return self._t.request(msg)
 
 
-# Input port IDs for ``BinaryPreset.Chain.in_portid``. Same numbering as the
-# schema's GainCalInputPortParameter.InputPortId enum, CONFIRMED exhaustively
-# on-device 2026-07-23 (ids 0-14 accepted; 15 rejected -> ceiling): set each on
-# a grid input row and read the source label off the unit. 0 = internally fed
-# (splitter/mixer), 7 = "Prev. Row", 14 = sidechain buffer (blank in the UI).
-IN_EMPTY = 0          # chain fed internally, not from a physical port
-INPUT_1 = 1
-INPUT_2 = 2
-INPUT_1_2 = 3         # stereo pair
-RETURN_1 = 4
-RETURN_2 = 5
-RETURN_1_2 = 6        # stereo pair
-PREV_ROW = 7          # feed from the previous grid row
-USB_IN_5 = 8
-USB_IN_6 = 9
-USB_IN_7 = 10
-USB_IN_8 = 11
-USB_IN_5_6 = 12       # stereo pair
-USB_IN_7_8 = 13       # stereo pair
-SIDECHAIN_BUFFER = 14  # internal sidechain source (no UI label)
-
-# Output port IDs for ``BinaryPreset.Chain.out_portid``. Same numbering as the
-# schema's GainCalOutputPortParameter.OutputPortId enum; anchored by the owner's
-# 28F (out 4 = "Output 1", out 1 = "Output 1/2") and spot-confirmed on-device
-# 2026-07-23 (2 = "Output 3/4", 3 = "Send 1/2", 10 = "USB 5"). 16-19 are
-# internal grid-routing states (feed the next row / multiple outs), not direct
-# physical destinations.
-OUT_EMPTY = 0
-OUT_XLR_1_2 = 1       # "Output 1/2"
-OUT_3_4 = 2           # "Output 3/4"
-OUT_SEND_1_2 = 3
-OUT_XLR_1 = 4         # "Output 1"
-OUT_XLR_2 = 5         # "Output 2"
-OUT_3 = 6
-OUT_4 = 7
-OUT_SEND_1 = 8
-OUT_SEND_2 = 9
-OUT_USB_5 = 10
-OUT_USB_6 = 11
-OUT_USB_7 = 12
-OUT_USB_8 = 13
-OUT_USB_5_6 = 14
-OUT_USB_7_8 = 15
-OUT_NEXT_ROW_3 = 16   # internal: feed next row, output 3
-OUT_NEXT_ROW_4 = 17   # internal
-OUT_NEXT_ROW_3_4 = 18  # internal
-OUT_MULTIPLE = 19     # internal: chain feeds multiple outputs
-OUT_USB_3 = 20
-OUT_USB_4 = 21
-OUT_USB_3_4 = 22
-
-# Instrument category tag for ``ProductData.instrument`` (the ``instrument`` arg
-# to save_current_preset). CONFIRMED against the factory library 2026-07-23:
-# guitar=1 (presets 0-15), bass=2 (16-23, 191-231), vocal=4 (AutoWah, Vocal 58,
-# Vocal Synth - owner-confirmed "Vocal"). Values are powers of two (3 unused),
-# consistent with bit flags.
-INSTRUMENT_GUITAR = 1
-INSTRUMENT_BASS = 2
-INSTRUMENT_VOCAL = 4
-
-
-# Device filesystem path of the default user setlist ("My Presets"), as
-# captured from Cortex Control recalling/saving user presets.
-USER_PRESETS_PATH = "/media/p4/Presets/My Presets"
-# Factory setlist root, as captured from a factory recall (note the TRAILING
-# SLASH - Cortex Control sent it verbatim); pair with is_factory=True.
-FACTORY_LIBRARY_PATH = "/opt/neuraldsp/Factory Library/"
-
-
 def slot_to_position(slot: str) -> int:
     """Convert a QC slot name like ``"28C"`` to its linear wire position.
 
@@ -462,7 +464,7 @@ def slot_to_position(slot: str) -> int:
     return (bank - 1) * 8 + (ord(slot[-1]) - ord("A"))
 
 
-def input_chain_rows(p: preset.BinaryPreset, from_port: int = INPUT_1) -> list:
+def input_chain_rows(p: preset.BinaryPreset, from_port: int = Input.INPUT_1) -> list:
     """Return the grid rows whose input chain is on ``from_port``.
 
     A chain's grid row is its explicit ``row`` when set, else its index in

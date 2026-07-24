@@ -5,7 +5,7 @@ and the raw 129-byte HID reports exchanged with the device. It deals ONLY in
 bytes and integers: no hidapi, no protobuf. ``message_type`` is just an int.
 
 CONFIRMED wire format (Windows USBPcap capture of Cortex Control 4.0.1,
-2026-07-22; see framing_spec.md "Phase 2 CONFIRMED framing"):
+2026-07-22; see docs/protocol.md):
 
   Report (129 bytes over hidapi, report-ID byte + 128-byte body)::
 

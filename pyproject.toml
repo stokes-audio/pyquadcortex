@@ -2,7 +2,7 @@
 name = "pyquadcortex"
 dynamic = ["version"]
 description = "Programmatic control of the Neural DSP Quad Cortex over USB HID"
-readme = "README.md"
+readme = "readme.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -66,6 +66,6 @@ include = [
   "/examples",
   "/scripts/compile_protos.sh",
   "/protocol/proto",
-  "/README.md",
+  "/readme.md",
   "/LICENSE",
 ]

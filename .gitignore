@@ -1,6 +1,44 @@
-.venv/
+# Python
 __pycache__/
+*.py[cod]
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build artifacts
 dist/
 build/
 *.egg-info/
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+.settings/
+*.iml
+*.swp
+*.swo
+*~
+.\#*
+\#*\#
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Agent / assistant workspaces
+.claude/
+.aider*
+
+# NOTE: pyquadcortex/proto/*_pb2.py are generated but INTENTIONALLY committed,
+# so that installing the package needs no protoc toolchain. Do not ignore them.
+# See docs/architecture.md.

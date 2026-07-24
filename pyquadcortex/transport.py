@@ -13,7 +13,7 @@ speaks the Quad Cortex framed protocol. It:
 
 The transport deals only in ``framing`` (bytes <-> ``(type, payload)``) and
 ``registry`` (type tag <-> protobuf class). The envelope is CONFIRMED against
-a real Cortex Control session (framing_spec.md "Phase 2 CONFIRMED framing").
+a real Cortex Control session (see docs/protocol.md).
 Write errors are EXPECTED: the QC stalls every SET_REPORT's status stage after
 consuming the data (see ``_write_report``), so writes that "fail" succeeded.
 

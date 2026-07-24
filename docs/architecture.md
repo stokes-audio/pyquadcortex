@@ -1,0 +1,448 @@
+# Architecture and contributor guide
+
+This document is for someone who wants to add support for a Quad Cortex feature
+`pyquadcortex` does not implement yet, or to adapt the library to a newer CorOS
+release, and does not know where to start. Read it before writing code: the
+layering is deliberate, and the recipe in
+[How to add a new operation](#how-to-add-a-new-operation) is short if you follow
+the layers and long if you fight them.
+
+For the wire protocol itself (frame layout, handshake, per-operation message
+shapes), see [`protocol.md`](protocol.md). This document covers the code.
+
+> `pyquadcortex` is unofficial and not affiliated with Neural DSP. It speaks the
+> device's own Protobuf control protocol, re-implemented from the recovered
+> schema in `protocol/proto/` and from observing real Cortex Control sessions
+> against CorOS / Cortex Control **4.0.1** and device firmware **d14e**.
+
+## Contents
+
+- [Layer map](#layer-map)
+- [What flows through the layers](#what-flows-through-the-layers)
+- [send vs request vs await_broadcast](#send-vs-request-vs-await_broadcast)
+- [How to add a new operation](#how-to-add-a-new-operation)
+- [The generated protobuf bindings](#the-generated-protobuf-bindings)
+- [Testing philosophy](#testing-philosophy)
+- [What is not implemented yet](#what-is-not-implemented-yet)
+- [Adapting to a new CorOS version](#adapting-to-a-new-coros-version)
+
+## Layer map
+
+Each file in `pyquadcortex/` owns exactly one concern, and each layer knows only
+about the layer directly below it.
+
+```
+    cli.py             argparse subcommands -> client methods
+      |
+    session.py         connect(): find + open the HID device, start the
+      |                transport, run the connect handshake, hand back a client
+      |
+    client.py          QuadCortex: the public API. Builds protobuf messages.
+      |                Knows NOTHING about HID, reports, or framing.
+      |
+    transport.py       Framed I/O over an hidapi-like device: write reports,
+      |                RX thread + reassembly, request/response and broadcast
+      |                correlation, keepalive thread.
+      |
+    registry.py        CortexMessageType enum integer <-> generated protobuf class
+      |
+    framing.py         HID frame codec: logical (message_type, protobuf_bytes)
+      |                <-> raw 129-byte HID reports. Pure bytes and ints.
+      |
+    [ hidapi / the device ]
+
+    proto/             Generated bindings (committed; see below)
+    enums.py           Named port / instrument / setlist-path values
+    hid_ids.py         Vendor and product IDs, interface number
+```
+
+### framing.py
+
+A pure codec. It converts a logical message `(message_type: int, payload:
+bytes)` into a list of 129-byte HID reports and back, and answers "is this list
+of reports a complete message yet?". No hidapi, no protobuf, no threads, no I/O
+whatsoever. `message_type` is just an integer here, which is why this module can
+be tested against real captured frames byte for byte
+(`tests/fixtures/frames/*.json`).
+
+Public surface: `encode_message`, `decode_reports`, `is_complete`, and the
+confirmed wire constants (`REPORT_SIZE`, `CHUNK_SIZE`, `TRAILER_SIZE`,
+`FLAG_FIRST`, `FLAG_LAST`, the two report IDs).
+
+### transport.py
+
+`Transport` wraps any object with hidapi's `write(report)` / `read(size,
+timeout_ms)` / `close()` shape. It owns everything time-dependent and
+concurrent:
+
+- outbound: frames a message via `framing`, writes its reports as an atomic
+  group under a write lock (a keepalive must never interleave its report between
+  a multi-report message's fragments, because continuation reports carry no
+  header);
+- inbound: a daemon RX thread reads reports, reassembles them by frame flags,
+  gunzips frame-level compressed payloads, parses the protobuf, and dispatches;
+- correlation: `request()` waiters keyed by `request_id`, plus
+  `await_broadcast()` waiters keyed by message class and an optional predicate;
+- a keepalive thread;
+- tolerating the device's benign write STALL (see
+  [protocol.md](protocol.md#the-benign-write-stall)): write errors are logged at
+  debug and swallowed, and a genuinely dead device is detected by `request()`
+  timeouts instead.
+
+The RX thread must never die. Every decode/parse is wrapped, unknown message
+types and non-protobuf pushes are skipped at debug level, and the reassembly
+buffer is reset on anything malformed so one bad frame cannot wedge the stream.
+If you add code to the RX path, preserve that property.
+
+### registry.py
+
+The only place that knows the mapping between the schema's
+`CortexMessageType.Enum` integers and the generated `*Message` classes.
+`_BY_NAME` maps enum names to classes; the two lookup helpers are
+`type_for(cls)` and `class_for(message_type)`. A message type absent from
+`_BY_NAME` cannot be sent (`type_for` raises `KeyError`) and inbound frames of
+that type are dropped as undecodable.
+
+### client.py
+
+`QuadCortex` is the public API. It builds protobuf messages and calls
+`send` / `request` / `await_broadcast` / `next_request_id` on whatever transport
+object was injected into its constructor. It deliberately imports no hidapi and
+never touches a report, a frame, or a byte offset.
+
+**Why this split matters:** because `QuadCortex` only depends on four transport
+methods, the whole high-level API is testable with a ~20-line fake (see
+`tests/test_client.py`), with no device, no `hid` import, and no timing. Every
+wire concern (report size, fragment flags, the trailer, the write stall, thread
+safety, timeouts) stays below this line. When you add an operation, the protobuf
+building belongs here and nothing else does.
+
+Also in this module: `slot_to_position("28C") -> 218` and
+`input_chain_rows(preset, port)`, two pure helpers with no transport dependency.
+
+### session.py
+
+`connect()` is the front door: `open_device()` finds and opens the HID
+interface, a `Transport` is started around it, `QuadCortex._hello()` runs the
+connect handshake, and the returned client is ready for commands. The client
+remembers what it opened (`_owned_resources`) so `close()` and the context
+manager tear down only what `connect()` created. A client built around a
+caller-supplied transport owns nothing and `close()` is a no-op.
+
+`import hid` lives *inside* `open_device()`. That laziness is a contract, not an
+accident: see [Testing philosophy](#testing-philosophy).
+
+### cli.py
+
+`qcctl`. `build_parser()` must stay import-safe and device-free. `main()` does
+the device work; the `version` subcommand deliberately bypasses the handshake
+(`_open_unconnected()`) because a plain `Version` READ works without the connect
+gate, and the handshake's own version announce would race that READ's reply.
+
+## What flows through the layers
+
+A host command, top to bottom:
+
+```
+qc.switch_scene(1)
+  -> client builds SceneMessage{action: UPDATE, selected_scene: 1}
+  -> transport.send(msg): registry.type_for(SceneMessage) -> 13
+  -> framing.encode_message(13, msg.SerializeToString())
+       -> [b'\x02' + len + flags + payload + trailer + padding]
+  -> device.write(report)  (the STALL "error" is swallowed)
+```
+
+A device message, bottom to top:
+
+```
+device.read() -> one 129-byte input report
+  -> RX thread appends to the reassembly buffer
+  -> framing.is_complete(buffer)?  (flag-driven; no length field exists)
+  -> framing.decode_reports(buffer) -> (message_type, payload)
+  -> gunzip payload if it starts 1f 8b
+  -> registry.class_for(message_type) -> parse
+  -> _dispatch: a request_id waiter, else a broadcast waiter, else dropped
+```
+
+## send vs request vs await_broadcast
+
+Choosing correctly is most of the work of adding an operation.
+
+| Transport method | Use when | Blocking | Correlation |
+|---|---|---|---|
+| `send(msg)` | The device acts on the message and you do not need its answer: scene switch, grid edits, recall, keepalive. | No | None |
+| `request(msg, timeout=)` | The device answers a message of the **same type**: `Version` READ, `ResetCommsBuffers`, the `File` mutations. | Yes | Fresh `request_id` is assigned and registered before the write. Reply is the first inbound message of the same type whose `request_id`, if present on both sides, matches. |
+| `await_broadcast(cls, trigger, timeout=, match=)` | The answer arrives as a **push of a different type**, or as an unsolicited broadcast the device emits in response to an action: the `RecallPreset` push that carries a full preset, the `File` folder listings. | Yes | By message class, plus your optional `match` predicate. A right-type message the predicate rejects is left undelivered so a later one can satisfy the waiter. |
+
+Two gotchas the current code already encodes, and that new operations must
+respect:
+
+- **READ replies carry no `request_id`.** `_dispatch` falls back to "first
+  waiter of the same type wins" for those, which is why two concurrent READs of
+  the same type cannot be disambiguated. This is exactly why `_hello()` does not
+  issue its own `Version` READ (it would race a caller's).
+- **A state-changing request triggers a cascade of other-type messages that all
+  echo its `request_id`.** Correlation is therefore by type first, id second.
+  If you need one specific push out of a cascade, use `await_broadcast` with a
+  `match` predicate on the id, the way `read_preset` does to avoid returning a
+  stale or seed push.
+
+## How to add a new operation
+
+Worked example: suppose you want `set_global_tempo(bpm)`.
+
+**1. Find the message in the schema.** The recovered schema lives in
+`protocol/proto/ProductionAutomation.proto` (control messages, ~45 KB) and
+`protocol/proto/Preset.proto` (the `BinaryPreset` grid model). Start from the
+`CortexMessageType.Enum` block at the top of `ProductionAutomation.proto`: it
+lists all 71 message types with their wire integers. Find the type name
+(`GlobalTempo = 33`), then find `message GlobalTempoMessage` and read its
+fields. Note that nearly every scalar field is wrapped in a synthetic
+`oneof _field`, i.e. proto3 `optional`, so `HasField()` distinguishes "set to
+zero" from "not set" and the device can tell a real value from a default.
+
+**2. Register the type if it is not already there.** Add
+`"GlobalTempo": pa.GlobalTempoMessage` to `_BY_NAME` in `registry.py`. Without
+this, `transport.send` raises `KeyError` and inbound frames of that type are
+silently dropped. Many types are already registered but have no client method;
+check first.
+
+**3. Add a method to `QuadCortex`.** Build the protobuf and hand it to the
+transport. Keep it thin: no HID, no bytes, no sleeps.
+
+```python
+def set_global_tempo(self, bpm: float):
+    """Set the device's global tempo."""
+    msg = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    msg.tempo = bpm
+    return self._t.send(msg)
+```
+
+Pick the transport method from the table above. If the device answers with a
+different message type, use `await_broadcast` with a `trigger` closure, as
+`read_preset` and `list_presets` do. Document in the docstring what is
+confirmed on hardware and what is inferred from the schema; the existing
+docstrings are the project's record of protocol facts, so state your evidence.
+
+**4. Add named constants if the field is an enum.** Device-side enums that a
+caller has to pass belong in `enums.py` (`Input`, `Output`, `Instrument`,
+`Setlist`), mirroring the schema's own names and values. Do not invent values;
+copy them from the schema, and mark in a comment which ones were actually
+confirmed on hardware.
+
+**5. Write offline tests.** `tests/test_client.py` has the pattern: a
+`FakeTransport` that records `sent` messages, returns canned responses from
+`request`, and replays a `broadcast` from `await_broadcast` while capturing the
+`match` predicate you passed. A good test asserts the exact wire shape:
+
+```python
+def test_set_global_tempo_sends_a_global_tempo_update():
+    fake = FakeTransport()
+    client.QuadCortex(fake).set_global_tempo(120)
+    (msg,) = fake.sent
+    assert isinstance(msg, pa.GlobalTempoMessage)
+    assert msg.action == pa.MessageAction.UPDATE
+    assert msg.tempo == 120
+```
+
+If your change touches framing or the transport instead, use
+`tests/test_framing.py` (real captured frames as golden fixtures) and
+`tests/test_transport.py` (an in-memory `FakeHid` that frames its own replies,
+so reassembly and correlation are exercised for real). No test may import `hid`
+or need hardware.
+
+**6. Verify on hardware.** Offline tests prove you built the message you
+intended; only the device proves the message is the right one. Connect over USB,
+quit Cortex Control first (it opens the interface exclusively, so nothing else
+can open the device while it runs), and check the effect two ways where you can:
+read the state back over the protocol, and look at the unit's screen. Then
+record the result: update your docstring and the coverage table in
+[`protocol.md`](protocol.md#operation-coverage) with what was verified and how.
+An operation whose shape comes only from the schema should say so.
+
+Useful shapes for hardware work live in `examples/` (`switch_scenes.py`,
+`list_presets.py`, `reroute_and_save.py`). `scripts/compile_protos.sh` is the
+only script in the repo.
+
+## The generated protobuf bindings
+
+`pyquadcortex/proto/ProductionAutomation_pb2.py` and `Preset_pb2.py` are
+**generated code that is deliberately committed to git**. That is unusual, and
+it is on purpose:
+
+- `pip install pyquadcortex` then needs **no protoc toolchain and no build
+  step**. A user gets a working wheel with only `hid` and `protobuf` as runtime
+  dependencies.
+- The wheel stays self-contained: the bindings are inside the package, not
+  produced at install time, so there is nothing to go wrong on a user's machine
+  and nothing platform-specific to get wrong.
+- CI installs the package and runs the suite without a protobuf compiler.
+
+**Do not add `pyquadcortex/proto/*_pb2.py` to `.gitignore`, and do not delete
+them as "build output".** Doing so breaks installs from PyPI and from a plain
+checkout.
+
+Note that `pyquadcortex/proto/__init__.py`'s docstring still claims the
+bindings are gitignored and regenerated per machine. That statement is stale;
+the files are tracked (`git ls-files pyquadcortex/proto`). The rest of that
+module is load-bearing: protoc emits absolute sibling imports
+(`ProductionAutomation_pb2` does `import Preset_pb2`), which fail inside a
+package, so `__init__.py` appends its own directory to `sys.path`. That is what
+lets unmodified protoc output keep working after a regeneration.
+
+### Regenerating
+
+```bash
+scripts/compile_protos.sh
+```
+
+It prefers the version-matched generator from the dev extra
+(`grpcio-tools`, hence `.venv/bin/python -m grpc_tools.protoc`) and falls back
+to a system `protoc`. Output goes to `pyquadcortex/proto/`.
+
+**The runtime pin must match the gencode version.** The protobuf runtime
+validates at import time that `runtime >= gencode` (see the
+`_runtime_version.ValidateProtobufRuntimeVersion(...)` call at the top of each
+generated file). The committed bindings were generated with **protobuf 7.35.1**,
+which is why `pyproject.toml` pins `protobuf>=7.35.1,<8`. If you regenerate with
+a newer generator, bump that lower bound to the new gencode version in the same
+commit; if you cross a major version, bump the upper bound too. A mismatch is a
+hard `ImportError` for every user, not a warning.
+
+Commit regenerated bindings together with the `.proto` change and the pyproject
+pin, so the tree is never internally inconsistent.
+
+## Testing philosophy
+
+The suite is **fully offline**. No Quad Cortex, no USB, no `hid` import, and on
+macOS no `DYLD_LIBRARY_PATH` prefix. That is what makes almost all development
+possible with no hardware attached, and it is what lets CI run the real suite on
+plain Linux runners.
+
+How each layer is faked:
+
+| Layer | Test double | File |
+|---|---|---|
+| `framing` | none needed (pure functions) plus real captured frames as golden fixtures | `tests/test_framing.py`, `tests/fixtures/frames/` |
+| `transport` | `FakeHid`: an in-memory hidapi stand-in that frames its own `Version` replies, so reassembly, multi-report messages, and correlation run for real | `tests/test_transport.py` |
+| `client` | `FakeTransport`: records `sent`, returns canned `request` responses, replays a `broadcast` and captures the `match` predicate | `tests/test_client.py` |
+| `session` | `open_device` and `Transport` monkeypatched | `tests/test_session.py` |
+| `cli` | `build_parser()` exercised directly | `tests/test_cli.py` |
+| schema | asserts the enum integers the code relies on and that core messages instantiate | `tests/test_schema_compiles.py` |
+
+### The import-safety contract
+
+**`import pyquadcortex` and `qcctl --help` must never require hidapi.**
+
+Concretely:
+
+- `import hid` appears exactly once, lazily, inside `session.open_device()`.
+  Nothing at module scope anywhere in the package may import it.
+- `pyquadcortex/__init__.py` may keep importing `client`, `enums`, and
+  `session`, because none of those import `hid` at module scope.
+- `cli.build_parser()` must construct no transport and open no device; `main()`
+  imports `session` inside the function body.
+
+Why it matters: the `hid` package is a ctypes binding that needs the native
+hidapi library present, which is an OS-level install (`brew install hidapi`,
+`apt install libhidapi-hidraw0`) and, on macOS, usually also a
+`DYLD_LIBRARY_PATH` prefix. If any of that were required at import time, then
+`--help`, `pip check`, CI, and the whole test suite would fail on machines
+without hidapi, and every test would need the dyld prefix. Keeping the import
+lazy also gives a good error message in one place: `open_device()` raises
+`DeviceNotFoundError` distinguishing "hidapi missing" from "device not
+openable".
+
+If you add a module that needs `hid`, import it inside the function that opens a
+device, and add a test that the new module imports cleanly without hidapi.
+
+## What is not implemented yet
+
+Being honest about the gaps is more useful than a feature list. Places to look
+next, roughly in order of how well the ground is prepared:
+
+- **Registered but unwrapped message types.** `registry.py` registers around
+  three dozen types so the RX thread can decode device chatter, but `client.py`
+  exposes methods for only about fifteen operations. `IOSettings`,
+  `GeneralSettings`, `GlobalEQ`, `MasterVolume`, `GlobalTempo`, `Mode`,
+  `RecentsFavorites`, `PresetDirty`, `Updater`, `ModelRepo` and others are
+  decoded and pushed to us but have no API. These are the cheapest additions:
+  the type already exists in the registry, so it is one client method plus
+  tests.
+- **Types not in the registry at all.** The schema declares 71 message types.
+  Whole feature areas are untouched: `Tuner` / `ShowTuner`, `Looper`,
+  `MIDISettings`, `NeuralCapture` / `NeuralCapture2`, `Screenshot`,
+  `Diagnostics`, `LocalBackup` / `CloudBackup`, `Confirmation`,
+  `GigViewButton`, `SuspendConnection`, `GenericError`, the `*Forward` transport
+  wrappers, and the production/test-farm messages. Nothing about these has been
+  observed on the wire by this project, so treat the schema as a starting
+  hypothesis and verify.
+- **`copy_scene` has a documentation contradiction.** The module docstring in
+  `client.py` calls it the one remaining UNVERIFIED method because `SceneCopy`
+  was never seen being sent by Cortex Control (its UI does not appear to expose
+  it). The method docstring and the coverage table, written later, record that
+  the shape came from the device's own broadcast when a scene was copied on the
+  unit, and that sending it host-to-device did work on hardware. Treat the
+  operation as confirmed-on-hardware but never observed being sent by Cortex
+  Control, and note the `is_swap` field has not been exercised.
+- **`GridMove`** is registered and its captured shape is documented in
+  [protocol.md](protocol.md#grid-block-move), but there is no client method for
+  moving a block between grid positions.
+- **`write_preset()` is a trap, kept as a primitive.** It sends a whole
+  `BinaryPreset` as a `Grid` UPDATE, which the device applies only for
+  row/column-keyed elements. A recalled preset carries no explicit `row`, so
+  writing it back wholesale does nothing. Any new edit operation should follow
+  the keyed pattern (`set_chain_input` / `set_param` / `set_bypass`), not extend
+  the wholesale path.
+- **Output port ids are only partly confirmed.** `enums.Output` is copied from
+  the schema verbatim; only a handful of values were checked against hardware
+  (see [protocol.md](protocol.md#output-ports-chainout_portid)).
+- **Two envelope bytes remain unexplained** (the device-filled trailer bytes),
+  and the "raw payload" trailer flag is an inference. Neither blocks anything,
+  but do not write code that depends on them.
+
+## Adapting to a new CorOS version
+
+**The protocol carries no version number.** There is no capability negotiation
+and no schema version on the wire, so nothing tells you at runtime that a
+firmware update changed a message. Assume nothing survives a major update until
+you re-check it.
+
+When moving to a new CorOS / Cortex Control release:
+
+1. **Re-recover and re-diff the schema.** The `.proto` files in
+   `protocol/proto/` were recovered from the Cortex Control application for
+   4.0.1. Field numbers and enum values are what the wire format actually
+   depends on, so diff a freshly recovered schema against the committed one and
+   look for renumbered fields, renumbered `CortexMessageType.Enum` values (the
+   type tag in every frame), and changed enum members for ports and
+   instruments. Regenerate the bindings and bump the protobuf pin as described
+   above.
+2. **Re-verify the framing.** `tests/test_framing.py` asserts the 4.0.1
+   envelope against real captured frames. If reports stop reassembling, suspect
+   the `len`/`flags` layout or the 8-byte trailer before anything higher up.
+3. **Re-verify the connect handshake.** This is the most likely thing to break,
+   because it is behavioural rather than structural. `QuadCortex.CC_VERSION` is
+   the Cortex Control version string the client announces
+   (`Version{action: UPDATE, cortex_control_version: "4.0.1"}`), and the device
+   **gates its push behaviour on receiving a valid version**: without it, the
+   device answers direct requests but pushes no state, so `read_preset` and the
+   live-sync broadcasts go quiet. If a newer device rejects `"4.0.1"`, update
+   `CC_VERSION` to what the matching Cortex Control build announces. The
+   `ModelRepo` READ in the handshake is also empirically required, apparently as
+   a readiness gate; if pushes stop flowing, re-check the whole burst
+   (`_hello()` and `_SUBSCRIBE_TYPES`) against a current session rather than
+   tweaking one step.
+4. **Re-check the write stall.** The transport assumes every HID write "fails"
+   and succeeded anyway. If a future firmware stops stalling, nothing breaks
+   (errors are only swallowed, never required). But if writes start failing *for
+   real*, the symptom will be `request()` timeouts, not write errors, so debug
+   from the timeout end.
+5. **Re-verify the edit path and the file-operation semantics.** That a `File`
+   CREATE snapshots the grid and ignores `preset_payload`, and that `Grid`
+   UPDATEs are applied by `row`/`column` key, are behavioural findings, not
+   schema facts. Re-run the recall-edit-save flow (`examples/reroute_and_save.py`
+   is the smallest end-to-end check) and read the result back.
+6. **Record what you re-verified**, with the CorOS version and firmware build,
+   in the coverage table in [`protocol.md`](protocol.md#operation-coverage). The
+   value of that table is that every row says how it was checked.
