@@ -14,11 +14,12 @@ fake transport and keeps all wire concerns in ``framing``/``transport``.
 Field semantics were confirmed against real Cortex Control 4.0.1 sessions:
 session connect, preset recall (user AND factory setlists), scene switch, grid
 bypass/param writes, Save As, delete, and move are all reproduced verbatim from
-observed traffic. ``copy_scene`` is the one operation Cortex Control was never
-seen to send, so its message shape comes from the device's own broadcast; the
-host-to-device direction works on hardware, but its ``swap`` behaviour and a
-nonzero ``from_index`` are untested. See ``docs/protocol.md`` for the full
-per-operation coverage table.
+observed traffic. ``copy_scene`` came from a different source, because Cortex
+Control has no scene-copy feature to observe: its shape was read off the
+device's own broadcast when a scene was copied on the unit, and sending it
+host-to-device is confirmed working on hardware. Its ``swap`` variant is the one
+thing not exercised. See ``docs/protocol.md`` for the per-operation coverage
+table.
 """
 
 import time
@@ -248,13 +249,15 @@ class QuadCortex:
     def copy_scene(self, from_index: int, to_index: int, swap: bool = False):
         """Copy (or swap, when ``swap=True``) one scene onto another.
 
-        CONFIRMED shape (session-03 capture, 2026-07-23): performing a scene
-        copy on the UNIT broadcast ``SceneCopy{action: UPDATE, to_index: 3}``
-        (from_index 0 left at default; action is UPDATE, not COPY). CONFIRMED
-        host->device on hardware 2026-07-23: sending ``copy_scene(0, 3)`` made
-        scene D take on scene A's state on the unit (owner-confirmed). Scene copy
-        is not reachable from Cortex Control's UI, but the host->device direction
-        works.
+        Cortex Control has no scene-copy feature, so this message was not learned
+        from its traffic. Instead, copying a scene ON THE UNIT broadcasts
+        ``SceneCopy{action: UPDATE, to_index: N}`` (note the action is UPDATE,
+        not COPY), and that is the shape sent here. Confirmed working
+        host-to-device on hardware: ``copy_scene(0, 3)`` makes scene D take on
+        scene A's state.
+
+        The ``swap=True`` variant sets ``is_swap`` on the same message but has
+        not been exercised on hardware.
         """
         return self._t.send(
             pa.SceneCopyMessage(

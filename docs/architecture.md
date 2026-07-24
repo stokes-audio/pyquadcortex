@@ -377,14 +377,12 @@ next, roughly in order of how well the ground is prepared:
   wrappers, and the production/test-farm messages. Nothing about these has been
   observed on the wire by this project, so treat the schema as a starting
   hypothesis and verify.
-- **`copy_scene` has a documentation contradiction.** The module docstring in
-  `client.py` calls it the one remaining UNVERIFIED method because `SceneCopy`
-  was never seen being sent by Cortex Control (its UI does not appear to expose
-  it). The method docstring and the coverage table, written later, record that
-  the shape came from the device's own broadcast when a scene was copied on the
-  unit, and that sending it host-to-device did work on hardware. Treat the
-  operation as confirmed-on-hardware but never observed being sent by Cortex
-  Control, and note the `is_swap` field has not been exercised.
+- **`copy_scene`'s swap variant is unexercised.** The operation itself is
+  confirmed working on hardware, but it is the one message whose shape did not
+  come from Cortex Control's traffic - Cortex Control cannot copy a scene at all,
+  so the shape was read off the device's own broadcast when a scene was copied on
+  the unit (see [protocol.md](protocol.md#74-scenes)). `is_swap` and a nonzero
+  `from_index` have not been tried; if you exercise either, update that section.
 - **`GridMove`** is registered and its captured shape is documented in
   [protocol.md](protocol.md#grid-block-move), but there is no client method for
   moving a block between grid positions.

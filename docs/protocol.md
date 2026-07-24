@@ -560,13 +560,15 @@ changed.
 SceneCopy{action: UPDATE, from_index: 0, to_index: 3, is_swap: false}
 ```
 
-Note the action is `UPDATE`, not `COPY`. This shape came from the device's own
-broadcast when a scene was copied **on the unit**; Cortex Control's UI does not
-appear to expose scene copy, so it was never observed being sent host to device.
-The host-to-device direction was confirmed on hardware (copying scene A onto
-scene D took effect on the unit). `is_swap` has not been exercised, and
-`from_index` was left at its default 0 in the observed broadcast, so a nonzero
-`from_index` rests on the symmetry of the protocol rather than on a capture.
+Note the action is `UPDATE`, not `COPY`. Cortex Control provides no way to copy a
+scene, so this message could not be learned from its traffic. Instead the shape
+was read off the device's own broadcast when a scene was copied **on the unit**,
+and sending that shape host to device is confirmed working on hardware (copying
+scene A onto scene D took effect on the unit).
+
+Two details remain unexercised: `is_swap`, and a nonzero `from_index` (the
+observed broadcast left it at its default 0, so a nonzero value rests on the
+symmetry of the protocol rather than on an observation).
 
 A scene copy can also be done entirely client-side without this message: read
 the preset, copy the per-scene `param_values[from]` and per-scene bypass entries
@@ -807,7 +809,7 @@ visually on the device's own screen.
 | `set_param` | `Grid{UPDATE, preset{chains{row, models{column, params{index, param_values[scene]{float_value}}}}}}` | read-back | value round-trips 0.0 to 1.0; param index is positional; not every index is a visible knob |
 | `set_bypass` | `Grid{UPDATE, preset{bypass{row, colBypass{column, sceneBypass[scene]{bypass}}}}}` | on-unit | block greyed out on the unit |
 | `set_scene_label` / `set_scene_color` | `SceneLabel` / `SceneColor{UPDATE, index, label/color}` | read-back | color is ARGB uint32; exact round-trip |
-| `copy_scene` | `SceneCopy{UPDATE, from_index, to_index}` | on-unit | shape came from the device's broadcast, never observed being sent by Cortex Control; host-to-device confirmed (scene D took on scene A). `is_swap` untested |
+| `copy_scene` | `SceneCopy{UPDATE, from_index, to_index}` | on-unit | confirmed host-to-device (scene D took on scene A). Cortex Control cannot copy a scene, so the shape came from the device's own broadcast when copying on the unit. `is_swap` untested |
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the GRID; `preset_payload` is IGNORED for CREATE |
 | `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | works, but asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
