@@ -100,5 +100,3 @@ device actually requires.
   domain model built on it.
 - **Scene labels and colors as first-class scene properties**, rather than
   index-addressed setters.
-- **Wi-Fi / network transport.** Only USB is implemented. The device also has
-  network connectivity, unexplored by this project.

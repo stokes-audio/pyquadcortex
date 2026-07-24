@@ -150,6 +150,10 @@ qcctl dump-preset --slot 28C
 - **[contributing.md](contributing.md)** - development setup and how to submit a
   change.
 
+## Acknowledgements
+
+Inspired by [OpenCortex](https://github.com/VanIseghemThomas/OpenCortex).
+
 ## License
 
 [MIT](LICENSE).
