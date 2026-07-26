@@ -24,7 +24,7 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 import time
 import uuid
 
-from pyquadcortex import registry
+from pyquadcortex import catalog, registry
 from pyquadcortex.enums import Input, Instrument, Output, Setlist  # noqa: F401
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
@@ -39,6 +39,36 @@ class QuadCortex:
         # and HID device it opened on the caller's behalf. When a caller wires
         # their own transport, they own its lifecycle and this stays empty.
         self._owned = _owned_resources or []
+        # Populated on first use of .catalog (a ~47 KB fetch from the device).
+        self._catalog = None
+
+    # -- catalog -------------------------------------------------------------
+
+    @property
+    def catalog(self):
+        """This unit's :class:`~pyquadcortex.catalog.ModelCatalog`, fetched once.
+
+        Every block on the grid is stored as an integer model id; the catalog is
+        what turns that into a name, a category, and the parameter list in wire
+        index order. It comes FROM the device, so it covers whatever this unit
+        actually has - purchased plugin models and the player's own Neural
+        Captures included - which no hard-coded table could know.
+
+        Fetched lazily (a ~47 KB transfer) and cached for the session.
+        """
+        if self._catalog is None:
+            self._catalog = catalog.parse_model_repo(self._fetch_model_repo())
+        return self._catalog
+
+    def _fetch_model_repo(self, timeout: float = 25.0) -> bytes:
+        """Ask the device for its ModelRepo payload and return the raw bytes."""
+        message = self._t.await_broadcast(
+            pa.ModelRepoMessage,
+            lambda: self._t.send(pa.ModelRepoMessage(action=pa.MessageAction.READ)),
+            timeout=timeout,
+            match=lambda m: bool(m.model_repo_payload),
+        )
+        return message.model_repo_payload
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -381,8 +411,8 @@ class QuadCortex:
         chain.in_portid = in_portid
         return self._t.send(msg)
 
-    def set_param(self, row: int, column: int, param_index: int,
-                  value: float, scene: int = 0):
+    def set_param(self, row: int, column: int, param_index=None,
+                  value: float = 0.0, scene: int = 0, param=None, model=None):
         """Set one block parameter on the grid (row/column-keyed sparse update).
 
         Confirmed shape: a knob change streams
@@ -391,17 +421,81 @@ class QuadCortex:
         persists - a full-preset write is dropped (chains carry no row). Save
         the grid afterwards to keep it. ``value`` is the normalized 0..1 float
         the device expects.
+
+        The parameter may be given as a wire ``param_index``, or by NAME via
+        ``param`` together with ``model`` (the block's model id, or a
+        :class:`~pyquadcortex.catalog.Model`), which resolves the index through
+        the device catalog. Naming is the safer route: indices are positional
+        and not every one is a visible knob - a cab's parameters are internal
+        ``ir selector`` entries, so writing index 0 changes stored data and
+        moves nothing on screen.
+        """
+        if param is not None:
+            param_index = self._resolve_param_index(param, model)
+        if param_index is None:
+            raise TypeError("set_param needs either param_index or param=<name> with model=")
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        model_msg = chain.models.add()
+        model_msg.column = column
+        p = model_msg.params.add()
+        p.index = param_index
+        while len(p.param_values) <= scene:
+            p.param_values.add()
+        p.param_values[scene].float_value = value
+        return self._t.send(msg)
+
+    def _resolve_param_index(self, param, model) -> int:
+        """Turn a parameter name into its wire index using the catalog."""
+        if isinstance(param, int):
+            return param
+        if model is None:
+            raise TypeError(
+                "naming a parameter needs model=<model id or catalog Model> so "
+                "the index can be resolved from the catalog"
+            )
+        resolved = model if hasattr(model, "parameter") else self.catalog[int(model)]
+        return resolved.parameter(param).index
+
+    # -- grid blocks ---------------------------------------------------------
+
+    def set_block(self, row: int, column: int, model):
+        """Put ``model`` in the grid cell at ``row``/``column``.
+
+        Creates a block in an empty cell and replaces whatever is in an occupied
+        one - the device makes no distinction. ``model`` is a model id or a
+        :class:`~pyquadcortex.catalog.Model`; :mod:`pyquadcortex.models` has
+        constants for the factory blocks, and :attr:`catalog` resolves anything
+        installed on the unit, including purchased models and Neural Captures.
+
+        Confirmed on hardware, and matching the device's own broadcast when a
+        block is added on the unit: ``Grid{UPDATE, preset{chains{row,
+        models{column, hash}}}}``. Save the grid afterwards to keep it.
         """
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
         chain.row = row
-        model = chain.models.add()
-        model.column = column
-        param = model.params.add()
-        param.index = param_index
-        while len(param.param_values) <= scene:
-            param.param_values.add()
-        param.param_values[scene].float_value = value
+        model_msg = chain.models.add()
+        model_msg.column = column
+        model_msg.hash = int(getattr(model, "id", model))
+        return self._t.send(msg)
+
+    def remove_block(self, row: int, column: int):
+        """Remove the block at ``row``/``column``, leaving the cell empty.
+
+        Confirmed on hardware, and matching the device's own broadcast when a
+        block is deleted on the unit: ``Grid{action: DELETE, preset{chains{row,
+        models{column, hash: 0}}}}``. The ACTION is what marks the removal -
+        an UPDATE carrying ``hash: 0`` is transmitted but ignored by the
+        firmware. Save the grid afterwards to keep it.
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.DELETE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        model_msg = chain.models.add()
+        model_msg.column = column
+        model_msg.hash = 0
         return self._t.send(msg)
 
     def set_bypass(self, row: int, column: int, bypassed: bool, scene: int = 0):

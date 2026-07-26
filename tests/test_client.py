@@ -10,7 +10,7 @@ import itertools
 
 import pytest
 
-from pyquadcortex import client
+from pyquadcortex import catalog, client
 from pyquadcortex.enums import Input, Instrument, Output, Setlist
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
@@ -542,3 +542,69 @@ def test_save_and_move_accept_slot_names():
 
     qc.move_preset(Setlist.USER, "Some Preset", "28D")
     assert fake.sent[-1].to_folder.files[0].index == 219   # (28-1)*8 + 3
+
+
+# -- grid blocks (add / replace / remove) -------------------------------------
+
+
+def test_set_block_sends_row_column_keyed_grid_update():
+    # CONFIRMED on hardware: placing a block is the same keyed sparse Grid
+    # UPDATE as set_param, carrying `hash` instead of params. The device's own
+    # broadcast when a block is added on the unit has this exact shape.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_block(row=0, column=2, model=5005)
+    sent = qc._t.sent[-1]
+    assert isinstance(sent, pa.GridMessage)
+    assert sent.action == pa.MessageAction.UPDATE
+    ch = sent.preset.chains[0]
+    assert ch.row == 0
+    assert ch.models[0].column == 2
+    assert ch.models[0].hash == 5005
+
+
+def test_set_block_accepts_a_catalog_model():
+    model = catalog.Model(id=4005, name="Graphic-9", category="Equalizer",
+                          category_id=4)
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_block(row=1, column=3, model=model)
+    assert qc._t.sent[-1].preset.chains[0].models[0].hash == 4005
+
+
+def test_remove_block_sends_grid_delete():
+    # CONFIRMED: deleting a block on the unit broadcast
+    # Grid{action: DELETE, chains{row, models{column, hash:0}}}. Sending the
+    # same shape from the host removes the block; an UPDATE with hash=0 does
+    # NOT (the firmware ignores a zero hash on an update).
+    qc = client.QuadCortex(FakeTransport())
+    qc.remove_block(row=0, column=4)
+    sent = qc._t.sent[-1]
+    assert isinstance(sent, pa.GridMessage)
+    assert sent.action == pa.MessageAction.DELETE
+    ch = sent.preset.chains[0]
+    assert ch.row == 0
+    assert ch.models[0].column == 4
+    assert ch.models[0].hash == 0
+
+
+def test_set_param_accepts_a_parameter_name_when_the_catalog_is_loaded():
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    # row 0 / column 1 holds model 5005 in this grid, whose parameter 0 is
+    # THRESHOLD; naming it must resolve to that index.
+    qc.set_param(row=0, column=1, param="THRESHOLD", value=0.25, model=5005)
+    param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert param.index == 0
+    assert abs(param.param_values[0].float_value - 0.25) < 1e-6
+
+
+def test_set_param_by_name_needs_a_known_model():
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    with pytest.raises(KeyError):
+        qc.set_param(row=0, column=1, param="NOPE", value=0.5, model=5005)
+
+
+def _sample_repo_payload():
+    from tests.test_catalog import make_payload
+
+    return make_payload()
