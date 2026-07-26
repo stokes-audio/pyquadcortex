@@ -184,6 +184,7 @@ qcctl dump-preset --slot 28C
 - **[docs/roadmap.md](docs/roadmap.md)** - where this is meant to go, including
   the object model of the device that should eventually hide the protocol's rough
   edges entirely.
+- **[changelog.md](changelog.md)** - what changed between released versions.
 - **[docs/releasing.md](docs/releasing.md)** - the release checklist, and why each
   step exists.
 - **[contributing.md](contributing.md)** - development setup and how to submit a
