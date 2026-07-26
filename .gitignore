@@ -10,6 +10,13 @@ __pycache__/
 venv/
 env/
 
+# Local secrets and configuration. This repository is public: a token committed
+# here is a token published, and deleting it afterwards does not un-publish it.
+.env
+.env.*
+!.env.example
+.pypirc
+
 # Build artifacts
 dist/
 build/
