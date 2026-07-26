@@ -91,6 +91,9 @@ class Instrument(IntEnum):
     Values are bit flags; 3 is unused.
     """
 
+    # An untagged preset. This is the default a save sends when no instrument
+    # is given, and the device accepts it; it simply carries no tag.
+    NONE = 0
     GUITAR = 1
     BASS = 2
     VOCAL = 4

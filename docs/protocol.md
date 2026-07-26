@@ -318,11 +318,25 @@ MOVE = 4      COPY = 5      UPLOAD = 6    DOWNLOAD = 7    SWAP = 8
 Note `CREATE = 0` is the proto3 default, so an omitted `action` means CREATE.
 That is exactly how Cortex Control's "Save As" is sent.
 
-Nearly every scalar field in the schema is wrapped in a synthetic
+Most scalar fields in a preset payload are wrapped in a synthetic
 `oneof _field` (proto3 `optional`), so "set to zero" and "not set" are
 distinguishable on the wire and via `HasField()`. The protocol makes use of
 that: absent fields mean "unchanged / not addressed", which is what makes sparse
 keyed grid edits work.
+
+**But presence is NOT universal, and `HasField` raises on a field that lacks it**
+(`ValueError: Field X does not have presence`). The exceptions are not obscure:
+`Preset.proto` has 22 singular fields without presence and
+`ProductionAutomation.proto` has 243, including every `action` field and all of
+`SceneCopyMessage`, `SceneLabelMessage` and `SceneColorMessage`. The one that
+bites hardest is **`SceneBypass.bypass`**, because walking per-scene bypass is a
+natural thing to want and the obvious loop crashes on the first preset read.
+
+Use `pyquadcortex.field_present(msg, "name")`, which answers `False` instead of
+raising. Two more presence details worth knowing, both observed in real payloads:
+`Chain.row` is absent on a recalled preset (see [7.5](#75-grid-edits-and-the-edit-path)),
+and `Param.index` is absent too - a parameter's index is its POSITION in the
+`params` list.
 
 **The protocol is symmetric.** The same message types flow in both directions.
 The device sends the host its own `Version` READ during connect, and it
@@ -541,10 +555,18 @@ Three things to expect from that push:
 A client should also require `len(folder.files) > 0`, because the device pushes
 empty folder messages for keys with no contents.
 
-**Listings are eventually consistent.** After a `File` DELETE or MOVE, a listing
-issued within about 2 seconds can still show the pre-mutation state; about
-5 seconds was reliable. Re-enumerate after a short wait rather than trusting the
-first listing after a mutation.
+**Listings are eventually consistent, and the lag scales with the number of
+mutations.** After a single `File` DELETE or MOVE, a listing within about 2
+seconds can show the pre-mutation state and about 5 seconds was reliable. That does
+NOT generalise: after deleting eleven presets, a listing 5 seconds later still
+returned all eleven - the deletes had in fact all succeeded, and a fresh
+connection moments later showed an empty setlist.
+
+So a fixed sleep produces false negatives, which in a careful script reads as "the
+operation failed, abort" on work that actually worked. **Poll until the listing
+settles** rather than sleeping a fixed interval: `QuadCortex.wait_for_listing()`
+does this, either against a predicate or by waiting for two consecutive identical
+listings.
 
 **The device renames a saved preset if the name collides.** Saving is not
 name-preserving. Within a setlist:
@@ -699,9 +721,60 @@ all of them. In one observed preset, only 5 of the 32 grid positions had
 `sceneMode` set. Filter on `sceneMode` before comparing scenes, or drawing
 conclusions from a diff.
 
+**A parameter cannot be set for one scene. This is a hard ceiling.** The shape
+`params{index, param_values[scene]{float_value}}` reads as though it names a
+scene, and it does not. Established by controlled experiment, each round verified
+by save and read-back:
+
+- A keyed parameter write persists, for both `chains[].models[]` and
+  `chains[].output_control[]`.
+- It **always applies to all eight scenes at once**.
+- Only `param_values[0]` is ever honoured. Filling all eight explicitly changes
+  nothing, even on a parameter whose `scene_mode` is already true.
+- `Param.scene_mode` is **not host-writable**: setting it leaves it false on
+  read-back, so a parameter cannot be promoted to scene-following.
+- Calling `switch_scene` first makes no difference.
+
+Padding `param_values` up to a scene index is actively destructive: the entries
+below it carry protobuf defaults, the device reads index 0, and the parameter ends
+up **0.0 in every scene**. `set_param` therefore refuses a non-zero `scene`.
+
+**Bypass is different, and per-scene bypass DOES work** - but not by index. The
+device applies `sceneBypass[0]` to whichever scene is **active** and ignores any
+entry beyond it. So to bypass a block in one scene, switch to that scene and write
+index 0; ordering over the pipe is enough, with no settle delay needed.
+`set_bypass(scene=...)` does exactly that. Only blocks whose `ColBypass.sceneMode`
+is set follow scenes at all (see [7.4](#74-scenes)).
+
+**Every row reports all 8 column slots.** Empty ones arrive as `Model` entries
+whose `hash` is absent or zero, so `len(chain.models)` is 8 for every row -
+including entirely empty rows - and is not a block count. The same padding applies
+to `splitter`, `mixer`, `output_control` and `input_control`, each of which is
+present on every row whether or not the row holds anything. Nor is `in_portid ==
+EMPTY` an occupancy signal: it means "not fed from a physical jack", the normal
+state of any non-input row. Factory "Brit 2203" has six blocks on row 2 with
+`in_portid` EMPTY. Use `pyquadcortex.blocks(preset)` to iterate the cells that
+actually hold something.
+
+**Lane Output Control** is model `23000`, sitting in `chains[].output_control[]`
+rather than `models[]`, present and populated on all four rows. Its parameters are
+`0 VOLUME` (dB), `1 PAN` (0.5 is centre), `2 MUTE`, `3 SOLO` - and the wire
+carries a fifth, index 4, that the catalog does not document. A keyed write into
+`output_control` persists exactly like one into `models` (confirmed: PAN 0.5 ->
+0.0 survived a save and read-back).
+
 A useful corollary for locating rows: in a preset read back from a recall, a
 chain's grid row equals its **index in `chains`** when the explicit `row` field
-is absent. `client.input_chain_rows()` relies on this.
+is absent, and it always is absent on a recalled preset.
+`client.input_chain_rows()` relies on this.
+
+For a worked example, factory **"Brit 2203"** (position 0) reads back as four
+chains, none carrying an explicit `row`: `chains[0]` has `in_portid = INPUT_1`
+with 8 blocks, `chains[2]` has `in_portid = EMPTY` with 6 blocks and is fed
+internally, and `chains[1]` and `chains[3]` are empty. So
+`input_chain_rows(p, Input.INPUT_1)` returns `[0]`. (An earlier version of this
+note cited "chain[0] on row 1", which cannot happen under the rule it was meant to
+illustrate; it came from a user preset, not the factory slot named.)
 
 Note also that in a recalled preset the `Model.column` fields come back unset
 (all zero), just as `Chain.row` does. Grid position has to be inferred from
@@ -879,6 +952,8 @@ visually on the device's own screen.
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the GRID; `preset_payload` is IGNORED for CREATE |
 | `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | works, but asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
+| `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
+| `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |
 | `write_preset` | `Grid{UPDATE, preset}` | read-back | low-level primitive; applies ONLY row/column-keyed elements. A full recalled preset written back does NOTHING. Use the keyed wrappers |
 | `set_block` | `Grid{UPDATE, preset{chains{row, models{column, hash}}}}` | read-back + on-unit | creates a block in an empty cell, replaces one in an occupied cell; the same shape the device broadcasts when a block is added on the unit |
 | `remove_block` | `Grid{action: DELETE, preset{chains{row, models{column, hash: 0}}}}` | read-back + on-unit | the ACTION marks the removal; an UPDATE carrying `hash: 0` is transmitted but ignored |

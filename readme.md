@@ -109,6 +109,9 @@ These are all methods on the object `connect()` returns.
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(row, column, param_index, value)`, `set_bypass(row, column, bypassed)` |
 | **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `catalog` |
+| **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
+| **Inspect a preset** | `blocks(preset)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
+| **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 
@@ -118,14 +121,27 @@ or by linear index if you have it. Scenes are `Scene.A` through `Scene.H`; input
 outputs, and instrument tags likewise have readable names (`Input.RETURN_1`,
 `Output.XLR_1_2`, `Instrument.BASS`), so nothing needs a bare number.
 
-Two things worth knowing:
+Things worth knowing before you script against this:
 
 - **Editing goes recall, change, save.** The device saves whatever is currently on
   the grid, so an edit means recalling the preset first. The methods above are
   built for that order; [docs/protocol.md](docs/protocol.md) explains why.
 - **Saving may rename.** If the setlist already holds a preset of that name, the
-  device appends a `_N` suffix (trimming the base to fit). Read the slot back if
-  the final name matters.
+  device appends a `_N` suffix (trimming the base to fit). Pass `confirm=True` to
+  get back the name the device actually stored.
+- **A parameter cannot be set for one scene.** The device applies a parameter write
+  to all eight scenes at once, so `set_param` refuses a non-zero `scene`. Per-scene
+  **bypass** does work - `set_bypass(scene=Scene.C)` switches to that scene and
+  writes it, which leaves the unit sitting on that scene.
+- **`read_preset` recalls the slot**, so there is no side-effect-free way to
+  inspect a preset, and no way to check a grid edit without saving it somewhere
+  first. Verification workflows need a scratch slot.
+- **File operations are asynchronous** and the device often does not reply at all,
+  so save, delete and move do not raise on a missing reply. Device state is the
+  arbiter: confirm with `wait_for_listing()` rather than a fixed sleep, because
+  settling time grows with the number of changes.
+- **Don't count a row's blocks with `len()`.** Every row reports all 8 column
+  slots whether or not they hold anything. Use `blocks(preset)`.
 
 ### Blocks and the model catalog
 

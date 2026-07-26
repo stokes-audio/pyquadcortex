@@ -685,3 +685,106 @@ def test_set_bypass_targets_a_scene_by_switching_to_it():
     qc.set_bypass(row=0, column=2, bypassed=False)
     assert [type(m).__name__ for m in fake.sent] == ["GridMessage"]
     assert len(fake.sent[0].preset.bypass[0].colBypass[0].sceneBypass) == 1
+
+
+# -- review follow-ups: file ops, polling, lane output, ergonomics -------------
+
+
+class TimingOutTransport(FakeTransport):
+    """A transport whose request() never gets a reply, like the real device."""
+
+    def request(self, msg, timeout=5.0):
+        self.sent.append(msg)
+        raise TimeoutError("no response")
+
+
+def test_file_operations_do_not_raise_when_the_device_stays_silent():
+    # File ops are asynchronous and every host write is STALLed, so a missing reply
+    # says nothing about success. Raising made callers wrap each one in
+    # try/except and verify by re-reading anyway.
+    qc = client.QuadCortex(TimingOutTransport())
+    assert qc.delete_preset(Setlist.USER, "Some Preset") is None
+    assert qc.move_preset(Setlist.USER, "Some Preset", "28D") is None
+    assert qc.save_current_preset(Setlist.USER, "30A", "Some Preset") == "Some Preset"
+
+
+def test_save_current_preset_reports_the_name_the_device_actually_stored():
+    # The device de-duplicates a colliding name, so the requested name can differ
+    # from the stored one. confirm=True asks the device rather than assuming.
+    listing = pa.FileMessage()
+    listing.folder.key = str(Setlist.USER)
+    stored = listing.folder.files.add()
+    stored.index = 232                                   # 30A
+    stored.name = "Cali Basswalk [Ret_1"                 # renamed by the device
+    fake = FakeTransport()
+    fake.broadcast = listing
+    qc = client.QuadCortex(fake)
+
+    got = qc.save_current_preset(Setlist.USER, "30A", "Cali Basswalk [Ret1]",
+                                 confirm=True)
+    assert got == "Cali Basswalk [Ret_1"
+
+
+def test_wait_for_listing_polls_until_the_condition_holds():
+    # A fixed sleep produces false negatives after a batch of mutations, because
+    # settling time scales with the number of them.
+    listing = pa.FileMessage()
+    listing.folder.key = str(Setlist.USER)
+    entry = listing.folder.files.add()
+    entry.index = 0
+    entry.name = "Eventually"
+
+    class Eventually(FakeTransport):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            self.calls += 1
+            return listing if self.calls >= 3 else pa.FileMessage(
+                folder=pa.FolderInfo(key=str(Setlist.USER), files=[pa.ProductData(index=0)])
+            )
+
+    fake = Eventually()
+    qc = client.QuadCortex(fake)
+    entries = qc.wait_for_listing(
+        Setlist.USER, until=lambda es: any(e.name == "Eventually" for e in es),
+        timeout=30.0, interval=0.0,
+    )
+    assert [e.name for e in entries] == ["Eventually"]
+    assert fake.calls == 3, "it polled rather than sleeping once"
+
+
+def test_set_lane_output_writes_into_output_control_not_models():
+    # Lane Output Control lives in chain.output_control[], which set_param cannot
+    # reach, so VOLUME/PAN/MUTE/SOLO were unreachable through the API.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_lane_output(row=2, param=1, value=0.5)         # index, no catalog needed
+    sent = fake.sent[-1]
+    chain = sent.preset.chains[0]
+    assert chain.row == 2
+    assert not chain.models, "must not touch models[]"
+    oc = chain.output_control[0]
+    assert oc.hash == qc.LANE_OUTPUT_CONTROL == 23000
+    assert oc.params[0].index == 1
+    assert len(oc.params[0].param_values) == 1
+    assert abs(oc.params[0].param_values[0].float_value - 0.5) < 1e-6
+
+
+def test_position_to_slot_inverts_slot_to_position():
+    from pyquadcortex.client import position_to_slot
+
+    assert position_to_slot(218) == "28C"
+    assert position_to_slot(0) == "1A"
+    for slot in ("1A", "4B", "28C", "30A", "32H"):
+        assert position_to_slot(client.slot_to_position(slot)) == slot
+    with pytest.raises(ValueError):
+        position_to_slot(-1)
+
+
+def test_instrument_has_a_member_for_the_untagged_default():
+    # save_current_preset's default was 0, which was not a member of Instrument.
+    assert Instrument.NONE == 0
+    assert Instrument(0) is Instrument.NONE

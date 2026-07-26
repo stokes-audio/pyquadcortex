@@ -8,6 +8,70 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.3.0 - 2026-07-26
+
+Fixes from a review written while building a real preset-generation script against
+0.1.0. Two of these were silent and destructive, so upgrade before scripting
+anything that edits scenes.
+
+### Fixed
+
+- **`set_param` no longer destroys a parameter across all scenes.** Passing
+  `scene=N` above zero padded the message with protobuf defaults below index N;
+  the device reads index 0, so the parameter was set to **0.0 in every scene**. It
+  now refuses a non-zero scene and explains why: the device applies a parameter
+  write to all eight scenes at once and cannot target one.
+- **`set_bypass(scene=...)` now works instead of corrupting a different scene.**
+  The same padding wrote a default `False` to whichever scene was ACTIVE and did
+  nothing to the one asked for. Bypass really is per scene, just not by index: the
+  device applies `sceneBypass[0]` to the active scene. Naming a scene now switches
+  to it and writes, which leaves the unit on that scene - a visible side effect.
+- **`DeviceNotFoundError` is actually raised.** `hid.HIDException` is not an
+  `OSError`, so the guidance for the most common first-run failure - unit not
+  connected, or Cortex Control still holding the port - was dead code and users got
+  a raw traceback.
+- **Saving, deleting and moving no longer raise `TimeoutError` on success.** File
+  operations are asynchronous and the device often does not reply; a missing reply
+  never meant failure.
+- Corrected `input_chain_rows`'s worked example, which cited a preset that does not
+  have the routing described and contradicted the rule it illustrated.
+
+### Added
+
+- **`field_present(msg, field)`** - `HasField` raises on fields without presence,
+  and the schema has many, including `SceneBypass.bypass`. This answers `False`
+  instead of crashing, so walking per-scene bypass works.
+- **`blocks(preset)`** - the occupied grid cells. Every row reports all 8 column
+  slots whether or not they hold anything, so `len(chain.models)` is not a block
+  count, and `in_portid == EMPTY` is not an occupancy signal either.
+- **`wait_for_listing(setlist, until=...)`** - polls until a listing settles.
+  Settling time grows with the number of changes, so a fixed sleep reports failure
+  on work that succeeded.
+- **`set_lane_output(row, param, value=/real=)`** - the per-row Lane Output
+  Control (VOLUME, PAN, MUTE, SOLO), which lives outside `models[]` and so was
+  unreachable through the API.
+- **`position_to_slot(218) -> "28C"`**, the inverse of `slot_to_position`.
+- **`Instrument.NONE`**, so an untagged save is a real enum member rather than a
+  bare 0.
+- `save_current_preset(confirm=True)` returns the name the device actually stored,
+  which can differ from the one requested when it de-duplicates.
+
+### Documentation
+
+- The per-scene write ceiling is now stated plainly, because it decides whether a
+  whole class of automation is possible.
+- Corrected the claim that nearly every scalar has presence, with the real rule and
+  the exceptions.
+- Documented slot padding, the lane output block, and that listing lag scales with
+  the number of mutations.
+
+### Testing
+
+- Added tests against a **real preset payload** read off a device, rather than only
+  against messages this library builds. Both presence and padding findings were
+  invisible to construction tests, and two existing tests had asserted the buggy
+  construction was correct.
+
 ## 0.2.0 - 2026-07-26
 
 Grid blocks and the device's own model catalog. Before this, the library could

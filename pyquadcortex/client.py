@@ -23,6 +23,7 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 
 import time
 import uuid
+from typing import NamedTuple
 
 from pyquadcortex import catalog, registry
 from pyquadcortex.enums import Input, Instrument, Output, Setlist  # noqa: F401
@@ -579,12 +580,118 @@ class QuadCortex:
 
     # -- file ops ------------------------------------------------------------
 
+    LANE_OUTPUT_CONTROL = 23000
+
+    def set_lane_output(self, row: int, param, value: float = None, real=None):
+        """Set a Lane Output Control parameter on ``row``.
+
+        Every grid row carries a Lane Output Control block - the VOLUME, PAN, MUTE
+        and SOLO the manual describes - and it lives in ``chain.output_control[]``
+        rather than ``chain.models[]``, so :meth:`set_param` cannot reach it. It is
+        model ``23000``, present and populated on all four rows whether or not the
+        row has any blocks.
+
+        ``param`` is a name (``"VOLUME"``, ``"PAN"``, ``"MUTE"``, ``"SOLO"``) or a
+        wire index. Pass ``value`` as the normalized 0..1 the wire carries, or
+        ``real`` in the parameter's own units, converted through the catalog::
+
+            qc.set_lane_output(row=0, param="PAN", value=0.5)      # centre
+            qc.set_lane_output(row=0, param="VOLUME", real=-3.0)   # dB
+
+        A keyed parameter write into ``output_control`` persists the same way as
+        one into ``models`` (confirmed on hardware). Note the wire carries FIVE
+        parameters here while the catalog documents four; index 4 is unidentified,
+        so prefer naming the one you want.
+        """
+        index = param
+        if isinstance(param, str) or real is not None:
+            model = self.catalog[self.LANE_OUTPUT_CONTROL]
+            spec = (model.parameter(param) if isinstance(param, str)
+                    else model.parameters[param])
+            index = spec.index
+            if real is not None:
+                value = spec.to_normalized(real)
+        if value is None:
+            raise TypeError("set_lane_output needs value= (0..1) or real= (own units)")
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        oc = chain.output_control.add()
+        oc.hash = self.LANE_OUTPUT_CONTROL
+        prm = oc.params.add()
+        prm.index = index
+        prm.param_values.add().float_value = value
+        return self._t.send(msg)
+
+    def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
+                         timeout: float = 45.0, interval: float = 2.0):
+        """Re-list ``setlist`` until ``until(entries)`` holds, and return them.
+
+        File operations are eventually consistent, and the lag scales with how
+        many you performed: a single delete settles in a few seconds, but after
+        eleven deletes a listing five seconds later still showed all eleven
+        presets - they had in fact all gone. A fixed sleep therefore produces
+        false negatives, which in a careful script reads as "the clear failed"
+        on work that actually succeeded.
+
+        Poll instead::
+
+            # wait for a save to appear
+            qc.wait_for_listing(Setlist.USER,
+                                until=lambda e: any(p.name == "My Patch" for p in e))
+
+            # wait for a bulk delete to settle
+            qc.wait_for_listing(Setlist.USER, until=lambda e: not e)
+
+        With no ``until``, this waits for two consecutive identical listings,
+        which is the general "has it stopped changing?" question. Raises
+        ``TimeoutError`` if the condition never holds.
+        """
+        deadline = time.monotonic() + timeout
+        previous = None
+        while True:
+            entries = self.list_presets(setlist)
+            if until is not None:
+                if until(entries):
+                    return entries
+            else:
+                signature = [(e.index, e.name) for e in entries]
+                if previous is not None and signature == previous:
+                    return entries
+                previous = signature
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"listing for {str(setlist)!r} did not settle within {timeout}s"
+                )
+            time.sleep(interval)
+
+    def _file_operation(self, msg, timeout: float = 5.0):
+        """Send a File message, tolerating the device not replying.
+
+        File operations are asynchronous and this protocol STALLs every host
+        write, so a missing reply says nothing about whether the operation
+        worked - the device may simply not answer. Treating that as an error made
+        callers wrap every save and delete in ``try/except TimeoutError`` and
+        verify by re-reading anyway, which is the same principle the transport
+        already applies to the benign write stall.
+
+        Returns the device's reply if one arrives, else ``None``. Either way,
+        DEVICE STATE IS THE ARBITER: re-read to confirm (see
+        :meth:`wait_for_listing`).
+        """
+        try:
+            return self._t.request(msg, timeout=timeout)
+        except TimeoutError:
+            return None
+
     def save_current_preset(
         self,
         setlist_path: str,
         position,
         name: str,
-        instrument: int = 0,
+        instrument: int = Instrument.NONE,
+        confirm: bool = False,
+        confirm_timeout: float = 20.0,
     ):
         """Save the preset currently on the grid into a setlist slot ("Save As").
 
@@ -617,7 +724,23 @@ class QuadCortex:
         entry.index = _as_position(position)
         entry.name = name
         entry.instrument = instrument
-        return self._t.request(msg)
+        self._file_operation(msg)
+        if not confirm:
+            return name
+        # The device renames on a collision, so the only way to know what it
+        # actually stored is to ask it.
+        try:
+            entries = self.wait_for_listing(
+                setlist_path,
+                until=lambda es: any(e.index == entry.index and e.name for e in es),
+                timeout=confirm_timeout,
+            )
+        except TimeoutError:
+            return None
+        for e in entries:
+            if e.index == entry.index:
+                return e.name
+        return None
 
     def delete_preset(self, setlist_path: str, name: str):
         """Delete the preset named ``name`` from the setlist at ``setlist_path``.
@@ -632,7 +755,7 @@ class QuadCortex:
         msg.folder.key = setlist_path
         msg.folder.is_factory = False
         msg.folder.files.add().key = f"{setlist_path}/{name}.pb"
-        return self._t.request(msg)
+        return self._file_operation(msg)
 
     def move_preset(self, setlist_path: str, name: str, to_position):
         """Move the preset named ``name`` to slot ``to_position`` (same setlist).
@@ -652,7 +775,65 @@ class QuadCortex:
         msg.folder.files.add().key = f"{setlist_path}/{name}.pb"
         msg.to_folder.key = setlist_path
         msg.to_folder.files.add().index = _as_position(to_position)
-        return self._t.request(msg)
+        return self._file_operation(msg)
+
+
+def field_present(message, field: str) -> bool:
+    """Whether ``field`` is set on ``message``, without raising.
+
+    ``HasField`` is the natural way to read this schema, because most fields in a
+    preset payload sit in a synthetic ``oneof`` and absent means "not addressed".
+    But presence is not universal: ``HasField`` raises ``ValueError`` on a field
+    that has none, and the schema has plenty - ``SceneBypass.bypass`` is the one
+    that bites, since walking per-scene bypass is a common thing to want::
+
+        # raises ValueError: Field SceneBypass.bypass does not have presence
+        entry.HasField("bypass")
+
+        field_present(entry, "bypass")      # False, and no exception
+
+    For a field without presence this returns ``False``, since the wire cannot
+    distinguish "absent" from "zero" there anyway. See ``docs/protocol.md`` for
+    which fields those are.
+    """
+    try:
+        return message.HasField(field)
+    except ValueError:
+        return False
+
+
+class Block(NamedTuple):
+    """One occupied grid cell: where it is, and what is in it."""
+
+    row: int
+    column: int
+    model_id: int
+
+
+def blocks(p: preset.BinaryPreset) -> list:
+    """The OCCUPIED grid cells of ``p``, as :class:`Block` entries.
+
+    Use this rather than walking ``chains[].models[]`` yourself. The device
+    reports every row as its full complement of **8 column slots**, with empty
+    ones present as ``Model`` entries whose ``hash`` is absent or zero, so
+    ``len(chain.models)`` is 8 for every row - including entirely empty rows - and
+    is not a block count. The same padding applies to ``splitter``, ``mixer``,
+    ``output_control`` and ``input_control``.
+
+    Nor is ``in_portid`` a usable occupancy signal: ``Input.EMPTY`` means "not fed
+    from a physical jack", which is the normal state of any row that is not an
+    input row, occupied or not. Factory "Brit 2203" has six blocks on row 2 with
+    ``in_portid`` EMPTY.
+    """
+    found = []
+    for i, chain in enumerate(p.chains):
+        row = chain.row if field_present(chain, "row") else i
+        for j, model in enumerate(chain.models):
+            if not (field_present(model, "hash") and model.hash):
+                continue
+            column = model.column if field_present(model, "column") else j
+            found.append(Block(row=row, column=column, model_id=model.hash))
+    return found
 
 
 def _is_factory_setlist(setlist_path: str) -> bool:
@@ -691,13 +872,34 @@ def input_chain_rows(p: preset.BinaryPreset, from_port: int = Input.INPUT_1) -> 
     """Return the grid rows whose input chain is on ``from_port``.
 
     A chain's grid row is its explicit ``row`` when set, else its index in
-    ``p.chains`` (confirmed: chains read back from a recall carry no ``row``, and
-    chain index == grid row - the 28A read-back had chain[0]=Input 2 on row 1
-    and chain[2]=Input 1 on row 3). Feed each returned row to
+    ``p.chains``. A recalled preset never carries ``row``, so in practice the
+    index is the row. Feed each returned row to
     :meth:`QuadCortex.set_chain_input` to re-point it, then save.
+
+    Worked example, factory "Brit 2203": four chains, none with an explicit
+    ``row``; ``chains[0]`` is on ``INPUT_1`` with 8 blocks, ``chains[2]`` holds 6
+    blocks but reads ``EMPTY`` because it is fed internally by the splitter, and
+    ``chains[1]`` and ``chains[3]`` are empty. So this returns ``[0]``.
+
+    Note what that means: a row being ``EMPTY`` says nothing about whether it
+    holds blocks. Use :func:`blocks` for occupancy.
     """
     rows = []
     for i, chain in enumerate(p.chains):
         if chain.HasField("in_portid") and chain.in_portid == from_port:
             rows.append(chain.row if chain.HasField("row") else i)
     return rows
+
+def position_to_slot(position: int) -> str:
+    """Turn a linear slot index into the slot name shown on the unit.
+
+    The inverse of :func:`slot_to_position`: ``218 -> "28C"``. Anything reporting
+    results to a person wants this, because the unit talks in slot names while the
+    wire talks in indices.
+    """
+    position = int(position)
+    if position < 0:
+        raise ValueError(f"slot position cannot be negative: {position}")
+    bank, letter = divmod(position, 8)
+    return f"{bank + 1}{'ABCDEFGH'[letter]}"
+

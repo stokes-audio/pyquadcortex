@@ -11,7 +11,7 @@ See the readme for a tour, and ``docs/`` for the protocol and internals.
 
 import logging
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # A library must not write to the application's console. Without a handler,
 # Python's handler of last resort prints WARNING and above to stderr, so a
@@ -19,7 +19,9 @@ __version__ = "0.2.0"
 # Applications that want our logs can configure the "pyquadcortex" logger.
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
-from pyquadcortex.client import QuadCortex, input_chain_rows, slot_to_position  # noqa: E402
+from pyquadcortex.client import (Block, QuadCortex, blocks, field_present,
+                                 input_chain_rows, position_to_slot,
+                                 slot_to_position)  # noqa: E402
 from pyquadcortex.enums import Input, Instrument, Output, Scene, Setlist
 from pyquadcortex.session import DeviceNotFoundError, connect, open_device
 from pyquadcortex import models  # noqa: E402  generated factory-block constants
@@ -31,12 +33,16 @@ __all__ = [
     "open_device",
     "DeviceNotFoundError",
     "QuadCortex",
+    "Block",
+    "blocks",
+    "field_present",
     "Input",
     "Output",
     "Scene",
     "Instrument",
     "Setlist",
     "slot_to_position",
+    "position_to_slot",
     "input_chain_rows",
     "models",
     "Model",
