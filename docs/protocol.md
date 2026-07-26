@@ -786,6 +786,74 @@ state of any non-input row. Factory "Brit 2203" has six blocks on row 2 with
 `in_portid` EMPTY. Use `pyquadcortex.blocks(preset)` to iterate the cells that
 actually hold something.
 
+**Row output routing.** `Grid{UPDATE, preset{chains{row, out_portid}}}` re-points a
+row's output, the mirror of the confirmed `in_portid` shape, and it survives a save
+and recall.
+
+**The device does NOT assign an output automatically.** A row given blocks and a
+physical input keeps `out_portid` at 0 - confirmed by adding a block plus Input 2 to
+an empty row and reading it back. So setting the output is a REQUIREMENT when
+building a chain on a fresh row, not a convenience: without it the row never reaches
+a jack.
+
+All of `out_portid` 5, 6, 7, 8, 9, 11, 20 and 22 were accepted and stored verbatim,
+so the device does not validate or normalise the value - passing a nonsense id will
+be kept, not rejected. Values 16 to 19 remain internal grid-routing states rather
+than jacks (factory "Brit 2203" uses 16 on row 0 to feed the next row, and 19,
+MULTIPLE, on row 2 for the actual Multi-Out).
+
+**Splitter and mixer.** Both are sub-collections of a chain, alongside
+`output_control`: `chain.splitter[]` holds "Splitter AB" (model `10000`: LEVEL TO A,
+LEVEL TO B, STEREO) and `chain.mixer[]` holds "Mixer" (model `11000`: LEVEL A, PAN A,
+LEVEL B, PAN B, PHASE, MIXER LEVEL, SPLIT MODE).
+
+The MIXER is writable, with the same row-keyed shape used for `models[]`, and it
+supports per-scene values. This matters because factory presets build their scenes
+out of it rather than out of bypass: in "Darkglass AO900 1" nothing is bypassed in
+any scene, and all eight scenes come from per-scene `LEVEL A` / `LEVEL B` across two
+rows, giving four amp paths. A client that cannot write the mixer cannot reproduce
+that.
+
+The SPLITTER appears NOT to be writable from the host. Four attempts, each saved and
+read back unchanged: with the model hash and without it (the device's own broadcast
+omits the hash), on a level (LEVEL TO A) and on a switch (STEREO). The identical
+shape against `mixer[]` works, so this is not a malformed message. It has NOT been
+confirmed by capture that the device broadcasts nothing when a splitter is edited on
+the unit, so treat this as "no known write path" rather than "impossible".
+
+**Splitter and mixer positions are not recoverable.** Neither carries `column` in a
+recalled preset - it is absent, not zero - so where a split occurs on the grid cannot
+be read directly. It can only be inferred, for example from a lone block on one row
+sitting at the same column as a block on another. **The grid topology is therefore
+only partly readable**, which is worth knowing before building anything that depends
+on reconstructing it.
+
+### Per-preset tempo, LED and metronome
+
+Reported as a dead end, and it is not. Each preset carries a `TempoControl` block
+(model `25000`) in `BinaryPreset.tempoProgramData` - a REPEATED field, despite
+holding a single entry - with 24 parameters including `TEMPO`, `TYPE`, `LED LIGHT`,
+`VOLUME`, `PAN`, `START`, `TIME SIGNATURE`, `NOTELENGTH`, `SOUND`, `ROUTING` and a
+run of `STEPSTATE*`.
+
+**It is writable, even though it is not row or column keyed.** A `Grid` UPDATE
+carrying `tempoProgramData{params{index, param_values}}` is applied and survives a
+save and recall, with the hash optional. That contradicts the reasonable assumption
+that a Grid update only ever applies row/column-keyed elements, so it is worth
+stating plainly. Confirmed: `LED LIGHT` 1.0 -> 0.0 turns the tempo LED off, and
+`VOLUME` 0.6131 -> 0.0 silences the metronome.
+
+Two related dead ends, for the record. `GlobalTempo` is global rather than
+per-preset and, when READ, returned only a running clock (`current_beat`,
+`current_bar`, `current_tick`) with no parameters. And `MetronomeStatusUpdate`
+carries only `is_enabled` and `preroll_enabled`, with no mute or level field at all -
+which is why muting means setting `TempoControl.VOLUME` to zero.
+
+**Default scene.** No field on the File message carries it. The device records
+whichever scene is ACTIVE at save time, so switching to a scene immediately before
+saving makes it the preset's default and `BinaryPreset.default_scene` reads back
+accordingly. `save_current_preset(default_scene=...)` does that.
+
 **Lane Output Control** is model `23000`, sitting in `chains[].output_control[]`
 rather than `models[]`, present and populated on all four rows. Its parameters are
 `0 VOLUME` (dB), `1 PAN` (0.5 is centre), `2 MUTE`, `3 SOLO` - and the wire
@@ -983,6 +1051,10 @@ visually on the device's own screen.
 | `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | works, but asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
 | `set_param_scene_mode` | `Grid{UPDATE, ..., params{index, scene_mode}}` (flag ALONE) | read-back | promotes a parameter to scene-following; a value in the same message voids it |
+| `set_chain_output` | `Grid{UPDATE, preset{chains{row, out_portid}}}` | read-back | required for a new chain: the device never assigns an output on its own |
+| `set_mixer_param` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |
+| `set_splitter_param` | same shape against `splitter[]` | **does not persist** | four shapes tried; raises rather than silently doing nothing |
+| `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |
 | `write_preset` | `Grid{UPDATE, preset}` | read-back | low-level primitive; applies ONLY row/column-keyed elements. A full recalled preset written back does NOTHING. Use the keyed wrappers |

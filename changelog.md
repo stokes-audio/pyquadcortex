@@ -8,6 +8,50 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.5.0 - 2026-07-26
+
+Four gaps that stopped a tester building bass presets from a script. Everything here
+was verified on hardware by read-back.
+
+### Added
+
+- **`set_chain_output(row, out_portid)`** - the sibling of `set_chain_input`, and the
+  piece that was blocking. Without it a chain built on an empty row could be given
+  blocks and an input but never pointed at a jack. **The device does not assign an
+  output on its own**, confirmed by adding a block and Input 2 to an empty row and
+  reading back `out_portid` still unset - so this is a requirement, not a convenience.
+- **`set_mixer_param(row, param, ...)`**, with `scene=`. This is how factory presets
+  build scenes: "Darkglass AO900 1" bypasses nothing in any scene and produces all
+  eight from per-scene mixer `LEVEL A` / `LEVEL B` across two rows.
+- **Per-preset tempo**: `set_tempo_led(on)`, `set_metronome_volume(v)` and the general
+  `set_tempo_param(param, ...)`. Reported as having no write path; it turned out
+  `tempoProgramData` is applied by a `Grid` UPDATE even though it is not row or column
+  keyed. `LED LIGHT` 1.0 -> 0.0 turns the LED off and `VOLUME` -> 0.0 silences the
+  metronome, both surviving save and recall.
+- **`save_current_preset(default_scene=...)`**, which switches to that scene first
+  because the device records whichever is active at save time.
+- **`position_to_slot(pos, pad=True)`** for the zero-padded form.
+
+### Fixed
+
+- `slot_to_position` accepted banks past the end of a setlist: `"33A"` returned 256,
+  the device ignored the save, and it surfaced 40 seconds later as a read timeout -
+  exactly the "the save failed" symptom reported. Both slot helpers now range-check.
+- `position_to_slot`'s output could not be compared against the padded form
+  `slot_to_position` accepts. Documented, with comparing linear positions recommended.
+
+### Known limits, now documented rather than discovered the hard way
+
+- **The splitter does not accept host writes.** Four shapes tried - with and without
+  the model hash, on a level and on a switch - each saved and read back unchanged,
+  while the identical shape against the mixer works. `set_splitter_param()` raises
+  instead of silently doing nothing.
+- **Splitter and mixer carry no column**, so where a split sits on the grid cannot be
+  read, only inferred. The grid topology is only partly recoverable.
+- `GlobalTempo` is global and returns only a running clock;
+  `MetronomeStatusUpdate` has no mute or level field, which is why muting means
+  setting `TempoControl.VOLUME` to zero.
+
 ## 0.4.0 - 2026-07-26
 
 **Per-scene parameter values.** A parameter can now hold a different value in each

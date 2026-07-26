@@ -109,7 +109,10 @@ These are all methods on the object `connect()` returns.
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(row, column, param_index, value)`, `set_bypass(row, column, bypassed)` |
 | **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `catalog` |
+| **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
 | **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
+| **Mixer** | `set_mixer_param(row, param, value=/real=, scene=)` |
+| **Per-preset tempo** | `set_tempo_led(on)`, `set_metronome_volume(v)`, `set_tempo_param(param, ...)` |
 | **Inspect a preset** | `blocks(preset)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
@@ -185,6 +188,48 @@ qc.set_param(row=0, column=1, param="THRESHOLD", real=-20, model=comp)  # dB
 
 That is worth preferring: parameter indices are positional, and not every index
 is a visible knob (a cab's are internal `ir selector` entries).
+
+### Building a chain on an empty row
+
+Blocks and an input are not enough. **The device never assigns a row's output for
+you** - a row given blocks and a physical input keeps its output unset and so never
+reaches a jack. Point it somewhere yourself:
+
+```python
+qc.set_block(row=1, column=0, model=models.BassAmplifier.AMPED_FLIP_TOP_6464)
+qc.set_chain_input(row=1, in_portid=Input.INPUT_2)
+qc.set_chain_output(row=1, out_portid=Output.XLR_1_2)     # required, not optional
+qc.save_current_preset(Setlist.USER, "30A", "Bass on In 2")
+```
+
+Beware that `Output` values 16 to 19 are internal grid routes rather than jacks, and
+the device stores whatever id you send without validating it - so a wrong value is
+kept, not rejected.
+
+### The mixer, and how factory presets build scenes
+
+Factory presets often produce their scenes with the **mixer**, not with bypass. In
+"Darkglass AO900 1" nothing is bypassed in any scene: all eight come from per-scene
+`LEVEL A` / `LEVEL B` across two rows, giving four amp paths.
+
+```python
+qc.set_mixer_param(row=0, param="LEVEL A", value=0.0, scene=Scene.C)
+```
+
+The **splitter** is not writable from the host - four message shapes were tried and
+none persisted - so `set_splitter_param()` raises rather than quietly doing nothing.
+Splitter and mixer positions also cannot be read: neither carries a column, so the
+grid topology is only partly recoverable.
+
+### Per-preset tempo, LED and metronome
+
+Each preset carries its own tempo block, separate from the global tempo:
+
+```python
+qc.set_tempo_led(False)              # this preset's TEMPO LED off
+qc.set_metronome_volume(0.0)         # silence its metronome (there is no mute flag)
+qc.set_tempo_param("TIME SIGNATURE", value=0.1)
+```
 
 ### Per-scene values
 

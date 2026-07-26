@@ -843,3 +843,106 @@ def test_instrument_has_a_member_for_the_untagged_default():
     # save_current_preset's default was 0, which was not a member of Instrument.
     assert Instrument.NONE == 0
     assert Instrument(0) is Instrument.NONE
+
+
+# -- routing, splitter/mixer, default_scene, slot helpers ----------------------
+
+
+def test_set_chain_output_is_the_sibling_of_set_chain_input():
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_chain_output(row=1, out_portid=Output.XLR_1_2)
+    sent = fake.sent[-1]
+    assert isinstance(sent, pa.GridMessage)
+    assert sent.action == pa.MessageAction.UPDATE
+    chain = sent.preset.chains[0]
+    assert chain.row == 1
+    assert chain.out_portid == int(Output.XLR_1_2)
+    assert not chain.HasField("in_portid"), "must not touch the input"
+    assert not chain.models, "row-keyed routing only"
+
+
+def test_set_mixer_param_targets_the_mixer_collection():
+    # Factory presets build their scenes out of per-scene Mixer LEVEL A/B, so this
+    # collection has to be reachable to reproduce that behaviour.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_mixer_param(row=0, param=0, value=0.769)
+    chain = fake.sent[-1].preset.chains[0]
+    assert chain.row == 0
+    assert not chain.models and not chain.splitter
+    mixer = chain.mixer[0]
+    assert mixer.hash == qc.MIXER == 11000
+    assert mixer.params[0].index == 0
+    assert len(mixer.params[0].param_values) == 1
+
+
+def test_set_splitter_param_refuses_rather_than_silently_doing_nothing():
+    # Tried on hardware four ways - with the hash, without it, on LEVEL TO A and on
+    # STEREO - and every write saved and read back unchanged, while the identical
+    # shape against chain.mixer[] works. A method that quietly does nothing is worse
+    # than one that says so.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    with pytest.raises(NotImplementedError, match="does not accept host parameter writes"):
+        qc.set_splitter_param(row=0, param=1, value=0.5)
+    assert fake.sent == [], "nothing may reach the device"
+
+
+def test_set_tempo_param_reaches_tempo_program_data():
+    # tempoProgramData is not row or column keyed, yet a Grid UPDATE carrying it is
+    # applied - confirmed on hardware, which is what makes per-preset tempo reachable.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_tempo_param(2, value=0.0)
+    sent = fake.sent[-1]
+    assert isinstance(sent, pa.GridMessage)
+    assert not sent.preset.chains, "not a chain edit"
+    tp = sent.preset.tempoProgramData[0]
+    assert tp.hash == qc.TEMPO_CONTROL == 25000
+    assert tp.params[0].index == 2
+    assert tp.params[0].param_values[0].float_value == 0.0
+
+
+def test_mixer_param_per_scene_uses_promote_switch_write():
+    from pyquadcortex.enums import Scene
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_mixer_param(row=0, param=0, value=0.0, scene=Scene.C)
+    assert [type(m).__name__ for m in fake.sent] == [
+        "GridMessage", "SceneMessage", "GridMessage"]
+    promote = fake.sent[0].preset.chains[0].mixer[0].params[0]
+    assert promote.scene_mode is True
+    assert not promote.param_values, "flag alone, or the device drops it"
+
+
+def test_save_current_preset_sets_the_default_scene_by_switching_first():
+    from pyquadcortex.enums import Scene
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.save_current_preset(Setlist.USER, "30A", "Patch", default_scene=Scene.D)
+    kinds = [type(m).__name__ for m in fake.sent]
+    assert kinds == ["SceneMessage", "FileMessage"], "switch, then save"
+    assert fake.sent[0].selected_scene == 3
+
+
+def test_slot_names_beyond_the_setlist_are_rejected():
+    # A setlist is 256 slots, so bank 33 does not exist. Accepting "33A" silently
+    # produced position 256, the device ignored the save, and it surfaced much
+    # later as a listing that never showed the preset.
+    for bad in ("33A", "0A", "99H"):
+        with pytest.raises(ValueError):
+            client.slot_to_position(bad)
+    with pytest.raises(ValueError):
+        client.position_to_slot(256)
+
+
+def test_position_to_slot_can_match_the_padded_form_it_accepts():
+    # slot_to_position takes "01A" and "1A"; position_to_slot returns "1A", so
+    # comparing against a padded string silently never matched.
+    assert client.position_to_slot(0) == "1A"
+    assert client.position_to_slot(0, pad=True) == "01A"
+    for slot in ("01A", "04B", "28C", "32H"):
+        assert client.position_to_slot(client.slot_to_position(slot), pad=True) == slot

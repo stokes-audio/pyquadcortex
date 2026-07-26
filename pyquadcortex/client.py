@@ -632,6 +632,167 @@ class QuadCortex:
 
     LANE_OUTPUT_CONTROL = 23000
 
+    TEMPO_CONTROL = 25000
+
+    def set_tempo_param(self, param, value: float = None, real=None):
+        """Set a per-preset tempo/metronome parameter.
+
+        Each preset carries a ``TempoControl`` block (model ``25000``) in
+        ``BinaryPreset.tempoProgramData`` with 24 parameters, among them ``TEMPO``,
+        ``LED LIGHT``, ``VOLUME``, ``TYPE``, ``TIME SIGNATURE`` and ``SOUND``.
+        These are per PRESET, unlike ``GlobalTempo``, which is global and only ever
+        reported a running clock.
+
+        Confirmed on hardware: although ``tempoProgramData`` is NOT row or column
+        keyed - it sits outside ``chains[]`` - a ``Grid`` UPDATE carrying it is
+        applied anyway, and survives a save and recall. The hash is optional.
+
+        Convenience wrappers: :meth:`set_tempo_led`, :meth:`set_metronome_volume`.
+        """
+        index = param
+        if isinstance(param, str) or real is not None:
+            model = self.catalog[self.TEMPO_CONTROL]
+            spec = (model.parameter(param) if isinstance(param, str)
+                    else model.parameters[param])
+            index = spec.index
+            if real is not None:
+                value = spec.to_normalized(real)
+        if value is None:
+            raise TypeError("set_tempo_param needs value= (0..1) or real= (own units)")
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        tp = msg.preset.tempoProgramData.add()
+        tp.hash = self.TEMPO_CONTROL
+        prm = tp.params.add()
+        prm.index = index
+        prm.param_values.add().float_value = value
+        return self._t.send(msg)
+
+    def set_tempo_led(self, on: bool):
+        """Turn this preset's TEMPO LED on or off."""
+        return self.set_tempo_param("LED LIGHT", value=1.0 if on else 0.0)
+
+    def set_metronome_volume(self, value: float):
+        """Set this preset's metronome level, 0.0 being silent.
+
+        There is no mute flag anywhere in the schema - ``MetronomeStatusUpdate``
+        carries only ``is_enabled`` and ``preroll_enabled`` - so muting means
+        setting this to zero.
+        """
+        return self.set_tempo_param("VOLUME", value=value)
+
+    def set_chain_output(self, row: int, out_portid: int):
+        """Point one grid ``row``'s output at ``out_portid`` (row-keyed update).
+
+        The sibling of :meth:`set_chain_input`, and the piece needed to finish a
+        chain built on a previously empty row: blocks and an input are not enough,
+        because a row whose output is unset does not reach a jack.
+
+        Confirmed on hardware by read-back, not assumed from the symmetry: a
+        ``Grid`` UPDATE carrying a single chain ``{row, out_portid}`` re-points that
+        row's output, and the value survives a save and recall.
+
+        Pass a :class:`~pyquadcortex.enums.Output`. Note that not every member is a
+        physical destination - values 16 to 19 are internal grid-routing states
+        (``NEXT_ROW_*``, ``MULTIPLE``), so a row set to one of those feeds another
+        row rather than an output. See ``docs/protocol.md`` for which are confirmed
+        real.
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        chain.out_portid = out_portid
+        return self._t.send(msg)
+
+    SPLITTER_AB = 10000
+    MIXER = 11000
+
+    def set_splitter_param(self, row: int, param, value: float = None, real=None,
+                           scene=None, promote: bool = True):
+        """Set a Splitter parameter on ``row`` (``LEVEL TO A``, ``LEVEL TO B``...).
+
+        The splitter lives in ``chain.splitter[]``, which neither :meth:`set_param`
+        (``models[]``) nor :meth:`set_lane_output` (``output_control[]``) can reach.
+        Model ``10000``, "Splitter AB".
+
+        Takes a parameter name or wire index, ``value`` as normalized 0..1 or
+        ``real`` in the parameter's own units, and ``scene`` for a per-scene value -
+        all exactly as :meth:`set_param` does.
+        """
+        raise NotImplementedError(
+            "the splitter does not accept host parameter writes. Tried on hardware "
+            "with the hash, without it, on a level (LEVEL TO A) and on a switch "
+            "(STEREO): every write saved and read back unchanged, while the very "
+            "same shape against chain.mixer[] works. The mixer is what factory "
+            "presets use to build scenes, so set_mixer_param is probably what you "
+            "want. If you find a shape that works, please reopen this - see "
+            "docs/protocol.md."
+        )
+
+    def set_mixer_param(self, row: int, param, value: float = None, real=None,
+                        scene=None, promote: bool = True):
+        """Set a Mixer parameter on ``row`` (``LEVEL A``, ``LEVEL B``, ``PAN A``...).
+
+        The mixer lives in ``chain.mixer[]``. Model ``11000``, "Mixer".
+
+        This is how factory presets build scenes without bypassing anything:
+        ``LEVEL A`` and ``LEVEL B`` arrive with ``scene_mode`` already set, and each
+        scene raises one path while muting the other. Factory "Darkglass AO900 1"
+        does exactly that across two rows to give eight scenes four amp paths, so a
+        library that cannot write the mixer cannot reproduce that preset's scene
+        behaviour.
+
+        Same call shape as :meth:`set_param`, including ``scene``.
+        """
+        return self._set_sub_param("mixer", self.MIXER, row, param,
+                                   value, real, scene, promote)
+
+    def _set_sub_param(self, collection: str, model_hash: int, row: int, param,
+                       value, real, scene, promote):
+        """Shared body for the splitter/mixer/lane-output style collections."""
+        index = param
+        if isinstance(param, str) or real is not None:
+            model = self.catalog[model_hash]
+            spec = (model.parameter(param) if isinstance(param, str)
+                    else model.parameters[param])
+            index = spec.index
+            if real is not None:
+                value = spec.to_normalized(real)
+        if value is None:
+            raise TypeError(
+                f"set_{collection}_param needs value= (0..1) or real= (own units)")
+        if scene is not None:
+            if promote:
+                self._sub_param_scene_mode(collection, model_hash, row, index, True)
+            self.switch_scene(scene)
+        return self._t.send(
+            self._sub_param_message(collection, model_hash, row, index, value=value))
+
+    def _sub_param_scene_mode(self, collection, model_hash, row, index, enabled):
+        return self._t.send(
+            self._sub_param_message(collection, model_hash, row, index,
+                                    scene_mode=enabled))
+
+    def _sub_param_message(self, collection, model_hash, row, index,
+                           value=None, scene_mode=None):
+        """Build a row-keyed Grid update against splitter[]/mixer[].
+
+        The flag and a value must never travel together - the device would treat
+        the message as a plain value write and drop the flag (see
+        :meth:`set_param_scene_mode`).
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        model_msg = getattr(chain, collection).add()
+        model_msg.hash = model_hash
+        prm = model_msg.params.add()
+        prm.index = index
+        if scene_mode is not None:
+            prm.scene_mode = scene_mode
+        if value is not None:
+            prm.param_values.add().float_value = value
+        return msg
+
     def set_lane_output(self, row: int, param, value: float = None, real=None,
                         scene=None, promote: bool = True):
         """Set a Lane Output Control parameter on ``row``.
@@ -768,6 +929,7 @@ class QuadCortex:
         position,
         name: str,
         instrument: int = Instrument.NONE,
+        default_scene=None,
         confirm: bool = False,
         confirm_timeout: float = 20.0,
     ):
@@ -775,6 +937,12 @@ class QuadCortex:
 
         ``position`` is either the linear slot index or the slot name shown on
         the unit (``"30A"``). Saving OVERWRITES whatever occupies that slot.
+
+        ``default_scene`` sets which scene the preset comes up in. There is no
+        field for it in the File message: the device records whichever scene is
+        ACTIVE at save time, so this switches to that scene first and the saved
+        preset's ``default_scene`` reads back accordingly. Note the side effect -
+        the unit is left on that scene.
 
         **The device may not use the name you asked for.** If the setlist already
         contains a preset of that name, it de-duplicates: the base is truncated as
@@ -795,6 +963,9 @@ class QuadCortex:
         exactly ``{folder{key: "/media/p4/Presets/My Presets",
         is_factory: false, files{index: 220, name: ..., instrument: 2}}}``.
         """
+        if default_scene is not None:
+            # No field carries this; the device takes the active scene at save time.
+            self.switch_scene(default_scene)
         msg = pa.FileMessage(type=0)
         msg.folder.key = setlist_path
         msg.folder.is_factory = False
@@ -936,13 +1107,23 @@ def slot_to_position(slot: str) -> int:
     Confirmed by capture: the wire ``position`` is zero-based
     ``(bank - 1) * 8 + letter`` with A=0..H=7; recalling "28C" sent 218 and
     saving to "28E" sent 220.
+
+    A zero-padded bank is accepted (``"01A"`` and ``"1A"`` are the same slot).
+    Note that :func:`position_to_slot` returns the UNPADDED form by default,
+    because that is what the unit displays - so comparing its output against a
+    padded string never matches. Compare linear positions instead, or ask for
+    ``position_to_slot(pos, pad=True)``.
     """
     slot = slot.strip().upper()
     if len(slot) < 2 or not slot[:-1].isdigit() or slot[-1] not in "ABCDEFGH":
         raise ValueError(f"slot must look like '28C' (bank number + letter A-H): {slot!r}")
     bank = int(slot[:-1])
-    if bank < 1:
-        raise ValueError(f"bank must be >= 1: {slot!r}")
+    if not 1 <= bank <= BANKS:
+        # A setlist is exactly 256 slots, so bank 33 does not exist. Accepting it
+        # silently produced a position of 256, the device ignored the save, and the
+        # failure surfaced much later as a listing that never showed the preset.
+        raise ValueError(
+            f"bank must be 1 to {BANKS} (a setlist holds {BANKS * 8} slots): {slot!r}")
     return (bank - 1) * 8 + (ord(slot[-1]) - ord("A"))
 
 
@@ -968,16 +1149,30 @@ def input_chain_rows(p: preset.BinaryPreset, from_port: int = Input.INPUT_1) -> 
             rows.append(chain.row if chain.HasField("row") else i)
     return rows
 
-def position_to_slot(position: int) -> str:
+BANKS = 32
+SLOTS_PER_BANK = 8
+SETLIST_SLOTS = BANKS * SLOTS_PER_BANK
+
+
+def position_to_slot(position: int, pad: bool = False) -> str:
     """Turn a linear slot index into the slot name shown on the unit.
 
     The inverse of :func:`slot_to_position`: ``218 -> "28C"``. Anything reporting
     results to a person wants this, because the unit talks in slot names while the
     wire talks in indices.
+
+    The default output is UNPADDED (``0 -> "1A"``), matching what the unit
+    displays. `slot_to_position` also accepts the padded ``"01A"``, so the two are
+    not symmetric: comparing this output against a padded string silently never
+    matches, and the usual symptom is a listing wait that times out on a save that
+    actually worked. Either pass ``pad=True`` for ``"01A"``, or - better - compare
+    linear positions and avoid the question.
     """
     position = int(position)
-    if position < 0:
-        raise ValueError(f"slot position cannot be negative: {position}")
-    bank, letter = divmod(position, 8)
-    return f"{bank + 1}{'ABCDEFGH'[letter]}"
+    if not 0 <= position < SETLIST_SLOTS:
+        raise ValueError(
+            f"slot position must be 0 to {SETLIST_SLOTS - 1}: {position}")
+    bank, letter = divmod(position, SLOTS_PER_BANK)
+    return f"{bank + 1:02d}{'ABCDEFGH'[letter]}" if pad else \
+           f"{bank + 1}{'ABCDEFGH'[letter]}"
 
