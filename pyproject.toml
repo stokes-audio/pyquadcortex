@@ -64,7 +64,7 @@ include = [
   "/pyquadcortex",
   "/tests",
   "/examples",
-  "/scripts/compile_protos.sh",
+  "/scripts",
   "/protocol/proto",
   "/readme.md",
   "/LICENSE",
