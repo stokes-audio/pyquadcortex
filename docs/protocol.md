@@ -739,9 +739,18 @@ Padding `param_values` up to a scene index is actively destructive: the entries
 below it carry protobuf defaults, the device reads index 0, and the parameter ends
 up **0.0 in every scene**. `set_param` therefore refuses a non-zero `scene`.
 
+**A bypass update must not carry a `chains` element.** Sending the same
+`bypass{row, colBypass{...}}` group with an otherwise-empty `chains{row}` beside it
+made the device ignore the whole message: nothing changed in any scene. Removing
+the chains element and sending only the bypass group applied it immediately. So a
+sparse update should carry exactly the one thing it means to change - an empty
+sibling element is not neutral. (Observed as a controlled A/B, twice.)
+
 **Bypass is different, and per-scene bypass DOES work** - but not by index. The
 device applies `sceneBypass[0]` to whichever scene is **active** and ignores any
-entry beyond it. So to bypass a block in one scene, switch to that scene and write
+entry beyond it. Re-verified in a controlled run with the active scene set
+explicitly rather than inferred: an index-3 `true` did not reach scene D, while
+index 0's default did reach the active scene. So to bypass a block in one scene, switch to that scene and write
 index 0; ordering over the pipe is enough, with no settle delay needed.
 `set_bypass(scene=...)` does exactly that. Only blocks whose `ColBypass.sceneMode`
 is set follow scenes at all (see [7.4](#74-scenes)).
