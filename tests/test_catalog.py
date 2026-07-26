@@ -141,3 +141,38 @@ def test_accepts_uncompressed_or_bare_xml_payloads():
     plain_tar = gzip.decompress(make_payload())
     assert catalog.parse_model_repo(plain_tar)[1].name == "Myth Drive"
     assert catalog.parse_model_repo(SAMPLE_XML.encode())[1].name == "Myth Drive"
+
+
+# -- unit conversion ----------------------------------------------------------
+# Confirmed on hardware: the wire carries a normalized 0..1 float. Sending 1.0
+# to the VCA Comp's THRESHOLD (catalog range -60..+12 dB) made the unit display
+# +12.0 dB, so normalized 1.0 maps to the parameter's maximum.
+
+
+def test_parameter_converts_real_units_to_normalized(cat):
+    thr = catalog.Parameter(index=0, name="THRESHOLD", minimum=-60.0,
+                            maximum=12.0, default=-40.0, units="dB")
+    assert thr.to_normalized(12.0) == pytest.approx(1.0)
+    assert thr.to_normalized(-60.0) == pytest.approx(0.0)
+    assert thr.to_normalized(-24.0) == pytest.approx(0.5)
+
+
+def test_parameter_converts_normalized_back_to_real_units(cat):
+    thr = catalog.Parameter(index=0, name="THRESHOLD", minimum=-60.0,
+                            maximum=12.0, default=-40.0, units="dB")
+    assert thr.to_real(1.0) == pytest.approx(12.0)
+    assert thr.to_real(0.0) == pytest.approx(-60.0)
+    assert thr.to_real(0.5) == pytest.approx(-24.0)
+
+
+def test_real_unit_conversion_clamps_out_of_range(cat):
+    thr = catalog.Parameter(index=0, name="THRESHOLD", minimum=-60.0,
+                            maximum=12.0, default=-40.0, units="dB")
+    assert thr.to_normalized(999.0) == pytest.approx(1.0)
+    assert thr.to_normalized(-999.0) == pytest.approx(0.0)
+
+
+def test_degenerate_range_does_not_divide_by_zero(cat):
+    flat = catalog.Parameter(index=0, name="X", minimum=5.0, maximum=5.0, default=5.0)
+    assert flat.to_normalized(5.0) == 0.0
+    assert flat.to_real(1.0) == 5.0

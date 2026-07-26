@@ -51,6 +51,25 @@ class Parameter:
     type: str = ""
     steps: int | None = None
 
+    def to_normalized(self, real: float) -> float:
+        """Convert a value in this parameter's own units to the wire's 0..1.
+
+        Confirmed on hardware: the wire carries a normalized float. Sending 1.0
+        to a THRESHOLD whose catalog range is -60..+12 dB made the unit read
+        +12.0 dB. Values outside the range are clamped.
+        """
+        span = self.maximum - self.minimum
+        if span == 0:
+            return 0.0
+        return min(1.0, max(0.0, (real - self.minimum) / span))
+
+    def to_real(self, normalized: float) -> float:
+        """Convert a wire 0..1 value back into this parameter's own units."""
+        span = self.maximum - self.minimum
+        if span == 0:
+            return self.minimum
+        return self.minimum + min(1.0, max(0.0, normalized)) * span
+
 
 @dataclass(frozen=True)
 class Model:

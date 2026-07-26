@@ -412,7 +412,8 @@ class QuadCortex:
         return self._t.send(msg)
 
     def set_param(self, row: int, column: int, param_index=None,
-                  value: float = 0.0, scene: int = 0, param=None, model=None):
+                  value: float = 0.0, scene: int = 0, param=None, model=None,
+                  real=None):
         """Set one block parameter on the grid (row/column-keyed sparse update).
 
         Confirmed shape: a knob change streams
@@ -429,8 +430,26 @@ class QuadCortex:
         and not every one is a visible knob - a cab's parameters are internal
         ``ir selector`` entries, so writing index 0 changes stored data and
         moves nothing on screen.
+
+        ``value`` is the normalized 0..1 the wire carries. Pass ``real=``
+        instead to give the value in the parameter's OWN units (dB, ms, Hz...)
+        and have it converted using the catalog's range - that needs ``param``
+        and ``model`` so the range is known::
+
+            qc.set_param(row=0, column=1, param="THRESHOLD", real=-20, model=comp)
         """
-        if param is not None:
+        if real is not None:
+            if param is None or model is None:
+                raise TypeError(
+                    "real= needs param= and model= so the parameter's range is "
+                    "known; pass value= for a normalized 0..1 float"
+                )
+            resolved = model if hasattr(model, "parameter") else self.catalog[int(model)]
+            spec = (resolved.parameter(param) if isinstance(param, str)
+                    else resolved.parameters[param])
+            param_index = spec.index
+            value = spec.to_normalized(real)
+        elif param is not None:
             param_index = self._resolve_param_index(param, model)
         if param_index is None:
             raise TypeError("set_param needs either param_index or param=<name> with model=")

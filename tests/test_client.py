@@ -608,3 +608,21 @@ def _sample_repo_payload():
     from tests.test_catalog import make_payload
 
     return make_payload()
+
+
+def test_set_param_accepts_a_value_in_real_units():
+    # Confirmed on hardware: the wire is normalized 0..1 (sending 1.0 to a
+    # -60..+12 dB THRESHOLD read +12.0 dB on the unit). real= converts through
+    # the catalog range, so callers can speak dB instead of fractions.
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    comp = qc._catalog[5005]          # THRESHOLD spans 0..1 in the fixture
+    qc.set_param(row=0, column=1, param="THRESHOLD", real=0.25, model=comp)
+    param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert param.param_values[0].float_value == pytest.approx(0.25)
+
+
+def test_set_param_real_units_require_param_and_model():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError):
+        qc.set_param(row=0, column=1, real=-20)
