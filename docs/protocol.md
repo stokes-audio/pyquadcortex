@@ -880,7 +880,68 @@ visually on the device's own screen.
 | `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | works, but asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
 | `write_preset` | `Grid{UPDATE, preset}` | read-back | low-level primitive; applies ONLY row/column-keyed elements. A full recalled preset written back does NOTHING. Use the keyed wrappers |
-| `GridMove` | `GridMove{move{from_col, to_col, is_drop}, grid{rows{modelIds} x4}}` | captured only | observed in a Cortex Control session; no client method, not driven host-to-device by this library |
+| `set_block` | `Grid{UPDATE, preset{chains{row, models{column, hash}}}}` | read-back + on-unit | creates a block in an empty cell, replaces one in an occupied cell; the same shape the device broadcasts when a block is added on the unit |
+| `remove_block` | `Grid{action: DELETE, preset{chains{row, models{column, hash: 0}}}}` | read-back + on-unit | the ACTION marks the removal; an UPDATE carrying `hash: 0` is transmitted but ignored |
+| `catalog` | `ModelRepo{READ}` then `ModelRepo{model_repo_payload}` | read-back | payload is gzip(tar(ModelRepo.xml)): the unit's full block catalog |
+| `GridMove` | `GridMove{move{from_col, to_col, is_drop}, grid{rows{modelIds} x4}}` | captured only | observed in a Cortex Control session; no client method, not driven host-to-device by this library. Its `grid` snapshot is ADVISORY - replaying it with a cell zeroed does NOT delete a block, and the device echoes back only the `move` element |
+
+## Grid blocks
+
+A grid cell holds a model id (`BinaryPreset.Model.hash`); `0` means empty. Both
+edits use the row/column-keyed sparse `Grid` update, and the ACTION is what
+distinguishes them:
+
+- **Create or replace** - `Grid{UPDATE, chains{row, models{column, hash}}}`.
+  The device makes no distinction between filling an empty cell and overwriting
+  an occupied one.
+- **Remove** - the same shape with `action: DELETE`. Sending an UPDATE with
+  `hash: 0` does nothing: the zero really is transmitted (`hash` sits in a
+  proto3 oneof, so it has explicit presence), the firmware simply treats a zero
+  hash on an update as "no model specified".
+
+Both were confirmed twice over: driven from the host with a read-back, and by
+watching the device's own broadcast when the same edit is made on the unit -
+deleting a block on the touchscreen emits exactly
+`Grid{action: DELETE, chains{row: 0, models{column: 2, hash: 0}}}`.
+
+Save the grid afterwards to keep the change, as with any other grid edit.
+
+## The model catalog (ModelRepo)
+
+`ModelRepo` is fetched during the connect burst as a readiness gate, but its
+payload is the device's whole block catalog: **gzip(tar(ModelRepo.xml))**, about
+46 KB compressed and 557 KB expanded on the observed unit.
+
+The XML is `<Models><Category id name><Model id name .../></Category></Models>`.
+Two things make it valuable:
+
+- **`Model/@id` IS the wire hash.** Ids are globally unique rather than
+  per-category counters: category 4 (Equalizer) holds 4000-4007, category 21
+  (Cabsim Bass) holds 21001-21009. So hash 21003 resolves directly to "810
+  Amped VT Aln 70s (M)".
+- **`<Parameter>` children are in wire-index order**, each with `min`, `max`,
+  `defaultValue` and `units`. This is what gives a parameter index meaning, and
+  it explains a puzzle from earlier work: writing index 0 of a cab moved no
+  visible knob because a cab's only parameters are internal `ir selector`
+  entries.
+
+Parameter values on the wire are **normalized 0..1**, confirmed on hardware:
+sending `1.0` to a `THRESHOLD` whose catalog range is -60..+12 dB made the unit
+display +12.0 dB.
+
+Attributes that classify a model:
+
+| Attribute | Meaning |
+|---|---|
+| `sku`, `plugin_id` | purchasable plugin content (the Archetype models); a given unit may not have it |
+| `hidden`, `internal` | not user-facing; `hidden` also appears on whole categories |
+| `replaces` | this model supersedes the listed id(s). Both stay in the catalog and they can share a display name - there are two "Graphic-9" equalizers, 4005 replacing 4002 |
+
+Because the catalog comes FROM the device it also covers Neural Captures
+(categories 14 and 20), which are user content in slot-numbered ids: the same id
+means a different capture on a different unit. That is why the library ships
+generated constants only for factory content (412 of the 533 models on the
+observed unit) and resolves everything else at runtime.
 
 ## Open questions
 

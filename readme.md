@@ -108,6 +108,7 @@ These are all methods on the object `connect()` returns.
 | **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(row, column, param_index, value)`, `set_bypass(row, column, bypassed)` |
+| **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `catalog` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 
@@ -125,6 +126,42 @@ Two things worth knowing:
 - **Saving may rename.** If the setlist already holds a preset of that name, the
   device appends a `_N` suffix (trimming the base to fit). Read the slot back if
   the final name matters.
+
+### Blocks and the model catalog
+
+A grid cell holds a block. `set_block()` fills an empty cell or replaces an
+occupied one, and `remove_block()` clears it:
+
+```python
+from pyquadcortex import models
+
+qc.read_preset(Setlist.FACTORY, "27A")                 # load it onto the grid
+qc.set_block(row=0, column=2, model=models.GuitarOverdrive.CHIEF_DS1)
+qc.remove_block(row=0, column=5)
+qc.save_current_preset(Setlist.USER, "30A", "My Patch")
+```
+
+`pyquadcortex.models` has constants for the **412 factory blocks** every unit
+has, grouped by category. Anything else - purchased plugin models, and the Neural
+Captures you made yourself - has ids that differ per device, so look those up on
+the connected unit through `qc.catalog`:
+
+```python
+qc.catalog.find("My Capture").id           # by name
+qc.catalog[5005].name                      # 'VCA Comp (M)'
+qc.catalog.by_category("Bass Amplifier")   # browse
+```
+
+The catalog also knows each block's knobs, so parameters can be set by name, and
+in their own units rather than as a 0..1 fraction:
+
+```python
+comp = qc.catalog[5005]
+qc.set_param(row=0, column=1, param="THRESHOLD", real=-20, model=comp)  # dB
+```
+
+That is worth preferring: parameter indices are positional, and not every index
+is a visible knob (a cab's are internal `ir selector` entries).
 
 ## Command line
 
