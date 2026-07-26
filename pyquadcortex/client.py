@@ -11,6 +11,13 @@ The client deliberately knows NOTHING about hidapi, HID reports, or the framing
 layer: it only speaks protobuf messages. That keeps this layer testable with a
 fake transport and keeps all wire concerns in ``framing``/``transport``.
 
+**Rows and columns are ZERO-BASED; the unit displays rows 1 to 4.** So ``row=0``
+is the top row on screen, and ``row=2`` is the one labelled 3. Getting this wrong
+is quiet rather than loud - an edit lands on a real row, just not the one intended,
+and it reads back perfectly. When a change is meant to be audible, check which row
+actually reaches a physical output: ``chain.out_portid`` values 16 to 19 are
+internal grid routes, not jacks.
+
 Field semantics were confirmed against real Cortex Control 4.0.1 sessions:
 session connect, preset recall (user AND factory setlists), scene switch, grid
 bypass/param writes, Save As, delete, and move are all reproduced verbatim from
@@ -505,6 +512,8 @@ class QuadCortex:
         :meth:`set_param` sequences that for you when you name a scene.
 
         Save the grid afterwards to keep it.
+
+        Rows and columns are zero-based; the unit displays rows 1 to 4.
         """
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()

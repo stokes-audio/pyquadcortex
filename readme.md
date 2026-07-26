@@ -115,6 +115,14 @@ These are all methods on the object `connect()` returns.
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 
+**Rows and columns are zero-based, and the unit displays rows 1 to 4.** `row=0` is
+the top row on screen and `row=2` is the one labelled 3. This matters more than it
+looks: an edit to the wrong row still succeeds and still reads back correctly, so
+nothing tells you. If the change is meant to be audible, check which row actually
+reaches an output - `out_portid` values 16 to 19 are internal grid routes rather
+than physical jacks, and a lane whose output feeds the next row can be muted without
+silencing anything.
+
 Presets live in a setlist (`Setlist.USER` or `Setlist.FACTORY`). Identify one by
 **name** with `find_preset()`, or by the **slot name shown on the unit** (`"28C"`),
 or by linear index if you have it. Scenes are `Scene.A` through `Scene.H`; inputs,

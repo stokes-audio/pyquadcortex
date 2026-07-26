@@ -27,6 +27,14 @@ by hand on the unit.
   **`set_lane_output_scene_mode(row, param_index, enabled)`** for explicit control
   over whether a parameter follows scenes at all.
 
+### Documentation
+
+- **Rows and columns are zero-based, and the unit labels rows 1 to 4.** This was
+  never stated, and getting it wrong is silent: the edit lands on a real row and
+  reads back perfectly, just not the row intended. Also noted that `out_portid` 16
+  to 19 are internal grid routes rather than physical outputs, so a lane can be
+  muted without silencing anything that leaves the unit.
+
 ### How it turned out to be possible
 
 Reported as a dead end, and it was not - but only just. Three facts had to line up,

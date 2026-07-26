@@ -769,6 +769,13 @@ index 0; ordering over the pipe is enough, with no settle delay needed.
 `set_bypass(scene=...)` does exactly that. Only blocks whose `ColBypass.sceneMode`
 is set follow scenes at all (see [7.4](#74-scenes)).
 
+**Rows and columns are zero-based on the wire, and the unit's screen labels rows 1
+to 4.** `chains[0]` is the top row. Also worth checking before assuming an edit is
+audible: `out_portid` 16 to 19 are internal grid-routing states rather than physical
+outputs, so a lane can be muted while the signal still leaves the unit through
+another row. In factory "Brit 2203", row 0 has `out_portid: 16` (into the next row)
+and row 2 has `19` (MULTIPLE, the actual Multi-Out).
+
 **Every row reports all 8 column slots.** Empty ones arrive as `Model` entries
 whose `hash` is absent or zero, so `len(chain.models)` is 8 for every row -
 including entirely empty rows - and is not a block count. The same padding applies
