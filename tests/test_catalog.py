@@ -43,6 +43,10 @@ SAMPLE_XML = """<?xml version="1.0" ?><Models>
 <Category id="22" name="Internal Routing">
   <Model blob="hhh" id="22000" name="Router" internal="true"/>
 </Category>
+<Category id="24" name="Filter">
+  <Model blob="iii" id="24003" name="Envelope Filter"/>
+  <Model blob="jjj" id="24006" name="Envelope Filter" replaces="24003"/>
+</Category>
 </Models>"""
 
 
@@ -111,7 +115,7 @@ def test_plain_models_are_factory(cat):
 
 def test_factory_models_helper_returns_only_factory(cat):
     ids = {m.id for m in cat.factory_models()}
-    assert ids == {1, 5005}
+    assert ids == {1, 5005, 24003, 24006}
 
 
 def test_find_by_name_is_case_insensitive_and_exact(cat):
@@ -126,8 +130,9 @@ def test_by_category_groups_models(cat):
 
 
 def test_catalog_is_iterable_and_sized(cat):
-    assert len(cat) == 8
-    assert {m.id for m in cat} == {1, 30, 31, 5005, 14000, 20000, 19000, 22000}
+    assert len(cat) == 10
+    assert {m.id for m in cat} == {1, 30, 31, 5005, 14000, 20000, 19000, 22000,
+                                   24003, 24006}
 
 
 def test_missing_model_raises_keyerror(cat):
@@ -176,3 +181,27 @@ def test_degenerate_range_does_not_divide_by_zero(cat):
     flat = catalog.Parameter(index=0, name="X", minimum=5.0, maximum=5.0, default=5.0)
     assert flat.to_normalized(5.0) == 0.0
     assert flat.to_real(1.0) == 5.0
+
+
+# -- superseded models --------------------------------------------------------
+# Some models are replaced by newer ones carrying the SAME display name (the
+# catalog has two "Graphic-9" equalizers, 4005 replaces=4002). The `replaces`
+# attribute is what tells them apart, and it decides which one earns the clean
+# generated constant name.
+
+
+def test_replaces_is_parsed_onto_the_replacement(cat):
+    assert cat[24006].replaces == (24003,)
+    assert cat[24003].replaces == ()
+
+
+def test_the_replaced_model_is_marked_superseded(cat):
+    assert cat[24003].superseded is True
+    assert cat[24006].superseded is False
+    assert cat[5005].superseded is False
+
+
+def test_superseded_models_are_still_factory_and_still_resolvable(cat):
+    # An old preset can still reference a superseded model, so reading must work.
+    assert cat[24003].is_factory is True
+    assert cat[24003].name == "Envelope Filter"

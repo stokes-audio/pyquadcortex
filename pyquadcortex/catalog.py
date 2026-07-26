@@ -24,7 +24,7 @@ import gzip
 import io
 import tarfile
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # Categories holding Neural Captures. These are user content: the ids are slots,
 # so the same id means a different capture on a different unit (or after the
@@ -86,6 +86,14 @@ class Model:
     hidden: bool = False
     internal: bool = False
     category_hidden: bool = False
+    #: Ids of older models this one supersedes (the XML ``replaces`` attribute).
+    replaces: tuple[int, ...] = ()
+    #: True if a NEWER model replaces this one. Superseded models stay in the
+    #: catalog - old presets still reference them - but the replacement is the
+    #: one you want when building a new chain, and it is the one that earns the
+    #: clean generated constant name (the two "Graphic-9" equalizers, 4005
+    #: replaces 4002, are why this matters).
+    superseded: bool = False
 
     @property
     def is_factory(self) -> bool:
@@ -237,5 +245,24 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 hidden=element.get("hidden") is not None,
                 internal=element.get("internal") is not None,
                 category_hidden=category_hidden,
+                replaces=_parse_replaces(element.get("replaces")),
             )
+
+    # Second pass: a model is superseded once some other model claims to replace
+    # it. Only knowable after everything is parsed.
+    replaced = {old for model in catalog.models.values() for old in model.replaces}
+    for model_id in replaced & catalog.models.keys():
+        catalog.models[model_id] = replace(catalog.models[model_id], superseded=True)
     return catalog
+
+
+def _parse_replaces(value: str | None) -> tuple[int, ...]:
+    """Parse a ``replaces`` attribute: one id, or several comma-separated."""
+    if not value:
+        return ()
+    ids = []
+    for part in value.split(","):
+        parsed = _as_int(part.strip())
+        if parsed is not None:
+            ids.append(parsed)
+    return tuple(ids)
