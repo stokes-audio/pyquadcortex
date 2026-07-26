@@ -119,3 +119,36 @@ def test_open_device_raises_device_not_found_when_hid_cannot_open(monkeypatch):
     monkeypatch.setitem(sys.modules, "hid", fake_hid)
     with pytest.raises(session.DeviceNotFoundError, match="Cortex Control"):
         session.open_device()
+
+
+def test_open_device_raises_device_not_found_on_the_real_hid_exception(monkeypatch):
+    """The `hid` package raises HIDException, which is NOT an OSError.
+
+    The sibling test above stubs hid to raise OSError, which is why it passed
+    while the real path was broken: `hid.HIDException` inherits straight from
+    Exception, so `except OSError` never fired and a raw traceback reached the
+    user instead of the guidance written for exactly this case. This is the most
+    common first-run failure there is, so it gets a test using the real
+    exception's shape.
+    """
+    import sys
+    import types
+
+    class HIDException(Exception):        # mirrors hid.HIDException's MRO
+        pass
+
+    assert not issubclass(HIDException, OSError), "premise of this test"
+
+    fake_hid = types.ModuleType("hid")
+    fake_hid.HIDException = HIDException
+
+    def explode(*a, **kw):
+        raise HIDException(
+            "unable to open device: No HID devices with requested VID/PID found"
+        )
+
+    fake_hid.Device = explode
+    monkeypatch.setitem(sys.modules, "hid", fake_hid)
+
+    with pytest.raises(session.DeviceNotFoundError, match="Cortex Control"):
+        session.open_device()

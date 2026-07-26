@@ -266,12 +266,18 @@ def test_set_param_sends_row_column_keyed_grid_update():
     assert abs(param.param_values[0].float_value - 0.4553) < 1e-6
 
 
-def test_set_param_targets_the_requested_scene_slot():
+def test_set_param_sends_exactly_one_param_value():
+    # This replaces a test that asserted param_values was "extended to index 2"
+    # for scene=2. The message was built exactly as intended - but the intent was
+    # wrong: the padding entries carried protobuf defaults, the device reads index
+    # 0, and so the parameter was zeroed in every scene. A construction test
+    # cannot catch that. See test_set_param_refuses_a_nonzero_scene.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(row=0, column=1, param_index=1, value=0.5, scene=2)
+    qc.set_param(row=0, column=1, param_index=1, value=0.5)
     param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
-    assert len(param.param_values) == 3          # extended to index 2
-    assert abs(param.param_values[2].float_value - 0.5) < 1e-6
+    assert len(param.param_values) == 1, "no padding entries may be emitted"
+    assert param.param_values[0].HasField("float_value")
+    assert abs(param.param_values[0].float_value - 0.5) < 1e-6
 
 
 def test_set_bypass_sends_row_column_keyed_grid_update():
@@ -289,12 +295,16 @@ def test_set_bypass_sends_row_column_keyed_grid_update():
     assert cb.sceneBypass[0].bypass is True
 
 
-def test_set_bypass_targets_the_requested_scene_slot():
+def test_set_bypass_never_pads_scene_bypass():
+    # Replaces a test asserting sceneBypass was padded to the scene index. That is
+    # not how the device reads it: only index 0 is honoured, applied to the ACTIVE
+    # scene, so padding wrote a default False to the wrong scene and did nothing to
+    # the intended one. See test_set_bypass_targets_a_scene_by_switching_to_it.
     qc = client.QuadCortex(FakeTransport())
     qc.set_bypass(row=0, column=4, bypassed=True, scene=1)
     cb = qc._t.sent[-1].preset.bypass[0].colBypass[0]
-    assert len(cb.sceneBypass) == 2
-    assert cb.sceneBypass[1].bypass is True
+    assert len(cb.sceneBypass) == 1
+    assert cb.sceneBypass[0].bypass is True
 
 
 def test_reroute_grid_input_sends_set_chain_input_per_matching_row():
@@ -626,3 +636,52 @@ def test_set_param_real_units_require_param_and_model():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError):
         qc.set_param(row=0, column=1, real=-20)
+
+
+# -- the per-scene write ceiling ----------------------------------------------
+
+
+def test_set_param_refuses_a_nonzero_scene():
+    # The device honours only param_values[0] and applies a write to all eight
+    # scenes. Padding up to a scene index put protobuf defaults at 0..N-1, so the
+    # device read a default and wrote 0.0 to the parameter in EVERY scene -
+    # silently destroying the value the caller meant to change one scene of.
+    # Refusing is the only honest behaviour until the protocol allows otherwise.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+
+    with pytest.raises(NotImplementedError, match="all eight scenes"):
+        qc.set_param(row=0, column=1, param_index=5, value=0.25, scene=3)
+    assert fake.sent == [], "nothing may reach the device"
+
+    # scene=0 is the real, working case and must still work.
+    qc.set_param(row=0, column=1, param_index=5, value=0.25, scene=0)
+    p = fake.sent[-1].preset.chains[0].models[0].params[0]
+    assert len(p.param_values) == 1
+    assert p.param_values[0].float_value == 0.25
+    assert p.param_values[0].HasField("float_value")
+
+
+def test_set_bypass_targets_a_scene_by_switching_to_it():
+    # Confirmed on hardware: the device applies sceneBypass[0] to whichever scene
+    # is ACTIVE, and ignores entries beyond index 0. So the old padding was doubly
+    # wrong - it wrote a default False to the active scene and did nothing to the
+    # scene asked for. Naming a scene therefore means: switch to it, then write
+    # index 0. Ordering over the pipe is enough; no settle delay is needed.
+    from pyquadcortex.enums import Scene
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+
+    qc.set_bypass(row=0, column=2, bypassed=True, scene=Scene.D)
+    assert isinstance(fake.sent[-2], pa.SceneMessage)
+    assert fake.sent[-2].selected_scene == 3
+    cb = fake.sent[-1].preset.bypass[0].colBypass[0]
+    assert len(cb.sceneBypass) == 1, "never pad; the device only reads index 0"
+    assert cb.sceneBypass[0].bypass is True
+
+    # With no scene named, act on whatever scene is active: no switch is sent.
+    fake.sent.clear()
+    qc.set_bypass(row=0, column=2, bypassed=False)
+    assert [type(m).__name__ for m in fake.sent] == ["GridMessage"]
+    assert len(fake.sent[0].preset.bypass[0].colBypass[0].sceneBypass) == 1

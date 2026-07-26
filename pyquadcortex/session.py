@@ -56,12 +56,19 @@ def open_device():
         dev = hid.device()
         dev.open(hid_ids.VENDOR_ID, hid_ids.PRODUCT_ID)
         return dev
-    except OSError as exc:
+    except Exception as exc:
+        # Deliberately broad. The `hid` package raises hid.HIDException, which
+        # inherits straight from Exception and NOT from OSError - so catching
+        # OSError did nothing on the very path this library takes, and a new user
+        # with no unit attached got a raw traceback instead of the guidance
+        # below. Every way of failing to open the device means the same thing to
+        # a caller, so they all become DeviceNotFoundError; the original is
+        # chained for anyone who needs the detail.
         raise DeviceNotFoundError(
             "could not open the Quad Cortex over USB. Check that: Cortex "
             "Control is quit (it holds the USB interface exclusively), the "
             "unit is connected by USB, and it has finished booting. "
-            f"(underlying error: {exc})"
+            f"(underlying error: {type(exc).__name__}: {exc})"
         ) from exc
 
 

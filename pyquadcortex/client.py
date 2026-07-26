@@ -453,6 +453,17 @@ class QuadCortex:
             param_index = self._resolve_param_index(param, model)
         if param_index is None:
             raise TypeError("set_param needs either param_index or param=<name> with model=")
+        if scene:
+            raise NotImplementedError(
+                "the device cannot set a parameter for one scene: it honours only "
+                "param_values[0] and applies the write to all eight scenes. "
+                f"scene={scene} would have padded indices 0..{scene - 1} with "
+                "protobuf defaults, and the device would have read one of those "
+                "and set the parameter to 0.0 in every scene. Omit scene= (or "
+                "pass 0) to change the value everywhere, which is all the "
+                "protocol offers. Per-scene BYPASS is a separate mechanism that "
+                "does work - see set_bypass."
+            )
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
         chain.row = row
@@ -460,9 +471,7 @@ class QuadCortex:
         model_msg.column = column
         p = model_msg.params.add()
         p.index = param_index
-        while len(p.param_values) <= scene:
-            p.param_values.add()
-        p.param_values[scene].float_value = value
+        p.param_values.add().float_value = value
         return self._t.send(msg)
 
     def _resolve_param_index(self, param, model) -> int:
@@ -517,21 +526,35 @@ class QuadCortex:
         model_msg.hash = 0
         return self._t.send(msg)
 
-    def set_bypass(self, row: int, column: int, bypassed: bool, scene: int = 0):
-        """Bypass/enable one block on the grid (row/column-keyed sparse update).
+    def set_bypass(self, row: int, column: int, bypassed: bool, scene=None):
+        """Bypass or enable one block on the grid (row/column-keyed sparse update).
 
-        Confirmed shape: ``Grid{UPDATE, preset{bypass{row,
-        colBypass{column, sceneBypass[scene]{bypass}}}}}``. Save the grid to
-        persist. Per-scene bypass is indexed by ``scene`` in ``sceneBypass``.
+        Shape: ``Grid{UPDATE, preset{bypass{row, colBypass{column,
+        sceneBypass{bypass}}}}}``. Save the grid afterwards to keep it.
+
+        Unlike parameters, bypass really is per scene - but not by index.
+        Confirmed on hardware: the device applies ``sceneBypass[0]`` to whichever
+        scene is ACTIVE and ignores any entry beyond it. So:
+
+        * without ``scene``, this changes the block in the currently active scene;
+        * with ``scene`` (a :class:`~pyquadcortex.enums.Scene`), the unit is first
+          switched to that scene, which is a visible side effect worth knowing
+          about - the unit is left sitting there.
+
+        Ordering over the pipe is enough for that pair; no settle delay is needed.
+
+        Blocks only follow scenes when their ``ColBypass.sceneMode`` is set. For a
+        block without it, bypass is a single global state and writing it changes
+        every scene at once, whatever the active scene is.
         """
+        if scene is not None:
+            self.switch_scene(scene)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         bp = msg.preset.bypass.add()
         bp.row = row
         cb = bp.colBypass.add()
         cb.column = column
-        while len(cb.sceneBypass) <= scene:
-            cb.sceneBypass.add()
-        cb.sceneBypass[scene].bypass = bypassed
+        cb.sceneBypass.add().bypass = bypassed
         return self._t.send(msg)
 
     def reroute_grid_input(self, p: preset.BinaryPreset, to_port: int,
