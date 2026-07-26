@@ -8,6 +8,43 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.4.0 - 2026-07-26
+
+**Per-scene parameter values.** A parameter can now hold a different value in each
+scene, which was the biggest functional gap: scripts could reproduce a preset's
+structure but not its scene behaviour, so anything performable had to be finished
+by hand on the unit.
+
+### Added
+
+- **`set_param(..., scene=Scene.D)`** writes one scene and leaves the other seven
+  alone, promoting the parameter to scene-following if it is not already.
+- **`set_lane_output(..., scene=Scene.E)`** does the same for the per-row Lane
+  Output Control, so a **silent scene** - one that mutes the rig without leaving
+  the preset - is now scriptable:
+  `qc.set_lane_output(row=0, param="VOLUME", value=0.0, scene=Scene.E)`
+- **`set_param_scene_mode(row, column, param_index, enabled)`** and
+  **`set_lane_output_scene_mode(row, param_index, enabled)`** for explicit control
+  over whether a parameter follows scenes at all.
+
+### How it turned out to be possible
+
+Reported as a dead end, and it was not - but only just. Three facts had to line up,
+each confirmed by writing, saving and reading back:
+
+- `param_values[0]` is applied to whichever scene is **active**. The index never
+  selected a scene, which is why writing a higher index only ever destroyed data.
+- Per-scene values are kept only for a parameter whose `scene_mode` is set.
+  Without it the parameter has ONE global value, so changing it appears in all
+  eight scenes - easily mistaken for "the write hit every scene", which is what
+  made this look impossible.
+- `scene_mode` **is** host-writable, but only in a message that carries nothing
+  else. Sent alongside a value it is silently dropped, which is why it looked
+  read-only.
+
+So the library issues three messages: the flag alone, a scene switch, then the
+value. No settle delay is needed between them.
+
 ## 0.3.0 - 2026-07-26
 
 Fixes from a review written while building a real preset-generation script against

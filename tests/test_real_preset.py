@@ -138,3 +138,78 @@ def test_recalled_chains_carry_no_explicit_row(real_preset):
     # written back does nothing: there is no row for the device to key on.
     for chain in real_preset.chains:
         assert not field_present(chain, "row")
+
+
+# -- per-scene parameter values (feature: writable per-scene values) ------------
+
+SCENE_FIXTURE = FIXTURE.parent / "scene_preset.bin"
+
+
+@pytest.fixture(scope="module")
+def scene_preset():
+    """A preset carrying real per-scene parameter structure.
+
+    Read off a device after using the library to mute one scene via the Lane
+    Output Control. The per-scene SHAPE is real - which parameters follow scenes,
+    and which scene differs - with the values themselves flattened to 0.5 (or 0.0
+    for the muted scene).
+    """
+    p = preset_pb.BinaryPreset()
+    p.ParseFromString(SCENE_FIXTURE.read_bytes())
+    return p
+
+
+def scene_following_params(p):
+    """(location, scene_mode, values) for parameters that follow scenes."""
+    out = []
+    for ci, chain in enumerate(p.chains):
+        for label, coll in (("models", chain.models),
+                            ("output_control", chain.output_control)):
+            for mi, model in enumerate(coll):
+                for pi, param in enumerate(model.params):
+                    if field_present(param, "scene_mode") and param.scene_mode:
+                        out.append(((ci, label, mi, pi), [
+                            pv.float_value if field_present(pv, "float_value") else None
+                            for pv in param.param_values]))
+    return out
+
+
+def test_the_device_really_stores_per_scene_parameter_values(scene_preset):
+    # The claim this feature rests on: a parameter with scene_mode set keeps eight
+    # independent values, and they can genuinely differ.
+    following = scene_following_params(scene_preset)
+    assert following, "the fixture must carry scene-following parameters"
+    varying = [(loc, vals) for loc, vals in following if len(set(vals)) > 1]
+    assert varying, "at least one must actually differ between scenes"
+    for _, vals in following:
+        assert len(vals) == 8, "eight scenes, always"
+
+
+def test_a_muted_scene_reads_back_as_zero_in_that_scene_only(scene_preset):
+    # The requester's use case: one scene silent, the rest untouched. Written with
+    # set_lane_output(param="VOLUME", value=0.0, scene=Scene.E).
+    lane = [(loc, vals) for loc, vals in scene_following_params(scene_preset)
+            if loc[1] == "output_control"]
+    assert lane, "the Lane Output Control parameter should follow scenes"
+    _, vals = lane[0]
+    zeros = [i for i, v in enumerate(vals) if v == 0.0]
+    assert len(zeros) == 1, f"exactly one scene silent, got {zeros}"
+    assert all(v != 0.0 for i, v in enumerate(vals) if i not in zeros)
+
+
+def test_scene_mode_is_what_distinguishes_per_scene_parameters(scene_preset):
+    # A parameter without scene_mode has one global value repeated eight times, so
+    # writing it looks like "all eight scenes changed" - which is how per-scene
+    # writes were first mistaken for impossible.
+    global_params = []
+    for chain in scene_preset.chains:
+        for model in chain.models:
+            for param in model.params:
+                if not (field_present(param, "scene_mode") and param.scene_mode):
+                    vals = [pv.float_value for pv in param.param_values
+                            if field_present(pv, "float_value")]
+                    if len(vals) == 8:
+                        global_params.append(vals)
+    assert global_params, "the fixture has ordinary, non-scene-following parameters"
+    for vals in global_params:
+        assert len(set(vals)) == 1, "a global parameter reads the same in every scene"

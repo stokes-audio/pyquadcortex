@@ -413,8 +413,8 @@ class QuadCortex:
         return self._t.send(msg)
 
     def set_param(self, row: int, column: int, param_index=None,
-                  value: float = 0.0, scene: int = 0, param=None, model=None,
-                  real=None):
+                  value: float = 0.0, scene=None, param=None, model=None,
+                  real=None, promote: bool = True):
         """Set one block parameter on the grid (row/column-keyed sparse update).
 
         Confirmed shape: a knob change streams
@@ -438,6 +438,29 @@ class QuadCortex:
         and ``model`` so the range is known::
 
             qc.set_param(row=0, column=1, param="THRESHOLD", real=-20, model=comp)
+
+        **Per-scene values.** Name a ``scene`` to change that scene alone::
+
+            qc.set_param(row=2, column=5, param_index=0, value=0.8, scene=Scene.D)
+
+        Three things had to line up for this, all confirmed on hardware:
+
+        1. The device honours ``param_values[0]`` against whichever scene is
+           **active** - the index is not a scene selector, so nothing is ever
+           padded.
+        2. It only keeps per-scene values for a parameter whose ``scene_mode`` is
+           set, so naming a scene promotes the parameter first (pass
+           ``promote=False`` to skip that if you know it is already set).
+        3. The device accepts **either** the flag **or** a value in one message,
+           never both: sent together, the flag is silently dropped. So this issues
+           the promotion, the scene switch, and the write as three messages.
+
+        Ordering over the pipe is enough; no settle delay is needed. Naming a
+        scene leaves the unit sitting on it, which is a visible side effect.
+
+        Without ``scene``, the write lands on the active scene - which for a
+        parameter that is not scene-following is its single global value, and so
+        appears in all eight scenes.
         """
         if real is not None:
             if param is None or model is None:
@@ -454,17 +477,10 @@ class QuadCortex:
             param_index = self._resolve_param_index(param, model)
         if param_index is None:
             raise TypeError("set_param needs either param_index or param=<name> with model=")
-        if scene:
-            raise NotImplementedError(
-                "the device cannot set a parameter for one scene: it honours only "
-                "param_values[0] and applies the write to all eight scenes. "
-                f"scene={scene} would have padded indices 0..{scene - 1} with "
-                "protobuf defaults, and the device would have read one of those "
-                "and set the parameter to 0.0 in every scene. Omit scene= (or "
-                "pass 0) to change the value everywhere, which is all the "
-                "protocol offers. Per-scene BYPASS is a separate mechanism that "
-                "does work - see set_bypass."
-            )
+        if scene is not None:
+            if promote:
+                self.set_param_scene_mode(row, column, param_index, True)
+            self.switch_scene(scene)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
         chain.row = row
@@ -473,6 +489,31 @@ class QuadCortex:
         p = model_msg.params.add()
         p.index = param_index
         p.param_values.add().float_value = value
+        return self._t.send(msg)
+
+    def set_param_scene_mode(self, row: int, column: int, param_index: int,
+                             enabled: bool = True):
+        """Make a block parameter follow scenes, or stop it following them.
+
+        A parameter only keeps per-scene values while ``scene_mode`` is set; until
+        then it has one global value. On the unit this is the long-press
+        assignment.
+
+        The flag must travel ALONE. A ``Grid`` update carrying both
+        ``scene_mode`` and a ``param_values`` entry is treated as a plain value
+        write and the flag is dropped - which is why this looked read-only.
+        :meth:`set_param` sequences that for you when you name a scene.
+
+        Save the grid afterwards to keep it.
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        model_msg = chain.models.add()
+        model_msg.column = column
+        prm = model_msg.params.add()
+        prm.index = param_index
+        prm.scene_mode = enabled
         return self._t.send(msg)
 
     def _resolve_param_index(self, param, model) -> int:
@@ -582,7 +623,8 @@ class QuadCortex:
 
     LANE_OUTPUT_CONTROL = 23000
 
-    def set_lane_output(self, row: int, param, value: float = None, real=None):
+    def set_lane_output(self, row: int, param, value: float = None, real=None,
+                        scene=None, promote: bool = True):
         """Set a Lane Output Control parameter on ``row``.
 
         Every grid row carries a Lane Output Control block - the VOLUME, PAN, MUTE
@@ -602,6 +644,11 @@ class QuadCortex:
         one into ``models`` (confirmed on hardware). Note the wire carries FIVE
         parameters here while the catalog documents four; index 4 is unidentified,
         so prefer naming the one you want.
+
+        Name a ``scene`` for a per-scene value, exactly as :meth:`set_param` does.
+        A silent scene - one that mutes the rig without leaving the preset - is::
+
+            qc.set_lane_output(row=0, param="VOLUME", value=0.0, scene=Scene.D)
         """
         index = param
         if isinstance(param, str) or real is not None:
@@ -613,6 +660,10 @@ class QuadCortex:
                 value = spec.to_normalized(real)
         if value is None:
             raise TypeError("set_lane_output needs value= (0..1) or real= (own units)")
+        if scene is not None:
+            if promote:
+                self.set_lane_output_scene_mode(row, index, True)
+            self.switch_scene(scene)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
         chain.row = row
@@ -621,6 +672,24 @@ class QuadCortex:
         prm = oc.params.add()
         prm.index = index
         prm.param_values.add().float_value = value
+        return self._t.send(msg)
+
+    def set_lane_output_scene_mode(self, row: int, param_index: int,
+                                   enabled: bool = True):
+        """Make a Lane Output Control parameter follow scenes.
+
+        The :meth:`set_param_scene_mode` of ``output_control``, and subject to the
+        same rule: the flag must travel alone. :meth:`set_lane_output` sequences it
+        for you when you name a scene.
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        oc = chain.output_control.add()
+        oc.hash = self.LANE_OUTPUT_CONTROL
+        prm = oc.params.add()
+        prm.index = param_index
+        prm.scene_mode = enabled
         return self._t.send(msg)
 
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,

@@ -721,23 +721,37 @@ all of them. In one observed preset, only 5 of the 32 grid positions had
 `sceneMode` set. Filter on `sceneMode` before comparing scenes, or drawing
 conclusions from a diff.
 
-**A parameter cannot be set for one scene. This is a hard ceiling.** The shape
-`params{index, param_values[scene]{float_value}}` reads as though it names a
-scene, and it does not. Established by controlled experiment, each round verified
-by save and read-back:
+**Per-scene parameter values ARE writable**, but the shape is nothing like it
+looks. `params{index, param_values[scene]{float_value}}` reads as though the index
+selects a scene. It does not, and three separate facts have to line up. All of
+this was established by controlled experiment, each round saved and read back:
 
-- A keyed parameter write persists, for both `chains[].models[]` and
-  `chains[].output_control[]`.
-- It **always applies to all eight scenes at once**.
-- Only `param_values[0]` is ever honoured. Filling all eight explicitly changes
-  nothing, even on a parameter whose `scene_mode` is already true.
-- `Param.scene_mode` is **not host-writable**: setting it leaves it false on
-  read-back, so a parameter cannot be promoted to scene-following.
-- Calling `switch_scene` first makes no difference.
+- **`param_values[0]` is applied to whichever scene is ACTIVE.** The index is not
+  a selector, so nothing should ever be padded. Entries past index 0 are ignored.
+- **Only a parameter whose `Param.scene_mode` is set keeps per-scene values.**
+  Without it the parameter has ONE global value, so writing it appears in all
+  eight scenes - which is easily mistaken for "the write hit every scene".
+- **`scene_mode` IS host-writable, but only when sent ALONE.** A `Grid` update
+  carrying both `scene_mode` and a `param_values` entry is treated as a plain
+  value write and the flag is silently dropped. Sent by itself, it sticks. This is
+  the long-press assignment the unit's own UI performs.
 
-Padding `param_values` up to a scene index is actively destructive: the entries
-below it carry protobuf defaults, the device reads index 0, and the parameter ends
-up **0.0 in every scene**. `set_param` therefore refuses a non-zero `scene`.
+So the sequence for a per-scene parameter value is three messages:
+
+```
+Grid{UPDATE, chains{row, models{column, params{index, scene_mode: true}}}}   # flag alone
+Scene{UPDATE, selected_scene: N}                                            # sit on the scene
+Grid{UPDATE, chains{row, models{column, params{index, param_values{value}}}}}
+```
+
+Ordering over the pipe is enough; no settle delay is needed. It works identically
+in `chains[].output_control[]`, so the Lane Output Control can hold a per-scene
+volume - which is how a "silent scene" that mutes without leaving the preset is
+built. `set_param(scene=...)` and `set_lane_output(scene=...)` issue exactly this.
+
+Padding `param_values` up to a scene index remains actively destructive: the
+entries below carry protobuf defaults, the device reads index 0, and the parameter
+ends up **0.0 in every scene**. Nothing in this library pads.
 
 **A bypass update must not carry a `chains` element.** Sending the same
 `bypass{row, colBypass{...}}` group with an otherwise-empty `chains{row}` beside it
@@ -954,13 +968,14 @@ visually on the device's own screen.
 | `list_presets` | `File{action: READ}` then `File{folder{files[] = ProductData}}` | read-back | factory listing gzipped; 256 slots; listings lag a few seconds after a `File` mutation |
 | `switch_scene` | `Scene{UPDATE, selected_scene}` | on-unit | zero-based |
 | `set_chain_input` / `reroute_grid_input` | `Grid{UPDATE, preset{chains{row, in_portid}}}` | read-back + on-unit | row-keyed; the only shape that persists input routing |
-| `set_param` | `Grid{UPDATE, preset{chains{row, models{column, params{index, param_values[scene]{float_value}}}}}}` | read-back | value round-trips 0.0 to 1.0; param index is positional; not every index is a visible knob |
+| `set_param` | `Grid{UPDATE, preset{chains{row, models{column, params{index, param_values{float_value}}}}}}` | read-back | value round-trips 0.0 to 1.0; param index is positional; not every index is a visible knob. Per-scene values via promote + switch_scene + write |
 | `set_bypass` | `Grid{UPDATE, preset{bypass{row, colBypass{column, sceneBypass[scene]{bypass}}}}}` | on-unit | block greyed out on the unit |
 | `set_scene_label` / `set_scene_color` | `SceneLabel` / `SceneColor{UPDATE, index, label/color}` | read-back | color is ARGB uint32; exact round-trip |
 | `copy_scene` | `SceneCopy{UPDATE, from_index, to_index, is_swap}` | read-back + on-unit | fully confirmed: `from_index` (copying B onto D produced B, not A), `is_swap` (scenes exchanged), and that the scene LABEL travels with the state. Cortex Control cannot copy a scene, so the shape came from the device's own broadcast when copying on the unit |
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the GRID; `preset_payload` is IGNORED for CREATE |
 | `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | works, but asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
+| `set_param_scene_mode` | `Grid{UPDATE, ..., params{index, scene_mode}}` (flag ALONE) | read-back | promotes a parameter to scene-following; a value in the same message voids it |
 | `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |
 | `write_preset` | `Grid{UPDATE, preset}` | read-back | low-level primitive; applies ONLY row/column-keyed elements. A full recalled preset written back does NOTHING. Use the keyed wrappers |

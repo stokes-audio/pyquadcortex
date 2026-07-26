@@ -641,25 +641,80 @@ def test_set_param_real_units_require_param_and_model():
 # -- the per-scene write ceiling ----------------------------------------------
 
 
-def test_set_param_refuses_a_nonzero_scene():
-    # The device honours only param_values[0] and applies a write to all eight
-    # scenes. Padding up to a scene index put protobuf defaults at 0..N-1, so the
-    # device read a default and wrote 0.0 to the parameter in EVERY scene -
-    # silently destroying the value the caller meant to change one scene of.
-    # Refusing is the only honest behaviour until the protocol allows otherwise.
+def test_set_param_writes_one_scene_by_promoting_then_switching():
+    """Per-scene parameter writes, confirmed on hardware, take three messages.
+
+    The device honours ``param_values[0]`` against whichever scene is ACTIVE, and
+    only on a parameter whose ``scene_mode`` is set. Crucially it accepts EITHER the
+    flag OR a value in one message, never both - sending them together silently
+    ignores the flag, which is why this looked impossible.
+    """
+    from pyquadcortex.enums import Scene
+
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
+    qc.set_param(row=2, column=5, param_index=0, value=0.8, scene=Scene.D)
 
-    with pytest.raises(NotImplementedError, match="all eight scenes"):
-        qc.set_param(row=0, column=1, param_index=5, value=0.25, scene=3)
-    assert fake.sent == [], "nothing may reach the device"
+    assert [type(m).__name__ for m in fake.sent] == [
+        "GridMessage", "SceneMessage", "GridMessage"], "promote, switch, write"
 
-    # scene=0 is the real, working case and must still work.
-    qc.set_param(row=0, column=1, param_index=5, value=0.25, scene=0)
-    p = fake.sent[-1].preset.chains[0].models[0].params[0]
+    promote = fake.sent[0].preset.chains[0].models[0].params[0]
+    assert promote.scene_mode is True
+    assert not promote.param_values, "the flag must travel ALONE or it is ignored"
+
+    assert fake.sent[1].selected_scene == 3
+
+    write = fake.sent[2].preset.chains[0].models[0].params[0]
+    assert not write.HasField("scene_mode"), "the value must travel alone too"
+    assert len(write.param_values) == 1, "never pad; index 0 means the active scene"
+    assert abs(write.param_values[0].float_value - 0.8) < 1e-6
+
+
+def test_set_param_without_a_scene_writes_the_active_scene_only():
+    # No scene named: one message, no promotion, no scene switch. On a parameter
+    # that is not scene-following this changes its single global value.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_param(row=0, column=1, param_index=5, value=0.25)
+    assert [type(m).__name__ for m in fake.sent] == ["GridMessage"]
+    p = fake.sent[0].preset.chains[0].models[0].params[0]
     assert len(p.param_values) == 1
-    assert p.param_values[0].float_value == 0.25
     assert p.param_values[0].HasField("float_value")
+
+
+def test_set_param_can_skip_promotion():
+    from pyquadcortex.enums import Scene
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_param(row=0, column=1, param_index=5, value=0.5, scene=Scene.B, promote=False)
+    assert [type(m).__name__ for m in fake.sent] == ["SceneMessage", "GridMessage"]
+
+
+def test_set_param_scene_mode_sends_the_flag_alone():
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_param_scene_mode(row=2, column=5, param_index=1, enabled=True)
+    prm = fake.sent[-1].preset.chains[0].models[0].params[0]
+    assert prm.scene_mode is True
+    assert not prm.param_values, "a value alongside the flag makes the device drop it"
+
+
+def test_set_lane_output_supports_per_scene_values():
+    from pyquadcortex.enums import Scene
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_lane_output(row=0, param=0, value=0.0, scene=Scene.D)
+    assert [type(m).__name__ for m in fake.sent] == [
+        "GridMessage", "SceneMessage", "GridMessage"]
+    promote = fake.sent[0].preset.chains[0].output_control[0]
+    assert promote.hash == 23000
+    assert promote.params[0].scene_mode is True
+    assert not promote.params[0].param_values
+    write = fake.sent[2].preset.chains[0].output_control[0].params[0]
+    assert len(write.param_values) == 1
+    assert write.param_values[0].float_value == 0.0
 
 
 def test_set_bypass_targets_a_scene_by_switching_to_it():

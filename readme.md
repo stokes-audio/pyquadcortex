@@ -129,10 +129,9 @@ Things worth knowing before you script against this:
 - **Saving may rename.** If the setlist already holds a preset of that name, the
   device appends a `_N` suffix (trimming the base to fit). Pass `confirm=True` to
   get back the name the device actually stored.
-- **A parameter cannot be set for one scene.** The device applies a parameter write
-  to all eight scenes at once, so `set_param` refuses a non-zero `scene`. Per-scene
-  **bypass** does work - `set_bypass(scene=Scene.C)` switches to that scene and
-  writes it, which leaves the unit sitting on that scene.
+- **Naming a scene leaves the unit on that scene.** `set_param(scene=...)`,
+  `set_lane_output(scene=...)` and `set_bypass(scene=...)` all work by switching to
+  the scene and writing, because that is what the device honours.
 - **`read_preset` recalls the slot**, so there is no side-effect-free way to
   inspect a preset, and no way to check a grid edit without saving it somewhere
   first. Verification workflows need a scratch slot.
@@ -178,6 +177,38 @@ qc.set_param(row=0, column=1, param="THRESHOLD", real=-20, model=comp)  # dB
 
 That is worth preferring: parameter indices are positional, and not every index
 is a visible knob (a cab's are internal `ir selector` entries).
+
+### Per-scene values
+
+Scenes are the Quad Cortex's performance feature, and a scene is more than which
+blocks are bypassed - a parameter can hold a different value in each one. Name a
+scene and the library does the rest:
+
+```python
+from pyquadcortex import Scene
+
+qc.read_preset(Setlist.FACTORY, "1A")                 # load it onto the grid
+
+# A delay that is wetter in scene C, and nowhere else.
+qc.set_param(row=2, column=5, param="MIX", real=45, model=delay, scene=Scene.C)
+
+# A silent scene: mute the rig without leaving the preset.
+qc.set_lane_output(row=0, param="VOLUME", value=0.0, scene=Scene.E)
+
+# Bypass follows scenes too.
+qc.set_bypass(row=0, column=2, bypassed=True, scene=Scene.B)
+
+qc.save_current_preset(Setlist.USER, "30A", "Scened Patch")
+```
+
+A parameter only keeps per-scene values once it is *scene-following*, which on the
+unit is the long-press assignment. Naming a scene does that promotion for you; pass
+`promote=False` if you know it is already set, or call
+`set_param_scene_mode(row, column, param_index)` yourself.
+
+Two things to expect: naming a scene **switches the unit to it**, and without a
+scene a write lands on whatever scene is active - which for a parameter that is not
+scene-following is its single global value, so it appears everywhere.
 
 ## Command line
 
