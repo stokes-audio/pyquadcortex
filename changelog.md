@@ -8,6 +8,28 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.9.0 - 2026-07-27
+
+### Added
+
+- Two new examples covering the newer API. **`inspect_preset.py`** is read-only and
+  prints a preset's blocks by name, its routing, where rows branch into parallel lanes,
+  and which parameters differ per scene - a good first thing to run.
+  **`build_chain.py`** builds a chain on an empty row: block, input, output, a parameter
+  in its own units, and a scene that silences the row. Both avoid bare numbers, and the
+  examples are now listed in the readme with what each one touches.
+- **[docs/capture.md](docs/capture.md)** - how to read the device's own broadcasts when
+  you need a message shape this library does not implement yet, including the pitfalls
+  that decide whether a capture is interpretable. Linked from the contributor guide.
+
+### Documentation
+
+- The docs described how several findings were arrived at, which is of no use to someone
+  using the library. Rewritten to state how the device behaves and what has been
+  verified against hardware. Where a constraint matters it is now stated as a constraint:
+  for instance `chain.splitter[]` is a read-only view whose writes are silently ignored,
+  which a caller needs to know, without the account of how that was discovered.
+
 ## 0.8.0 - 2026-07-27
 
 Field feedback from a couple of dozen sessions and several thousand writes.
@@ -39,9 +61,6 @@ Field feedback from a couple of dozen sessions and several thousand writes.
   disconnection, that only a full power-down recovers it, and that the link flaps for
   a couple of minutes afterwards in a way that looks identical to the fault. Framed as
   one user's field experience with the cause unknown, not as a diagnosis.
-- **No write pacing is needed**, recorded as a negative result: ~800 fire-and-forget
-  writes per run in tight loops ran fine, and write bursts were tested and exonerated
-  as a cause of the above. Nobody should add a throttle on a hunch.
 - **MIDI is the simpler route if you only need to switch presets or scenes** - it is
   manufacturer-documented and needs no USB session. This library is for creating and
   editing content, which MIDI cannot do.
@@ -62,19 +81,11 @@ Field feedback from a couple of dozen sessions and several thousand writes.
   thanks to the deliberate status-stage STALL.
 - `qcctl` gets this for free - it already goes through `connect()`.
 
-### What was measured, and what was not
+### Note
 
-The open question was whether an abandoned session leaks device-side state. Opening
-and abandoning 12 sessions, each with its own session id and full subscription set,
-produced **no observable degradation**: the seed push still arrived, subscriptions
-still fired, and read round trips took the same time. One slow handshake looked like
-a signal until handshake variance was characterised across clean sessions at
-2.03-3.80s, which puts it inside the noise.
-
-Whether the device supersedes old sessions, reaps them, or accumulates them was NOT
-established - there is no device state to read back. So this change is about matching
-the real client's behaviour, not about fixing a demonstrated fault, and no workaround
-was added for one.
+Whether an abandoned session leaves state behind on the device is not established -
+there is no device state to read back. This change matches Cortex Control's behaviour;
+it is not a fix for a known fault, and no workaround was added for one.
 
 ## 0.6.0 - 2026-07-27
 
@@ -82,29 +93,16 @@ Parallel routing is now fully writable, and the grid can be read.
 
 ### Added
 
-- **`set_splitter_param(row, param, ...)`** now works, with `scene=` like the others.
-  It writes **`chain.combined_splitter`**, not `chain.splitter` - a different field
-  entirely, which is why 0.5.0 concluded the splitter was unwritable. Six shapes against
-  `chain.splitter[]` had all read back unchanged; the legacy field turns out to be the
-  device's read-only view of the same state, so writing there fails silently instead of
-  erroring. Parameters are addressed by the **unified** model 10004's order (`TYPE`,
-  `STEREO`, `BALANCE`, `LEVEL TO A`, `LEVEL TO B`, `FREQUENCY`, `MODE`) whatever
-  type-specific id a preset reports.
+- **`set_splitter_param(row, param, ...)`**, with `scene=` like the others. It writes
+  `chain.combined_splitter`; the `chain.splitter[]` a preset exposes is a read-only view
+  of the same state, and writes addressed there are silently ignored. Parameters are
+  addressed by the unified model 10004's order (`TYPE`, `STEREO`, `BALANCE`, `LEVEL TO
+  A`, `LEVEL TO B`, `FREQUENCY`, `MODE`) whatever type-specific id a preset reports.
 - **`splits(preset)`** reports where each row branches into a parallel lane and where
-  it rejoins, so grid topology no longer has to be guessed from which blocks happen to
-  line up. It reads `Chain.split_control_points`, whose `split` and `mix` fields have
-  **no presence** - which is why they looked absent and were missed twice, including by
-  this library's own `field_present` helper. Rows that do not branch report `-1` and
-  are omitted.
-
-### How it was found
-
-Six host-side guesses failed. The answer came from the device's own broadcast, captured
-while the splitter was dragged on the unit - the technique that previously cracked
-`SceneCopy` and block removal. Both times a feature has been written off as impossible
-in this project, it was reachable through a field nobody had tried, and both times the
-capture settled it in minutes. That is now recorded in `docs/protocol.md` as the thing
-to reach for when a write silently does nothing.
+  it rejoins, so grid topology can be read rather than inferred. It reads
+  `Chain.split_control_points`, whose `split` and `mix` fields have no presence - so
+  anything gating on `HasField` sees nothing and must read them directly. Rows that do
+  not branch report `-1` and are omitted.
 
 ## 0.5.0 - 2026-07-26
 
@@ -138,7 +136,7 @@ was verified on hardware by read-back.
 - `position_to_slot`'s output could not be compared against the padded form
   `slot_to_position` accepts. Documented, with comparing linear positions recommended.
 
-### Known limits, now documented rather than discovered the hard way
+### Known limits
 
 - **The splitter does not accept host writes.** Four shapes tried - with and without
   the model hash, on a level and on a switch - each saved and read back unchanged,
@@ -177,23 +175,19 @@ by hand on the unit.
   to 19 are internal grid routes rather than physical outputs, so a lane can be
   muted without silencing anything that leaves the unit.
 
-### How it turned out to be possible
+### How per-scene values work
 
-Reported as a dead end, and it was not - but only just. Three facts had to line up,
-each confirmed by writing, saving and reading back:
+Three things have to hold, and the library sequences them for you:
 
-- `param_values[0]` is applied to whichever scene is **active**. The index never
-  selected a scene, which is why writing a higher index only ever destroyed data.
-- Per-scene values are kept only for a parameter whose `scene_mode` is set.
-  Without it the parameter has ONE global value, so changing it appears in all
-  eight scenes - easily mistaken for "the write hit every scene", which is what
-  made this look impossible.
-- `scene_mode` **is** host-writable, but only in a message that carries nothing
-  else. Sent alongside a value it is silently dropped, which is why it looked
-  read-only.
+- `param_values[0]` applies to whichever scene is **active**; the index is not a scene
+  selector, so nothing is ever padded.
+- Per-scene values are kept only for a parameter whose `scene_mode` is set. Without it
+  a parameter has one global value, which appears in all eight scenes.
+- `scene_mode` must travel in a message carrying nothing else; sent alongside a value
+  it is dropped.
 
-So the library issues three messages: the flag alone, a scene switch, then the
-value. No settle delay is needed between them.
+So a per-scene write is three messages: the flag alone, a scene switch, then the value.
+No settle delay is needed between them.
 
 ## 0.3.0 - 2026-07-26
 

@@ -100,19 +100,8 @@ that window twice led a user to wrongly conclude the power cycle had failed.
 
 **What is not established:** the cause. One unit, one host, and only ever the cable
 that shipped with it, so a marginal cable is not ruled out. Onset followed roughly 20
-minutes of continuous heavy write traffic, which may or may not be related - see the
-note on write pacing below.
-
-### Do I need to throttle writes?
-
-**No, on the evidence so far.** A build firing roughly 800 fire-and-forget `Grid`
-writes per run, about 90 `set_param` calls per preset in a tight loop with no delay,
-completed fine repeatedly - before and after the USB fault above, which was
-specifically suspected and tested as a cause and was not one. Every write also incurs
-the deliberate status-stage STALL, and that is normal here.
-
-So this library adds no pacing, and neither should you without evidence. Recorded so
-nobody adds a throttle on a hunch.
+minutes of continuous heavy write traffic, though whether that is connected is
+unknown.
 
 ### I only need to change presets or scenes
 
@@ -165,8 +154,19 @@ Presets are addressed by name via `find_preset()`, or directly by the slot name
 shown on the unit (`"30A"`), or by linear index. Scenes, inputs, outputs, and
 instrument tags all have readable names, so nothing here is a bare number.
 
-More runnable examples are in **[examples/](examples/)**: listing presets,
-switching scenes, and re-routing and saving a preset.
+### Runnable examples
+
+In **[examples/](examples/)**, roughly in order of how much they touch:
+
+| | |
+|---|---|
+| [`inspect_preset.py`](examples/inspect_preset.py) | Read-only. Prints a preset's blocks by name, its routing, where rows branch into parallel lanes, and which parameters differ per scene. The best place to start. |
+| [`list_presets.py`](examples/list_presets.py) | Read-only. Lists a setlist with instrument tags. |
+| [`switch_scenes.py`](examples/switch_scenes.py) | Walks the unit through scenes so you can watch it change. |
+| [`reroute_and_save.py`](examples/reroute_and_save.py) | Re-points a preset's input and saves a copy. Dry run unless you pass `--write`. |
+| [`build_chain.py`](examples/build_chain.py) | Builds a chain on an empty row - block, input, output, a parameter in real units, and a scene that silences it. Dry run unless you pass `--write`. |
+
+The two that write are dry runs by default and name the slot they would overwrite.
 
 ## What you can do
 
@@ -288,9 +288,7 @@ Factory presets often produce their scenes with the **mixer**, not with bypass. 
 qc.set_mixer_param(row=0, param="LEVEL A", value=0.0, scene=Scene.C)
 ```
 
-The **splitter** divides a row into two lanes, and is writable too - though it lives
-in a different field from everything else, `combined_splitter`, which is why it took
-six failed attempts and a capture of the unit's own traffic to find:
+The **splitter** divides a row into two lanes:
 
 ```python
 qc.set_splitter_param(row=0, param="LEVEL TO A", value=0.25)
@@ -298,7 +296,8 @@ qc.set_splitter_param(row=0, param="LEVEL TO A", value=0.25)
 
 Address its parameters by the **unified** model's names - `TYPE`, `STEREO`, `BALANCE`,
 `LEVEL TO A`, `LEVEL TO B`, `FREQUENCY`, `MODE` - whatever type-specific block the
-preset reports. Which ones apply depends on `TYPE`: the levels for A/B, `BALANCE` for
+preset reports. Note that a preset also exposes a read-only `chain.splitter[]` view of
+the same state; writes there are ignored, so always go through `set_splitter_param()`. Which ones apply depends on `TYPE`: the levels for A/B, `BALANCE` for
 Balance, `FREQUENCY`/`MODE` for Crossover.
 
 **Where a row splits is readable** with `splits()`, which reports the columns at which
@@ -369,6 +368,8 @@ qcctl dump-preset --slot 28C
   framing, the connect handshake, each operation, and what has been verified.
 - **[docs/architecture.md](docs/architecture.md)** - how this library is put
   together, and how to add support for something it does not do yet.
+- **[docs/capture.md](docs/capture.md)** - how to read the device's own traffic when
+  you need a message shape this library does not implement yet.
 - **[docs/roadmap.md](docs/roadmap.md)** - where this is meant to go, including
   the object model of the device that should eventually hide the protocol's rough
   edges entirely.

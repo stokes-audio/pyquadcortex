@@ -145,14 +145,6 @@ and whether USB audio is streaming.
 genuinely dead device through **request timeouts** instead. If writes ever start
 failing for real, the symptom will be timeouts, not write errors.
 
-**No write pacing appears to be needed.** Since every write incurs the stall, it is
-natural to wonder whether bursts should be throttled. On the evidence so far, no: a
-build firing roughly 800 fire-and-forget `Grid` writes per run - about 90 `set_param`
-calls per preset in a tight loop with no delay - completed repeatedly without trouble.
-This was specifically suspected as the cause of a USB link failure, tested, and was
-not one; identical bursts ran fine before and after. So this library adds no pacing.
-Recorded as a negative result so nobody adds a throttle on a hunch.
-
 ## 2. Report framing
 
 ### 2.1 Report layout
@@ -851,26 +843,20 @@ any scene, and all eight scenes come from per-scene `LEVEL A` / `LEVEL B` across
 rows, giving four amp paths. A client that cannot write the mixer cannot reproduce
 that.
 
-**The SPLITTER is writable, but through a different field.** This took a while, so
-the wrong turn is worth recording: six attempts against `chain.splitter[]` all saved
-and read back unchanged - with the preset's own model hash, with none, addressed to
-the unified model 10004, with an explicit `column` swept across all eight, on a level
-and on a switch.
-
-The answer came from the device's own broadcast while the splitter was dragged on the
-unit, which is the same technique that cracked `SceneCopy`:
+**The splitter is written through `chain.combined_splitter`.**
 
 ```
 Grid{UPDATE, preset{chains{row: 0, combined_splitter{params{index: 3,
                                                      param_values{float_value}}}}}}
 ```
 
-**`chain.combined_splitter`**, not `chain.splitter` - a separate repeated field on the
-same chain, carrying NO hash and NO column. Writing there works and propagates to
-both representations: setting `LEVEL TO A` to 0.25 read back as 0.25 in
-`combined_splitter[3]` AND in the legacy `splitter[0]`. So `splitter[]` is the
-device's read-only view of the same state, which is exactly why writing to it looked
-like a silent no-op rather than an error.
+A separate repeated field on the same chain, carrying no hash and no column. Writing
+there works and propagates to both representations: setting `LEVEL TO A` to 0.25 read
+back as 0.25 in `combined_splitter[3]` and in `splitter[0]` alike.
+
+**`chain.splitter[]` is a read-only view of the same state.** A write addressed to it
+is silently ignored - accepted on the wire, absent on read-back - so it must not be
+used as a write target.
 
 Parameter indices follow the **unified** model 10004 (`TYPE, STEREO, BALANCE, LEVEL TO
 A, LEVEL TO B, FREQUENCY, MODE`), whatever type-specific legacy id the preset reports
@@ -882,21 +868,14 @@ Splitter parameters read back with `scene_mode` false in the factory content exa
 so per-scene splitter values appear to be unusual, though the promote/switch/write
 sequence is offered for them anyway.
 
-**A caution drawn from getting this wrong:** "I tried the obvious field and it did
-nothing" is weak evidence. Both this and per-preset tempo were written off on that
-basis, and both turned out to be reachable through a field nobody had thought to try.
-When a write silently does nothing, capture what the device sends when a human does
-the same thing on the unit, and copy that. It is the only authoritative source.
-
 **Where a row splits IS readable - just not from the splitter.** Neither the splitter
 nor the mixer carries `column`, so the position looked unknowable. It lives in
 `Chain.split_control_points` instead, whose `split` and `mix` fields give the columns
 where the lane leaves and rejoins.
 
-The reason this was missed twice: **`split` and `mix` have no presence**, so
-`HasField` reports them absent even when set, and any code that gates on presence -
-the correct habit everywhere else in this schema - silently sees nothing. Read them
-directly, as `pyquadcortex.splits()` does.
+**`split` and `mix` have no presence**, so `HasField` reports them absent even when
+set, and code that gates on presence - the correct habit everywhere else in this
+schema - sees nothing here. Read them directly, as `pyquadcortex.splits()` does.
 
 Confirmed: factory "Darkglass AO900 1" (27H) and "Darkglass AO900 2" (28A) both report
 `(split=4, mix=4)` on rows 0 and 2, and the parallel lane's single block does sit at

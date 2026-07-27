@@ -534,7 +534,7 @@ class QuadCortex:
 
         The flag must travel ALONE. A ``Grid`` update carrying both
         ``scene_mode`` and a ``param_values`` entry is treated as a plain value
-        write and the flag is dropped - which is why this looked read-only.
+        write and the flag is dropped.
         :meth:`set_param` sequences that for you when you name a scene.
 
         Save the grid afterwards to keep it.
@@ -757,11 +757,10 @@ class QuadCortex:
         ``TYPE``: ``LEVEL TO A``/``LEVEL TO B`` only for A/B, ``BALANCE`` only for
         Balance, ``FREQUENCY``/``MODE`` only for Crossover.
 
-        **This writes ``chain.combined_splitter``, not ``chain.splitter``** - which
-        is the whole reason splitter writes looked impossible. Six attempts against
-        ``chain.splitter[]`` all read back unchanged; the device's own broadcast,
-        captured while the splitter was dragged on the unit, uses
-        ``combined_splitter`` and carries no model hash at all.
+        **This writes ``chain.combined_splitter``, not ``chain.splitter``.** A preset
+        also exposes ``chain.splitter[]``, which is a READ-ONLY view of the same
+        state: a write addressed there is silently ignored, accepted on the wire and
+        absent on read-back. Always go through this method.
 
         Same call shape as :meth:`set_param`, ``scene`` included - though note that
         splitter parameters read back with ``scene_mode`` false in factory content,

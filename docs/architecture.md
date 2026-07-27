@@ -22,6 +22,7 @@ shapes), see [`protocol.md`](protocol.md). This document covers the code.
 - [send vs request vs await_broadcast](#send-vs-request-vs-await_broadcast)
 - [How to add a new operation](#how-to-add-a-new-operation)
 - [The generated protobuf bindings](#the-generated-protobuf-bindings)
+- [Capturing the device's traffic](#capturing-the-devices-traffic)
 - [Testing philosophy](#testing-philosophy)
 - [What is not implemented yet](#what-is-not-implemented-yet)
 - [Adapting to a new CorOS version](#adapting-to-a-new-coros-version)
@@ -263,6 +264,19 @@ An operation whose shape comes only from the schema should say so.
 Useful shapes for hardware work live in `examples/` (`switch_scenes.py`,
 `list_presets.py`, `reroute_and_save.py`). `scripts/compile_protos.sh` is the
 only script in the repo.
+
+## Capturing the device's traffic
+
+If the operation you want is not documented in [protocol.md](protocol.md), or a write
+you believe is correct has no effect, do not keep guessing shapes. The device
+broadcasts what it does, so perform the action on the unit and read what arrives, then
+replay it.
+
+**[capture.md](capture.md)** has the listener, the pitfalls that decide whether a
+capture is interpretable, and how to compare what you get against what the library
+sends. This is the most reliable tool here, because a write the device does not
+understand is accepted and ignored rather than rejected - there is no error to work
+from.
 
 ## The generated protobuf bindings
 
