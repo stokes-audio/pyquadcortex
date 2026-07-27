@@ -106,6 +106,9 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0) -> QuadCortex:
         transport.start()
         qc = QuadCortex(transport, _owned_resources=owned)
         qc._hello(timeout=timeout, settle=settle)
+        # Say goodbye BEFORE the transport and handle go away, since the send needs
+        # a live transport. close() pops this list, so appending last runs it first.
+        owned.append(qc.disconnect)
         return qc
     except BaseException:
         # Never leak the device if bring-up fails part-way.

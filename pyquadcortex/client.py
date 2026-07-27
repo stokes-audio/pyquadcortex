@@ -80,6 +80,32 @@ class QuadCortex:
 
     # -- lifecycle -----------------------------------------------------------
 
+    def disconnect(self):
+        """Tell the device this client is going away.
+
+        Sends ``Connection{connected: false}``, which is what Cortex Control does
+        on quit. Without it the device is never told the client left - it simply
+        stops receiving keepalives - and this library announced the connect but
+        never the disconnect.
+
+        Best effort: a failure here never prevents teardown. On this device that
+        matters less than it sounds, because EVERY host write is reported as
+        failing thanks to the deliberate status-stage STALL, so swallowing the
+        error is the normal path rather than a special case.
+
+        :func:`pyquadcortex.connect` calls this for you as the first step of
+        :meth:`close`. It is public for callers who supplied their own transport
+        and therefore own teardown themselves, who otherwise had no
+        non-private way to send it.
+
+        Whether an abandoned session leaks anything on the device is an open
+        question - see ``docs/protocol.md`` section 4.3 for what was measured.
+        """
+        try:
+            return self._t.send(pa.ConnectionMessage(connected=False))
+        except Exception:  # pragma: no cover - the link may already be gone
+            return None
+
     def close(self):
         """Release the device, if this object opened it.
 

@@ -404,7 +404,34 @@ waiting for a preset push must be able to ignore it; see
 Cortex Control sends `KeepAlive{action: UPDATE}` about once per second. The
 library defaults to every 5 seconds, and the device tolerated 20-second idle
 gaps in the capture without dropping the session, so the exact interval is not
-critical. On quit, Cortex Control sends `Connection{connected: false}`.
+critical. On quit, Cortex Control sends `Connection{connected: false}`. This library now does the
+same, as the first step of teardown - the send needs a live transport, so it has to
+precede stopping it and closing the handle.
+
+**Does abandoning a session leak anything device-side?** Measured rather than
+assumed, and the answer is *nothing observable*, with the honest caveat that the
+measurement is coarse.
+
+The experiment: baseline a session's health, then open and abandon **12** sessions
+with no goodbye (each with its own fresh `session_id` and full 22-type subscription
+set, exactly as before this change), then re-measure. Health meant handshake
+duration, whether the `RecallPreset` seed push still arrived, and how long a
+`read_preset` round trip took.
+
+Afterwards: the seed push still arrived, subscriptions still fired, and
+`read_preset` took the same time (9.04s -> 8.77s, i.e. unchanged). One handshake
+came in at 4.79s against a 2.03s baseline, which looked like degradation until
+handshake variance was characterised: six clean sessions spanned **2.03s to 3.80s**,
+a spread of 1.77s. So a single 4.79s sample is barely outside normal noise, and
+handshake timing is in any case dominated by this library's own two-second settle,
+which makes it a poor instrument for small effects.
+
+**What was NOT established:** whether the device supersedes an old session when a
+fresh `ResetCommsBuffers` arrives, whether it reaps sessions whose keepalives stop,
+or whether there is any ceiling on accumulated sessions. There is no evidence of a
+leak, and no proof there is not one. Nothing here justifies a workaround; sending
+the goodbye is worth doing because it matches the real client, not because a fault
+was demonstrated.
 
 ## 5. Request/response correlation
 
@@ -1091,6 +1118,7 @@ visually on the device's own screen.
 | `set_param_scene_mode` | `Grid{UPDATE, ..., params{index, scene_mode}}` (flag ALONE) | read-back | promotes a parameter to scene-following; a value in the same message voids it |
 | `set_chain_output` | `Grid{UPDATE, preset{chains{row, out_portid}}}` | read-back | required for a new chain: the device never assigns an output on its own |
 | `set_mixer_param` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |
+| `disconnect` | `Connection{connected: false}` | sent, unverified | matches Cortex Control's captured behaviour on quit; no device state to read back, and no observable effect measured either way |
 | `set_splitter_param` | `Grid{UPDATE, preset{chains{row, combined_splitter{params{index, param_values}}}}}` | read-back | writes `combined_splitter`, NOT `splitter[]`, which is a read-only view; indices follow the unified model 10004 |
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns; `-1` means the row is serial |
 | `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |

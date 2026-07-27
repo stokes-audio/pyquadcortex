@@ -152,3 +152,61 @@ def test_open_device_raises_device_not_found_on_the_real_hid_exception(monkeypat
 
     with pytest.raises(session.DeviceNotFoundError, match="Cortex Control"):
         session.open_device()
+
+
+def test_close_says_goodbye_before_tearing_down():
+    """The device is told the client is leaving, and told FIRST.
+
+    Cortex Control sends Connection{connected: false} on quit; this library
+    announced the connect and then went quiet. The send needs a live transport, so
+    ordering matters: it has to precede transport.stop and device.close.
+    """
+    from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+
+    order = []
+
+    class RecordingTransport(FakeTransport):
+        def send(self, msg):
+            order.append(("send", type(msg).__name__, getattr(msg, "connected", None)))
+
+    device = FakeDevice()
+    t = RecordingTransport(device)
+    owned = [lambda: order.append(("device.close", None, None)),
+             lambda: order.append(("transport.stop", None, None))]
+    qc = client.QuadCortex(t, _owned_resources=owned)
+    owned.append(qc.disconnect)          # as session.connect() does
+
+    qc.close()
+
+    assert order[0] == ("send", "ConnectionMessage", False), \
+        f"goodbye must go out first, got {order}"
+    assert [step[0] for step in order] == ["send", "transport.stop", "device.close"]
+
+
+def test_disconnect_is_best_effort():
+    # A dead link must not stop the rest of teardown.
+    class DeadTransport(FakeTransport):
+        def send(self, msg):
+            raise OSError("link gone")
+
+    torn_down = []
+    qc = client.QuadCortex(DeadTransport(FakeDevice()),
+                           _owned_resources=[lambda: torn_down.append("closed")])
+    qc._owned.append(qc.disconnect)
+    qc.close()                                  # must not raise
+    assert torn_down == ["closed"], "teardown continued despite the failed send"
+
+
+def test_disconnect_is_public_for_callers_owning_their_own_transport():
+    # A caller who supplied their own transport owns teardown and previously had no
+    # non-private way to send the goodbye.
+    from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+
+    t = FakeTransport(FakeDevice())
+    sent = []
+    t.send = lambda m: sent.append(m)
+    qc = client.QuadCortex(t)                   # no owned resources
+    qc.disconnect()
+    assert isinstance(sent[0], pa.ConnectionMessage)
+    assert sent[0].connected is False
+    qc.close()                                  # still a no-op for a borrowed transport

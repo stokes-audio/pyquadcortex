@@ -92,6 +92,10 @@ with pyquadcortex.connect() as qc:
 requires, so what you get back is ready to use. As a context manager it also
 releases the device when the block ends; otherwise call `qc.close()`.
 
+Closing tells the device the client is leaving, which is what Cortex Control does on
+quit. If you supplied your own transport and so own teardown yourself, send it with
+`qc.disconnect()` before you tear down.
+
 Presets are addressed by name via `find_preset()`, or directly by the slot name
 shown on the unit (`"30A"`), or by linear index. Scenes, inputs, outputs, and
 instrument tags all have readable names, so nothing here is a bare number.

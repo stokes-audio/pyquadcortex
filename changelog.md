@@ -8,6 +8,36 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.7.0 - 2026-07-27
+
+### Added
+
+- **The device is now told when a client goes away.** Closing a session sends
+  `Connection{connected: false}` first, before the transport stops and the handle
+  closes, which is what Cortex Control does on quit. Previously this library
+  announced the connect and then simply went quiet, so from the unit's point of view
+  a client never left - it just stopped sending keepalives.
+- **`QuadCortex.disconnect()`** is public, for callers who supply their own transport
+  and therefore own teardown. There was no non-private way to send this before.
+  It is best effort: a failure never prevents the rest of teardown, which matters
+  little in practice since every write on this device is reported as failing anyway
+  thanks to the deliberate status-stage STALL.
+- `qcctl` gets this for free - it already goes through `connect()`.
+
+### What was measured, and what was not
+
+The open question was whether an abandoned session leaks device-side state. Opening
+and abandoning 12 sessions, each with its own session id and full subscription set,
+produced **no observable degradation**: the seed push still arrived, subscriptions
+still fired, and read round trips took the same time. One slow handshake looked like
+a signal until handshake variance was characterised across clean sessions at
+2.03-3.80s, which puts it inside the noise.
+
+Whether the device supersedes old sessions, reaps them, or accumulates them was NOT
+established - there is no device state to read back. So this change is about matching
+the real client's behaviour, not about fixing a demonstrated fault, and no workaround
+was added for one.
+
 ## 0.6.0 - 2026-07-27
 
 Parallel routing is now fully writable, and the grid can be read.
