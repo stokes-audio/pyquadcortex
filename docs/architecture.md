@@ -368,11 +368,13 @@ next, roughly in order of how well the ground is prepared:
 - **Registered but unwrapped message types.** `registry.py` registers around
   three dozen types so the RX thread can decode device chatter, but `client.py`
   exposes methods for only about fifteen operations. `IOSettings`,
-  `GeneralSettings`, `GlobalEQ`, `MasterVolume`, `GlobalTempo`, `Mode`,
+  `GeneralSettings`, `GlobalEQ`, `MasterVolume`, `Mode`,
   `RecentsFavorites`, `PresetDirty`, `Updater`, `ModelRepo` and others are
   decoded and pushed to us but have no API. These are the cheapest additions:
   the type already exists in the registry, so it is one client method plus
-  tests.
+  tests. (`GlobalTempo` is a special case: it is global rather than per preset and
+  only ever returned a running clock, so the useful per-preset tempo controls live
+  in `tempoProgramData` instead - see `set_tempo_param`.)
 - **Types not in the registry at all.** The schema declares 71 message types.
   Whole feature areas are untouched: `Tuner` / `ShowTuner`, `Looper`,
   `MIDISettings`, `NeuralCapture` / `NeuralCapture2`, `Screenshot`,
@@ -395,9 +397,21 @@ next, roughly in order of how well the ground is prepared:
   writing it back wholesale does nothing. Any new edit operation should follow
   the keyed pattern (`set_chain_input` / `set_param` / `set_bypass`), not extend
   the wholesale path.
-- **Output port ids are only partly confirmed.** `enums.Output` is copied from
-  the schema verbatim; only a handful of values were checked against hardware
-  (see [protocol.md](protocol.md#output-ports-chainout_portid)).
+- **The splitter accepts no host writes.** `chain.mixer[]` is writable with the
+  ordinary row-keyed shape, but `chain.splitter[]` is not: four shapes were tried
+  and each saved and read back unchanged, so `set_splitter_param()` raises rather
+  than pretend. It has NOT been confirmed by capture that the device stays silent
+  when a splitter is edited on the unit, so this is "no known write path" rather
+  than "impossible" - and reading that broadcast is the obvious way to settle it.
+- **Splitter and mixer positions cannot be read.** Neither carries `column`, so
+  where a split sits on the grid is unknowable from a recall and can only be
+  inferred. Grid topology is therefore only partly recoverable, which limits
+  anything that tries to reconstruct a preset's shape.
+- **`enums.Output` is still schema-derived, though better anchored now.** Eight
+  further ids were written and read back verbatim, which also established that the
+  device does NOT validate: a meaningless id is stored, not rejected. What no
+  read-back can tell you is which ids reach a physical jack, so that part remains
+  inference (see [protocol.md](protocol.md#output-ports-chainout_portid)).
 - **Two envelope bytes remain unexplained** (the device-filled trailer bytes),
   and the "raw payload" trailer flag is an inference. Neither blocks anything,
   but do not write code that depends on them.

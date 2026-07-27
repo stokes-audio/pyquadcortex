@@ -1,9 +1,13 @@
 # Design direction
 
-Ideas for where this library should go. Nothing here is committed, and none of it
-is implemented. It is written down so the intent survives, and so a contributor
-can tell the difference between "this is how the library is meant to be" and
-"this is just how it happens to be so far".
+Ideas for where this library should go. It is written down so the intent survives,
+and so a contributor can tell the difference between "this is how the library is
+meant to be" and "this is just how it happens to be so far".
+
+Nothing here is a commitment, but it is no longer all hypothetical either: several
+leaks below have since been absorbed one at a time, and those rows are struck
+through rather than deleted, so the direction can be judged by what it has actually
+produced.
 
 ## The next big step: a domain model of the device
 
@@ -31,19 +35,20 @@ instead.
 
 | Leak | What a caller must know today | What they should be able to do |
 |---|---|---|
-| `ColBypass.sceneMode` | Per-scene bypass values are only meaningful when `sceneMode` is set; otherwise they are unmaintained and can contradict the unit | Ask whether a block is on in a given scene and get the answer the unit would give |
-| Grid geometry | A recalled preset carries no explicit `row` or `column`; position must be inferred from list ordering | Address a block by its position on the grid, or iterate the grid |
+| `ColBypass.sceneMode` | Partly absorbed: `field_present` stops the crash and writes are correct, but a caller still has to know the flag exists to read state safely | Ask whether a block is on in a given scene and get the answer the unit would give |
+| Grid geometry | Partly absorbed by `blocks()` for models. Splitter and mixer carry no column at all, so their position stays unknowable | Address a block by its position on the grid, or iterate the grid |
 | The edit path | Edits must be recall -> row/column-keyed update -> save, and writing a whole preset back silently does nothing | Change a preset and save it |
 | Scene copy side effects | Copying a scene also moves its label | Copy a scene, and be able to keep the label if that is what is wanted |
 | Setlist paths | The factory path needs a trailing slash for recalls but not for listing keys | Refer to the factory library |
-| Slot addressing | Slots are linear positions; `"28C"` must be converted | Use the slot name shown on the unit |
-| Empty slots | A setlist always reports 256 entries, most of them placeholders | Iterate the presets that exist, or ask for free slots |
-| Saved names | Saving silently renames on a name collision, so the name you asked for may not be the name you get | Save, and be told what it was called - or be warned before it happens |
+| ~~Slot addressing~~ | **Absorbed.** Slot names are accepted anywhere a position is taken, and `position_to_slot` converts back | |
+| ~~Empty slots~~ | **Absorbed.** `list_presets` returns occupied slots by default; `include_empty=True` gives the full map | |
+| ~~Saved names~~ | **Absorbed.** `save_current_preset(confirm=True)` returns the name the device actually stored | |
 | The write STALL | Writes "fail" and the error must be ignored | Nothing. This one is already absorbed by the transport |
 
 That last row is the model for all the others: the benign write stall is a
 significant protocol wart that no caller ever sees, because the transport
-swallows it. The rest of these deserve the same treatment.
+swallows it. The rest deserve the same treatment, and the struck-through rows show
+it is achievable one leak at a time rather than only by a grand redesign.
 
 ### Roughly what it might look like
 
