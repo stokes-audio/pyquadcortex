@@ -180,9 +180,10 @@ These are all methods on the object `connect()` returns.
 | **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `catalog` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
 | **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
+| **Input gate** | `set_input_gate(row, param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
 | **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `splits(preset)` |
 | **Per-preset tempo** | `set_tempo_led(on)`, `set_metronome_volume(v)`, `set_tempo_param(param, ...)` |
-| **Inspect a preset** | `blocks(preset)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
+| **Inspect a preset** | `blocks(preset)`, `splits(preset)`, `free_rows(preset)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
@@ -266,11 +267,25 @@ you** - a row given blocks and a physical input keeps its output unset and so ne
 reaches a jack. Point it somewhere yourself:
 
 ```python
-qc.set_block(row=1, column=0, model=models.BassAmplifier.AMPED_FLIP_TOP_6464)
-qc.set_chain_input(row=1, in_portid=Input.INPUT_2)
-qc.set_chain_output(row=1, out_portid=Output.XLR_1_2)     # required, not optional
+row = free_rows(preset)[0]           # not just "a row with no blocks" - see below
+qc.set_block(row=row, column=0, model=models.BassAmplifier.AMPED_FLIP_TOP_6464)
+qc.set_chain_input(row=row, in_portid=Input.INPUT_2)
+qc.set_chain_output(row=row, out_portid=Output.XLR_1_2)   # required, not optional
 qc.save_current_preset(Setlist.USER, "30A", "Bass on In 2")
 ```
+
+**Pick the row with `free_rows()`, not by counting blocks.** When a row branches into
+a parallel lane, that lane lives on the row BELOW it, which is frequently empty and is
+nonetheless spoken for: building there puts your blocks inside the existing chain's
+parallel path. `free_rows()` excludes those.
+
+**A block can be refused for want of DSP capacity.** The preset has a processing
+budget, and a block that does not fit is accepted on the wire and then simply is not
+there - no error, since every host write is STALLed anyway. `set_block()` checks the
+device's echo for you and raises `BlockRefused` when a placement did not take, so this
+is loud rather than silent; pass `verify=False` if you would rather send and not wait.
+There is no way to ask how much headroom is left, so the answer to a refusal is a
+cheaper block or one fewer.
 
 Two things to watch. `Output` values **16 to 18** are internal row-to-row routing
 rather than jacks - but **19 (`MULTIPLE`) is a real destination**, and often the right
@@ -287,6 +302,12 @@ Factory presets often produce their scenes with the **mixer**, not with bypass. 
 ```python
 qc.set_mixer_param(row=0, param="LEVEL A", value=0.0, scene=Scene.C)
 ```
+
+A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which is
+what every mixer, splitter and lane level in the factory content sits at when nothing
+is attenuated. Those parameters are published with a placeholder `0..1` range that
+claims to be dB, so `real=` is refused for them rather than converting into a number
+that means something else - pass `value=`.
 
 The **splitter** divides a row into two lanes:
 

@@ -626,10 +626,10 @@ def test_set_param_accepts_a_value_in_real_units():
     # the catalog range, so callers can speak dB instead of fractions.
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    comp = qc._catalog[5005]          # THRESHOLD spans 0..1 in the fixture
-    qc.set_param(row=0, column=1, param="THRESHOLD", real=0.25, model=comp)
+    comp = qc._catalog[5005]          # THRESHOLD spans -60..+12 dB
+    qc.set_param(row=0, column=1, param="THRESHOLD", real=-24.0, model=comp)
     param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
-    assert param.param_values[0].float_value == pytest.approx(0.25)
+    assert param.param_values[0].float_value == pytest.approx(0.5)
 
 
 def test_set_param_real_units_require_param_and_model():
@@ -1036,3 +1036,225 @@ def test_set_chain_output_docstring_does_not_lump_19_with_the_internal_routes():
     assert "16 to 18" in doc
     assert "19" in doc and "real destination" in doc
     assert "16 to 19" not in doc, "the old wording called 19 internal"
+
+
+# -- grid topology (verified against factory presets on hardware) --------------
+# splitter/mixer/combined_splitter/split_control_points exist ONLY on rows 0 and
+# 2: counted across all 68 rows of 17 factory presets, each appears 17 times on
+# rows 0 and 2 and zero times on rows 1 and 3, because a branch can only
+# originate on an even row with its lane on the row below.
+
+
+def _preset_with_split(row, split, mix, block_rows=()):
+    p = preset.BinaryPreset()
+    for r in range(4):
+        chain = p.chains.add()
+        chain.row = r
+        for c in range(8):
+            m = chain.models.add()
+            m.column = c
+            if r in block_rows and c == 0:
+                m.hash = 5005
+        if r % 2 == 0:
+            scp = chain.split_control_points.add()
+            scp.split = split if r == row else -1
+            scp.mix = mix if r == row else -1
+    return p
+
+
+def test_splits_reports_a_branch_that_never_rejoins():
+    # Factory "Strat Ambience" (05B) reports split=2 mix=-1 on row 0: it branches
+    # and the lane never recombines. Dropping those hid a row that is spoken for.
+    p = _preset_with_split(row=0, split=2, mix=-1)
+    found = client.splits(p)
+    assert len(found) == 1
+    assert found[0].row == 0
+    assert found[0].split_column == 2
+    assert found[0].mix_column == -1
+    assert found[0].rejoins is False
+    assert found[0].lane_row == 1
+
+
+def test_splits_reports_a_branch_that_does_rejoin():
+    p = _preset_with_split(row=2, split=4, mix=4)
+    found = client.splits(p)
+    assert [(s.row, s.split_column, s.mix_column) for s in found] == [(2, 4, 4)]
+    assert found[0].rejoins is True
+    assert found[0].lane_row == 3
+
+
+def test_splits_omits_rows_that_do_not_branch():
+    p = _preset_with_split(row=0, split=-1, mix=-1)
+    assert client.splits(p) == []
+
+
+def test_free_rows_excludes_the_lane_of_a_branch_even_when_it_is_empty():
+    # 05B branches on row 0 and holds nothing on row 1. Row 1 is NOT free:
+    # building there puts blocks inside the existing chain's parallel path.
+    p = _preset_with_split(row=0, split=2, mix=-1, block_rows=(0,))
+    assert client.free_rows(p) == [2, 3]
+
+
+def test_free_rows_counts_an_empty_row_below_a_serial_row_as_free():
+    p = _preset_with_split(row=0, split=-1, mix=-1, block_rows=(0,))
+    assert client.free_rows(p) == [1, 2, 3]
+
+
+def test_splitter_and_mixer_writes_refuse_an_odd_row():
+    qc = client.QuadCortex(FakeTransport())
+    for row in (1, 3):
+        with pytest.raises(ValueError, match="row 0 or"):
+            qc.set_splitter_param(row=row, param=3, value=0.5)
+        with pytest.raises(ValueError, match="row 0 or"):
+            qc.set_mixer_param(row=row, param=0, value=0.5)
+    assert qc._t.sent == [], "nothing should reach the wire for a row without one"
+
+
+# -- set_block capacity verification ------------------------------------------
+# A placement can be refused for want of DSP capacity: accepted on the wire,
+# absent afterwards. The device echoes a Grid broadcast naming the cell it
+# accepted, and a refused block produces none, so the refusal is detectable
+# without saving.
+
+
+class EchoingTransport(FakeTransport):
+    """Echoes the accepted cell the way the device does, unless refusing it."""
+
+    def __init__(self, refuse=()):
+        super().__init__()
+        self.refuse = set(refuse)
+
+    def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+        trigger()
+        sent = self.sent[-1]
+        chain = sent.preset.chains[0]
+        model = chain.models[0]
+        if model.hash in self.refuse:
+            raise TimeoutError(f"no {expected_class.__name__} broadcast")
+        echo = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        ch = echo.preset.chains.add()
+        ch.row = chain.row
+        m = ch.models.add()
+        m.column = model.column
+        m.hash = model.hash
+        assert match is None or match(echo), "the client should accept this echo"
+        return echo
+
+
+def test_set_block_verifies_the_device_accepted_the_cell():
+    qc = client.QuadCortex(EchoingTransport())
+    qc.set_block(row=1, column=0, model=5005)
+    chain = qc._t.sent[-1].preset.chains[0]
+    assert chain.row == 1
+    assert chain.models[0].column == 0
+    assert chain.models[0].hash == 5005
+
+
+def test_set_block_raises_when_the_device_never_echoes_the_cell():
+    qc = client.QuadCortex(EchoingTransport(refuse={21005}))
+    with pytest.raises(client.BlockRefused, match="no DSP capacity"):
+        qc.set_block(row=1, column=4, model=21005)
+
+
+def test_set_block_can_skip_verification_for_fire_and_forget_placement():
+    qc = client.QuadCortex(EchoingTransport(refuse={21005}))
+    qc.set_block(row=1, column=4, model=21005, verify=False)   # must not raise
+    assert qc._t.sent[-1].preset.chains[0].models[0].hash == 21005
+
+
+def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():
+    qc = client.QuadCortex(FakeTransport())
+    captured = {}
+
+    def await_broadcast(expected_class, trigger, timeout=40.0, match=None):
+        trigger()
+        captured["match"] = match
+        return pa.GridMessage()
+
+    qc._t.await_broadcast = await_broadcast
+    qc.set_block(row=2, column=3, model=5005)
+    match = captured["match"]
+
+    def echo(row, column, hash_):
+        m = pa.GridMessage()
+        ch = m.preset.chains.add()
+        ch.row = row
+        mdl = ch.models.add()
+        mdl.column = column
+        mdl.hash = hash_
+        return m
+
+    assert match(echo(2, 3, 5005)) is True
+    assert match(echo(2, 3, 4000)) is False, "a different model is not our cell"
+    assert match(echo(0, 3, 5005)) is False, "a different row is not our cell"
+    assert match(echo(2, 5, 5005)) is False, "a different column is not our cell"
+
+
+# -- input gate ---------------------------------------------------------------
+
+
+def test_set_input_gate_writes_a_row_keyed_update_into_input_control():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_input_gate(row=0, param=1, value=1.0)          # BYPASS
+    msg = qc._t.sent[-1]
+    assert msg.action == pa.MessageAction.UPDATE
+    chain = msg.preset.chains[0]
+    assert chain.row == 0
+    assert len(chain.input_control) == 1
+    gate = chain.input_control[0]
+    assert gate.hash == 28000
+    assert gate.params[0].index == 1
+    assert gate.params[0].param_values[0].float_value == pytest.approx(1.0)
+
+
+def test_set_input_gate_promotes_then_switches_then_writes_for_a_scene():
+    # Same three-message sequence as set_lane_output: the scene_mode flag must
+    # travel alone, or the device treats the message as a plain value write.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_input_gate(row=0, param=0, value=0.9, scene=2)
+    flag, switch, write = qc._t.sent[-3:]
+    assert flag.preset.chains[0].input_control[0].params[0].scene_mode is True
+    assert not flag.preset.chains[0].input_control[0].params[0].param_values
+    assert isinstance(switch, pa.SceneMessage)
+    assert write.preset.chains[0].input_control[0].params[0].param_values
+
+
+def test_set_input_gate_needs_a_value():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError):
+        qc.set_input_gate(row=0, param=1)
+
+
+# -- blank scene labels -------------------------------------------------------
+
+
+def test_set_scene_label_none_sends_the_space_the_unit_uses():
+    # Factory "Cali Basswalk" (27E) reads back " " for the four scenes it does
+    # not use, so `if not label` works and `label == ""` does not.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_scene_label(5, None)
+    assert qc._t.sent[-1].label == client.SCENE_UNLABELLED == " "
+
+
+def test_set_scene_label_still_sends_a_given_label_verbatim():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_scene_label(0, "Bright Punch")
+    assert qc._t.sent[-1].label == "Bright Punch"
+
+
+def test_copy_scene_documents_that_the_colour_travels_too():
+    doc = client.QuadCortex.copy_scene.__doc__
+    assert "COLOUR" in doc and "0xff45f862" in doc
+
+
+def test_set_mixer_param_refuses_real_units_for_a_placeholder_range():
+    # MIXER LEVEL is published as 0..1 "dB". real= used to convert against that
+    # range and produce a number meaning something else entirely; it now raises.
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    with pytest.raises(ValueError, match="placeholder range"):
+        qc.set_mixer_param(row=0, param="MIXER LEVEL", real=0.0)
+    assert qc._t.sent == []
+    qc.set_mixer_param(row=0, param="MIXER LEVEL", value=client.UNITY_LEVEL)
+    written = qc._t.sent[-1].preset.chains[0].mixer[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.76923077)

@@ -21,9 +21,13 @@ import threading, time
 import pyquadcortex
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 
-# Chatter that arrives constantly and drowns everything else.
-NOISE = {"IOMeterMessage", "CPULoadMessage", "GridModelMeterMessage",
-         "KeepAliveMessage", "ModuleStatsMessage", "GlobalTempoMessage"}
+# Chatter that arrives constantly and drowns everything else. On the firmware
+# measured, GlobalTempoMessage is the only heavy one - about 50 in 10 seconds -
+# so start by counting arrivals BY TYPE and filter from what you actually see
+# rather than from this list. (CPULoadMessage, for instance, never arrives at
+# all, subscribed or not, so filtering it is harmless but pointless.)
+NOISE = {"GlobalTempoMessage", "IOMeterMessage", "GridModelMeterMessage",
+         "KeepAliveMessage", "ModuleStatsMessage"}
 
 seen, lock = [], threading.Lock()
 
@@ -85,6 +89,11 @@ operation. Differences worth checking, each of which has mattered at least once:
 - **Parameter indices.** These are positional and follow the model's own parameter
   order, which for a family of related models may be the unified model's order rather
   than the type-specific one a preset reports.
+
+A second thing the echo tells you: **whether the device accepted the write at all.**
+An accepted `set_block` draws 2-3 `Grid` echoes naming the cell plus an
+`UndoRedoMessage`; one refused for want of DSP capacity draws neither. That is the
+only signal a refusal produces, and the same listener finds it.
 
 Then replay the captured shape host to device, save, and read it back. A shape is only
 confirmed once the value survives a save and recall - see

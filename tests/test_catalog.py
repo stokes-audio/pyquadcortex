@@ -28,7 +28,7 @@ SAMPLE_XML = """<?xml version="1.0" ?><Models>
 </Category>
 <Category id="5" name="Compressor">
   <Model blob="ddd" id="5005" name="VCA Comp (M)">
-    <Parameter defaultValue="0.5" max="1" min="0" name="THRESHOLD" type="float" units="dB"/>
+    <Parameter defaultValue="-40" max="12" min="-60" name="THRESHOLD" type="float" units="dB"/>
   </Model>
 </Category>
 <Category id="14" name="Neural Capture">
@@ -39,6 +39,12 @@ SAMPLE_XML = """<?xml version="1.0" ?><Models>
 </Category>
 <Category hidden="true" id="19" name="Utility_Deprecated">
   <Model blob="ggg" id="19000" name="Old Thing"/>
+</Category>
+<Category id="11" name="Mixer">
+  <Model blob="mmm" id="11000" name="Mixer" internal="true">
+    <Parameter defaultValue="0.769" max="1" min="0" name="MIXER LEVEL" type="float" units="dB"/>
+    <Parameter defaultValue="5" max="10" min="0" name="PAN A" type="float" units=""/>
+  </Model>
 </Category>
 <Category id="22" name="Internal Routing">
   <Model blob="hhh" id="22000" name="Router" internal="true"/>
@@ -130,9 +136,9 @@ def test_by_category_groups_models(cat):
 
 
 def test_catalog_is_iterable_and_sized(cat):
-    assert len(cat) == 10
-    assert {m.id for m in cat} == {1, 30, 31, 5005, 14000, 20000, 19000, 22000,
-                                   24003, 24006}
+    assert len(cat) == 11
+    assert {m.id for m in cat} == {1, 30, 31, 5005, 11000, 14000, 20000, 19000,
+                                   22000, 24003, 24006}
 
 
 def test_missing_model_raises_keyerror(cat):
@@ -205,3 +211,44 @@ def test_superseded_models_are_still_factory_and_still_resolvable(cat):
     # An old preset can still reference a superseded model, so reading must work.
     assert cat[24003].is_factory is True
     assert cat[24003].name == "Envelope Filter"
+
+
+# -- placeholder ranges -------------------------------------------------------
+# Some parameters are published as 0..1 with a real-world unit: the mixer,
+# splitter and lane-output LEVEL controls are 0..1 "dB", and TEMPO is 0..1 "BPM".
+# That is the wire's own normalized scale, not the span the control covers, so
+# there is nothing to convert and the true span is not in the catalog. Measured:
+# those level parameters read 0.76923077 (10/13, i.e. 0 dB on -100..+30) on every
+# row carrying one across 17 factory presets.
+
+
+def test_a_zero_to_one_range_with_a_unit_is_flagged_as_a_placeholder(cat):
+    level = cat[11000].parameter("MIXER LEVEL")
+    assert level.minimum == 0.0 and level.maximum == 1.0 and level.units == "dB"
+    assert level.range_is_placeholder is True
+
+
+def test_a_real_range_is_not_a_placeholder(cat):
+    assert cat[5005].parameter("THRESHOLD").range_is_placeholder is False
+
+
+def test_a_zero_to_one_range_without_a_unit_is_not_a_placeholder(cat):
+    # A unitless 0..1 is a genuine fraction - a switch, a mix control - and
+    # converts fine, so only the ones claiming a real-world unit are suspect.
+    plain = catalog.Parameter(index=0, name="PHASE", minimum=0.0, maximum=1.0,
+                              default=0.0, units="", type="switch", steps=2)
+    assert plain.range_is_placeholder is False
+
+
+def test_placeholder_conversions_refuse_rather_than_mislead(cat):
+    level = cat[11000].parameter("MIXER LEVEL")
+    with pytest.raises(ValueError, match="placeholder range"):
+        level.to_real(0.76923077)
+    with pytest.raises(ValueError, match="value="):
+        level.to_normalized(0.0)
+
+
+def test_a_unitless_parameter_on_the_same_model_still_converts(cat):
+    pan = cat[11000].parameter("PAN A")
+    assert pan.to_real(0.5) == pytest.approx(5.0)
+    assert pan.to_normalized(10.0) == pytest.approx(1.0)

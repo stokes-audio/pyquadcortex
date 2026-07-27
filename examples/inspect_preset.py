@@ -14,10 +14,12 @@ Run it with the unit connected by USB and Cortex Control quit:
     python examples/inspect_preset.py 28C --user         # or by slot, from My Presets
 """
 
+import math
 import sys
 
 import pyquadcortex
-from pyquadcortex import Input, Output, Setlist, blocks, field_present, splits
+from pyquadcortex import (Input, Output, Setlist, blocks, field_present,
+                          free_rows, splits)
 
 
 def main():
@@ -53,13 +55,22 @@ def main():
                 name = qc.catalog[block.model_id].name
                 print(f"        column {block.column + 1}: {name}")
 
-        # Where a row branches into a parallel lane and rejoins. Serial rows are
-        # omitted rather than reported with the device's -1 sentinel.
+        # Where a row branches into a parallel lane. A branch need not recombine,
+        # so ask `rejoins` rather than reading the column - and the lane occupies
+        # the row below, which is spoken for even when it holds nothing.
         parallel = splits(preset)
         print("\n  parallel lanes:", "none" if not parallel else "")
         for split in parallel:
+            where = (f"rejoins at column {split.mix_column + 1}" if split.rejoins
+                     else "never rejoins")
             print(f"    row {split.row + 1} branches at column "
-                  f"{split.split_column + 1} and rejoins at {split.mix_column + 1}")
+                  f"{split.split_column + 1}, {where}, "
+                  f"lane on row {split.lane_row + 1}")
+
+        # So "which rows could take a new chain" is not just "which are empty".
+        free = free_rows(preset)
+        print(f"\n  rows free for another chain: "
+              f"{[r + 1 for r in free] if free else 'none'}")
 
         # Parameters that hold a different value per scene are what make scenes do
         # anything beyond bypass, so they are worth seeing.
@@ -77,6 +88,12 @@ def main():
                             continue
                         values = [round(v.float_value, 2) for v in param.param_values
                                   if field_present(v, "float_value")]
+                        # Factory presets store NaN in unused parameter slots, and
+                        # NaN != NaN, so "are these all the same?" answers no about
+                        # eight identical NaNs. Drop them before comparing - the
+                        # same trap awaits anything diffing two presets.
+                        if any(math.isnan(v) for v in values):
+                            continue
                         if len(set(values)) < 2:
                             continue          # follows scenes but is set the same in all
                         model = qc.catalog[element.hash]

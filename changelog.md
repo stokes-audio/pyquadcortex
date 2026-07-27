@@ -8,6 +8,106 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.10.0 - 2026-07-27
+
+Everything below was re-derived on hardware against factory presets before being
+changed, so each item states what the device does rather than what was reported.
+
+### Fixed
+
+- **`splits()` dropped a branch that never recombines.** A row can report
+  `split >= 0` with `mix == -1`: it branches and the lane does not rejoin. Those rows
+  were skipped entirely, and the docstring explained the omission as "rows that do not
+  branch report -1 for both", which is not what they report. Verified on three factory
+  presets - "Strat Ambience" (05B) `(2, -1)`, "Classic Pedalboard" (07C) `(7, -1)`,
+  "Stereo Lead" (11B) `(5, -1)`. A branch is now recognised by `split` alone, and
+  `Split.rejoins` answers the other question. `Split.lane_row` gives the row the
+  parallel lane occupies.
+- **`set_block` could fail silently.** A placement the preset has no DSP capacity for
+  is accepted on the wire and then is not there, with no error of any kind. It is now
+  verified by default against the echo the device sends for each cell it accepts, and
+  raises the new `BlockRefused` when none arrives; `verify=False` restores
+  fire-and-forget. Reproduced deterministically: a six-block chain added to "OneStar
+  Clean Tweed" (02C) places five and drops the bass cab, while the cheaper block after
+  it in the same chain lands.
+- **`real=` silently produced meaningless values for some parameters.** Where the
+  catalog publishes `0..1` with a real-world unit - mixer and splitter levels, lane
+  `VOLUME`, `TEMPO` - that range is the wire's own scale, not the span the control
+  covers, so converting against it yields a number meaning something else. Those now
+  raise `ValueError` (`Parameter.range_is_placeholder` is the test). This corrects a
+  documented example: `set_lane_output(param="VOLUME", real=-3.0)` did not attenuate
+  3 dB, it silenced the row.
+- **`set_splitter_param` and `set_mixer_param` accepted rows that have no splitter or
+  mixer.** They now raise `ValueError` for an odd row instead of sending a write into a
+  collection the device does not have there.
+
+### Added
+
+- **`set_input_gate(row, param, value=/real=, scene=)`** and
+  `INPUT_GATE_CONTROL = 28000`, for the per-row noise gate in
+  `chains[].input_control[]` - the last of the four chain sub-collections without a
+  setter. `NOISE REDUCTION`, `BYPASS` and `INPUT GAIN` are confirmed writable in both
+  directions, per-scene included. `GAIN REDUCTION` is a meter, not a control: the
+  catalog types it `grMeter`, and it is sampled at save time, which matters when
+  diffing presets.
+- **`free_rows(preset)`** - the rows available for an independent chain. A row is free
+  only when it holds no blocks AND is not the parallel lane of a branch above it; that
+  lane is frequently empty and still spoken for, so block count alone answers the
+  question wrongly.
+- **`UNITY_LEVEL`** (0.76923077) - what the mixer, splitter and lane level parameters
+  hold when nothing is attenuated, measured on every row carrying one across 17 factory
+  presets. Knowing it is what distinguishes a deliberately silenced lane from a default.
+- **`SCENE_UNLABELLED`**, and `set_scene_label(index, None)` to write it. The unit
+  stores an unlabelled scene as a single space, so `label.strip()` detects a blank
+  scene and `label == ""` does not.
+
+### Documentation
+
+- **The claim that every row carries a splitter and mixer was wrong.** They exist only
+  on rows 0 and 2 - counted across all 68 rows of 17 factory presets - because a branch
+  can only originate on an even row with its lane below it. `output_control` and
+  `input_control` are padded on all four rows; those four are not.
+- **`copy_scene` carries the scene COLOUR as well as the label.** Verified with nothing
+  else sent, and on the unit's own screen. So reproducing a scene map needs no
+  `set_scene_color` calls for copied scenes.
+- **Adding a block rewrites comboBox values on rows never written to.** A selector whose
+  options enumerate the preset's blocks has its stored value recomputed when the block
+  count changes: on "US TWN Vibrato" (01C) a Doubler `TRIGGER` moves 1/19 -> 1/20 -> 1/23
+  as blocks are added, denominator `blocks + 6`, while a recall-and-save with no edit
+  leaves it alone. Anyone diffing a preset before and after an edit will meet this.
+  comboBox option names are not in `ModelRepo`, so what an index denotes is not knowable
+  from the catalog.
+- **`param_values` can contain NaN**, in at least four factory presets. Since
+  `nan != nan`, a preset compared against itself reports differences - a false failure
+  about a build that is in fact identical.
+- **Preset `tags` cannot be written, and a saved preset has none.** Three routes are
+  confirmed no-ops: `ProductData.tags` on the File CREATE, a File UPDATE carrying them,
+  and a `Grid` UPDATE carrying `preset.tags`. The control settles it - a plain save
+  reads back with an empty tag list whatever the source had - so nothing stale is
+  inherited, and `instrument`, which is settable, is what the unit filters on.
+- **DSP load is not readable.** `CPULoad{READ}` times out, adding `"CPULoad"` to the
+  connect burst's subscribe READs produces no pushes, and listening across both saw
+  none. So headroom cannot be checked before placing a block.
+- **Enumeration:** a listing that arrives is complete (five READs on an 18-preset
+  setlist, no short listing seen), but a READ does not reliably produce one promptly -
+  two of those five saw nothing within 8 s. A timeout means "ask again", not "the
+  setlist is empty".
+- The per-unit capture-id claim was stated as fact on no evidence; it is now what was
+  observed. What IS established: 13 of 17 surveyed factory presets reference capture id
+  14000 from positions no single capture could fill at once, so factory presets appear
+  to reference capture slots. Whether an id denotes different content on another unit is
+  untested here.
+- New `docs/protocol.md` sections for the capacity refusal, placeholder ranges, NaN and
+  the comboBox behaviour, all listed in the contents; `docs/capture.md`'s noise list
+  corrected to what actually arrives.
+
+### Examples
+
+- `inspect_preset.py` reports whether a branch rejoins, which row its lane occupies,
+  and which rows are genuinely free; it also skips NaN before comparing per-scene
+  values, for the reason above. `build_chain.py` picks its row with `free_rows()`,
+  handles `BlockRefused`, and uses `UNITY_LEVEL` for the lane level.
+
 ## 0.9.0 - 2026-07-27
 
 ### Added

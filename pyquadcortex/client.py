@@ -37,6 +37,37 @@ from pyquadcortex.enums import Input, Instrument, Output, Setlist  # noqa: F401
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
+#: The wire value the mixer, splitter and lane-output LEVEL parameters hold when
+#: nothing is attenuated - 10/13, which is 0 dB on the -100..+30 dB span those
+#: controls cover. The catalog publishes them as 0..1 "dB" (see
+#: :attr:`~pyquadcortex.catalog.Parameter.range_is_placeholder`), so this is the
+#: reference point for reading and writing them. Measured on every row carrying
+#: one across 17 factory presets.
+UNITY_LEVEL = 0.76923077
+
+#: How the unit stores "this scene has no label": a single space, not an empty
+#: string. So ``label.strip()`` detects a blank scene and ``label == ""`` does not.
+#: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
+SCENE_UNLABELLED = " "
+
+
+class BlockRefused(RuntimeError):
+    """The device did not accept a block placement.
+
+    Raised by :meth:`QuadCortex.set_block` when no echo confirms the cell. The
+    known cause is the preset having no DSP capacity left for that model.
+    """
+
+
+def _require_even_row(row: int, what: str):
+    """Splitters and mixers exist only on rows 0 and 2 - see :func:`splits`."""
+    if row % 2:
+        raise ValueError(
+            f"row {row} has no {what}: a branch can only originate on row 0 or "
+            f"row 2, whose parallel lane is the row below it. Rows 1 and 3 report "
+            f"an empty {what} collection, and a write addressed there does nothing."
+        )
+
 
 class QuadCortex:
     """Ergonomic control surface over a request/response transport."""
@@ -290,9 +321,14 @@ class QuadCortex:
         Unlike :meth:`read_preset`, this does not change what is loaded on the
         grid. There is no host-initiated "list" request: a ``File`` READ makes the
         device push a folder listing per setlist, so this sends that READ and
-        waits for the listing whose key matches ``setlist``. (The device sends
-        each setlist's listing more than once; the first is complete, so the
-        duplicates are ignored.)
+        waits for the listing whose key matches ``setlist``.
+
+        A listing that arrives is COMPLETE - five READs against an 18-preset setlist
+        each produced a full listing, and no short one has been observed. But a READ
+        does not reliably produce one promptly: two of those five saw nothing for
+        that setlist within 8 s, delivery being lazy. So treat a timeout as "ask
+        again", which is what :meth:`wait_for_listing` does, rather than as an
+        answer about the setlist's contents.
 
         Note the trailing-slash asymmetry the match has to absorb: recalls need
         the factory path WITH its trailing slash (Cortex Control sends it that
@@ -374,8 +410,12 @@ class QuadCortex:
         overwriting one, so scene B ends up holding scene D's former state and
         vice versa.
 
-        Either way the scene's LABEL travels with its bypass and parameter state:
-        a copy renames the destination scene, and a swap exchanges both labels.
+        The scene's LABEL and COLOUR both travel with its bypass and parameter
+        state: a copy renames and recolours the destination scene, and a swap
+        exchanges both. Confirmed on hardware with nothing else sent - ``copy_scene(
+        Scene.E, Scene.B)`` on factory 28A moved 'Clean +VMT' and ``0xff45f862``
+        onto scene B - and by performing the same copy on the unit. So reproducing a
+        scene map needs no :meth:`set_scene_color` calls for the copied scenes.
         """
         return self._t.send(
             pa.SceneCopyMessage(
@@ -386,13 +426,23 @@ class QuadCortex:
             )
         )
 
-    def set_scene_label(self, scene_index: int, label: str):
-        """Rename a scene. Confirmed shape: ``SceneLabel{action:
-        UPDATE, index, label}`` (observed as the device's broadcast when a
-        scene was renamed on the unit)."""
+    def set_scene_label(self, scene_index: int, label):
+        """Rename a scene, or blank it with ``label=None``.
+
+        Confirmed shape: ``SceneLabel{action: UPDATE, index, label}`` (observed as
+        the device's broadcast when a scene was renamed on the unit).
+
+        The unit stores an unlabelled scene as a single SPACE rather than an empty
+        string - factory "Cali Basswalk" (27E) reads back ``" "`` for the four
+        scenes it does not use - so ``None`` sends :data:`SCENE_UNLABELLED` to match
+        what the unit itself writes, and a blank scene is detected with
+        ``label.strip()`` rather than ``label == ""``.
+        """
         return self._t.send(
             pa.SceneLabelMessage(
-                action=pa.MessageAction.UPDATE, index=scene_index, label=label
+                action=pa.MessageAction.UPDATE,
+                index=scene_index,
+                label=SCENE_UNLABELLED if label is None else label,
             )
         )
 
@@ -565,7 +615,8 @@ class QuadCortex:
 
     # -- grid blocks ---------------------------------------------------------
 
-    def set_block(self, row: int, column: int, model):
+    def set_block(self, row: int, column: int, model, verify: bool = True,
+                  timeout: float = 5.0):
         """Put ``model`` in the grid cell at ``row``/``column``.
 
         Creates a block in an empty cell and replaces whatever is in an occupied
@@ -577,14 +628,58 @@ class QuadCortex:
         Confirmed on hardware, and matching the device's own broadcast when a
         block is added on the unit: ``Grid{UPDATE, preset{chains{row,
         models{column, hash}}}}``. Save the grid afterwards to keep it.
+
+        **A placement can be refused for want of DSP capacity.** The preset as a
+        whole has a processing budget, and a block that does not fit is accepted on
+        the wire like any other write and simply is not there afterwards. Confirmed
+        on hardware: adding a chain ending in a bass cab to factory "OneStar Clean
+        Tweed" (02C) placed every block except the cab, deterministically, while the
+        cheaper block AFTER it in the same chain landed. Nothing in the reply says
+        so - every host write is STALLed, and there is no per-block error message.
+
+        So by default this VERIFIES, which is possible without saving: the device
+        echoes a ``Grid`` broadcast naming the cell it accepted (~0.3 s on the
+        firmware measured), and a refused block produces no echo at all. When none
+        arrives within ``timeout``, this raises :class:`BlockRefused`. Pass
+        ``verify=False`` to send and return immediately, in which case a save and
+        read-back is the only way to learn whether the block is there.
         """
+        model_id = int(getattr(model, "id", model))
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
         chain.row = row
         model_msg = chain.models.add()
         model_msg.column = column
-        model_msg.hash = int(getattr(model, "id", model))
-        return self._t.send(msg)
+        model_msg.hash = model_id
+        if not verify:
+            return self._t.send(msg)
+
+        def echoes_cell(m):
+            # Same row/column conventions as blocks(): both fields may arrive
+            # without presence, in which case position in the repeated field is
+            # the index.
+            for i, ch in enumerate(m.preset.chains):
+                if (ch.row if field_present(ch, "row") else i) != row:
+                    continue
+                for j, mdl in enumerate(ch.models):
+                    if (mdl.column if field_present(mdl, "column") else j) != column:
+                        continue
+                    if field_present(mdl, "hash") and mdl.hash == model_id:
+                        return True
+            return False
+
+        try:
+            self._t.await_broadcast(pa.GridMessage, lambda: self._t.send(msg),
+                                    timeout=timeout, match=echoes_cell)
+        except TimeoutError:
+            raise BlockRefused(
+                f"the device did not accept {model_id} at row {row} column "
+                f"{column}: no Grid echo within {timeout}s. The usual cause is "
+                f"that the preset has no DSP capacity left for this block - try a "
+                f"cheaper one, or free a block. Pass verify=False to send without "
+                f"checking."
+            ) from None
+        return None
 
     def remove_block(self, row: int, column: int):
         """Remove the block at ``row``/``column``, leaving the cell empty.
@@ -659,6 +754,8 @@ class QuadCortex:
     LANE_OUTPUT_CONTROL = 23000
 
     TEMPO_CONTROL = 25000
+
+    INPUT_GATE_CONTROL = 28000
 
     def set_tempo_param(self, param, value: float = None, real=None):
         """Set a per-preset tempo/metronome parameter.
@@ -762,10 +859,15 @@ class QuadCortex:
         state: a write addressed there is silently ignored, accepted on the wire and
         absent on read-back. Always go through this method.
 
+        ``row`` must be 0 or 2: a splitter exists only on an even row, whose lane is
+        the row below (see :func:`splits`). An odd row raises ``ValueError`` rather
+        than sending a write into a collection the device does not have there.
+
         Same call shape as :meth:`set_param`, ``scene`` included - though note that
         splitter parameters read back with ``scene_mode`` false in factory content,
         so per-scene splitter values may be unusual.
         """
+        _require_even_row(row, "splitter")
         index = param
         if isinstance(param, str) or real is not None:
             model = self.catalog[self.SPLITTER]
@@ -809,8 +911,17 @@ class QuadCortex:
         library that cannot write the mixer cannot reproduce that preset's scene
         behaviour.
 
+        ``row`` must be 0 or 2, for the same reason as :meth:`set_splitter_param`:
+        a mixer exists only where a branch can originate. An odd row raises
+        ``ValueError``.
+
+        ``LEVEL A``, ``LEVEL B`` and ``MIXER LEVEL`` publish a placeholder catalog
+        range, so pass ``value=`` rather than ``real=`` for them;
+        :data:`pyquadcortex.UNITY_LEVEL` is unity.
+
         Same call shape as :meth:`set_param`, including ``scene``.
         """
+        _require_even_row(row, "mixer")
         return self._set_sub_param("mixer", self.MIXER, row, param,
                                    value, real, scene, promote)
 
@@ -872,11 +983,15 @@ class QuadCortex:
         row has any blocks.
 
         ``param`` is a name (``"VOLUME"``, ``"PAN"``, ``"MUTE"``, ``"SOLO"``) or a
-        wire index. Pass ``value`` as the normalized 0..1 the wire carries, or
-        ``real`` in the parameter's own units, converted through the catalog::
+        wire index. Pass ``value`` as the normalized 0..1 the wire carries::
 
-            qc.set_lane_output(row=0, param="PAN", value=0.5)      # centre
-            qc.set_lane_output(row=0, param="VOLUME", real=-3.0)   # dB
+            qc.set_lane_output(row=0, param="PAN", value=0.5)                # centre
+            qc.set_lane_output(row=0, param="VOLUME", value=UNITY_LEVEL)     # 0 dB
+            qc.set_lane_output(row=0, param="VOLUME", value=0.0)             # silent
+
+        ``VOLUME`` publishes a placeholder catalog range, so ``real=`` raises for it
+        rather than converting: :data:`UNITY_LEVEL` is the value it holds when
+        nothing is attenuated, and 0.0 is silence.
 
         A keyed parameter write into ``output_control`` persists the same way as
         one into ``models`` (confirmed on hardware). Note the wire carries FIVE
@@ -911,6 +1026,56 @@ class QuadCortex:
         prm.index = index
         prm.param_values.add().float_value = value
         return self._t.send(msg)
+
+    def set_input_gate(self, row: int, param, value: float = None, real=None,
+                       scene=None, promote: bool = True):
+        """Set an Input Gate Control parameter on ``row``.
+
+        Every grid row carries an Input Gate Control - the noise gate at the head of
+        the row - in ``chain.input_control[]`` rather than ``chain.models[]``, so
+        :meth:`set_param` cannot reach it. It is model ``28000``, present on all four
+        rows, and it genuinely differs between factory presets, so reproducing a row
+        faithfully means reproducing its gate.
+
+        ``param`` is a name or a wire index. Three of the five are controls:
+
+        * ``NOISE REDUCTION`` - the amount, ``real=`` in percent (0..100)
+        * ``BYPASS`` - 1.0 bypasses the gate, 0.0 engages it
+        * ``INPUT GAIN`` - ``real=`` in dB (-24..+24; 0.5 on the wire is 0 dB)
+
+        ``GAIN REDUCTION`` is not a control but a METER: the catalog types it
+        ``grMeter``, and it only ever holds 0.0 or 0.0011 (-39.96 dB on its -40..0
+        range, i.e. no reduction). It is sampled when the preset is saved, so two
+        saves of the same rig can differ there - worth knowing when comparing
+        presets. Index 4 is unidentified and reads 0.0 everywhere.
+
+        All three controls are confirmed writable on hardware in both directions,
+        by a row-keyed ``Grid`` UPDATE into ``input_control`` - the same shape
+        :meth:`set_lane_output` uses. (A full-preset :meth:`write_preset` reaches
+        ``NOISE REDUCTION`` but not ``BYPASS``; that is the general rule that only
+        keyed sparse updates persist, not anything specific to the gate.)
+
+        Name a ``scene`` for a per-scene value, exactly as :meth:`set_param` does;
+        confirmed on hardware, so a scene can open the gate that others keep shut.
+        """
+        index = param
+        if isinstance(param, str) or real is not None:
+            model = self.catalog[self.INPUT_GATE_CONTROL]
+            spec = (model.parameter(param) if isinstance(param, str)
+                    else model.parameters[param])
+            index = spec.index
+            if real is not None:
+                value = spec.to_normalized(real)
+        if value is None:
+            raise TypeError("set_input_gate needs value= (0..1) or real= (own units)")
+        if scene is not None:
+            if promote:
+                self._t.send(self._sub_param_message(
+                    "input_control", self.INPUT_GATE_CONTROL, row, index,
+                    scene_mode=True))
+            self.switch_scene(scene)
+        return self._t.send(self._sub_param_message(
+            "input_control", self.INPUT_GATE_CONTROL, row, index, value=value))
 
     def set_lane_output_scene_mode(self, row: int, param_index: int,
                                    enabled: bool = True):
@@ -1063,6 +1228,15 @@ class QuadCortex:
         ``instrument: 2``). Saving to slot 28E as "Test save to user sl" sent
         exactly ``{folder{key: "/media/p4/Presets/My Presets",
         is_factory: false, files{index: 220, name: ..., instrument: 2}}}``.
+
+        ``instrument`` is the tag the unit filters on, and is the only preset
+        metadata this can set. The descriptive ``tags`` a factory preset carries
+        ('Clean', 'Crunch') are NOT reproduced: a preset saved this way reads back
+        with an EMPTY tag list whatever its source had, and no route to them was
+        found on this firmware - not ``ProductData.tags`` on this message, not a
+        File UPDATE carrying them, not a ``Grid`` UPDATE carrying
+        ``preset.tags``. All three are accepted and leave the list empty. Nothing
+        stale is inherited, so a derived preset is simply untagged.
         """
         if default_scene is not None:
             # No field carries this; the device takes the active scene at save time.
@@ -1167,8 +1341,11 @@ def blocks(p: preset.BinaryPreset) -> list:
     reports every row as its full complement of **8 column slots**, with empty
     ones present as ``Model`` entries whose ``hash`` is absent or zero, so
     ``len(chain.models)`` is 8 for every row - including entirely empty rows - and
-    is not a block count. The same padding applies to ``splitter``, ``mixer``,
-    ``output_control`` and ``input_control``.
+    is not a block count. ``output_control`` and ``input_control`` are padded the
+    same way, one entry on every row. ``splitter``, ``mixer``,
+    ``combined_splitter`` and ``split_control_points`` are NOT: they exist only on
+    rows 0 and 2, and are empty on rows 1 and 3, because a branch can only
+    originate on an even row with its lane on the row below.
 
     Nor is ``in_portid`` a usable occupancy signal: ``Input.EMPTY`` means "not fed
     from a physical jack", which is the normal state of any row that is not an
@@ -1187,43 +1364,74 @@ def blocks(p: preset.BinaryPreset) -> list:
 
 
 class Split(NamedTuple):
-    """Where a row branches into a parallel lane, and where it recombines."""
+    """Where a row branches into a parallel lane, and where it recombines.
+
+    ``mix_column`` is ``-1`` for a branch that never recombines, so prefer
+    :attr:`rejoins` over testing the number. :attr:`lane_row` is the row the
+    parallel lane occupies.
+    """
 
     row: int
     split_column: int
     mix_column: int
 
+    @property
+    def rejoins(self) -> bool:
+        """Whether the parallel lane recombines into this row."""
+        return self.mix_column >= 0
+
+    @property
+    def lane_row(self) -> int:
+        """The row carrying this branch's parallel lane."""
+        return self.row + 1
+
 
 def splits(p: preset.BinaryPreset) -> list:
-    """Where each row splits into a parallel lane, as :class:`Split` entries.
+    """Where each row branches into a parallel lane, as :class:`Split` entries.
 
-    This is the readable half of the grid topology, and it is easy to miss twice
-    over. It does NOT live on the splitter block - that carries no ``column`` at
-    all - but in ``Chain.split_control_points``, whose ``split`` and ``mix`` fields
-    give the columns where the lane leaves and rejoins.
+    This is the readable half of the grid topology. It does NOT live on the
+    splitter block - that carries no ``column`` at all - but in
+    ``Chain.split_control_points``, whose ``split`` and ``mix`` fields give the
+    columns where the lane leaves and rejoins. Those fields have **no presence**,
+    so ``HasField`` (and therefore :func:`field_present`) reports them missing
+    even when set; read them directly, as this does.
 
-    The reason it looks absent: ``split`` and ``mix`` have **no presence**, so
-    ``HasField`` (and therefore :func:`field_present`) reports them missing even
-    when set. Read them directly, as this does.
+    A branch is present when ``split >= 0``. ``mix`` is independent: a lane may
+    never recombine, and reports ``-1`` when it does not, so test
+    :attr:`Split.rejoins` rather than the column. Factory "Strat Ambience" (05B)
+    branches at column 2 and never rejoins; "Darkglass AO900 1" (27H) branches and
+    rejoins at column 4 on rows 0 and 2. A row with no branch reports ``-1`` for
+    both and is omitted.
 
-    Confirmed against hardware: factory "Darkglass AO900 1" (27H) reports
-    ``(split=4, mix=4)`` on rows 0 and 2, and the parallel block on rows 1 and 3
-    does sit at column 4. So the branch column can be read rather than inferred
-    from where a lone block happens to line up.
-
-    Rows that do not branch are omitted: they report ``-1`` for both, which
-    factory "Brit 2203" does on its serial rows.
+    The parallel lane occupies :attr:`Split.lane_row`, the row BELOW the branch,
+    which is spoken for whether or not it holds blocks - see :func:`free_rows`.
+    Only rows 0 and 2 can carry a branch at all.
     """
     found = []
     for i, chain in enumerate(p.chains):
         row = chain.row if field_present(chain, "row") else i
         for scp in chain.split_control_points:
-            # -1 is the sentinel for "this row has a split element but no active
-            # split" - factory "Brit 2203" reports (-1, -1) on its serial rows.
-            if scp.split < 0 or scp.mix < 0:
+            # -1 means "no branch here" - factory "Brit 2203" reports (-1, -1) on
+            # its serial rows. `mix` alone being -1 is a branch that never rejoins.
+            if scp.split < 0:
                 continue
             found.append(Split(row=row, split_column=scp.split, mix_column=scp.mix))
     return found
+
+
+def free_rows(p: preset.BinaryPreset) -> list:
+    """The rows of ``p`` available for an independent chain, lowest first.
+
+    A row is free when it holds no blocks AND is not the parallel lane of a branch
+    on the row above. The second half is the part that bites: building on the lane
+    row of a branch puts blocks inside the existing chain's parallel path rather
+    than beside it, and the lane row is frequently empty, so block count alone says
+    a row is free when it is not. Factory "Strat Ambience" (05B) branches on row 0
+    and holds nothing on row 1; row 1 is not free.
+    """
+    used = {b.row for b in blocks(p)}
+    lanes = {s.lane_row for s in splits(p)}
+    return [row for row in range(len(p.chains)) if row not in used | lanes]
 
 
 def _is_factory_setlist(setlist_path: str) -> bool:

@@ -26,9 +26,14 @@ import tarfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 
-# Categories holding Neural Captures. These are user content: the ids are slots,
-# so the same id means a different capture on a different unit (or after the
-# player overwrites one). They must never become hard-coded constants.
+# Categories holding Neural Captures. These are user content, so they must never
+# become hard-coded constants. What is observed on one unit: the ids are dense and
+# low (14000, 14001 for two captures), and factory presets reference id 14000 from
+# positions no single capture could fill - the amp slot in one preset, a pedal slot
+# ahead of a real amp in another - so a factory preset appears to reference a
+# capture SLOT, resolved against whatever that unit holds. Whether the same id
+# denotes different content on a DIFFERENT unit has not been tested here; it would
+# take a second unit. Either way, resolve capture ids at run time.
 _CAPTURE_CATEGORY_IDS = frozenset({14, 20})
 
 
@@ -51,20 +56,55 @@ class Parameter:
     type: str = ""
     steps: int | None = None
 
+    @property
+    def range_is_placeholder(self) -> bool:
+        """Whether this parameter's catalog range supports no conversion.
+
+        Some parameters are published with the range ``0.0..1.0`` while carrying a
+        real-world unit: ``MIXER LEVEL`` is ``0..1`` "dB", ``TEMPO`` is ``0..1``
+        "BPM". That range is the wire's own normalized scale rather than the span
+        the parameter covers, so there is nothing to convert between, and the true
+        span is not recoverable from the catalog.
+
+        For these, pass ``value=`` - the normalized 0..1 the wire carries - rather
+        than ``real=``. :data:`pyquadcortex.UNITY_LEVEL` is the value the level
+        parameters hold when nothing is attenuated.
+        """
+        return self.minimum == 0.0 and self.maximum == 1.0 and bool(self.units)
+
+    def _reject_placeholder(self):
+        raise ValueError(
+            f"{self.name!r} publishes the placeholder range 0.0..1.0 "
+            f"{self.units!r}: that is the wire's own normalized scale, not the "
+            f"span this parameter covers, so no conversion exists. Pass value= "
+            f"with the normalized 0..1 instead of real= "
+            f"(pyquadcortex.UNITY_LEVEL is unity for the level parameters)."
+        )
+
     def to_normalized(self, real: float) -> float:
         """Convert a value in this parameter's own units to the wire's 0..1.
 
         Confirmed on hardware: the wire carries a normalized float. Sending 1.0
         to a THRESHOLD whose catalog range is -60..+12 dB made the unit read
         +12.0 dB. Values outside the range are clamped.
+
+        Raises ``ValueError`` when :attr:`range_is_placeholder`, rather than
+        returning a number that would quietly mean something else.
         """
+        if self.range_is_placeholder:
+            self._reject_placeholder()
         span = self.maximum - self.minimum
         if span == 0:
             return 0.0
         return min(1.0, max(0.0, (real - self.minimum) / span))
 
     def to_real(self, normalized: float) -> float:
-        """Convert a wire 0..1 value back into this parameter's own units."""
+        """Convert a wire 0..1 value back into this parameter's own units.
+
+        Raises ``ValueError`` when :attr:`range_is_placeholder` - see there.
+        """
+        if self.range_is_placeholder:
+            self._reject_placeholder()
         span = self.maximum - self.minimum
         if span == 0:
             return self.minimum

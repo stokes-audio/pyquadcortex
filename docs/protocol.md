@@ -43,12 +43,19 @@ confirming each finding live against hardware.
   - [7.3 Enumerate a setlist](#73-enumerate-a-setlist)
   - [7.4 Scenes](#74-scenes)
   - [7.5 Grid edits and the edit path](#75-grid-edits-and-the-edit-path)
+  - [Per-preset tempo, LED and metronome](#per-preset-tempo-led-and-metronome)
   - [Grid block move](#grid-block-move)
   - [7.7 File operations](#77-file-operations)
   - [7.8 Other observed traffic](#78-other-observed-traffic)
 - [8. Port, instrument, and preset enums](#8-port-instrument-and-preset-enums)
 - [9. The pushed preset structure](#9-the-pushed-preset-structure)
 - [Operation coverage](#operation-coverage)
+- [Grid blocks](#grid-blocks)
+  - [A placement can be refused for want of DSP capacity](#a-placement-can-be-refused-for-want-of-dsp-capacity)
+- [The model catalog (ModelRepo)](#the-model-catalog-modelrepo)
+  - [Some catalog ranges are placeholders, and cannot be converted](#some-catalog-ranges-are-placeholders-and-cannot-be-converted)
+  - [`param_values` can contain NaN](#param_values-can-contain-nan)
+  - [Adding a block rewrites comboBox values on rows you never wrote to](#adding-a-block-rewrites-combobox-values-on-rows-you-never-wrote-to)
 - [Open questions](#open-questions)
 
 ## 1. The USB HID interface
@@ -575,9 +582,15 @@ Three things to expect from that push:
   appear as entries with an `index` and no `name`, so a caller that wants real
   presets has to filter them out. A user setlist holding a dozen presets still
   reports 256 entries.
-- **Each setlist's listing is pushed more than once** (twice, in observation),
-  with identical contents. The first push is already complete, so the duplicates
-  can be ignored.
+- **A listing that arrives is complete**, so there is no need to wait for a
+  second one to be sure of it. Five `File` READs against an 18-preset setlist each
+  produced a full 18, and no short listing has been observed. Duplicate pushes of
+  the same listing carry identical contents and can be ignored.
+- **A READ does not reliably produce a listing promptly.** In those same five
+  rounds, two saw nothing for the setlist of interest within 8 seconds; delivery is
+  lazy. So a timeout means "ask again", not "the setlist is empty", and a caller
+  that deletes everything a listing reports should re-enumerate rather than assume
+  one pass saw everything. `wait_for_listing()` does this.
 
 A client should also require `len(folder.files) > 0`, because the device pushes
 empty folder messages for keys with no contents.
@@ -662,10 +675,24 @@ scenes, scene D matched scene B and differed from scene A.
 `is_swap: true`, scene B ended up holding scene D's former state and scene D held
 scene B's, rather than one overwriting the other.
 
-**The scene LABEL travels with the state**, in both modes. A copy renames the
-destination scene to the source scene's label; a swap exchanges the two labels.
-So `SceneCopy` is not limited to the audible state - a caller who only wants the
-sound copied should expect the label to move as well.
+**The scene LABEL and COLOUR both travel with the state**, in both modes. A copy
+renames and recolours the destination scene to match the source; a swap exchanges
+both. Confirmed by read-back with nothing else sent - `copy_scene(E, B)` on factory
+28A moved both the label `'Clean +VMT'` and the colour `0xff45f862` onto scene B,
+which had been `'Bright Punch'` / `0xff0a74e0` - and independently by performing the
+same copy on the unit's own screen.
+
+So `SceneCopy` is not limited to the audible state: a caller who only wants the
+sound copied should expect the label and colour to move as well, and a caller
+reproducing a scene map gets the colour for free and needs no `set_scene_color`
+calls for copied scenes.
+
+**An unlabelled scene is a single SPACE, not an empty string.** Factory "Cali
+Basswalk" (27E) has four scenes it does not use and all four labels read `" "`; 34 of
+the 136 scene labels across 17 factory presets are that. So `if not label` is wrong,
+`label.strip()` is right, and writing a blank scene means sending `" "` to match what
+the unit does. `pyquadcortex.SCENE_UNLABELLED` holds it, and
+`set_scene_label(index, None)` sends it - confirmed to round-trip a save as `" "`.
 
 A scene copy can also be done entirely client-side without this message: read
 the preset, copy the per-scene `param_values[from]` and per-scene bypass entries
@@ -805,10 +832,30 @@ and row 2 has `19` (MULTIPLE, the actual Multi-Out).
 
 **Every row reports all 8 column slots.** Empty ones arrive as `Model` entries
 whose `hash` is absent or zero, so `len(chain.models)` is 8 for every row -
-including entirely empty rows - and is not a block count. The same padding applies
-to `splitter`, `mixer`, `output_control` and `input_control`, each of which is
-present on every row whether or not the row holds anything. Nor is `in_portid ==
-EMPTY` an occupancy signal: it means "not fed from a physical jack", the normal
+including entirely empty rows - and is not a block count. `output_control` and
+`input_control` are padded the same way: one entry on every row, whether or not the
+row holds anything.
+
+**`splitter`, `mixer`, `combined_splitter` and `split_control_points` are NOT.**
+They exist only on rows 0 and 2 and are empty on rows 1 and 3, because a branch can
+only originate on an even row, with its parallel lane on the row below. Counted
+across all 68 rows of 17 factory presets:
+
+| collection | row 0 | row 1 | row 2 | row 3 |
+|---|---|---|---|---|
+| `models` | 136 | 136 | 136 | 136 |
+| `output_control` | 17 | 17 | 17 | 17 |
+| `input_control` | 17 | 17 | 17 | 17 |
+| `splitter` | 17 | 0 | 17 | 0 |
+| `mixer` | 17 | 0 | 17 | 0 |
+| `combined_splitter` | 17 | 0 | 17 | 0 |
+| `split_control_points` | 17 | 0 | 17 | 0 |
+
+So a splitter or mixer write addressed to row 1 or row 3 goes into a collection the
+device does not have there and does nothing. `set_splitter_param` and
+`set_mixer_param` raise `ValueError` on an odd row rather than sending it.
+
+Nor is `in_portid == EMPTY` an occupancy signal: it means "not fed from a physical jack", the normal
 state of any non-input row. Factory "Brit 2203" has six blocks on row 2 with
 `in_portid` EMPTY. Use `pyquadcortex.blocks(preset)` to iterate the cells that
 actually hold something.
@@ -882,6 +929,20 @@ Confirmed: factory "Darkglass AO900 1" (27H) and "Darkglass AO900 2" (28A) both 
 column 4. Rows that do not branch report **`-1`** for both, as factory "Brit 2203"
 does on its serial rows.
 
+**A branch is marked by `split` alone, and `mix` is independent of it.** A lane may
+branch and never recombine, in which case `split >= 0` while `mix == -1`. Three
+factory presets do exactly that: "Strat Ambience" (05B) reports `(2, -1)` on row 0,
+"Classic Pedalboard" (07C) `(7, -1)`, "Stereo Lead" (11B) `(5, -1)`. `split` and
+`mix` need not agree either - 07C reports `(3, 4)` on row 2 and 11B `(1, 7)`. So test
+whether a branch exists on `split`, and read `mix` separately;
+`Split.rejoins` does that.
+
+**The row below a branch is spoken for, even when it is empty.** The parallel lane
+lives there, so a row can hold no blocks and still not be available: writing to it
+puts content inside the existing chain's parallel path rather than beside it. Block
+count alone therefore answers "is this row free?" wrongly. `pyquadcortex.free_rows()`
+excludes both occupied rows and lane rows.
+
 ### Per-preset tempo, LED and metronome
 
 Reported as a dead end, and it is not. Each preset carries a `TempoControl` block
@@ -914,6 +975,26 @@ rather than `models[]`, present and populated on all four rows. Its parameters a
 carries a fifth, index 4, that the catalog does not document. A keyed write into
 `output_control` persists exactly like one into `models` (confirmed: PAN 0.5 ->
 0.0 survived a save and read-back).
+
+**Input Gate Control** is model `28000`, in `chains[].input_control[]`, one per row.
+Parameters: `0 NOISE REDUCTION` (%, 0..100), `1 BYPASS` (1.0 bypasses), `2 GAIN
+REDUCTION`, `3 INPUT GAIN` (dB, -24..+24, where 0.5 on the wire is 0 dB), and an
+undocumented index 4 that reads 0.0 everywhere. It is written with the same row-keyed
+shape as `output_control`, and all three controls are confirmed in both directions on
+hardware: `NOISE REDUCTION` 0.3 -> 0.6, `BYPASS` 1.0 -> 0.0 on a preset that ships
+bypassed and 0.0 -> 1.0 on one that does not, `INPUT GAIN` 0.5 -> 0.7 and -> 0.25.
+Per-scene values work too (promote, switch, write): scene C held 0.9 while the other
+seven held 0.3.
+
+The gate genuinely differs between factory presets, so reproducing a row faithfully
+means reproducing it. Six distinct settings appear across 68 rows, the commonest being
+`NOISE REDUCTION` 0.372 with the gate engaged (39 rows) and 0.3 with it bypassed (12).
+
+**`GAIN REDUCTION` is a meter, not a control.** The catalog types it `grMeter`, and
+across all 68 rows it only ever holds 0.0 or 0.0011 - the latter being -39.96 dB on
+its -40..0 range, i.e. no reduction happening. It is sampled when the preset is
+saved, so two saves of the same rig can legitimately differ there, which matters when
+diffing presets.
 
 A useful corollary for locating rows: in a preset read back from a recall, a
 chain's grid row equals its **index in `chains`** when the explicit `row` field
@@ -993,6 +1074,21 @@ moves have been observed.
 Delete and move are **eventually consistent**: the change takes effect on the
 device, but a listing issued a couple of seconds later can still show the
 pre-mutation state. Re-enumerate after a short wait.
+
+**A preset's descriptive `tags` cannot be written, and a saved preset has none.**
+`BinaryPreset.tags` (`repeated string`, field 12) carries the descriptors factory
+content ships with - 01C reads `['Guitar', 'Clean', 'Crunch']` - and the same list
+appears on the listing's `ProductData.tags` (field 7). Neither is reachable. Three
+routes were tried on hardware and all three are accepted and leave the list empty:
+`ProductData.tags` on the `File` CREATE, a `File` UPDATE carrying them against an
+existing entry, and a `Grid` UPDATE carrying `preset.tags`.
+
+The control settles what happens without any of them: a plain save reads back with an
+EMPTY tag list, whatever the source preset carried. So nothing stale is inherited - a
+preset derived from a guitar preset is simply untagged, not mislabelled - and
+`instrument`, which IS settable and is what the unit filters on, is the metadata that
+matters. Whether the unit's own screen can add tags to a user preset is not
+established.
 
 ### 7.8 Other observed traffic
 
@@ -1100,7 +1196,7 @@ visually on the device's own screen.
 | `set_param` | `Grid{UPDATE, preset{chains{row, models{column, params{index, param_values{float_value}}}}}}` | read-back | value round-trips 0.0 to 1.0; param index is positional; not every index is a visible knob. Per-scene values via promote + switch_scene + write |
 | `set_bypass` | `Grid{UPDATE, preset{bypass{row, colBypass{column, sceneBypass[scene]{bypass}}}}}` | on-unit | block greyed out on the unit |
 | `set_scene_label` / `set_scene_color` | `SceneLabel` / `SceneColor{UPDATE, index, label/color}` | read-back | color is ARGB uint32; exact round-trip |
-| `copy_scene` | `SceneCopy{UPDATE, from_index, to_index, is_swap}` | read-back + on-unit | fully confirmed: `from_index` (copying B onto D produced B, not A), `is_swap` (scenes exchanged), and that the scene LABEL travels with the state. Cortex Control cannot copy a scene, so the shape came from the device's own broadcast when copying on the unit |
+| `copy_scene` | `SceneCopy{UPDATE, from_index, to_index, is_swap}` | read-back + on-unit | fully confirmed: `from_index` (copying B onto D produced B, not A), `is_swap` (scenes exchanged), and that the scene LABEL and COLOUR both travel with the state. Cortex Control cannot copy a scene, so the shape came from the device's own broadcast when copying on the unit |
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the GRID; `preset_payload` is IGNORED for CREATE |
 | `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | works, but asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
@@ -1109,12 +1205,14 @@ visually on the device's own screen.
 | `set_mixer_param` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |
 | `disconnect` | `Connection{connected: false}` | sent, unverified | matches Cortex Control's captured behaviour on quit; no device state to read back, and no observable effect measured either way |
 | `set_splitter_param` | `Grid{UPDATE, preset{chains{row, combined_splitter{params{index, param_values}}}}}` | read-back | writes `combined_splitter`, NOT `splitter[]`, which is a read-only view; indices follow the unified model 10004 |
-| `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns; `-1` means the row is serial |
+| `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
+| `set_input_gate` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |
+| `free_rows` | reads `models[]` + `Chain.split_control_points` | read-back | rows available for an independent chain: excludes the lane row of a branch, which is spoken for even when empty |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |
 | `write_preset` | `Grid{UPDATE, preset}` | read-back | low-level primitive; applies ONLY row/column-keyed elements. A full recalled preset written back does NOTHING. Use the keyed wrappers |
-| `set_block` | `Grid{UPDATE, preset{chains{row, models{column, hash}}}}` | read-back + on-unit | creates a block in an empty cell, replaces one in an occupied cell; the same shape the device broadcasts when a block is added on the unit |
+| `set_block` | `Grid{UPDATE, preset{chains{row, models{column, hash}}}}` | read-back + on-unit | creates a block in an empty cell, replaces one in an occupied cell; the same shape the device broadcasts when a block is added on the unit. A placement can be REFUSED for want of DSP capacity, silently; verified by default against the device's echo |
 | `remove_block` | `Grid{action: DELETE, preset{chains{row, models{column, hash: 0}}}}` | read-back + on-unit | the ACTION marks the removal; an UPDATE carrying `hash: 0` is transmitted but ignored |
 | `catalog` | `ModelRepo{READ}` then `ModelRepo{model_repo_payload}` | read-back | payload is gzip(tar(ModelRepo.xml)): the unit's full block catalog |
 | `GridMove` | `GridMove{move{from_col, to_col, is_drop}, grid{rows{modelIds} x4}}` | captured only | observed in a Cortex Control session; no client method, not driven host-to-device by this library. Its `grid` snapshot is ADVISORY - replaying it with a cell zeroed does NOT delete a block, and the device echoes back only the `move` element |
@@ -1140,6 +1238,45 @@ deleting a block on the touchscreen emits exactly
 
 Save the grid afterwards to keep the change, as with any other grid edit.
 
+### A placement can be refused for want of DSP capacity
+
+A preset has a finite processing budget, and a block that does not fit in what is
+left **is accepted on the wire and simply is not there afterwards**. There is no
+error: every host write is STALLed regardless, `GenericError` carries only cloud and
+version codes, and `CompilerInhibitedModules` carries only two global booleans
+(`global_gate`, `global_eq`).
+
+Confirmed, and deterministic. Adding a six-block chain - two Neural Captures, an EQ, a
+compressor, a bass cab (21005), an 8-band EQ - to a free row of factory "OneStar Clean
+Tweed" (02C) placed five of the six and dropped the cab. The same happened on "Major
+Strat Vibes" (10B). It is the block, not the position or the count: the cheaper EQ
+placed AFTER the cab in the same chain landed both times, and shifting the chain a
+column left refuses the cab in its new position instead.
+
+**The refusal is detectable without saving.** The device echoes a `Grid` broadcast
+naming each cell it accepts, and a refused block produces none:
+
+| placed on 02C row 1 | `Grid` echoes | `UndoRedo` | read-back |
+|---|---|---|---|
+| Eltron 30 (capture) | 3 | yes | landed |
+| Capture 2 | 3 | yes | landed |
+| Graphic-9 | 3 | yes | landed |
+| Solid State Comp (M) | 2 | yes | landed |
+| **212 Darkglass Neo (M)** | **0** | **no** | **missing** |
+| Parametric-8 | 2 | yes | landed |
+
+Echo latency was 0.29-0.42 s over six accepted placements, and a repeat write to a
+cell that already holds that model echoes too, so an idempotent placement is not
+mistaken for a refusal. `set_block()` waits for that echo by default and raises
+`BlockRefused` when it does not arrive; `verify=False` restores fire-and-forget.
+
+**DSP load itself is not readable on this firmware.** `CPULoadMessage` (type 26)
+exists, with `cpu_total_load` and per-column `CPUColumnLoad`, and the RX path decodes
+it, but nothing ever arrives: a bare `CPULoad{READ}` times out with no reply, adding
+`"CPULoad"` to the connect burst's subscribe READs produces no pushes, and 40 seconds
+of listening across those three conditions saw zero. So there is no way to check
+headroom before placing a block; place it and check the echo.
+
 ## The model catalog (ModelRepo)
 
 `ModelRepo` is fetched during the connect burst as a readiness gate, but its
@@ -1163,6 +1300,79 @@ Parameter values on the wire are **normalized 0..1**, confirmed on hardware:
 sending `1.0` to a `THRESHOLD` whose catalog range is -60..+12 dB made the unit
 display +12.0 dB.
 
+### Some catalog ranges are placeholders, and cannot be converted
+
+A parameter published as **`min="0" max="1"` with a real-world unit** is not
+describing its own span - that is just the wire's normalized scale, and the true span
+is not in the catalog. Affected on the observed unit: Mixer (`11000`) `LEVEL A`,
+`LEVEL B`, `MIXER LEVEL`; Splitter (`10004`) `LEVEL TO A`, `LEVEL TO B`, `FREQUENCY`;
+LaneOutputControl (`23000`) `VOLUME`; TempoControl (`25000`) `TEMPO`. All are internal
+models, so none has a generated constant and nobody had reason to check.
+
+Converting against such a range yields a number that means something else, so
+`Parameter.to_real()` and `to_normalized()` raise `ValueError` for them
+(`Parameter.range_is_placeholder` is the test) and `real=` is refused. Pass `value=`
+with the normalized 0..1 instead.
+
+**Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on a -100..+30
+dB span. Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on
+every one of the 34 rows carrying them across 17 factory presets, and lane `VOLUME` on
+52 of 68 rows. So that value is the default, not attenuation somebody dialled in -
+which is what makes a `LEVEL B` of 0.0 next to it recognisable as a deliberately
+silenced lane. `pyquadcortex.UNITY_LEVEL` holds it.
+
+Note the ranges that ARE genuine on those same models, and do convert: Input Gate
+`NOISE REDUCTION` is 0..100 "%", `INPUT GAIN` is -24..+24 "dB", TempoControl `VOLUME`
+is -60..+9 "dB", and unitless 0..1 parameters (switches, `PHASE`) are real fractions.
+
+### `param_values` can contain NaN
+
+Factory "Strat Ambience" (05B) stores NaN in `param_values` at several parameter
+indices across several scenes; "Classic Pedalboard" (07C), "Rols Jazz" (09A) and
+"Major Strat Vibes" (10B) do too. It round-trips a save unchanged, so it is
+presumably a legitimate unused slot rather than corruption.
+
+Because `nan != nan`, a preset compared field-by-field against ITSELF reports
+differences. Anything diffing presets - to check a build is reproducible, or that an
+edit left other rows alone - has to treat NaN as equal to NaN, or it will report a
+false failure on a preset that is in fact identical.
+
+### Adding a block rewrites comboBox values on rows you never wrote to
+
+A comboBox parameter whose option list has one entry per block in the preset has its
+stored normalised value **recomputed by the device when the preset's block count
+changes**, including on rows nothing was written to. The selected INDEX stays put; the
+denominator moves.
+
+Confirmed on factory "US TWN Vibrato" (01C), whose row 2 column 0 is a Doubler
+(`16011`) with `TRIGGER` (index 4, type comboBox). Each case recalled 01C, made the
+stated edit ON ROW 1, saved to a scratch slot and read back:
+
+| case | `TRIGGER` reads | blocks |
+|---|---|---|
+| shipped | 0.0526316 = 1/19 | 13 |
+| recall and save, no edit | 0.0526316 = 1/19 | 13 |
+| add 1 block | 0.0500000 = 1/20 | 14 |
+| add 4 blocks | 0.0434783 = 1/23 | 17 |
+
+The denominator is `blocks + 6`. The control case matters: a save round-trip on its
+own does not move it, so this is a response to the option list changing length rather
+than to saving. A Tremolo `WAVEFORM` comboBox in the same preset, whose 5-option list
+is fixed, came back byte-identical - so this is specific to selectors that enumerate
+the preset's blocks.
+
+The consequence is for diffing: the natural way to show "I added a chain and left the
+rest alone" is to compare the untouched rows against what shipped, and that comparison
+fails on a row never addressed.
+
+**comboBox option NAMES are not recoverable from ModelRepo.** It gives comboBox
+parameters only `min`, `max`, `steps` and `type`, never the option list, so there is
+no way to tell from the catalog whether a given index is a fixed entry or a per-block
+reference whose meaning shifts as blocks are added. `TRIGGER` is published as
+`min=0 max=44 steps=45`, static and inconsistent with the observed option count of
+19/20/23 - the same class of problem as the placeholder ranges above. What option
+index 1 actually denotes is not established; only the unit's screen can say.
+
 Attributes that classify a model:
 
 | Attribute | Meaning |
@@ -1172,10 +1382,24 @@ Attributes that classify a model:
 | `replaces` | this model supersedes the listed id(s). Both stay in the catalog and they can share a display name - there are two "Graphic-9" equalizers, 4005 replacing 4002 |
 
 Because the catalog comes FROM the device it also covers Neural Captures
-(categories 14 and 20), which are user content in slot-numbered ids: the same id
-means a different capture on a different unit. That is why the library ships
-generated constants only for factory content (412 of the 533 models on the
-observed unit) and resolves everything else at runtime.
+(categories 14 and 20), which are user content. That is why the library ships
+generated constants only for factory content (412 of the 533 models on the observed
+unit) and resolves everything else at runtime.
+
+**Capture ids look like slots, and factory presets treat them as such.** What is
+observed on one unit: category 14 holds exactly two models, `14000` "Eltron 30" and
+`14001` "Capture 2", densely numbered from the category base. Thirteen of 17 surveyed
+factory presets reference id `14000`, from positions no single capture could fill at
+once - the amp slot in "Darkglass AO900 2" (28A) and "Cali Basswalk" (27E), a pedal
+slot ahead of the real amp in "OneStar Clean Tweed" (02C), row 0 column 2 in "Rols
+Jazz" (09A) opposite a real amp, row 3 column 4 in 06D. So a factory preset appears
+to reference a capture SLOT, resolved against whatever that unit happens to hold.
+
+Whether the same id denotes different content on a DIFFERENT unit has NOT been tested
+here - it would take a second unit - so the slot reading is an inference from
+numbering and from the factory references, not a measurement. Either way, the
+practical consequence holds: a preset copied from factory content is unit-specific
+unless the capture ids in it are resolved at run time.
 
 ## Open questions
 
@@ -1193,6 +1417,18 @@ Stated explicitly so nobody builds on a guess:
   sent. Its effect is unknown.
 - **Most output port ids** are schema-derived rather than hardware-confirmed
   (see [section 8](#output-ports-chainout_portid)).
+- **DSP cost per model** is not published anywhere reachable, and `CPULoad` never
+  arrives (see [above](#a-placement-can-be-refused-for-want-of-dsp-capacity)), so
+  whether a block will fit can only be discovered by placing it.
+- **comboBox option names**, and therefore what a given comboBox index denotes, are
+  not in `ModelRepo`. Only the unit's screen can say.
+- **The true spans behind the placeholder 0..1 ranges** (mixer/splitter/lane levels,
+  `TEMPO`) are not recoverable from the catalog. Unity for the levels is measured;
+  the endpoints are not.
+- **Whether a capture id denotes different content on a different unit** is untested
+  here, needing a second unit.
+- **Whether a preset's descriptive `tags` can be set at all**, by any route or from
+  the unit itself, is unresolved: three host routes are confirmed no-ops.
 - **Cross-setlist moves**, downloads/plugin folders
   (`SetlistPosition.is_downloads`, `is_plugin`), IR payloads
   (`FileMessage.ir_payload`), and bulk operations
