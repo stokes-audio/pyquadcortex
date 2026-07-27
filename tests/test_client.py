@@ -877,16 +877,36 @@ def test_set_mixer_param_targets_the_mixer_collection():
     assert len(mixer.params[0].param_values) == 1
 
 
-def test_set_splitter_param_refuses_rather_than_silently_doing_nothing():
-    # Tried on hardware four ways - with the hash, without it, on LEVEL TO A and on
-    # STEREO - and every write saved and read back unchanged, while the identical
-    # shape against chain.mixer[] works. A method that quietly does nothing is worse
-    # than one that says so.
+def test_set_splitter_param_writes_combined_splitter_not_splitter():
+    # Six attempts against chain.splitter[] all read back unchanged. The device's
+    # own broadcast, captured while the splitter was dragged on the unit, uses
+    # chain.combined_splitter with NO hash and the UNIFIED model's parameter order -
+    # which is why this looked impossible rather than merely undiscovered.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    with pytest.raises(NotImplementedError, match="does not accept host parameter writes"):
-        qc.set_splitter_param(row=0, param=1, value=0.5)
-    assert fake.sent == [], "nothing may reach the device"
+    qc.set_splitter_param(row=0, param=3, value=0.25)      # 3 = LEVEL TO A
+    chain = fake.sent[-1].preset.chains[0]
+    assert chain.row == 0
+    assert not chain.splitter, "the legacy field is the device's read-only view"
+    assert not chain.models and not chain.mixer
+    el = chain.combined_splitter[0]
+    assert not el.HasField("hash"), "the broadcast carries no hash, so nor do we"
+    assert el.params[0].index == 3
+    assert len(el.params[0].param_values) == 1
+    assert abs(el.params[0].param_values[0].float_value - 0.25) < 1e-6
+
+
+def test_splitter_param_per_scene_uses_promote_switch_write():
+    from pyquadcortex.enums import Scene
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.set_splitter_param(row=0, param=3, value=0.1, scene=Scene.B)
+    assert [type(m).__name__ for m in fake.sent] == [
+        "GridMessage", "SceneMessage", "GridMessage"]
+    promote = fake.sent[0].preset.chains[0].combined_splitter[0].params[0]
+    assert promote.scene_mode is True
+    assert not promote.param_values
 
 
 def test_set_tempo_param_reaches_tempo_program_data():

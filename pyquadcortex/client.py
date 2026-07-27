@@ -706,27 +706,62 @@ class QuadCortex:
     SPLITTER_AB = 10000
     MIXER = 11000
 
+    SPLITTER = 10004
+
     def set_splitter_param(self, row: int, param, value: float = None, real=None,
                            scene=None, promote: bool = True):
-        """Set a Splitter parameter on ``row`` (``LEVEL TO A``, ``LEVEL TO B``...).
+        """Set a Splitter parameter on ``row`` (``LEVEL TO A``, ``BALANCE``...).
 
-        The splitter lives in ``chain.splitter[]``, which neither :meth:`set_param`
-        (``models[]``) nor :meth:`set_lane_output` (``output_control[]``) can reach.
-        Model ``10000``, "Splitter AB".
+        The splitter divides a row into two parallel lanes; :meth:`set_mixer_param`
+        controls how they recombine.
 
-        Takes a parameter name or wire index, ``value`` as normalized 0..1 or
-        ``real`` in the parameter's own units, and ``scene`` for a per-scene value -
-        all exactly as :meth:`set_param` does.
+        **Address it by the UNIFIED model 10004 ("Splitter"), whatever the preset
+        reports.** A preset stores a type-specific legacy id - 10000 "Splitter AB",
+        10002 "Splitter Balance", 10003 "LR Crossover" - but the device speaks the
+        unified model's parameter order: ``TYPE, STEREO, BALANCE, LEVEL TO A,
+        LEVEL TO B, FREQUENCY, MODE``. Which parameters actually apply depends on
+        ``TYPE``: ``LEVEL TO A``/``LEVEL TO B`` only for A/B, ``BALANCE`` only for
+        Balance, ``FREQUENCY``/``MODE`` only for Crossover.
+
+        **This writes ``chain.combined_splitter``, not ``chain.splitter``** - which
+        is the whole reason splitter writes looked impossible. Six attempts against
+        ``chain.splitter[]`` all read back unchanged; the device's own broadcast,
+        captured while the splitter was dragged on the unit, uses
+        ``combined_splitter`` and carries no model hash at all.
+
+        Same call shape as :meth:`set_param`, ``scene`` included - though note that
+        splitter parameters read back with ``scene_mode`` false in factory content,
+        so per-scene splitter values may be unusual.
         """
-        raise NotImplementedError(
-            "the splitter does not accept host parameter writes. Tried on hardware "
-            "with the hash, without it, on a level (LEVEL TO A) and on a switch "
-            "(STEREO): every write saved and read back unchanged, while the very "
-            "same shape against chain.mixer[] works. The mixer is what factory "
-            "presets use to build scenes, so set_mixer_param is probably what you "
-            "want. If you find a shape that works, please reopen this - see "
-            "docs/protocol.md."
-        )
+        index = param
+        if isinstance(param, str) or real is not None:
+            model = self.catalog[self.SPLITTER]
+            spec = (model.parameter(param) if isinstance(param, str)
+                    else model.parameters[param])
+            index = spec.index
+            if real is not None:
+                value = spec.to_normalized(real)
+        if value is None:
+            raise TypeError("set_splitter_param needs value= (0..1) or real= (own units)")
+        if scene is not None:
+            if promote:
+                self._t.send(self._combined_splitter_message(row, index, scene_mode=True))
+            self.switch_scene(scene)
+        return self._t.send(self._combined_splitter_message(row, index, value=value))
+
+    def _combined_splitter_message(self, row, index, value=None, scene_mode=None):
+        """Build the shape the device itself broadcasts: no hash, no column."""
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        el = chain.combined_splitter.add()
+        prm = el.params.add()
+        prm.index = index
+        if scene_mode is not None:
+            prm.scene_mode = scene_mode
+        if value is not None:
+            prm.param_values.add().float_value = value
+        return msg
 
     def set_mixer_param(self, row: int, param, value: float = None, real=None,
                         scene=None, promote: bool = True):
@@ -1082,6 +1117,46 @@ def blocks(p: preset.BinaryPreset) -> list:
                 continue
             column = model.column if field_present(model, "column") else j
             found.append(Block(row=row, column=column, model_id=model.hash))
+    return found
+
+
+class Split(NamedTuple):
+    """Where a row branches into a parallel lane, and where it recombines."""
+
+    row: int
+    split_column: int
+    mix_column: int
+
+
+def splits(p: preset.BinaryPreset) -> list:
+    """Where each row splits into a parallel lane, as :class:`Split` entries.
+
+    This is the readable half of the grid topology, and it is easy to miss twice
+    over. It does NOT live on the splitter block - that carries no ``column`` at
+    all - but in ``Chain.split_control_points``, whose ``split`` and ``mix`` fields
+    give the columns where the lane leaves and rejoins.
+
+    The reason it looks absent: ``split`` and ``mix`` have **no presence**, so
+    ``HasField`` (and therefore :func:`field_present`) reports them missing even
+    when set. Read them directly, as this does.
+
+    Confirmed against hardware: factory "Darkglass AO900 1" (27H) reports
+    ``(split=4, mix=4)`` on rows 0 and 2, and the parallel block on rows 1 and 3
+    does sit at column 4. So the branch column can be read rather than inferred
+    from where a lone block happens to line up.
+
+    Rows that do not branch are omitted: they report ``-1`` for both, which
+    factory "Brit 2203" does on its serial rows.
+    """
+    found = []
+    for i, chain in enumerate(p.chains):
+        row = chain.row if field_present(chain, "row") else i
+        for scp in chain.split_control_points:
+            # -1 is the sentinel for "this row has a split element but no active
+            # split" - factory "Brit 2203" reports (-1, -1) on its serial rows.
+            if scp.split < 0 or scp.mix < 0:
+                continue
+            found.append(Split(row=row, split_column=scp.split, mix_column=scp.mix))
     return found
 
 

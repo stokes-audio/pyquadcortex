@@ -213,3 +213,41 @@ def test_scene_mode_is_what_distinguishes_per_scene_parameters(scene_preset):
     assert global_params, "the fixture has ordinary, non-scene-following parameters"
     for vals in global_params:
         assert len(set(vals)) == 1, "a global parameter reads the same in every scene"
+
+
+# -- grid topology: where a row splits ----------------------------------------
+
+
+def test_splits_recovers_the_branch_columns(real_preset):
+    # The splitter block carries no column, so where a lane leaves the row looked
+    # unknowable and had to be inferred from a lone block lining up. It is in
+    # Chain.split_control_points instead - whose split and mix fields have NO
+    # presence, so HasField reports them absent and they are easy to miss entirely.
+    from pyquadcortex import splits
+
+    found = splits(real_preset)
+    # This fixture's rows are serial: they report the -1 sentinel, which splits()
+    # filters out rather than reporting as column -1.
+    if not found:
+        for chain in real_preset.chains:
+            for scp in chain.split_control_points:
+                assert scp.split == -1 and scp.mix == -1
+        pytest.skip("this fixture is serial; the sentinel case is asserted above")
+    for s in found:
+        assert 0 <= s.row < 4
+        assert 0 <= s.split_column < 8
+        assert 0 <= s.mix_column < 8
+
+
+def test_split_control_point_fields_have_no_presence(real_preset):
+    # Locks in WHY splits() reads the values directly: gating on presence, which is
+    # the correct habit everywhere else in this schema, silently yields nothing here.
+    from pyquadcortex import field_present
+
+    for chain in real_preset.chains:
+        for scp in chain.split_control_points:
+            assert field_present(scp, "split") is False, (
+                "if this ever becomes True the schema changed and splits() can "
+                "start gating on presence like everything else"
+            )
+            assert isinstance(scp.split, int), "the value is readable regardless"

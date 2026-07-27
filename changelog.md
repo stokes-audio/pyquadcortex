@@ -8,6 +8,36 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.6.0 - 2026-07-27
+
+Parallel routing is now fully writable, and the grid can be read.
+
+### Added
+
+- **`set_splitter_param(row, param, ...)`** now works, with `scene=` like the others.
+  It writes **`chain.combined_splitter`**, not `chain.splitter` - a different field
+  entirely, which is why 0.5.0 concluded the splitter was unwritable. Six shapes against
+  `chain.splitter[]` had all read back unchanged; the legacy field turns out to be the
+  device's read-only view of the same state, so writing there fails silently instead of
+  erroring. Parameters are addressed by the **unified** model 10004's order (`TYPE`,
+  `STEREO`, `BALANCE`, `LEVEL TO A`, `LEVEL TO B`, `FREQUENCY`, `MODE`) whatever
+  type-specific id a preset reports.
+- **`splits(preset)`** reports where each row branches into a parallel lane and where
+  it rejoins, so grid topology no longer has to be guessed from which blocks happen to
+  line up. It reads `Chain.split_control_points`, whose `split` and `mix` fields have
+  **no presence** - which is why they looked absent and were missed twice, including by
+  this library's own `field_present` helper. Rows that do not branch report `-1` and
+  are omitted.
+
+### How it was found
+
+Six host-side guesses failed. The answer came from the device's own broadcast, captured
+while the splitter was dragged on the unit - the technique that previously cracked
+`SceneCopy` and block removal. Both times a feature has been written off as impossible
+in this project, it was reachable through a field nobody had tried, and both times the
+capture settled it in minutes. That is now recorded in `docs/protocol.md` as the thing
+to reach for when a write silently does nothing.
+
 ## 0.5.0 - 2026-07-26
 
 Four gaps that stopped a tester building bass presets from a script. Everything here

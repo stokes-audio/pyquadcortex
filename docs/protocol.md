@@ -814,19 +814,57 @@ any scene, and all eight scenes come from per-scene `LEVEL A` / `LEVEL B` across
 rows, giving four amp paths. A client that cannot write the mixer cannot reproduce
 that.
 
-The SPLITTER appears NOT to be writable from the host. Four attempts, each saved and
-read back unchanged: with the model hash and without it (the device's own broadcast
-omits the hash), on a level (LEVEL TO A) and on a switch (STEREO). The identical
-shape against `mixer[]` works, so this is not a malformed message. It has NOT been
-confirmed by capture that the device broadcasts nothing when a splitter is edited on
-the unit, so treat this as "no known write path" rather than "impossible".
+**The SPLITTER is writable, but through a different field.** This took a while, so
+the wrong turn is worth recording: six attempts against `chain.splitter[]` all saved
+and read back unchanged - with the preset's own model hash, with none, addressed to
+the unified model 10004, with an explicit `column` swept across all eight, on a level
+and on a switch.
 
-**Splitter and mixer positions are not recoverable.** Neither carries `column` in a
-recalled preset - it is absent, not zero - so where a split occurs on the grid cannot
-be read directly. It can only be inferred, for example from a lone block on one row
-sitting at the same column as a block on another. **The grid topology is therefore
-only partly readable**, which is worth knowing before building anything that depends
-on reconstructing it.
+The answer came from the device's own broadcast while the splitter was dragged on the
+unit, which is the same technique that cracked `SceneCopy`:
+
+```
+Grid{UPDATE, preset{chains{row: 0, combined_splitter{params{index: 3,
+                                                     param_values{float_value}}}}}}
+```
+
+**`chain.combined_splitter`**, not `chain.splitter` - a separate repeated field on the
+same chain, carrying NO hash and NO column. Writing there works and propagates to
+both representations: setting `LEVEL TO A` to 0.25 read back as 0.25 in
+`combined_splitter[3]` AND in the legacy `splitter[0]`. So `splitter[]` is the
+device's read-only view of the same state, which is exactly why writing to it looked
+like a silent no-op rather than an error.
+
+Parameter indices follow the **unified** model 10004 (`TYPE, STEREO, BALANCE, LEVEL TO
+A, LEVEL TO B, FREQUENCY, MODE`), whatever type-specific legacy id the preset reports
+(10000 Splitter AB, 10002 Splitter Balance, 10003 LR Crossover). Which parameters
+apply depends on `TYPE`: levels for A/B, `BALANCE` for Balance, `FREQUENCY`/`MODE` for
+Crossover.
+
+Splitter parameters read back with `scene_mode` false in the factory content examined,
+so per-scene splitter values appear to be unusual, though the promote/switch/write
+sequence is offered for them anyway.
+
+**A caution drawn from getting this wrong:** "I tried the obvious field and it did
+nothing" is weak evidence. Both this and per-preset tempo were written off on that
+basis, and both turned out to be reachable through a field nobody had thought to try.
+When a write silently does nothing, capture what the device sends when a human does
+the same thing on the unit, and copy that. It is the only authoritative source.
+
+**Where a row splits IS readable - just not from the splitter.** Neither the splitter
+nor the mixer carries `column`, so the position looked unknowable. It lives in
+`Chain.split_control_points` instead, whose `split` and `mix` fields give the columns
+where the lane leaves and rejoins.
+
+The reason this was missed twice: **`split` and `mix` have no presence**, so
+`HasField` reports them absent even when set, and any code that gates on presence -
+the correct habit everywhere else in this schema - silently sees nothing. Read them
+directly, as `pyquadcortex.splits()` does.
+
+Confirmed: factory "Darkglass AO900 1" (27H) and "Darkglass AO900 2" (28A) both report
+`(split=4, mix=4)` on rows 0 and 2, and the parallel lane's single block does sit at
+column 4. Rows that do not branch report **`-1`** for both, as factory "Brit 2203"
+does on its serial rows.
 
 ### Per-preset tempo, LED and metronome
 
@@ -1053,7 +1091,8 @@ visually on the device's own screen.
 | `set_param_scene_mode` | `Grid{UPDATE, ..., params{index, scene_mode}}` (flag ALONE) | read-back | promotes a parameter to scene-following; a value in the same message voids it |
 | `set_chain_output` | `Grid{UPDATE, preset{chains{row, out_portid}}}` | read-back | required for a new chain: the device never assigns an output on its own |
 | `set_mixer_param` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |
-| `set_splitter_param` | same shape against `splitter[]` | **does not persist** | four shapes tried; raises rather than silently doing nothing |
+| `set_splitter_param` | `Grid{UPDATE, preset{chains{row, combined_splitter{params{index, param_values}}}}}` | read-back | writes `combined_splitter`, NOT `splitter[]`, which is a read-only view; indices follow the unified model 10004 |
+| `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns; `-1` means the row is serial |
 | `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |

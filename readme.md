@@ -111,7 +111,7 @@ These are all methods on the object `connect()` returns.
 | **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `catalog` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
 | **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
-| **Mixer** | `set_mixer_param(row, param, value=/real=, scene=)` |
+| **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `splits(preset)` |
 | **Per-preset tempo** | `set_tempo_led(on)`, `set_metronome_volume(v)`, `set_tempo_param(param, ...)` |
 | **Inspect a preset** | `blocks(preset)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
@@ -216,10 +216,26 @@ Factory presets often produce their scenes with the **mixer**, not with bypass. 
 qc.set_mixer_param(row=0, param="LEVEL A", value=0.0, scene=Scene.C)
 ```
 
-The **splitter** is not writable from the host - four message shapes were tried and
-none persisted - so `set_splitter_param()` raises rather than quietly doing nothing.
-Splitter and mixer positions also cannot be read: neither carries a column, so the
-grid topology is only partly recoverable.
+The **splitter** divides a row into two lanes, and is writable too - though it lives
+in a different field from everything else, `combined_splitter`, which is why it took
+six failed attempts and a capture of the unit's own traffic to find:
+
+```python
+qc.set_splitter_param(row=0, param="LEVEL TO A", value=0.25)
+```
+
+Address its parameters by the **unified** model's names - `TYPE`, `STEREO`, `BALANCE`,
+`LEVEL TO A`, `LEVEL TO B`, `FREQUENCY`, `MODE` - whatever type-specific block the
+preset reports. Which ones apply depends on `TYPE`: the levels for A/B, `BALANCE` for
+Balance, `FREQUENCY`/`MODE` for Crossover.
+
+**Where a row splits is readable** with `splits()`, which reports the columns at which
+a lane leaves and rejoins. Rows that do not branch are omitted:
+
+```python
+for s in splits(preset):
+    print(f"row {s.row} branches at {s.split_column}, rejoins at {s.mix_column}")
+```
 
 ### Per-preset tempo, LED and metronome
 
