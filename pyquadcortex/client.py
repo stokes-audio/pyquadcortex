@@ -15,8 +15,8 @@ fake transport and keeps all wire concerns in ``framing``/``transport``.
 is the top row on screen, and ``row=2`` is the one labelled 3. Getting this wrong
 is quiet rather than loud - an edit lands on a real row, just not the one intended,
 and it reads back perfectly. When a change is meant to be audible, check which row
-actually reaches a physical output: ``chain.out_portid`` values 16 to 19 are
-internal grid routes, not jacks.
+actually reaches a physical output: ``chain.out_portid`` values 16 to 18 are internal
+row-to-row routing rather than jacks, though 19 (``MULTIPLE``) is a real destination.
 
 Field semantics were confirmed against real Cortex Control 4.0.1 sessions:
 session connect, preset recall (user AND factory setlists), scene switch, grid
@@ -718,10 +718,18 @@ class QuadCortex:
         row's output, and the value survives a save and recall.
 
         Pass a :class:`~pyquadcortex.enums.Output`. Note that not every member is a
-        physical destination - values 16 to 19 are internal grid-routing states
-        (``NEXT_ROW_*``, ``MULTIPLE``), so a row set to one of those feeds another
-        row rather than an output. See ``docs/protocol.md`` for which are confirmed
-        real.
+        physical destination. Values **16 to 18** are internal grid routing
+        (``NEXT_ROW_*``): a row set to one of those feeds another row rather than a
+        jack.
+
+        **19 (``MULTIPLE``) IS a real destination** - it is what factory presets use
+        to reach the Multi-Out, so it is often the right value when building a chain
+        that has to be audible alongside an existing one. Factory "Brit 2203" uses 16
+        on row 0 to feed the next row and 19 on row 2 for the actual output.
+
+        Note also that the device does NOT validate this field: an id that means
+        nothing is stored rather than rejected, so a typo reads back cleanly. See
+        ``docs/protocol.md``.
         """
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
@@ -944,24 +952,57 @@ class QuadCortex:
             qc.wait_for_listing(Setlist.USER, until=lambda e: not e)
 
         With no ``until``, this waits for two consecutive identical listings,
-        which is the general "has it stopped changing?" question. Raises
-        ``TimeoutError`` if the condition never holds.
+        which is the general "has it stopped changing?" question.
+
+        **A missed push is ridden out, not raised.** The device sometimes goes quiet
+        for a polling interval and the underlying listing request times out; that is
+        the transient this method exists to absorb, so it keeps polling until its own
+        ``timeout``. You do not need to wrap this in your own retry loop.
+
+        Two different ``TimeoutError`` diagnoses come out of it, which are worth
+        telling apart: *the condition never became true* means listings arrived and
+        your predicate stayed false, whereas *the device stopped pushing listings*
+        means nothing was ever evaluated - so the latter says nothing about whether
+        your change landed.
         """
         deadline = time.monotonic() + timeout
         previous = None
+        listings_seen = 0
+        missed_pushes = 0
         while True:
-            entries = self.list_presets(setlist)
-            if until is not None:
-                if until(entries):
-                    return entries
+            try:
+                entries = self.list_presets(setlist)
+            except TimeoutError:
+                # A missed File push is exactly the transient this method exists to
+                # ride out. Surfacing it would produce the very false negative the
+                # docstring warns about - one quiet polling interval aborting a wait
+                # for work that already succeeded. Keep polling until OUR deadline.
+                missed_pushes += 1
             else:
-                signature = [(e.index, e.name) for e in entries]
-                if previous is not None and signature == previous:
-                    return entries
-                previous = signature
+                listings_seen += 1
+                if until is not None:
+                    if until(entries):
+                        return entries
+                else:
+                    signature = [(e.index, e.name) for e in entries]
+                    if previous is not None and signature == previous:
+                        return entries
+                    previous = signature
             if time.monotonic() >= deadline:
+                if listings_seen == 0:
+                    # Different diagnosis: we never saw a listing at all.
+                    raise TimeoutError(
+                        f"the device stopped pushing listings for {str(setlist)!r}: "
+                        f"{missed_pushes} attempt(s) in {timeout}s each timed out "
+                        "waiting for a File broadcast. The condition was never "
+                        "evaluated, so this says nothing about whether your change "
+                        "landed."
+                    )
                 raise TimeoutError(
-                    f"listing for {str(setlist)!r} did not settle within {timeout}s"
+                    f"the condition never became true for {str(setlist)!r} within "
+                    f"{timeout}s ({listings_seen} listing(s) checked"
+                    + (f", {missed_pushes} missed push(es) ridden out"
+                       if missed_pushes else "") + ")"
                 )
             time.sleep(interval)
 

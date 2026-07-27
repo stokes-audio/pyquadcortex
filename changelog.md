@@ -8,6 +8,44 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.8.0 - 2026-07-27
+
+Field feedback from a couple of dozen sessions and several thousand writes.
+
+### Fixed
+
+- **`wait_for_listing()` no longer aborts on a missed push.** It exists to absorb
+  eventual consistency, but called `list_presets()` bare in its poll loop, so a single
+  quiet interval raised `TimeoutError` straight out of it - producing exactly the false
+  negative its own docstring warns about. One report had it kill a 14-preset build at
+  preset 8, after a save that had already succeeded. It now rides out missed pushes
+  until its own `timeout`, and you no longer need to wrap it in a retry.
+  Its two failures are also now distinguishable: *the condition never became true*
+  means listings arrived and your predicate stayed false, while *the device stopped
+  pushing listings* means nothing was evaluated - so only the first tells you anything
+  about whether your change landed.
+- **Corrected `out_portid` 19.** The docs and `set_chain_output`'s docstring lumped
+  16-19 together as internal routing. Wrong, and it steered users away from the right
+  answer: **16 to 18** are internal row-to-row routing, but **19 (`MULTIPLE`) is a real
+  destination** and is what factory presets use to reach the Multi-Out - often exactly
+  the value you want when building a chain that has to be audible.
+
+### Documentation
+
+- **A Troubleshooting section**, covering a failure mode whose symptoms actively
+  mislead: the unit's USB link can die mid-session, with Cortex Control quit, the cable
+  in and the unit booted - so the existing error message sends you the wrong way. It
+  now points at the readme. Includes how to tell a flapping port from a plain
+  disconnection, that only a full power-down recovers it, and that the link flaps for
+  a couple of minutes afterwards in a way that looks identical to the fault. Framed as
+  one user's field experience with the cause unknown, not as a diagnosis.
+- **No write pacing is needed**, recorded as a negative result: ~800 fire-and-forget
+  writes per run in tight loops ran fine, and write bursts were tested and exonerated
+  as a cause of the above. Nobody should add a throttle on a hunch.
+- **MIDI is the simpler route if you only need to switch presets or scenes** - it is
+  manufacturer-documented and needs no USB session. This library is for creating and
+  editing content, which MIDI cannot do.
+
 ## 0.7.0 - 2026-07-27
 
 ### Added

@@ -58,6 +58,71 @@ Python 3.11 or newer.
 it is running nothing else can talk to the device. (Wi-Fi can stay on, it makes
 no difference. The Quad Cortex just has to be plugged in over USB.)
 
+## Troubleshooting
+
+### `DeviceNotFoundError` when it was working a moment ago
+
+If a session was running fine and then the device vanishes mid-run, the usual advice
+in that error message does not apply - Cortex Control is quit, the cable is in, and
+the unit has booted. What can happen instead is that **the unit's USB link dies and
+only a full power-down recovers it**.
+
+This is field experience from one unit, not a protocol finding, and the root cause is
+unknown. Recorded because the symptoms are misleading and cost a user about an hour.
+
+**What it looks like:** `hid.enumerate()` reports zero Neural DSP interfaces and
+`connect()` raises. Reseating the cable at either end changes nothing, and retrying in
+software never succeeds (25 attempts over 75 seconds, never visible once).
+
+**How to tell it apart from a plain disconnection:** the port is *flapping* -
+asserting and dropping a connection several times a second - rather than idle. On
+macOS:
+
+```bash
+log show --last 60s --predicate 'eventMessage CONTAINS "cableChangeOccurred"' \
+    --style compact | grep -c cableChangeOccurred
+```
+
+Hundreds of events a minute with nobody touching the cable means the connection is
+being made and lost repeatedly, so enumeration never completes. Roughly 264 events
+were seen while attached, against about 1 per minute with the cable out - which is
+also a clean way to exonerate the host: if it is quiet with nothing plugged in, the
+Mac's port and USB stack are fine.
+
+**What fixed it:** a **full shutdown** of the unit, then power on. A reboot was *not*
+enough, and unplugging at the unit end does not reset its USB controller either.
+
+**Then wait about three minutes before re-diagnosing.** After a restart the link flaps
+for a while as it settles, and that looks identical to the fault: in one measurement
+the unit was still flapping a minute later with zero interfaces, then enumerated on
+its own two and a half minutes after the restart with no intervention. Sampling during
+that window twice led a user to wrongly conclude the power cycle had failed.
+
+**What is not established:** the cause. One unit, one host, and only ever the cable
+that shipped with it, so a marginal cable is not ruled out. Onset followed roughly 20
+minutes of continuous heavy write traffic, which may or may not be related - see the
+note on write pacing below.
+
+### Do I need to throttle writes?
+
+**No, on the evidence so far.** A build firing roughly 800 fire-and-forget `Grid`
+writes per run, about 90 `set_param` calls per preset in a tight loop with no delay,
+completed fine repeatedly - before and after the USB fault above, which was
+specifically suspected and tested as a cause and was not one. Every write also incurs
+the deliberate status-stage STALL, and that is normal here.
+
+So this library adds no pacing, and neither should you without evidence. Recorded so
+nobody adds a throttle on a hunch.
+
+### I only need to change presets or scenes
+
+Then you may not need this library at all. The Quad Cortex accepts **MIDI** for preset
+and scene selection, which is documented by the manufacturer and needs no USB session:
+bank select plus program change for presets, CC#43 for scenes, CC#35-42 for
+footswitches, and more. It cannot create or edit preset content, which is what this
+library is for - but if switching is all you want, MIDI is the simpler and better
+supported route.
+
 ## Quickstart
 
 Everything here uses the factory library, so it works on any unit.
@@ -126,9 +191,10 @@ These are all methods on the object `connect()` returns.
 the top row on screen and `row=2` is the one labelled 3. This matters more than it
 looks: an edit to the wrong row still succeeds and still reads back correctly, so
 nothing tells you. If the change is meant to be audible, check which row actually
-reaches an output - `out_portid` values 16 to 19 are internal grid routes rather
-than physical jacks, and a lane whose output feeds the next row can be muted without
-silencing anything.
+reaches an output - `out_portid` values **16 to 18** are internal row-to-row routing,
+so a lane set to one of those can be muted without silencing anything. **19
+(`MULTIPLE`) is a real destination**, and is what factory presets use for the
+Multi-Out.
 
 Presets live in a setlist (`Setlist.USER` or `Setlist.FACTORY`). Identify one by
 **name** with `find_preset()`, or by the **slot name shown on the unit** (`"28C"`),
@@ -206,9 +272,11 @@ qc.set_chain_output(row=1, out_portid=Output.XLR_1_2)     # required, not option
 qc.save_current_preset(Setlist.USER, "30A", "Bass on In 2")
 ```
 
-Beware that `Output` values 16 to 19 are internal grid routes rather than jacks, and
-the device stores whatever id you send without validating it - so a wrong value is
-kept, not rejected.
+Two things to watch. `Output` values **16 to 18** are internal row-to-row routing
+rather than jacks - but **19 (`MULTIPLE`) is a real destination**, and often the right
+answer, since it is what factory presets use to reach the Multi-Out. And the device
+stores whatever id you send without validating it, so a wrong value is kept rather
+than rejected and reads back cleanly.
 
 ### The mixer, and how factory presets build scenes
 

@@ -55,8 +55,10 @@ class Output(IntEnum):
     USB_8 = 13
     USB_5_6 = 14
     USB_7_8 = 15
-    # 16-19 are internal grid-routing states (feed the next row, or feed
-    # several outputs at once), not selectable physical destinations.
+    # 16-18 are internal grid-routing states: they feed another row rather than a
+    # jack. 19 (MULTIPLE) is DIFFERENT - it is a real destination, and is what
+    # factory presets use to reach the Multi-Out. The device does not validate
+    # this field, so a nonsense id is stored rather than rejected.
     NEXT_ROW_3 = 16
     NEXT_ROW_4 = 17
     NEXT_ROW_3_4 = 18

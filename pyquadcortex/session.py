@@ -68,6 +68,9 @@ def open_device():
             "could not open the Quad Cortex over USB. Check that: Cortex "
             "Control is quit (it holds the USB interface exclusively), the "
             "unit is connected by USB, and it has finished booting. "
+            "If it was working moments ago and none of those apply, the unit's "
+            "USB link may have died mid-session - see the Troubleshooting "
+            "section of the readme, since only a full power-down recovers it. "
             f"(underlying error: {type(exc).__name__}: {exc})"
         ) from exc
 

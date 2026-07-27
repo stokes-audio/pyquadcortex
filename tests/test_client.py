@@ -966,3 +966,73 @@ def test_position_to_slot_can_match_the_padded_form_it_accepts():
     assert client.position_to_slot(0, pad=True) == "01A"
     for slot in ("01A", "04B", "28C", "32H"):
         assert client.position_to_slot(client.slot_to_position(slot), pad=True) == slot
+
+
+def test_wait_for_listing_rides_out_a_missed_push():
+    """A single quiet interval must not abort the wait.
+
+    list_presets raises TimeoutError when the device fails to push a File broadcast.
+    Propagating that produced exactly the false negative this method exists to
+    prevent: a save that had already succeeded killing a long build mid-run.
+    """
+    listing = pa.FileMessage()
+    listing.folder.key = str(Setlist.USER)
+    e = listing.folder.files.add()
+    e.index = 0
+    e.name = "Arrived"
+
+    class FlakyTransport(FakeTransport):
+        def __init__(self):
+            super().__init__()
+            self.attempts = 0
+
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            self.attempts += 1
+            if self.attempts in (1, 2):
+                raise TimeoutError("no FileMessage broadcast within 25.0s")
+            return listing
+
+    fake = FlakyTransport()
+    qc = client.QuadCortex(fake)
+    entries = qc.wait_for_listing(
+        Setlist.USER, until=lambda es: any(x.name == "Arrived" for x in es),
+        timeout=30.0, interval=0.0,
+    )
+    assert [x.name for x in entries] == ["Arrived"]
+    assert fake.attempts == 3, "it kept polling through two missed pushes"
+
+
+def test_wait_for_listing_distinguishes_its_two_failures():
+    # "the condition never became true" and "the device went silent" are different
+    # diagnoses: only the first tells you anything about your change.
+    quiet = pa.FileMessage()
+    quiet.folder.key = str(Setlist.USER)
+    quiet.folder.files.add().index = 0          # a listing, but no matching preset
+
+    fake = FakeTransport()
+    fake.broadcast = quiet
+    qc = client.QuadCortex(fake)
+    with pytest.raises(TimeoutError, match="condition never became true"):
+        qc.wait_for_listing(Setlist.USER, until=lambda es: False,
+                            timeout=0.0, interval=0.0)
+
+    class SilentTransport(FakeTransport):
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            raise TimeoutError("no FileMessage broadcast within 25.0s")
+
+    qc2 = client.QuadCortex(SilentTransport())
+    with pytest.raises(TimeoutError, match="stopped pushing listings"):
+        qc2.wait_for_listing(Setlist.USER, until=lambda es: True,
+                             timeout=0.0, interval=0.0)
+
+
+def test_set_chain_output_docstring_does_not_lump_19_with_the_internal_routes():
+    # 19 (MULTIPLE) is a real destination - it is how factory presets reach the
+    # Multi-Out - while 16-18 are internal row-to-row routing. Conflating them
+    # steered a user away from the correct value.
+    doc = client.QuadCortex.set_chain_output.__doc__
+    assert "16 to 18" in doc
+    assert "19" in doc and "real destination" in doc
+    assert "16 to 19" not in doc, "the old wording called 19 internal"

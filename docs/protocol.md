@@ -145,6 +145,14 @@ and whether USB audio is streaming.
 genuinely dead device through **request timeouts** instead. If writes ever start
 failing for real, the symptom will be timeouts, not write errors.
 
+**No write pacing appears to be needed.** Since every write incurs the stall, it is
+natural to wonder whether bursts should be throttled. On the evidence so far, no: a
+build firing roughly 800 fire-and-forget `Grid` writes per run - about 90 `set_param`
+calls per preset in a tight loop with no delay - completed repeatedly without trouble.
+This was specifically suspected as the cause of a USB link failure, tested, and was
+not one; identical bursts ran fine before and after. So this library adds no pacing.
+Recorded as a negative result so nobody adds a throttle on a hunch.
+
 ## 2. Report framing
 
 ### 2.1 Report layout
@@ -798,9 +806,9 @@ is set follow scenes at all (see [7.4](#74-scenes)).
 
 **Rows and columns are zero-based on the wire, and the unit's screen labels rows 1
 to 4.** `chains[0]` is the top row. Also worth checking before assuming an edit is
-audible: `out_portid` 16 to 19 are internal grid-routing states rather than physical
-outputs, so a lane can be muted while the signal still leaves the unit through
-another row. In factory "Brit 2203", row 0 has `out_portid: 16` (into the next row)
+audible: `out_portid` **16 to 18** are internal row-to-row routing rather than
+physical outputs, so a lane set to one of those can be muted while the signal still
+leaves the unit through another row. **19 (`MULTIPLE`) is a real destination.** In factory "Brit 2203", row 0 has `out_portid: 16` (into the next row)
 and row 2 has `19` (MULTIPLE, the actual Multi-Out).
 
 **Every row reports all 8 column slots.** Empty ones arrive as `Model` entries
@@ -825,8 +833,10 @@ a jack.
 
 All of `out_portid` 5, 6, 7, 8, 9, 11, 20 and 22 were accepted and stored verbatim,
 so the device does not validate or normalise the value - passing a nonsense id will
-be kept, not rejected. Values 16 to 19 remain internal grid-routing states rather
-than jacks (factory "Brit 2203" uses 16 on row 0 to feed the next row, and 19,
+be kept, not rejected. Values **16 to 18** are internal row-to-row routing rather
+than jacks, while **19 (`MULTIPLE`) IS a physical destination** - it is what factory
+presets use to reach the Multi-Out, and a tester reported setting it on 8 presets with
+the audio arriving each time (factory "Brit 2203" uses 16 on row 0 to feed the next row, and 19,
 MULTIPLE, on row 2 for the actual Multi-Out).
 
 **Splitter and mixer.** Both are sub-collections of a chain, alongside
