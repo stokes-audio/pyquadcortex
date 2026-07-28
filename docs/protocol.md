@@ -1371,12 +1371,19 @@ not fixed setlists.
 setlist's own key - the folder leaves the listing, subject to the usual eventual
 consistency.
 
-**Duplicating one is NOT settled.** The unit's duplicate action sends the same `File`
-CREATE for the destination and then broadcasts
-`BulkOperation{type: 0, source_folder{...}, destination_folder{...}}` with
-`progress_message: "Duplicating, please wait."`. Doing both in that order from the host
-creates the destination and leaves it EMPTY, so the BulkOperation is the device
-reporting progress rather than the command that copies.
+**There is no host-drivable copy, and none is needed.** The unit's duplicate action
+sends a `File` CREATE for the destination and then narrates itself through
+`BulkOperation` - `"Duplicating, please wait."`, a progress fraction, then `finished` -
+and doing the same from the host creates an EMPTY destination. Everything in that window
+is the device REPORTING, not a command.
+
+The unit's per-preset copy/paste gives the way in: pasting broadcasts
+`File{CREATE, folder{key, files{key, index, name, ...}}}`, which is the same shape as a
+Save As pointed at a different folder. And a save DOES accept any folder key (confirmed:
+recalling a factory preset and saving it into `/media/p4/Presets/probe` put it there). So
+copying a preset is recall-then-save, and duplicating a setlist is that per preset -
+which is what `copy_preset()` and `duplicate_setlist()` do. The cost is inherent: each
+one recalls the source on the unit.
 
 ### 7.7b3 Looper X, master volume, pinning, and the Global EQ
 

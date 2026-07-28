@@ -1944,6 +1944,69 @@ class QuadCortex:
         msg.folder.name = name
         return self._file_operation(msg)
 
+    def copy_preset(self, from_setlist: str, position, to_setlist: str,
+                    to_position=None, name: str = None,
+                    instrument: int = Instrument.NONE):
+        """Copy a preset into another setlist.
+
+        Not a device operation - the unit has no host-drivable copy - but a
+        composition of two that are: this RECALLS the source preset and then saves
+        the grid into the destination. Which is exactly what the unit's own
+        copy/paste turns out to be: pasting broadcasts the same
+        ``File{CREATE, folder{key, files{...}}}`` shape as a Save As, just aimed at
+        a different folder key.
+
+        Consequences worth knowing, both from that mechanism:
+
+        * It CHANGES what is loaded on the unit, and leaves the source preset on
+          the grid afterwards.
+        * It copies the preset's audio state, not its metadata: the destination
+          gets whatever ``instrument`` is passed and no tags, because that is all a
+          save can carry (see :meth:`save_current_preset`).
+
+        ``to_position`` defaults to the first free slot in the destination.
+        Returns the name the device actually stored, which may be de-duplicated.
+        """
+        p = self.read_preset(from_setlist, position)
+        source_name = p.name if field_present(p, "name") else None
+        if to_position is None:
+            taken = {e.index for e in self.list_presets(to_setlist)}
+            to_position = next(i for i in range(256) if i not in taken)
+        return self.save_current_preset(to_setlist, to_position,
+                                        name or source_name or "copy",
+                                        instrument=instrument, confirm=True)
+
+    def duplicate_setlist(self, source_name: str, dest_name: str,
+                          limit: int = None):
+        """Copy a whole setlist into a new one, preset by preset.
+
+        Also a composition rather than a device operation. The unit's own
+        duplicate action broadcasts a ``BulkOperation`` narrating its progress -
+        ``"Duplicating, please wait."``, then a progress fraction, then
+        ``finished`` - but that is the device REPORTING: replaying it copies
+        nothing, and no host-drivable duplicate exists. So this creates the
+        destination and copies each preset with :meth:`copy_preset`.
+
+        Which means it is SLOW - a recall and a save per preset, several seconds
+        each - and it recalls every one of them on the unit as it goes. ``limit``
+        caps how many are copied, for trying it out on a large setlist.
+
+        Returns the list of names stored in the destination.
+        """
+        dest_key = self.create_setlist(dest_name)
+        time.sleep(3.0)
+        source_key = (source_name if source_name.startswith("/")
+                      else f"{USER_SETLIST_ROOT}/{source_name}")
+        entries = self.list_presets(source_key)
+        if limit is not None:
+            entries = entries[:limit]
+        stored = []
+        for i, entry in enumerate(entries):
+            stored.append(self.copy_preset(source_key, entry.index, dest_key,
+                                           to_position=i, name=entry.name,
+                                           instrument=entry.instrument))
+        return stored
+
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
                          timeout: float = 45.0, interval: float = 2.0):
         """Re-list ``setlist`` until ``until(entries)`` holds, and return them.

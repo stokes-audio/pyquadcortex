@@ -1970,3 +1970,83 @@ def test_set_expression_bypass_accepts_the_enum():
     from pyquadcortex.enums import ExpressionBypassMode as M
     qc.set_expression_bypass(row=0, column=1, pedal=1, mode=M.HEEL_TOE)
     assert qc._t.sent[-1].preset.chains[0].models[0].expression_bypass_info[0].type == 2
+
+
+# -- copying presets and setlists ----------------------------------------------
+# Neither is a device operation. The unit's paste broadcasts the same
+# File{CREATE, folder{key, files}} shape as a Save As, just aimed at another folder
+# key, and its setlist duplicate only NARRATES progress via BulkOperation. So both
+# are compositions of recall + save.
+
+
+class RecallSaveTransport(FakeTransport):
+    """Answers a recall with a preset and a listing with canned entries."""
+
+    def __init__(self, preset_name="Brit 2203", entries=()):
+        super().__init__()
+        self.preset_name = preset_name
+        self.entries = entries
+        self.calls = []
+
+    def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+        trigger()
+        self.calls.append(expected_class.__name__)
+        if expected_class is pa.RecallPresetMessage:
+            m = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE)
+            m.preset.name = self.preset_name
+            return m
+        listing = pa.FileMessage(action=pa.MessageAction.UPDATE)
+        listing.folder.key = "/media/p4/Presets/dest"
+        for index, name in self.entries:
+            f = listing.folder.files.add()
+            f.index = index
+            if name:
+                f.name = name
+        # echo back whatever was saved, so the save's confirm step resolves at
+        # once instead of polling
+        for msg in self.sent:
+            if isinstance(msg, pa.FileMessage) and len(msg.folder.files) \
+                    and msg.folder.files[0].HasField("name"):
+                src = msg.folder.files[0]
+                f = listing.folder.files.add()
+                f.index = src.index
+                f.name = src.name
+        return listing
+
+    def last_save(self):
+        """The File CREATE this transport was asked to store, ignoring the READs
+        the confirm step sends afterwards."""
+        for msg in reversed(self.sent):
+            if isinstance(msg, pa.FileMessage) and len(msg.folder.files) \
+                    and msg.folder.files[0].HasField("name"):
+                return msg
+        raise AssertionError("no File CREATE carrying a named entry was sent")
+
+
+def test_copy_preset_recalls_the_source_then_saves_into_the_destination():
+    t = RecallSaveTransport(entries=[(0, "already here")])
+    qc = client.QuadCortex(t)
+    qc.copy_preset("/media/p4/Presets/src", 4, "/media/p4/Presets/dest")
+    saved = qc._t.last_save()
+    assert saved.folder.key == "/media/p4/Presets/dest"
+    entry = saved.folder.files[0]
+    assert entry.name == "Brit 2203", "the source preset's own name by default"
+    assert entry.index == 1, "the first free slot, 0 being taken"
+
+
+def test_copy_preset_honours_an_explicit_slot_and_name():
+    qc = client.QuadCortex(RecallSaveTransport())
+    qc.copy_preset("/media/p4/Presets/src", 0, "/media/p4/Presets/dest",
+                   to_position=7, name="renamed")
+    entry = qc._t.last_save().folder.files[0]
+    assert (entry.index, entry.name) == (7, "renamed")
+
+
+def test_copy_preset_does_recall_the_source_which_changes_the_grid():
+    # Worth asserting: this is not a background copy, it loads the preset.
+    t = RecallSaveTransport()
+    qc = client.QuadCortex(t)
+    qc.copy_preset("/media/p4/Presets/src", 2, "/media/p4/Presets/dest",
+                   to_position=0)
+    assert "RecallPresetMessage" in t.calls
+    assert any(isinstance(m, pa.SetlistPositionMessage) for m in qc._t.sent)

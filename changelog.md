@@ -8,6 +8,23 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.18.0 - 2026-07-28
+
+### Added
+
+- **`copy_preset(from_setlist, position, to_setlist, ...)`** and
+  **`duplicate_setlist(source, dest)`**. Neither is a device operation, and finding
+  that out is the point: the unit's copy/paste broadcasts the same
+  `File{CREATE, folder{key, files{...}}}` shape as a Save As, just aimed at another
+  folder key, and its setlist duplicate only NARRATES progress through
+  `BulkOperation` - replaying that copies nothing. So both are compositions of
+  recall + save, and `save_current_preset` was already able to target ANY folder key,
+  which is now confirmed and tested.
+
+  Both are documented with what that mechanism costs: they recall each source preset,
+  so they change what is loaded on the unit and take seconds per preset, and they
+  carry audio state rather than metadata.
+
 ## 0.17.0 - 2026-07-28
 
 ### Fixed

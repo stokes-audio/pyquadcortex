@@ -122,7 +122,7 @@ documentation of the library.
 | User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. CC#32's 'User folders' 2-12 are created, not built in |
 | Create a folder, nested navigation | yes | `create_setlist(name)`. The earlier failure was the path: setlists are siblings under `/media/p4/Presets`, not children of My Presets |
 | Favorites and Recents | partly | `favorites()` reads them (name, folder key, folder name); writing is untested |
-| Bulk actions | no | `BulkOperation` reports progress. Reproducing a setlist duplicate - create the destination, then send the BulkOperation - creates the destination and leaves it empty, so that message is not the command |
+| Bulk actions | partly | there is no host-drivable bulk copy - `BulkOperation` only narrates progress - but `copy_preset()` and `duplicate_setlist()` achieve it by recall + save, at a few seconds per preset |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
 | Neural Captures: list | yes | the catalog covers the unit's own capture slots, and `list_folders()` exposes the 2062-entry factory Captures Library grouped into 176 per-amp folders |
