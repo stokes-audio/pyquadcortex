@@ -8,6 +8,55 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.28.0 - 2026-07-28
+
+Sixteen device settings moved from "reachable in principle" to tested, and one packing bug
+came out of it.
+
+### Fixed
+
+- **`set_usb_port()` no longer drops fields.** Sending `level` and `dry_wet` together
+  applied the level and silently discarded the dry/wet. The USB port packs like the other
+  I/O ports, so the method now sends one field per message and all three land. This was
+  found by testing for the fault rather than by tripping over it a third time.
+
+### Added
+
+- **`set_tuner_mute()`** - the Tuner menu's MUTE, for silent tuning. Confirmed writable.
+- Fifteen `GeneralSettings` fields are now confirmed writable through
+  `update_settings()`, each tested alone and restored: `stomp_mode_auto_assign`,
+  `swap_tempo_tuner_access`, `enable_dynamic_delay_compensation`,
+  `gig_view_stomp_access_enabled`, `hold_timing`, `midi_channel`, `midi_over_usb`,
+  `midi_clock_in_enabled`, `ignore_duplicate_pc`, `disable_internet_connection_check`,
+  `dimmed_led_brightness` and the dimming toggles, alongside the brightnesses and
+  `scene_block_bypass` that were already known.
+
+### Changed
+
+- Three settings do not behave as their names suggest, and the docstrings now say so:
+  `internal_midi_clock_enabled` **refuses** writes (with external clock either way, so the
+  tempting explanation is wrong); `dimmed_led_brightness` is **capped just below**
+  `led_brightness`, so a high value quietly lands lower; and `hold_timing` is an **index**,
+  not the milliseconds the manual's 500-1000 ms range implies - it defaults to 3 and stores
+  any integer unvalidated.
+- `tuner()`'s docstring no longer claims `frequency` is the detected pitch that ignores
+  writes. It is the reference-pitch offset from 440 Hz and it is writable - which
+  `set_tuner_reference()` had already established, so the two docstrings contradicted each
+  other. The genuine gap is `enable_meter`, which refuses a write, leaving the live needle
+  unreadable over USB.
+- The MIDI settings the manual lists in a MIDI submenu live in `GeneralSettings`, not in
+  the undecoded `MIDISettings`. The coverage table had them as unreachable; four of the
+  five are writable today.
+- **The coverage summary was overstating coverage by 11 rows** - it claimed 65 yes and 13
+  no where the table held 54 and 22. It was maintained by hand. A test now recomputes it
+  from the table, so it cannot drift again. The honest figure after this release is 59 yes,
+  11 partly, 21 no, 10 n/a of 101.
+- The capture guide documents the two ways a listener reports silence that is not there: an
+  unregistered message type is discarded before you see it, and filtering the device's
+  constant chatter makes a dead USB link look like a quiet one. Both produced wrong
+  conclusions here. The tempo MODE finding was re-run with neither flaw and still holds -
+  nothing is broadcast when that control changes.
+
 ## 0.27.0 - 2026-07-28
 
 Documentation, not code. The library had outgrown its own front door: 107 methods, and a

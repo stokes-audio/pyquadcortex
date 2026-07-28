@@ -43,7 +43,7 @@ These are all methods on the object `connect()` returns.
 | **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `set_global_bypass()`, `set_master_volume_assignment()`, `mode()`, `set_mode()`, `set_mode_cycle()`, `set_gig_view()` |
 | **Global EQ** | `global_eq()`, `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)`, `set_global_eq_bypassed()` |
 | **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
-| **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`, `looper()` (states named by `LooperState`) |
+| **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`, `set_tuner_mute()`, `looper()` (states named by `LooperState`) |
 | **List parameters** | `set_param_option(row, column, param, option, source)`, `param_options(preset, ...)` - includes a block's side-chain SOURCE |
 | **Setlists** | `create_setlist(name)`, `delete_setlist(name)`, `duplicate_setlist(src, dest)`, `list_folders()` |
 | **Copying** | `copy_preset(from_setlist, position, to_setlist)` - recall + save, so it loads each source |
@@ -256,6 +256,12 @@ before = qc.settings()                      # read first if you mean to restore
 qc.update_settings(screen_brightness=30)    # sparse: only what you name
 qc.update_settings(screen_brightness=before.screen_brightness)
 ```
+
+Fifteen `GeneralSettings` fields are confirmed writable this way; the exceptions are
+worth knowing before you trust a read-back. `internal_midi_clock_enabled` refuses writes
+outright. `dimmed_led_brightness` is capped just below `led_brightness`, so a high value
+silently lands lower. `hold_timing` is an index, not the milliseconds the manual describes.
+See `update_settings()`'s docstring for the full list.
 
 `update_settings()` refuses `power_option` and `reset_wifi_networks`: those are
 commands rather than settings, and one of them shuts the unit down.

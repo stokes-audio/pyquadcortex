@@ -1528,13 +1528,31 @@ Two of those names disagree with the catalog, which is why the map
 
             qc.update_settings(screen_brightness=60, swap_tempo_tuner_access=True)
 
-        Confirmed writable on hardware: ``screen_brightness``,
-        ``led_brightness`` and ``scene_block_bypass``. The rest of the message is
-        the same shape and the same action, but has not been individually
-        exercised - read it back if it matters.
+        Confirmed writable on hardware, each tested on its own and restored:
+        ``screen_brightness``, ``led_brightness``, ``dimmed_led_brightness``,
+        ``scene_block_bypass``, ``stomp_mode_auto_assign``,
+        ``swap_tempo_tuner_access``, ``enable_dynamic_delay_compensation``,
+        ``gig_view_stomp_access_enabled``, ``hold_timing``, ``midi_channel``,
+        ``midi_over_usb``, ``midi_clock_in_enabled``, ``ignore_duplicate_pc``,
+        ``disable_internet_connection_check`` and ``enable_preset_dimmed``.
 
-        Note that brightness is quantized: writing 30 read back as 31, and 60 as
-        59, so the device stores it on a coarser internal scale.
+        **Refused:** ``internal_midi_clock_enabled`` stays true whatever you send,
+        with ``midi_clock_in_enabled`` either way, so the internal clock cannot be
+        switched off from here.
+
+        Two scales are not what they look like:
+
+        * **Brightness is quantized.** Writing 30 read back as 31 and 60 as 59, so
+          the device stores it on a coarser internal scale.
+        * **``dimmed_led_brightness`` is capped just under ``led_brightness``** -
+          the dimmed value has to be dimmer. Asking for 100 landed on 25 with
+          ``led_brightness`` at 28, on 9 with it at 13, and on 56 with it at 59. So
+          raise ``led_brightness`` first if you want a high dimmed value.
+        * **``hold_timing`` is not milliseconds.** The manual describes a 500-1000 ms
+          range but the field's default is 3, and it stores any integer you send
+          without validation (0 and 5000 both round-tripped). It is presumably an
+          index into that range; the corresponding on-screen value has not been
+          read back, so treat anything outside roughly 0-5 as unknown territory.
 
         **Top-level fields are sparse, but a SUBMESSAGE is replaced wholesale.**
         Sending ``master_volume_assignment`` with one flag set leaves the other
@@ -1647,17 +1665,26 @@ Two of those names disagree with the catalog, which is why the map
 
     def set_usb_port(self, level: float = None, hp_select: float = None,
                      dry_wet: float = None):
-        """Change the USB audio settings. ``dry_wet`` is confirmed writable.
+        """Change the USB audio settings. All three fields confirmed writable.
 
         ``dry_wet`` chooses whether USB outputs carry clean DI or processed audio,
-        and ``hp_select`` which USB channels feed the headphones.
+        ``hp_select`` which USB channels feed the headphones, and ``level`` the USB
+        output level.
+
+        **One field per message, like the other I/O ports.** Sending ``level`` and
+        ``dry_wet`` in a single message applied the level and silently dropped the
+        dry/wet; sent separately both land. So this sends one message per field
+        given, in the order listed above.
         """
-        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
-        for name, value in (("level", level), ("hp_select", hp_select),
-                            ("dry_wet", dry_wet)):
-            if value is not None:
-                setattr(msg.settings.usb_port, name, value)
-        return self._t.send(msg)
+        given = [(name, value) for name, value in
+                 (("level", level), ("hp_select", hp_select), ("dry_wet", dry_wet))
+                 if value is not None]
+        if not given:
+            raise TypeError("nothing to set on the USB port")
+        for name, value in given:
+            msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+            setattr(msg.settings.usb_port, name, value)
+            self._t.send(msg)
 
     def set_midi_thru(self, enabled: bool):
         """Turn MIDI Thru on or off. Confirmed writable (the field is a float)."""
@@ -1681,11 +1708,16 @@ Two of those names disagree with the catalog, which is why the map
     def tuner(self, timeout: float = 10.0):
         """The tuner's state.
 
-        Reports ``input_port_id``, ``frequency`` and ``mute``. Note that
-        ``frequency`` reads 0 with nothing playing and ignores a write, so it
-        appears to be the DETECTED pitch rather than the reference-pitch setting
-        the manual's FREQ [Hz] control adjusts - where that lives is not
-        established.
+        Reports ``input_port_id``, ``frequency`` and ``mute``.
+
+        ``frequency`` is the reference-pitch OFFSET from 440 Hz, not the detected
+        pitch: it reads 0 with a standard reference and moving FREQ to 442 on the
+        unit broadcasts 1.99999809. Write it with :meth:`set_tuner_reference`.
+
+        ``enable_meter`` and ``meter`` are the needle feed, and ``enable_meter``
+        refuses a write from here - it stays false and ``meter`` stays 0.0 - so the
+        live needle is not readable over USB. ``mute`` and ``input_port_id`` both
+        write; see :meth:`set_tuner_mute` and :meth:`set_tuner_input`.
         """
         return self._read_state(pa.TunerMessage,
                                 lambda m: m.HasField("input_port_id"), timeout)
@@ -1703,6 +1735,14 @@ Two of those names disagree with the catalog, which is why the map
         """Choose which input feeds the Tuner. Confirmed writable (1 -> 2 -> 1)."""
         return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
                                             input_port_id=input_port_id))
+
+    def set_tuner_mute(self, muted: bool):
+        """Mute or unmute the outputs while the Tuner is open. Confirmed writable.
+
+        The manual's MUTE control in the Tuner menu, so silent tuning on stage.
+        """
+        return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
+                                            mute=muted))
 
     def looper(self, timeout: float = 10.0):
         """The Looper X block's state, if one is on the grid.

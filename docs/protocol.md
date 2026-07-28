@@ -1399,11 +1399,53 @@ was wrongly explained by the manual's note about impedance being disabled for Mi
 Both were the same packing problem. Rather than work out which combinations are safe,
 `set_input_port()` and `set_output_port()` now send **one field per message**.
 
+**The USB port packs the same way**, which was found by testing for it rather than by
+being surprised again. `usb_port.level`, `hp_select` and `dry_wet` are each writable
+alone; sent as `{level, dry_wet}` in one message the level landed and the dry/wet was
+silently dropped. `set_usb_port()` splits them too. Note that `usb_port` is a single
+submessage rather than a repeated port entry, so this is not about repeated fields - the
+rule is about how many fields an I/O update carries, whatever shape it has.
+
 **Tuner.** `ShowTuner{show}` opens and closes it, and `Tuner{input_port_id}` chooses
 the input (1 to 2 and back, confirmed). `Tuner.frequency` IS the reference pitch, but
 as an **offset in Hz from 440**: 442 on the unit broadcast `frequency: 1.99999809` and
 445 broadcast `5`, which is why an earlier write of `442.0` did nothing. Two points on a
 line, so the Hz scale is measured rather than assumed.
+
+`Tuner.mute` is writable (the menu's MUTE, for silent tuning). `enable_meter` is NOT: it
+is sent, stays `false`, and `meter` stays `0.0`. So the needle itself is not readable over
+USB, which is the one part of the Tuner the host cannot see.
+
+## Global settings: what actually writes
+
+`GeneralSettings` is one wide message covering most of Device Settings. Fifteen fields are
+confirmed writable, each sent on its own and restored: the three brightnesses, the three
+dimming toggles, `scene_block_bypass`, `stomp_mode_auto_assign`, `swap_tempo_tuner_access`,
+`enable_dynamic_delay_compensation`, `gig_view_stomp_access_enabled`, `hold_timing`,
+`midi_channel`, `midi_over_usb`, `midi_clock_in_enabled`, `ignore_duplicate_pc` and
+`disable_internet_connection_check`.
+
+Three results are worth more than the list:
+
+**`internal_midi_clock_enabled` refuses.** It stays `true` whatever is sent, with
+`midi_clock_in_enabled` true or false, so the obvious guess - that the internal clock can
+only be switched off when an external one is selected - is wrong. It is simply not
+host-writable.
+
+**`dimmed_led_brightness` is capped just below `led_brightness`.** Asking for 100 landed on
+25 with `led_brightness` at 28, on 9 with it at 13, and on 56 with it at 59. The dimmed
+state has to stay dimmer than the normal one. This first read as a flat refusal, because a
+poll demanding the exact value written cannot tell a clamp from a rejection - worth
+remembering when testing any bounded field.
+
+**`hold_timing` is not milliseconds.** The manual describes HOLD TIMING as a 500-1000 ms
+range, but the field's default is 3, and the device stores any integer without validation:
+0 and 5000 both round-tripped. It is presumably an index into that range. What the unit
+shows for a given value has not been read back, so only the default is trustworthy.
+
+Also worth knowing: the MIDI settings the manual lists under a MIDI submenu - channel,
+over USB, ignore duplicate PC, clock in - are in `GeneralSettings`, NOT in the
+`MIDISettings` message, which carries per-preset MIDI output instead.
 
 **Looper.** `Looper{READ}` reports a full `status`: `state`, `progress`,
 `loop_length`, `free_samples`, `armed`, `in_reverse`, `half_speed`, `undo_count`,

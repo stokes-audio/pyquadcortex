@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 101 features audited: **65 yes**, **13 partly**, **13 no**, **10 n/a**.
+Of 101 features audited: **59 yes**, **11 partly**, **21 no**, **10 n/a**.
 
 Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
@@ -54,9 +54,9 @@ loading from the factory Captures Library.
 | Bank navigation | yes | any slot is addressable by name (`"28C"`) or index |
 | Master Volume level | partly | `master_volume()` reads it (0..1 mapping to the 0-100 on screen). READ-ONLY, and it is a separate gain stage - turning the knob changes no port level. The nearest equivalent is setting the individual output levels |
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
-| Master Volume knob function (global vs per output) | partly | in `GeneralSettings`, so reachable via `update_settings()`; not individually exercised |
+| Master Volume knob function (global vs per output) | yes | `set_master_volume_assignment()`, which reads and merges - the raw field is a submessage, and writing one flag through `update_settings()` clears the other three |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
-| Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` and `set_tuner_reference()` confirmed, the latter an OFFSET in Hz from 440 (442 and 445 both measured). Tuner `mute` and Live Tuner are untested |
+| Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()`, `set_tuner_reference()` and `set_tuner_mute()` all confirmed. Reference is an OFFSET in Hz from 440 (442 and 445 both measured). The gap is Live Tuner: `enable_meter` refuses a write and `meter` stays 0.0, so the needle is not readable over USB |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is not on the wire at all |
@@ -66,7 +66,7 @@ loading from the factory Captures Library.
 | Gig View: open/close | yes | `set_gig_view()` |
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | yes | `set_input_port()` writes level, impedance, input type and ground lift - each in its own message, since some fields are dropped when packed together. Phantom power has no field in the schema |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |
-| I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested. The headphone output's own level is NOT writable |
+| I/O: USB LEVEL, HP SOURCE, DRY/WET | yes | `set_usb_port()`, all three confirmed writable. Like the other I/O ports they must travel one field per message, which the method now does for you. The headphone output's own level is NOT writable |
 | Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | yes | `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)` and `set_global_eq_bypassed()`. Every control is reachable; only the OUT level's dB mapping is unknown |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
 | Footswitch presses, touch gestures, encoders | n/a | physical |
@@ -156,27 +156,30 @@ loading from the factory Captures Library.
 | Feature | Status | Detail |
 |---|---|---|
 | Controlling the unit over MIDI (PC + CC#0-62) | yes | documented, not implemented here: this library speaks USB-HID. The full map is in the manual, ch 8 |
-| MIDI settings: channel, Thru, over USB, ignore duplicate PC, clock in/out | no | `MIDISettings` and `GeneralMIDI` - neither decoded |
+| MIDI settings: channel, Thru, over USB, ignore duplicate PC, clock in/out | partly | these are in `GeneralSettings`, not the undecoded `MIDISettings`. `midi_channel`, `midi_over_usb`, `ignore_duplicate_pc` and `midi_clock_in_enabled` are confirmed writable via `update_settings()`, and Thru via `set_midi_thru()`. Two gaps: `internal_midi_clock_enabled` REFUSES a write (it stays true with external clock either way), and the `midi_clock_out` enum is untested |
 | Preset MIDI Out: footswitch, expression and on-load messages | yes | `set_midi_out()` / `set_preset_load_midi_out()` via `MIDISettings`, NOT `Grid`. CC/CC Toggle/PC all confirmed |
 
 ## 10 Device Settings menu
 
 Every row here is unexplored, and all of it is global rather than per preset.
-`GeneralSettings` is decoded and subscribed, so its pushes can already be read;
-nothing has been written.
+`GeneralSettings` carries most of this menu. Fifteen of its fields are now confirmed
+writable one at a time and restored; `internal_midi_clock_enabled` is the only one that
+refused. Two scales mislead: brightness is quantized, and `dimmed_led_brightness` is
+capped just below `led_brightness` so the dimmed state stays dimmer (asking for 100 landed
+on 25, 9 and 56 as `led_brightness` was 28, 13 and 59).
 
 | Feature | Status | Detail |
 |---|---|---|
 | GLOBAL BYPASS (Cab / IR Loader per row) | yes | `set_global_bypass(cab=..., ir=...)`, four booleans per collection |
 | SCENE BYPASS BEHAVIOR (3 modes) | yes | `set_scene_bypass_behavior()` with the `SceneBypassBehavior` enum. It decides what `set_bypass` persists |
-| STOMP MODE BYPASS (auto-assign on load) | partly | `stomp_mode_auto_assign` in `GeneralSettings`; reachable via `update_settings()`, untested |
-| HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | partly | all three read from `settings()`; reachable via `update_settings()`, untested |
-| LATENCY COMPENSATION | partly | `enable_dynamic_delay_compensation`; same as above |
+| STOMP MODE BYPASS (auto-assign on load) | yes | `update_settings(stomp_mode_auto_assign=...)`, confirmed writable |
+| HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | yes | all three confirmed writable via `update_settings()`. `hold_timing` is NOT milliseconds despite the manual's 500-1000 ms range - it defaults to 3 and stores any integer unvalidated, so it is presumably an index into that range |
+| LATENCY COMPENSATION | yes | `update_settings(enable_dynamic_delay_compensation=...)`, confirmed writable |
 | Device name | no | candidate `Serialization`, `GeneralSettings` |
 | Firmware and serial | yes | `version()` |
 | Diagnostics (DSP, footswitches, USB) | no | `ModuleStats` is decoded and subscribed; `Diagnostics`, `DSPCommsDiagnostics` are not |
 | CorOS updates | no | `Updater` is decoded and subscribed; never driven. Risky to explore |
-| Brightness, power sensitivity, storage | yes | brightness confirmed (quantized: 30 reads back 31); disk space is reported. `power_option` and `reset_wifi_networks` are refused by `update_settings()` as commands |
+| Brightness, power sensitivity, storage | yes | screen, LED and dimmed-LED brightness all confirmed (quantized: 30 reads back 31), plus the three dimming toggles; disk space is reported. `power_option` and `reset_wifi_networks` are refused by `update_settings()` as commands |
 | Cloud sign-in and cloud backups | no | `CloudLogin`, `CloudBackup`, `BackupsForward` |
 | Local backups | no | `LocalBackup` |
 
