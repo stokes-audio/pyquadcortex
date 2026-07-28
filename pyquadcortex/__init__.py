@@ -11,7 +11,7 @@ See the readme for a tour, and ``docs/`` for the protocol and internals.
 
 import logging
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 # A library must not write to the application's console. Without a handler,
 # Python's handler of last resort prints WARNING and above to stderr, so a
@@ -20,7 +20,7 @@ __version__ = "0.12.0"
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL, Block,
-                                 BlockRefused, MidiOut, QuadCortex, Split,
+                                 BlockRefused, Folder, MidiOut, QuadCortex, Split,
                                  StompAssignment, blocks, field_present,
                                  free_rows, input_chain_rows, midi_out,
                                  param_options, position_to_slot,
@@ -52,6 +52,7 @@ __all__ = [
     "midi_out",
     "preset_load_midi_out",
     "StompAssignment",
+    "Folder",
     "stomp_assignments",
     "param_options",
     "BlockRefused",

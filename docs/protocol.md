@@ -46,6 +46,9 @@ confirming each finding live against hardware.
   - [Per-preset tempo, LED and metronome](#per-preset-tempo-led-and-metronome)
   - [Grid block move](#grid-block-move)
   - [7.6 Per-preset MIDI Out](#76-per-preset-midi-out)
+  - [7.6b Moving blocks, and creating a branch](#76b-moving-blocks-and-creating-a-branch)
+  - [7.6c Preset fields that are NOT writable](#76c-preset-fields-that-are-not-writable)
+  - [7.7c The folder tree, and what else is enumerable](#77c-the-folder-tree-and-what-else-is-enumerable)
   - [7.7b Global device settings](#77b-global-device-settings)
   - [7.7 File operations](#77-file-operations)
   - [7.8 Other observed traffic](#78-other-observed-traffic)
@@ -1080,6 +1083,21 @@ That is the move plus a **full 4x8 snapshot of grid model IDs**. No row field wa
 sent for a row-0 move (proto3 default). The library registers this message type
 but does not yet wrap it in a client method.
 
+### 7.6c Preset fields that are NOT writable
+
+Tried and refused, so nobody repeats them:
+
+| field | attempted | result |
+|---|---|---|
+| `BinaryPreset.volume`, `pan` | `Grid` update carrying them; `ProductData.gain` on the File save | both ignored, volume stays 1.0 and pan 0.5 |
+| `BinaryPreset.scene_tempo` | `Grid` update with eight values | ignored, reads back empty |
+| `Model.sidechain_source_flag` | `Grid` update, row/column keyed | ignored, reads back false |
+| `BinaryPreset.tags` | three routes, see [7.7](#77-file-operations) | ignored; a saved preset has no tags at all |
+
+The side-chain case is worth a note: the flags are clearly part of how side-chaining is
+stored (`side_chain_follow_exists` sits on the preset, and the source list is readable
+through `Param.dynamic_steps`), so the write almost certainly travels some other way.
+
 ### 7.7 File operations
 
 All four use `FileMessage` with `type: 0` (presets). `FileMessage.type` appears
@@ -1179,6 +1197,41 @@ unit and reading the saved preset:
 Note that a plain CC means different things by source: a footswitch sends one value,
 while an expression pedal sweeps, so the unit asks for a range even for `type: 1`.
 
+### 7.6b Moving blocks, and creating a branch
+
+**`GridMove` is drivable host-to-device**, which earlier work had left as
+"captured only". `GridMoveElement` carries `{from_row, from_col, to_row, to_col,
+is_drop}` - all four addressed, so leaving the rows at their default 0 moves within
+row 0. Confirmed: row 2 column 1 to column 7 moved that block and left every other
+cell on the row, and all of row 0, exactly where it was.
+
+**A cross-row move creates a parallel path**, as the manual says dragging a block from
+path A to path B does. Moving row 0 column 6 to row 1 column 6 on factory "Brit 2203" -
+a serial preset - left the device reporting `Split(row=0, split_column=0, mix_column=7)`.
+The branch and rejoin columns are computed by the DEVICE, not supplied by the caller.
+
+The message also takes an optional `grid` snapshot of every row's model ids, which is
+ADVISORY: this library sends only the move.
+
+**A branch can also be created directly**, which is how to place it deliberately:
+
+```
+Grid{UPDATE, preset{chains{row, split_control_points{split: 3, mix: 5}}}}
+```
+
+Every even row ALREADY carries a splitter, mixer and combined splitter - dormant, with
+`split_control_points` reporting `-1`. So there is nothing to create: activating a
+branch means setting the columns. Confirmed on "Brit 2203": after the write `splits()`
+reported the branch and the splitter, mixer and mute setters all drove it, a `LEVEL TO
+B` of 0.25 and a mixer `LEVEL B` of 0.5 both reading back. Writing `-1` to both clears
+it again, and clearing row 0 left row 2's branch untouched.
+
+**Expression bypass** writes both halves in one message:
+`models{column, bypass_expression{expression, expression_min, expression_max},
+expression_bypass_info{type, invert, delay_ms, latch_emulation}}`. Confirmed round
+tripping pedal 1, type 1, invert, 250 ms and latch emulation. Which integer `type`
+denotes which of the manual's Heel-Toe, Switch and Stop behaviours is NOT established.
+
 ### 7.7b Global device settings
 
 Unlike a preset edit, these change the UNIT: there is nothing to save, and nothing
@@ -1225,11 +1278,59 @@ eventually consistent in the same way `File` listings are: a scene-bypass write 
 back as the old value, and reading again a moment later showed the new one. Allow a
 settle, or re-read, before deciding a write was refused.
 
+**What is writable, field by field.** Confirmed by writing, reading back and
+restoring: input `level`, `ground_lift` and `input_type`; output `level` and
+`ground_lift`; `usb_port.dry_wet`; `midi_port.midi_thru`; and the
+`xlr1_2_linked`/`out3_4_linked` pairing flags.
+
+Two that did NOT take. Output **`mute`** is accepted and reads back unmuted, on both a
+physical and a USB output - whatever the unit's MUTE control sends, it is not this
+field. Input **`input_zmode`** (impedance) also did not change, which fits the manual's
+note that impedance is disabled while the input type is set to Mic.
+
+**Tuner.** `ShowTuner{show}` opens and closes it, and `Tuner{input_port_id}` chooses
+the input (1 to 2 and back, confirmed). But `Tuner.frequency` reads 0 with nothing
+playing and ignores a write, so it is the DETECTED pitch rather than the reference
+pitch the manual's FREQ [Hz] control sets - where that setting lives is unresolved.
+
+**Looper.** `Looper{READ}` reports a full `status`: `state`, `progress`,
+`loop_length`, `free_samples`, `armed`, `in_reverse`, `half_speed`, `undo_count`,
+`redo_available` and more. Readable; what the `state` numbers mean is not established,
+so nothing here drives the transport. The manual notes MIDI CC#48-61 also control the
+Looper, which is a second route worth comparing against.
+
 **Values are quantized.** Brightness written as 30 read back as 31, and 60 as 59. Port
 levels are stored as float32, so a value must be written at full precision to
 round-trip: writing `0.769231` (six decimal places) stored something measurably
 different from the `0.769230783` already there, while writing `10/13` reproduced it
 exactly.
+
+### 7.7c The folder tree, and what else is enumerable
+
+A single `File` READ makes the device enumerate far more than the two setlists. On the
+observed unit **399 folders** arrive over roughly fifteen seconds:
+
+| key | name | contents |
+|---|---|---|
+| `/media/p4/Presets/My Presets` | My Presets | 256 slots, the only USER setlist present |
+| `/opt/neuraldsp/Factory Library` | Factory Library | 256 slots, all occupied |
+| `local_nc_root` | Captures Library | **2062** factory captures |
+| `NNN_f` (176 of them) | an amp name | that amp's captures, e.g. `106_f` is "Darkglass VMT" with three |
+| `/opt/neuraldsp/impulse_responses` | - | 588 factory IRs |
+| `/opt/neuraldsp/Plugins/<plugin>/Artists/<artist>` | artist name | that plugin's artist presets |
+| `local_ir_root`, `cloud-0-1`, `cloud-2-1` | - | empty here |
+
+**Every one of those keys works with `list_presets`**, confirmed for `106_f` and for a
+plugin artist folder - so a caller is not limited to the two setlists, and
+`list_folders()` is how to discover what is addressable.
+
+Note what this does NOT show: the MIDI documentation describes bank select LSB values
+2-12 as 'User' folders, but only one user setlist exists on this unit, so those are
+folders a player can create rather than fixed setlists. A `File` CREATE naming a new
+folder key was accepted and created nothing, so how a folder is made is unresolved.
+
+`RecentsFavorites` reports the unit's Favorites and Recents as `items{name, folder_key,
+folder_name}` - 49 entries here - which can be fed straight back into a recall.
 
 ### 7.8 Other observed traffic
 
@@ -1349,6 +1450,14 @@ visually on the device's own screen.
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
+| `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
+| `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
+| `set_expression_bypass` | `Grid{UPDATE, ..., models{bypass_expression, expression_bypass_info}}` | read-back | `type` numbering unestablished |
+| `list_folders` | `File{READ}`, collecting every push | read-back | 399 folders on the observed unit, including a 2062-entry Captures Library |
+| `favorites` | `RecentsFavorites{READ}` | read-back | read-only |
+| `tuner` / `show_tuner` / `set_tuner_input` | `Tuner{READ}` / `ShowTuner{UPDATE, show}` / `Tuner{UPDATE, input_port_id}` | read-back | `frequency` is a readout, not the reference pitch |
+| `looper` | `Looper{READ}` | read-back | full status; transport not driven |
+| `set_input_port` / `set_output_port` / `set_usb_port` / `set_midi_thru` / `set_output_pairing` | `IOSettings{UPDATE, settings{...}}` | read-back | sparse and port-keyed. Output `mute` and input impedance did NOT take |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | the single splitter/mixer MUTE; reported back in `mixBypass`, and one write sets all eight scenes |
 | `set_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence; an UPDATE alone leaves the old assignment |
 | `set_expression` | `Grid{UPDATE, preset{chains{row, models{column, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit | pedal 1 or 2 with a normalized sweep range |

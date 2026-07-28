@@ -1531,3 +1531,199 @@ def test_mode_reader_waits_for_a_push_carrying_mode():
     assert got.mode == 1
     assert list(got.available_modes.modes) == [0, 1, 2]
     assert qc._t.matches[-1](pa.ModeMessage()) is False
+
+
+# -- moving blocks and creating branches ---------------------------------------
+
+
+def test_move_block_sends_a_row_and_column_addressed_move():
+    qc = client.QuadCortex(FakeTransport())
+    qc.move_block(2, 1, 2, 7)
+    msg = qc._t.sent[-1]
+    assert isinstance(msg, pa.GridMoveMessage)
+    mv = msg.move[0]
+    assert (mv.from_row, mv.from_col, mv.to_row, mv.to_col, mv.is_drop) == (2, 1, 2, 7, True)
+    # the advisory grid snapshot is not sent
+    assert not msg.HasField("grid")
+
+
+def test_set_split_activates_a_branch_on_an_even_row():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_split(row=0, split_column=3, mix_column=5)
+    chain = qc._t.sent[-1].preset.chains[0]
+    assert chain.row == 0
+    assert (chain.split_control_points[0].split,
+            chain.split_control_points[0].mix) == (3, 5)
+
+
+def test_set_split_allows_a_branch_that_never_rejoins():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_split(row=2, split_column=2, mix_column=-1)
+    scp = qc._t.sent[-1].preset.chains[0].split_control_points[0]
+    assert (scp.split, scp.mix) == (2, -1)
+
+
+def test_clear_split_writes_the_minus_one_sentinels():
+    qc = client.QuadCortex(FakeTransport())
+    qc.clear_split(row=0)
+    scp = qc._t.sent[-1].preset.chains[0].split_control_points[0]
+    assert (scp.split, scp.mix) == (-1, -1)
+
+
+def test_split_helpers_refuse_an_odd_row():
+    qc = client.QuadCortex(FakeTransport())
+    for call in (lambda: qc.set_split(1, 2, 3), lambda: qc.clear_split(3)):
+        with pytest.raises(ValueError, match="row 0 or"):
+            call()
+    assert qc._t.sent == []
+
+
+def test_set_expression_bypass_writes_both_halves():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_expression_bypass(row=0, column=2, pedal=1, mode=1, invert=True,
+                             delay_ms=250, latch_emulation=True)
+    model = qc._t.sent[-1].preset.chains[0].models[0]
+    assert model.column == 2
+    be = model.bypass_expression[0]
+    assert (be.expression, be.expression_min, be.expression_max) == (1, 0.0, 1.0)
+    info = model.expression_bypass_info[0]
+    assert (info.type, info.invert, info.delay_ms, info.latch_emulation) \
+        == (1, True, 250, True)
+
+
+# -- I/O ports, tuner, looper ---------------------------------------------------
+
+
+def test_set_input_port_is_sparse_and_only_sends_given_fields():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_input_port(2, input_type=0.5)
+    port = qc._t.sent[-1].settings.in_port[0]
+    assert port.input_port_id == 2
+    assert port.input_type == pytest.approx(0.5)
+    assert not port.HasField("level")
+    assert not port.HasField("ground_lift")
+    assert not port.HasField("input_zmode")
+
+
+def test_set_input_level_still_works_and_delegates():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_input_level(5, 0.25)
+    port = qc._t.sent[-1].settings.in_port[0]
+    assert (port.input_port_id, round(port.level, 3)) == (5, 0.25)
+    assert not port.HasField("input_type")
+
+
+def test_set_output_port_sends_ground_lift_and_mute_when_asked():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_output_port(1, ground_lift=1.0, mute=True)
+    port = qc._t.sent[-1].settings.out_port[0]
+    assert port.ground_lift == pytest.approx(1.0)
+    assert port.mute is True
+    assert not port.HasField("level")
+
+
+def test_usb_midi_and_pairing_writes():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_usb_port(dry_wet=1.0)
+    assert qc._t.sent[-1].settings.usb_port.dry_wet == pytest.approx(1.0)
+    assert not qc._t.sent[-1].settings.usb_port.HasField("level")
+
+    qc.set_midi_thru(True)
+    assert qc._t.sent[-1].settings.midi_port.midi_thru == pytest.approx(1.0)
+    qc.set_midi_thru(False)
+    assert qc._t.sent[-1].settings.midi_port.midi_thru == pytest.approx(0.0)
+
+    qc.set_output_pairing(out3_4=False)
+    msg = qc._t.sent[-1]
+    assert msg.out3_4_linked is False
+    assert not msg.HasField("xlr1_2_linked")
+
+
+def test_tuner_and_looper_readers_and_the_tuner_input_write():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_tuner_input(2)
+    assert qc._t.sent[-1].input_port_id == 2
+    qc.show_tuner(True)
+    assert qc._t.sent[-1].show is True
+
+    tuner_push = pa.TunerMessage(action=pa.MessageAction.UPDATE, input_port_id=1)
+    qc2 = client.QuadCortex(StateTransport(tuner_push))
+    assert qc2.tuner().input_port_id == 1
+    assert qc2._t.matches[-1](pa.TunerMessage()) is False
+
+    looper_push = pa.LooperMessage(action=pa.MessageAction.UPDATE)
+    looper_push.status.state = 1
+    looper_push.status.free_samples = 27131904
+    qc3 = client.QuadCortex(StateTransport(looper_push))
+    got = qc3.looper()
+    assert got.status.state == 1
+    assert got.status.free_samples == 27131904
+    assert qc3._t.matches[-1](pa.LooperMessage()) is False
+
+
+# -- folder discovery ----------------------------------------------------------
+# One File READ makes the device enumerate its whole tree - 399 folders on the
+# observed unit, not just the two setlists.
+
+
+class CollectingTransport(FakeTransport):
+    def __init__(self, pushes):
+        super().__init__()
+        self.pushes = pushes
+        self.seconds = None
+
+    def collect(self, expected_class, trigger, seconds, match=None):
+        trigger()
+        self.seconds = seconds
+        return [m for m in self.pushes
+                if isinstance(m, expected_class) and (match is None or match(m))]
+
+
+def _folder(key, name, slots, occupied, factory):
+    m = pa.FileMessage(action=pa.MessageAction.UPDATE)
+    m.folder.key = key
+    m.folder.name = name
+    m.folder.is_factory = factory
+    for i in range(slots):
+        f = m.folder.files.add()
+        f.index = i
+        if i < occupied:
+            f.name = f"p{i}"
+    return m
+
+
+def test_list_folders_collects_every_pushed_folder():
+    pushes = [
+        _folder("/media/p4/Presets/My Presets", "My Presets", 4, 2, False),
+        _folder("local_nc_root", "Captures Library", 3, 3, False),
+        _folder("", "nameless", 1, 0, False),          # no key: ignored
+    ]
+    qc = client.QuadCortex(CollectingTransport(pushes))
+    got = qc.list_folders(seconds=5)
+    assert [f.key for f in got] == ["/media/p4/Presets/My Presets", "local_nc_root"]
+    mine = got[0]
+    assert (mine.name, mine.slots, mine.occupied, mine.is_factory) \
+        == ("My Presets", 4, 2, False)
+    assert qc._t.seconds == 5
+    assert qc._t.sent[-1].action == pa.MessageAction.READ
+
+
+def test_list_folders_keeps_the_fullest_push_per_key():
+    # The device pushes a key more than once, and an early push can be short.
+    pushes = [_folder("k", "K", 1, 1, False), _folder("k", "K", 6, 4, False)]
+    qc = client.QuadCortex(CollectingTransport(pushes))
+    got = qc.list_folders(seconds=1)
+    assert len(got) == 1
+    assert (got[0].slots, got[0].occupied) == (6, 4)
+
+
+def test_favorites_waits_for_a_push_with_items():
+    push = pa.RecentsFavoritesMessage(action=pa.MessageAction.UPDATE)
+    it = push.items.add()
+    it.name = "Brit 2203"
+    it.folder_key = "/opt/neuraldsp/Factory Library"
+    it.folder_name = "Factory Library"
+    qc = client.QuadCortex(StateTransport(push))
+    got = qc.favorites()
+    assert got.items[0].name == "Brit 2203"
+    assert qc._t.matches[-1](pa.RecentsFavoritesMessage()) is False

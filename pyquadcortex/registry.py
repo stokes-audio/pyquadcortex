@@ -62,6 +62,11 @@ _BY_NAME = {
     # BinaryPreset.midi_messages/_general/_general_v2, but a Grid update carrying
     # those fields does nothing - MIDISettings is what applies them.
     "MIDISettings": pa.MIDISettingsMessage,
+    # Tuner and Looper X. Registered so their state can be read and driven.
+    "Tuner": pa.TunerMessage,
+    "ShowTuner": pa.ShowTunerMessage,
+    "Looper": pa.LooperMessage,
+    "GigViewButton": pa.GigViewButtonMessage,
 }
 _ENUM = pa.CortexMessageType.Enum
 _BY_TYPE = {_ENUM.Value(name): cls for name, cls in _BY_NAME.items()}

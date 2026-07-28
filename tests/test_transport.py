@@ -405,3 +405,31 @@ def test_library_does_not_print_to_the_console_by_default(capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
+
+
+def test_collect_gathers_every_matching_push_without_consuming_them():
+    # One request can provoke hundreds of pushes (a File READ enumerates the
+    # device's whole folder tree), so collect() accumulates rather than taking
+    # the first, and leaves messages available to waiters.
+    import threading
+    from pyquadcortex import transport as tmod
+    from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+
+    t = tmod.Transport.__new__(tmod.Transport)
+    t._lock = threading.RLock()
+    t._pending = {}
+    t._type_waiters = []
+    t._collectors = []
+
+    def trigger():
+        for i in range(3):
+            m = pa.FileMessage(action=pa.MessageAction.UPDATE)
+            m.folder.key = f"k{i}"
+            t._dispatch(m)
+        other = pa.SceneMessage(action=pa.MessageAction.UPDATE, selected_scene=1)
+        t._dispatch(other)
+
+    got = t.collect(pa.FileMessage, trigger, 0.2,
+                    match=lambda m: m.folder.key != "k1")
+    assert [m.folder.key for m in got] == ["k0", "k2"]
+    assert t._collectors == [], "the collector is removed when done"

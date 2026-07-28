@@ -20,22 +20,27 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **42 yes**, **13 partly**, **37 no**, **8 n/a**.
+Of 100 features audited: **48 yes**, **20 partly**, **24 no**, **8 n/a**.
 
-Of the 92 features a host could plausibly drive, 42 are fully covered and 13 more are
-partly covered - usually meaning the state is readable and one field of it is confirmed
-writable, with the neighbouring fields the same shape but not individually exercised.
+Of the 92 features a host could plausibly drive, **48 are fully covered** and 20 more
+are partly covered - which here means the state is readable and at least one field of it
+is confirmed writable, with the neighbours the same shape but not individually
+exercised. Only 24 remain untouched.
 
-Two exploration rounds got it there. The first closed the per-preset non-audio gap:
+Three exploration rounds got it there. The first closed the per-preset non-audio gap:
 footswitch assignments, expression assignments and Preset MIDI Out. The second opened
-the global settings families, which had been the largest untouched area -
-`GeneralSettings` alone covers most of the Device Settings and System menus.
+the global settings families, `GeneralSettings` alone covering most of the Device
+Settings and System menus. The third added block moves, creating and clearing a branch,
+expression bypass, the Tuner and Looper state, the remaining I/O port fields, and folder
+discovery - which turned up a 2062-entry factory Captures Library nobody had looked
+for.
 
-What is left, roughly in order of usefulness: the Tuner and Looper X (both whole
-features with their own message types), creating a splitter, side-chaining, expression
-bypass, per-preset `volume`/`pan`, the directory's folders and favourites, and Neural
-Capture. Nothing left is blocked by a lack of leads - each row below names its
-candidate.
+What is left falls into two kinds. A handful of writes are **confirmed no-ops**, so the
+shape must be something else: preset `volume`/`pan`, `scene_tempo`, the side-chain
+flags, output `mute`, creating a folder, and preset tags. The rest is **semantics** -
+shapes that work but whose numbering needs an eye on the unit: the Looper's `state`, the
+expression-bypass `mode`, and where the tuner's reference pitch lives. Those are in
+[needs-hardware-interaction.md](needs-hardware-interaction.md).
 
 ---
 
@@ -49,18 +54,18 @@ candidate.
 | Master Volume level | no | `MasterVolume` is decoded and subscribed, so pushes can be read, but no wrapper and no write attempted |
 | Master Volume output assignment | partly | readable: `settings().master_volume_assignment{out12, out34, send12, headphones}`. Writing it is untested |
 | Master Volume knob function (global vs per output) | partly | in `GeneralSettings`, so reachable via `update_settings()`; not individually exercised |
-| Tuner: open/close | no | candidates `ShowTuner`, `Tuner`. Neither is decoded yet |
-| Tuner: reference pitch, input source, mute, Live Tuner | no | candidate `Tuner` |
+| Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
+| Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` confirmed; `Tuner.frequency` is the detected pitch rather than the reference-pitch setting, which is not located |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_metronome_volume()`, `set_tempo_led()`, `set_tempo_param()` |
-| Per-scene tempo | no | `BinaryPreset.scene_tempo` exists and is unexplored |
+| Per-scene tempo | no | `BinaryPreset.scene_tempo` is ignored by a `Grid` update; reads back empty |
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
 | Modes: reorder, merge into HYBRID, remove | no | candidate `Mode`. Manual describes it as drag-and-drop only |
 | Gig View: open/close | yes | `set_gig_view()` |
-| I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `io_settings()` reads all of them and `set_input_level()` writes the gain; impedance, type and phantom are the same shape but untested |
-| I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | partly | `set_output_level()` confirmed; ground lift, mute and the `xlr1_2_linked`/`out3_4_linked` pairing flags are readable but untested |
-| I/O: USB LEVEL, HP SOURCE, DRY/WET | no | candidate `IOSettings` |
+| I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
+| I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | partly | `set_output_port()` writes level and ground lift, `set_output_pairing()` the link flags. `mute` is accepted and does NOT take |
+| I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested |
 | Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` confirmed; `global_eq()` reads the 28 band parameters, writing them is untested |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
 | Footswitch presses, touch gestures, encoders | n/a | physical |
@@ -75,7 +80,7 @@ candidate.
 | Pin a device to the top of its category | no | `PinnedModels` is decoded and subscribed; never written |
 | Place or replace a block | yes | `set_block()`, which verifies the device accepted the cell |
 | Remove a block | yes | `remove_block()` (the DELETE action; an UPDATE with `hash: 0` is ignored) |
-| Move a block | no | `GridMove` is decoded but only ever observed inbound; its `grid` snapshot is advisory |
+| Move a block | yes | `move_block(from_row, from_col, to_row, to_col)`; a cross-row move makes the device create a branch |
 | DSP capacity refusal | partly | detected, not predicted: a refused placement raises `BlockRefused`. Headroom cannot be read - `CPULoad` never arrives |
 | Global EQ / Input Gate auto-disable under load | partly | `CompilerInhibitedModules{global_gate, global_eq}` is decoded and arrives on grid edits. The manual confirms this is the documented behaviour when a preset exceeds resources. Not surfaced in the API |
 | Input blocks: assign a physical input | yes | `set_chain_input()` |
@@ -87,18 +92,18 @@ candidate.
 | Promote a parameter to follow scenes | yes | `set_param_scene_mode()` (the flag must travel alone) |
 | comboBox option names | yes | `param_options()`, reading `Param.dynamic_steps` from the preset |
 | Read where a row branches and rejoins | yes | `splits()`, including branches that never rejoin |
-| Create a splitter or mixer | no | manual: tap-and-hold an empty slot, or drag a block to path B. No host shape known |
+| Create a splitter or mixer | yes | `set_split(row, split_column, mix_column)` / `clear_split(row)`. Every even row already has the splitter; the branch is what gets activated |
 | Splitter parameters | yes | `set_splitter_param()` via `combined_splitter`; indices follow unified model 10004 |
 | Mixer parameters | yes | `set_mixer_param()` |
 | Splitter / Mixer MUTE | yes | `set_split_mute()`. It is ONE control, not two; the write goes to `splitBypass` and the device reports it in `mixBypass` |
-| Side-chaining: set a block's SOURCE/TRIGGER | no | `Model.sidechain_source_flag`, `sidechain_sink_flag`, `BinaryPreset.side_chain_follow_exists`. The source list is readable via `dynamic_steps` |
+| Side-chaining: set a block's SOURCE/TRIGGER | no | `sidechain_source_flag` is ignored by a row/column-keyed `Grid` update, so the write travels some other way. The source list IS readable via `Param.dynamic_steps` |
 | Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()` |
 | Expression pedal assignment to a parameter | yes | `set_expression(row, column, param, pedal, minimum, maximum)` |
-| Expression bypass (heel-toe / switch / stop) | no | `Model.bypass_expression`, `Model.expression_bypass_info` |
+| Expression bypass (heel-toe / switch / stop) | partly | `set_expression_bypass()` round-trips, but which `mode` integer is Heel-Toe, Switch or Stop is unestablished |
 | Expression pedal calibration | no | candidate `IOSettings`. Manual calls it a global setting |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | it is an ordinary catalog model |
-| Looper X: transport actions and parameters | no | `Looper` is not decoded. The manual notes MIDI CC#48-61 drive it, which is a second route |
+| Looper X: transport actions and parameters | partly | `looper()` reads the full status; the transport is not driven because the `state` numbering is unestablished |
 | Undo / redo | no | `UndoRedo` is decoded and subscribed. It arrives after accepted grid edits - useful as an acceptance signal |
 
 ## 05 The Directory
@@ -110,19 +115,19 @@ candidate.
 | Save a preset ("Save As") | yes | `save_current_preset()` with name, instrument tag and default scene |
 | Preset descriptive tags | no | proven unwritable by three routes; a saved preset carries none at all |
 | Preset description, author, cloud id | no | `BinaryPreset.description`, `author_name`, `author_id`, `cloud_id`. Unexplored |
-| Preset volume and pan | no | `BinaryPreset.volume`, `BinaryPreset.pan`. A `Grid` update carrying them is ignored; no other route found yet |
+| Preset volume and pan | no | ignored by a `Grid` update AND by `ProductData.gain` on the save. No route found |
 | Delete a preset | yes | `delete_preset()`, eventually consistent |
 | Move a preset | yes | `move_preset()`, same-setlist only observed |
 | Factory and My Presets setlists | yes | `Setlist.FACTORY`, `Setlist.USER` |
-| User folders / additional setlists | no | MIDI CC#32 documents values 2-12 as 'User' folders, so up to 11 more exist. This library models only two |
-| Create a folder, nested navigation | no | candidate `File` |
-| Favorites and Recents | no | `RecentsFavorites` is decoded and subscribed; never written |
+| User folders / additional setlists | partly | `list_folders()` enumerates all 399 folders and `list_presets()` accepts any key. Only ONE user setlist exists on this unit, so CC#32's 2-12 are creatable folders - and creating one is unresolved |
+| Create a folder, nested navigation | no | a `File` CREATE naming a new folder key was accepted and created nothing. Nesting itself works - the plugin tree is nested |
+| Favorites and Recents | partly | `favorites()` reads them (name, folder key, folder name); writing is untested |
 | Bulk actions | no | `BulkOperation` is decoded and subscribed; never driven |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
-| Neural Captures: list | yes | the catalog includes them (categories 14 and 20) |
+| Neural Captures: list | yes | the catalog covers the unit's own capture slots, and `list_folders()` exposes the 2062-entry factory Captures Library grouped into 176 per-amp folders |
 | Neural Captures: rename, delete, manage | no | candidate `File` |
-| Impulse responses: list and load into an IR Loader | no | `FileMessage.ir_payload` exists and is unobserved |
+| Impulse responses: list and load into an IR Loader | partly | the 588 factory IRs are listable via `list_folders()`/`list_presets()`; loading one is unexplored (`FileMessage.ir_payload`) |
 | Plugin presets | no | candidate `License`, `CloudProduct` |
 | Upload to Cortex Cloud | no | candidates `CloudProduct`, `ProcessDownloadsQueue` |
 

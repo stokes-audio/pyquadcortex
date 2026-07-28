@@ -32,6 +32,7 @@ import itertools
 import logging
 import math
 import threading
+import time
 
 from google.protobuf.message import DecodeError
 
@@ -80,6 +81,7 @@ class Transport:
         # recalled - it carries no request_id to correlate on). List of
         # (expected_class, Event, [response|None]).
         self._type_waiters = []
+        self._collectors = []
         self._lock = threading.Lock()  # guards _pending / _ids (state only)
         # Serializes device writes so each logical message's reports are written
         # as an atomic group (a keepalive can't slip between a multi-report
@@ -210,6 +212,32 @@ class Transport:
                 return slot[0]
             raise TimeoutError(f"no response for request_id={rid}")
         return slot[0]
+
+    def collect(self, expected_class, trigger, seconds, match=None):
+        """Fire ``trigger()`` and gather EVERY matching message for ``seconds``.
+
+        The counterpart of :meth:`await_broadcast` for the case where one request
+        provokes many pushes rather than one: a single ``File`` READ makes the
+        device enumerate every folder it knows about, several hundred of them on
+        the observed unit, arriving over ten to twenty seconds.
+
+        Returns the messages in arrival order. Unlike a waiter, a collector does
+        not consume messages - they still reach any waiter or other collector.
+        """
+        got = []
+        entry = (expected_class, match, got)
+        with self._lock:
+            self._collectors.append(entry)
+        try:
+            trigger()
+            deadline = time.monotonic() + seconds
+            while time.monotonic() < deadline:
+                time.sleep(0.1)
+        finally:
+            with self._lock:
+                if entry in self._collectors:
+                    self._collectors.remove(entry)
+        return got
 
     def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
         """Fire ``trigger()`` and block for the next matching ``expected_class``.
@@ -363,6 +391,11 @@ class Transport:
         echo the id of the request that caused them) and unsolicited broadcasts
         simply find no waiter and are dropped at debug level.
         """
+        with self._lock:
+            collectors = [c for c in self._collectors
+                          if c[0] is type(message) and (c[1] is None or c[1](message))]
+        for _cls, _match, bucket in collectors:
+            bucket.append(message)
         rid = message.request_id if _has_request_id(message) else None
         with self._lock:
             entry = None

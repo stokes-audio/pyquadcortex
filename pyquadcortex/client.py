@@ -320,6 +320,11 @@ class QuadCortex:
         returned; pass ``include_empty=True`` for the complete slot map, e.g. to
         find a free slot to save into.
 
+        ``setlist`` is any folder KEY the device reports, not only the two
+        setlists: plugin artist folders and the Captures Library work too, and
+        :meth:`list_folders` enumerates all of them. Confirmed by listing
+        ``"106_f"`` (three "Darkglass VMT" captures) and a plugin artist folder.
+
         Unlike :meth:`read_preset`, this does not change what is loaded on the
         grid. There is no host-initiated "list" request: a ``File`` READ makes the
         device push a folder listing per setlist, so this sends that READ and
@@ -1246,6 +1251,103 @@ class QuadCortex:
             entry.param3 = int(m.param3)
         return self._t.send(msg)
 
+
+    def move_block(self, from_row: int, from_col: int, to_row: int, to_col: int,
+                   drop: bool = True):
+        """Move the block at one grid cell to another.
+
+        Shape: ``GridMove{move{from_row, from_col, to_row, to_col, is_drop}}``.
+        Confirmed driven host-to-device: moving row 2 column 1 to column 7 left
+        every other cell on that row where it was, and row 0 untouched.
+
+        **A cross-row move creates a parallel path**, which is what the manual
+        means by dragging a block from path A to path B. Moving row 0 column 6 to
+        row 1 column 6 on factory "Brit 2203" - a serial preset with no branch -
+        left the device reporting ``Split(row=0, split_column=0, mix_column=7)``:
+        the branch and rejoin columns are computed by the device, not by the
+        caller. Use :meth:`set_split` to place them deliberately instead.
+
+        The message also has an optional ``grid`` snapshot of every row's model
+        ids. It is ADVISORY - replaying one with a cell zeroed does not delete a
+        block - so this sends only the move.
+        """
+        msg = pa.GridMoveMessage()
+        mv = msg.move.add()
+        mv.from_row = from_row
+        mv.from_col = from_col
+        mv.to_row = to_row
+        mv.to_col = to_col
+        mv.is_drop = drop
+        return self._t.send(msg)
+
+    def set_split(self, row: int, split_column: int, mix_column: int):
+        """Branch ``row`` into its parallel lane at ``split_column``, rejoining at
+        ``mix_column``.
+
+        This is how a splitter is created without touching the unit. Every even
+        row already carries a splitter, mixer and combined splitter - they are
+        simply dormant, with ``split_control_points`` reporting ``-1`` - so
+        activating a branch means setting the columns::
+
+            Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}
+
+        Confirmed on factory "Brit 2203", a serial preset: after this write
+        :func:`splits` reported the branch, and :meth:`set_splitter_param`,
+        :meth:`set_mixer_param` and :meth:`set_split_mute` all drove it - a
+        ``LEVEL TO B`` of 0.25 and a mixer ``LEVEL B`` of 0.5 both read back.
+
+        Pass ``mix_column=-1`` for a branch that never rejoins, which is what
+        several factory presets do. ``row`` must be 0 or 2.
+        """
+        _require_even_row(row, "splitter or mixer")
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        scp = chain.split_control_points.add()
+        scp.split = split_column
+        scp.mix = mix_column
+        return self._t.send(msg)
+
+    def clear_split(self, row: int):
+        """Remove ``row``'s branch, making it serial again.
+
+        Sets both columns to the ``-1`` sentinel. Confirmed on factory 28A:
+        clearing row 0 left row 2's branch untouched.
+        """
+        return self.set_split(row, -1, -1)
+
+    def set_expression_bypass(self, row: int, column: int, pedal: int = 1,
+                              mode: int = 0, invert: bool = False,
+                              delay_ms: int = 0, latch_emulation: bool = False):
+        """Let an expression pedal bypass the block at ``row``/``column``.
+
+        Writes both halves of the feature in one message: ``bypass_expression``
+        (which pedal, and the range over which it acts) and
+        ``expression_bypass_info`` (how it behaves). Confirmed round-tripping
+        through a save: pedal 1, mode 1, invert, 250 ms, latch emulation.
+
+        The manual describes three ``mode`` behaviours - Heel-Toe, Switch and
+        Stop - but which integer denotes which is NOT established, so ``mode`` is
+        passed through as a number. ``invert`` reverses the value at which the
+        bypass engages, ``delay_ms`` is the switch delay (to 5000 ms), and
+        ``latch_emulation`` lets a momentary toe switch behave as latching.
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        model = chain.models.add()
+        model.column = column
+        be = model.bypass_expression.add()
+        be.expression = int(pedal)
+        be.expression_min = 0.0
+        be.expression_max = 1.0
+        info = model.expression_bypass_info.add()
+        info.type = int(mode)
+        info.invert = invert
+        info.delay_ms = delay_ms
+        info.latch_emulation = latch_emulation
+        return self._t.send(msg)
+
     def set_lane_output_scene_mode(self, row: int, param_index: int,
                                    enabled: bool = True):
         """Make a Lane Output Control parameter follow scenes.
@@ -1357,6 +1459,129 @@ class QuadCortex:
         return self._read_state(pa.IOSettingsMessage,
                                 lambda m: len(m.settings.in_port) > 0, timeout)
 
+    def set_input_port(self, input_port_id: int, level: float = None,
+                       impedance: float = None, input_type: float = None,
+                       ground_lift: float = None):
+        """Change one input port's settings, sparsely.
+
+        Only the arguments given are sent, and only that port is affected -
+        confirmed on hardware, where writing one input left the other three
+        byte-identical.
+
+        ``level`` is the gain and ``ground_lift`` is confirmed writable.
+        ``input_type`` is confirmed writable (the manual's Instrument/Mic switch on
+        the combo inputs). ``impedance`` did NOT take when written on its own, which
+        fits the manual's note that impedance is disabled while the type is set to
+        Mic - so treat it as unconfirmed.
+
+        These are global and survive power cycles, and an input gain is usually
+        something a player has set by ear. Read :meth:`io_settings` first if you
+        intend to put it back, and note that a read straight after a write can
+        still report the old value.
+        """
+        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+        port = msg.settings.in_port.add()
+        port.input_port_id = input_port_id
+        for name, value in (("level", level), ("input_zmode", impedance),
+                            ("input_type", input_type),
+                            ("ground_lift", ground_lift)):
+            if value is not None:
+                setattr(port, name, value)
+        return self._t.send(msg)
+
+    def set_output_port(self, output_port_id: int, level: float = None,
+                        ground_lift: float = None, mute: bool = None):
+        """Change one output port's settings, sparsely.
+
+        ``level`` and ``ground_lift`` are confirmed writable. ``mute`` is NOT: a
+        write is accepted and the port reads back unmuted, on both a physical
+        output and a USB one. Whatever the unit's MUTE control sends, it is not
+        this field.
+        """
+        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+        port = msg.settings.out_port.add()
+        port.output_port_id = output_port_id
+        for name, value in (("level", level), ("ground_lift", ground_lift),
+                            ("mute", mute)):
+            if value is not None:
+                setattr(port, name, value)
+        return self._t.send(msg)
+
+    def set_usb_port(self, level: float = None, hp_select: float = None,
+                     dry_wet: float = None):
+        """Change the USB audio settings. ``dry_wet`` is confirmed writable.
+
+        ``dry_wet`` chooses whether USB outputs carry clean DI or processed audio,
+        and ``hp_select`` which USB channels feed the headphones.
+        """
+        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+        for name, value in (("level", level), ("hp_select", hp_select),
+                            ("dry_wet", dry_wet)):
+            if value is not None:
+                setattr(msg.settings.usb_port, name, value)
+        return self._t.send(msg)
+
+    def set_midi_thru(self, enabled: bool):
+        """Turn MIDI Thru on or off. Confirmed writable (the field is a float)."""
+        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+        msg.settings.midi_port.midi_thru = 1.0 if enabled else 0.0
+        return self._t.send(msg)
+
+    def set_output_pairing(self, xlr1_2: bool = None, out3_4: bool = None):
+        """Pair or unpair the output couples, which makes them share settings.
+
+        The manual's "hold OUTPUTS 1/2 or 3/4 to pair or unpair them". Paired
+        outputs share level, ground lift and mute. Confirmed writable.
+        """
+        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+        if xlr1_2 is not None:
+            msg.xlr1_2_linked = xlr1_2
+        if out3_4 is not None:
+            msg.out3_4_linked = out3_4
+        return self._t.send(msg)
+
+    def tuner(self, timeout: float = 10.0):
+        """The tuner's state.
+
+        Reports ``input_port_id``, ``frequency`` and ``mute``. Note that
+        ``frequency`` reads 0 with nothing playing and ignores a write, so it
+        appears to be the DETECTED pitch rather than the reference-pitch setting
+        the manual's FREQ [Hz] control adjusts - where that lives is not
+        established.
+        """
+        return self._read_state(pa.TunerMessage,
+                                lambda m: m.HasField("input_port_id"), timeout)
+
+    def show_tuner(self, shown: bool = True):
+        """Open or close the Tuner on the unit.
+
+        ``ShowTuner{show}``, the counterpart of :meth:`set_gig_view`. Sent and
+        accepted; that it opens the Tuner on screen has not been eyeballed.
+        """
+        return self._t.send(pa.ShowTunerMessage(action=pa.MessageAction.UPDATE,
+                                                show=shown))
+
+    def set_tuner_input(self, input_port_id: int):
+        """Choose which input feeds the Tuner. Confirmed writable (1 -> 2 -> 1)."""
+        return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
+                                            input_port_id=input_port_id))
+
+    def looper(self, timeout: float = 10.0):
+        """The Looper X block's state, if one is on the grid.
+
+        A ``Looper`` message whose ``status`` carries ``state``, ``progress``,
+        ``loop_length``, ``free_samples``, ``armed``, ``in_reverse``,
+        ``half_speed``, ``undo_count``, ``redo_available`` and more, plus the
+        top-level ``one_shot_play``, ``sync_start_waiting`` and
+        ``quantize_enabled``.
+
+        Readable; DRIVING the transport is not implemented, because what the
+        ``state`` numbers mean has not been established - the manual notes MIDI
+        CC#48-61 control the Looper, which is a second route worth comparing.
+        """
+        return self._read_state(pa.LooperMessage, lambda m: m.HasField("status"),
+                                timeout)
+
     def set_input_level(self, input_port_id: int, level: float):
         """Set an input port's gain, as the normalized 0..1 the wire carries.
 
@@ -1366,13 +1591,11 @@ class QuadCortex:
         restore it: these are global, and an input gain is the kind of setting a
         player has dialled in by ear.
         """
-        return self._io_port_write("in_port", "input_port_id", input_port_id,
-                                   level)
+        return self.set_input_port(input_port_id, level=level)
 
     def set_output_level(self, output_port_id: int, level: float):
         """Set an output port's level, as the normalized 0..1 the wire carries."""
-        return self._io_port_write("out_port", "output_port_id", output_port_id,
-                                   level)
+        return self.set_output_port(output_port_id, level=level)
 
     def _io_port_write(self, collection: str, key: str, port_id: int,
                        level: float):
@@ -1420,6 +1643,59 @@ class QuadCortex:
         """Open or close Gig View on the unit. Confirmed on hardware."""
         return self._t.send(pa.ShowGigViewMessage(action=pa.MessageAction.UPDATE,
                                                   show=shown))
+
+    def list_folders(self, seconds: float = 20.0) -> list:
+        """Every folder the device knows about, as :class:`Folder` entries.
+
+        A single ``File`` READ makes the device enumerate its whole tree, which is
+        far more than the two setlists: on the observed unit 399 folders arrive
+        over about fifteen seconds. What is in there:
+
+        * ``My Presets`` and the ``Factory Library``, 256 slots each.
+        * The **Captures Library** (``local_nc_root``) - 2062 factory captures,
+          also grouped into ~180 per-amp folders keyed ``NNN_f`` and named after
+          the amp, e.g. ``106_f`` is "Darkglass VMT" with three variants.
+        * ``/opt/neuraldsp/impulse_responses``, 588 factory IRs.
+        * One folder per installed plugin, each with an ``Artists`` tree of that
+          plugin's artist presets.
+
+        Every one of those keys works with :meth:`list_presets`, so this is how a
+        caller discovers what is addressable rather than assuming two setlists.
+
+        Takes ``seconds`` rather than a timeout because the answer is "everything
+        that arrived", not "the first match".
+        """
+        pushes = self._t.collect(
+            pa.FileMessage,
+            lambda: self._t.send(pa.FileMessage(action=pa.MessageAction.READ)),
+            seconds,
+            match=lambda m: bool(m.folder.key))
+        best = {}
+        for m in pushes:
+            f = m.folder
+            occupied = sum(1 for x in f.files
+                           if x.HasField("name") and x.name)
+            prev = best.get(f.key)
+            entry = Folder(
+                key=f.key,
+                name=f.name if f.HasField("name") else "",
+                slots=len(f.files),
+                occupied=occupied,
+                is_factory=f.is_factory if f.HasField("is_factory") else False,
+            )
+            if prev is None or entry.slots > prev.slots:
+                best[f.key] = entry
+        return sorted(best.values(), key=lambda e: e.key)
+
+    def favorites(self, timeout: float = 10.0):
+        """The unit's Favorites and Recents, as a ``RecentsFavorites`` message.
+
+        Each ``items`` entry carries ``name``, ``folder_key`` and ``folder_name``,
+        so an entry can be fed straight back to :meth:`find_preset` or
+        :meth:`recall_preset`. Read-only here: writing it is untested.
+        """
+        return self._read_state(pa.RecentsFavoritesMessage,
+                                lambda m: len(m.items) > 0, timeout)
 
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
                          timeout: float = 45.0, interval: float = 2.0):
@@ -1743,6 +2019,16 @@ def splits(p: preset.BinaryPreset) -> list:
                 continue
             found.append(Split(row=row, split_column=scp.split, mix_column=scp.mix))
     return found
+
+
+class Folder(NamedTuple):
+    """One folder the device reports, from :meth:`QuadCortex.list_folders`."""
+
+    key: str
+    name: str
+    slots: int
+    occupied: int
+    is_factory: bool
 
 
 class MidiOut(NamedTuple):

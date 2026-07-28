@@ -177,7 +177,8 @@ These are all methods on the object `connect()` returns.
 | **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(row, column, param_index, value)`, `set_bypass(row, column, bypassed)` |
-| **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `catalog` |
+| **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `move_block(...)`, `catalog` |
+| **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `splits(preset)` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
 | **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
 | **Input gate** | `set_input_gate(row, param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
@@ -189,7 +190,10 @@ These are all methods on the object `connect()` returns.
 | **Inspect a preset** | `blocks(preset)`, `splits(preset)`, `free_rows(preset)`, `param_options(preset, row, column, index)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
-| **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `io_settings()`, `set_input_level()`, `set_output_level()`, `global_eq()`, `set_global_eq_bypassed()`, `mode()`, `set_mode()`, `set_gig_view()` |
+| **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `global_eq()`, `set_global_eq_bypassed()`, `mode()`, `set_mode()`, `set_gig_view()` |
+| **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
+| **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `looper()` |
+| **Discovery** | `list_folders()` - every folder the device knows, including the factory Captures Library and plugin artist presets; `favorites()` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 
 **Rows and columns are zero-based, and the unit displays rows 1 to 4.** `row=0` is

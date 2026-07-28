@@ -8,6 +8,53 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.13.0 - 2026-07-28
+
+Third exploration round, worked through without anyone at the unit. Everything below was
+established by driving the device and reading it back; what could NOT be settled that way
+is now listed in
+[docs/needs-hardware-interaction.md](docs/needs-hardware-interaction.md) rather than left
+implicit.
+
+### Added
+
+- **`move_block(from_row, from_col, to_row, to_col)`.** `GridMove` had been recorded as
+  observed-inbound-only; it drives fine. A cross-row move is how the manual says a
+  parallel path gets created, and that is exactly what happens: moving a block from row 0
+  to row 1 on a serial preset left the device reporting a branch it had computed itself.
+- **`set_split(row, split_column, mix_column)`** and **`clear_split(row)`**. Creating a
+  splitter was listed as having no known host shape. It turns out there is nothing to
+  create - every even row already carries a splitter, mixer and combined splitter,
+  dormant with `-1` columns - so a branch is activated by setting the columns. After
+  which `set_splitter_param`, `set_mixer_param` and `set_split_mute` all drive it.
+- **`set_expression_bypass()`** - lets a pedal bypass a block, writing both
+  `bypass_expression` and `expression_bypass_info` in one message.
+- **`set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`,
+  `set_output_pairing()`** - the rest of the I/O settings, sparse and port-keyed.
+  `set_input_level()`/`set_output_level()` still work and now delegate.
+- **`tuner()`, `show_tuner()`, `set_tuner_input()`, `looper()`** - Tuner and Looper X
+  state. `Tuner`, `ShowTuner`, `Looper` and `GigViewButton` are now registered.
+- **`list_folders()`** and the `Folder` type. One `File` READ makes the device enumerate
+  its whole tree - 399 folders here, not two setlists - including a **2062-entry factory
+  Captures Library** grouped into 176 per-amp folders, 588 factory IRs, and every
+  installed plugin's artist presets. `list_presets()` already accepted any of those keys;
+  that is now documented and tested.
+- **`favorites()`** - the unit's Favorites and Recents.
+- **`Transport.collect()`** - gather every matching push for a window, for the case where
+  one request provokes hundreds rather than one.
+
+### Documented as not working
+
+Writes that were tried and are confirmed no-ops, so nobody repeats them: preset
+`volume`/`pan` (via `Grid` and via `ProductData.gain`), `scene_tempo`,
+`Model.sidechain_source_flag`, output `mute`, and creating a folder by naming a new key.
+Input impedance also did not take, which matches the manual's note that it is disabled
+while an input's type is Mic.
+
+Three shapes work but their numbering does not: the Looper's `state`, the
+expression-bypass `mode`, and the tuner's reference pitch (`Tuner.frequency` is the
+DETECTED pitch - it reads 0 in silence and ignores writes).
+
 ## 0.12.0 - 2026-07-27
 
 Second exploration round against the manual audit, opening the global settings
