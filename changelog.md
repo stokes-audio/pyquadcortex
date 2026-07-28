@@ -8,6 +8,44 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.27.0 - 2026-07-28
+
+Documentation, not code. The library had outgrown its own front door: 107 methods, and a
+readme whose "what you can do" section was a 28-row table.
+
+### Changed
+
+- **The readme is half the size** (424 lines to 229) and leads with **four** things rather
+  than twenty-eight: edit a preset, build scenes, drive the unit, and find what is on it -
+  each with a short snippet. A reader deciding whether this library is for them should not
+  have to read a reference table first.
+- **[docs/api.md](docs/api.md)** is new and holds what moved: the full method groups, and
+  the longer pieces on blocks and the catalog, building a chain, how factory presets build
+  scenes, the tempo controls, captures, and the three ways a global-settings read can
+  mislead you.
+- **[docs/troubleshooting.md](docs/troubleshooting.md)** takes the forty lines on the USB
+  link dying, which was the largest thing on the front page and relevant to almost nobody
+  arriving.
+
+### Added
+
+Four examples, because the existing five demonstrated the 0.9.0 subset and nothing added
+since:
+
+- **`scene_map.py`** - builds a preset whose eight scenes alternate between a main path
+  and a parallel lane, using per-scene mixer levels. This is how factory presets do it,
+  and it is the single most Quad-Cortex-specific thing the library can do.
+- **`footswitches.py`** - STOMP assignments and Preset MIDI Out.
+- **`device_settings.py`** - read-only by default; prints the global settings and I/O, and
+  demonstrates the read-modify-restore pattern those require.
+- **`use_capture.py`** - browses the Neural Capture library and places one.
+
+Plus **[examples/readme.md](examples/readme.md)** describing all nine, and a note on the
+two things that bite: rows are zero-based here and 1-4 on screen, and global settings have
+no save and no undo.
+
+All four new examples were run against hardware, not just checked for syntax.
+
 ## 0.26.0 - 2026-07-28
 
 Neural Capture, and a fix to the capture tooling that had been quietly limiting every
