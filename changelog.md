@@ -8,6 +8,53 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.26.0 - 2026-07-28
+
+Neural Capture, and a fix to the capture tooling that had been quietly limiting every
+session before this one.
+
+### Fixed
+
+- **The RX path now decodes every message type it can**, 70 of the 72 in the device's
+  enum, instead of only the 45 this project had registered by hand. Undecodable inbound
+  messages are dropped before dispatch, so anything watching decoded traffic was blind to
+  half the schema - and **a feature whose message type was unregistered looked exactly
+  like a feature that broadcasts nothing at all**.
+
+  That is not hypothetical: "New Neural Capture" appeared to do nothing on the unit AND
+  produce nothing on the wire. With the fix, the very same tap showed
+  `NeuralCapture{try_to_show_dialog: true}` immediately. Any earlier "nothing was
+  broadcast" conclusion in these notes should be treated as suspect if the feature's type
+  was not registered at the time.
+
+### Added
+
+- **`captures()`** - browse the Neural Capture library, over two thousand entries on the
+  observed unit, presented on screen as Factory Captures V1, Factory Captures V2 and My
+  Captures.
+- **`set_capture(row, column, entry)`** - point a capture block at one of them.
+
+  A capture block's model id is only the block TYPE; which capture it plays is the string
+  parameter `file_name` at index 5, holding the library file's 64-character content hash
+  concatenated directly with its display name. Verified end to end: the owner created a
+  capture on the unit, and a block placed and pointed at it from the host came up named
+  correctly.
+- **`show_capture_dialog()`**, with a warning attached. The unit hands its capture flow to
+  a connected host, so a client that stays silent SUPPRESSES the on-device wizard, and one
+  that answers `true` without drawing a UI puts the device into a flow with no interface
+  anywhere. To use the unit's own wizard, disconnect.
+
+### Corrected
+
+An earlier note reasoned that a capture id must be a per-unit SLOT, because thirteen of
+seventeen factory presets reference id 14000 from positions no single capture could
+occupy. The observation was right and the conclusion was wrong: they all use the same
+block model with different `file_name` strings. The mistake was assuming the model id
+carried the capture's identity.
+
+The catalog documentation is corrected too - it does NOT enumerate captures, and does not
+grow when one is saved.
+
 ## 0.25.0 - 2026-07-28
 
 ### Documented, and it reverses an earlier finding

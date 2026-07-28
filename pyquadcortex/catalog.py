@@ -10,8 +10,12 @@ order and their ranges.
 
 This module turns that payload into a :class:`ModelCatalog`. Because it comes
 from the device, the catalog automatically covers content that is not built in -
-purchased plugin models, and Neural Captures the player made themselves - which
-is exactly the content no hard-coded table could know about.
+purchased plugin models in particular.
+
+It does NOT enumerate Neural Captures. The Neural Capture category holds only a
+couple of entries and does not grow when a capture is saved: a capture BLOCK is one
+of those models and the capture it plays is a string parameter naming a library
+file. Use :meth:`pyquadcortex.QuadCortex.captures` to browse what is available.
 
 Which models are "factory" matters for the generated constants in
 :mod:`pyquadcortex.models`: only models every unit is guaranteed to have belong
@@ -26,14 +30,18 @@ import tarfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 
-# Categories holding Neural Captures. These are user content, so they must never
-# become hard-coded constants. What is observed on one unit: the ids are dense and
-# low (14000, 14001 for two captures), and factory presets reference id 14000 from
-# positions no single capture could fill - the amp slot in one preset, a pedal slot
-# ahead of a real amp in another - so a factory preset appears to reference a
-# capture SLOT, resolved against whatever that unit holds. Whether the same id
-# denotes different content on a DIFFERENT unit has not been tested here; it would
-# take a second unit. Either way, resolve capture ids at run time.
+# Categories holding Neural Captures, kept out of the generated constants.
+#
+# These ids are capture BLOCK types, not individual captures. A block's model id says
+# only "this is a Neural Capture"; WHICH capture it plays is a string parameter,
+# `file_name`, holding the library file's 64-character content hash followed by its
+# display name. Saving a new capture does not add a model here.
+#
+# That explains an earlier puzzle honestly. Thirteen of seventeen factory presets
+# reference id 14000 from positions no single capture could fill - the amp slot in one,
+# a pedal slot ahead of a real amp in another - which had been read as evidence that a
+# capture id was a per-unit SLOT. It is not: they all use the same block model with
+# different `file_name` strings.
 _CAPTURE_CATEGORY_IDS = frozenset({14, 20})
 
 

@@ -20,9 +20,9 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **63 yes**, **13 partly**, **14 no**, **10 n/a**.
+Of 101 features audited: **65 yes**, **13 partly**, **13 no**, **10 n/a**.
 
-Of the 90 features a host could plausibly drive, **63 are fully covered** and 13 more
+Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
 exercised. Only 14 remain untouched.
@@ -126,7 +126,8 @@ loading from the factory Captures Library.
 | Bulk actions | partly | there is no host-drivable bulk copy - `BulkOperation` only narrates progress - but `copy_preset()` and `duplicate_setlist()` achieve it by recall + save, at a few seconds per preset |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
-| Neural Captures: list | yes | the catalog covers the unit's own capture slots, and `list_folders()` exposes the 2062-entry factory Captures Library grouped into 176 per-amp folders |
+| Neural Captures: list | yes | `captures()` browses the library - over 2000 entries, shown on the unit as Factory Captures V1/V2 and My Captures. NOT the catalog, which does not grow when a capture is saved |
+| Load a capture onto the grid | yes | `set_capture(row, column, entry)` - the block model plus a `file_name` string of content hash + name |
 | Neural Captures: rename, delete, manage | no | candidate `File` |
 | Impulse responses: list and load into an IR Loader | partly | the 588 factory IRs are listable via `list_folders()`/`list_presets()`; loading one is unexplored (`FileMessage.ir_payload`) |
 | Plugin presets | no | candidate `License`, `CloudProduct` |
@@ -136,9 +137,9 @@ loading from the factory Captures Library.
 
 | Feature | Status | Detail |
 |---|---|---|
-| Run a capture (v1, on the unit) | no | `NeuralCapture`, `GainCalibration`, `EnableCaptureOut` - none decoded |
-| Capture v2 (from Cortex Control) | no | `NeuralCapture2` - not decoded |
-| Capture calibration settings, A/B test, metadata | no | as above |
+| Run a capture (v1, on the unit) | no | the unit hands the flow to a connected HOST via `NeuralCapture{try_to_show_dialog}`, so a connected client suppresses the on-device wizard. The engine is reachable as the `NC_Recorder`/`NC_Trainer`/`NC_Refiner` internal models |
+| Capture v2 (from Cortex Control) | no | `NeuralCapture2` now decodes, but the flow is unexplored |
+| Capture calibration settings, A/B test, metadata | no | as above. `NeuralCapture` carries `state`, `progress`, `toggle_ab_model`, `model_ab_bypass`, `save_info` and `error_id` |
 | Physical connection for a capture | n/a | cabling |
 
 ## 07, 09 Plugins and computer integration

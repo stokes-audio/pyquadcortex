@@ -69,6 +69,27 @@ _BY_NAME = {
     "GigViewButton": pa.GigViewButtonMessage,
 }
 _ENUM = pa.CortexMessageType.Enum
+
+# Every remaining type in the enum whose generated class exists, resolved by name.
+# The explicit table above records what this project has actually exercised; this
+# fallback makes the RX path DECODE the rest rather than dropping them.
+#
+# That mattered more than it looks. Undecodable inbound messages are discarded before
+# dispatch, so any tooling that watches decoded traffic was blind to roughly half the
+# schema - and a feature whose message type was unregistered looked exactly like a
+# feature that broadcasts nothing at all. Decoding everything removes that trap.
+def _auto_registered():
+    found = {}
+    for value in pa.CortexMessageType.DESCRIPTOR.enum_types_by_name["Enum"].values:
+        if value.name in _BY_NAME:
+            continue
+        cls = getattr(pa, f"{value.name}Message", None)
+        if cls is not None:
+            found[value.name] = cls
+    return found
+
+
+_BY_NAME.update(_auto_registered())
 _BY_TYPE = {_ENUM.Value(name): cls for name, cls in _BY_NAME.items()}
 # Reverse map (class -> enum integer) built once; message classes are hashable.
 _TYPE_BY_CLASS = {cls: t for t, cls in _BY_TYPE.items()}

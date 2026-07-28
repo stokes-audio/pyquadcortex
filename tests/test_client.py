@@ -2304,3 +2304,48 @@ def test_set_mode_cycle_accepts_a_hybrid_slot_value():
     assert list(qc._t.sent[-1].available_modes.modes) == [7, 1]
     qc.set_mode(7)
     assert qc._t.sent[-1].mode == 7
+
+
+# -- Neural Captures -----------------------------------------------------------
+# A capture BLOCK is an ordinary model (14000); which capture it plays is the string
+# parameter `file_name`, holding the library file's 64-char content hash followed
+# directly by its display name. Read off factory 28A and confirmed by pointing a
+# host-placed block at a freshly created capture.
+
+
+class _Entry:
+    def __init__(self, key, name):
+        self.key, self.name = key, name
+
+
+def test_set_capture_writes_the_hash_and_name_as_one_string():
+    qc = client.QuadCortex(EchoingTransport())
+    entry = _Entry("0200eff9df18229325d1816aeb8445eca03604f2a9f95fd3732ceaed167c25c1",
+                   "Kyle Pb 1")
+    qc.set_capture(row=1, column=0, capture=entry)
+    placed, pointed = qc._t.sent[-2:]
+    assert placed.preset.chains[0].models[0].hash == 14000
+    prm = pointed.preset.chains[0].models[0].params[0]
+    assert prm.index == 5
+    assert prm.param_values[0].string_value == entry.key + entry.name
+    assert "" == entry.key[len(entry.key):], "no separator between hash and name"
+
+
+def test_set_capture_needs_a_library_entry():
+    qc = client.QuadCortex(EchoingTransport())
+    with pytest.raises(TypeError, match="captures\\(\\)"):
+        qc.set_capture(row=1, column=0, capture="Kyle Pb 1")
+
+
+def test_captures_browses_the_library_not_the_catalog():
+    # The catalog does NOT grow when a capture is saved, so it cannot be the source.
+    listing = pa.FileMessage(action=pa.MessageAction.UPDATE)
+    listing.folder.key = "local_nc_root"
+    for key, name in (("aa" * 32, "Kyle Pb 1"), ("bb" * 32, "Darkglass VMT 1")):
+        f = listing.folder.files.add()
+        f.key = key
+        f.name = name
+    qc = client.QuadCortex(StateTransport(listing))
+    got = qc.captures()
+    assert [e.name for e in got] == ["Kyle Pb 1", "Darkglass VMT 1"]
+    assert got[0].key == "aa" * 32

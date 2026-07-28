@@ -2215,6 +2215,91 @@ Two of those names disagree with the catalog, which is why the map
             self.set_global_eq_band(base + offset, value)
         return None
 
+    #: Wire index of the ``file_name`` parameter on a Neural Capture block, and the
+    #: root folder key of the Captures Library. See :meth:`set_capture`.
+    CAPTURE_FILE_NAME_PARAM = 5
+    CAPTURES_LIBRARY = "local_nc_root"
+
+    def captures(self, timeout: float = 30.0) -> list:
+        """Every Neural Capture in the library, as listing entries.
+
+        Each has a ``name`` and a ``key`` - the key being a 64-character content hash,
+        which is half of what :meth:`set_capture` needs. On the observed unit this is
+        over two thousand entries: the factory capture libraries plus the player's own.
+
+        Note this is NOT the same as the models in :attr:`catalog`. The catalog's
+        Neural Capture category lists only a couple of entries and does not grow when a
+        capture is saved, so it cannot be used to find out what is available.
+        """
+        return self.list_presets(self.CAPTURES_LIBRARY, timeout=timeout)
+
+    def set_capture(self, row: int, column: int, capture, model: int = 14000):
+        """Point a Neural Capture block at a capture from the library.
+
+        ``capture`` is an entry from :meth:`captures` (or anything with ``key`` and
+        ``name``). A capture BLOCK is an ordinary model - 14000 on the observed unit -
+        and which capture it plays is held in a string parameter:
+
+            ``file_name = <64-char content hash><display name>``
+
+        the hash being the library entry's ``key``, concatenated directly with its
+        name and no separator. Read off factory 28A, whose capture block holds
+        ``"3c06...3a2dDarkglass VMT 1"``, and confirmed by placing a block from the
+        host and pointing it at a freshly made capture.
+
+        So the model id identifies "a capture block", not which capture - which is why
+        the catalog cannot enumerate what is available and :meth:`captures` is the
+        list to browse.
+        """
+        key = getattr(capture, "key", None)
+        name = getattr(capture, "name", None)
+        if key is None or name is None:
+            raise TypeError(
+                "capture must be an entry from captures(), carrying key and name"
+            )
+        self.set_block(row=row, column=column, model=model)
+        return self.set_param(row=row, column=column,
+                              param_index=self.CAPTURE_FILE_NAME_PARAM,
+                              text=f"{key}{name}")
+
+    def show_capture_dialog(self, shown: bool = True):
+        """Answer the device's request to open the Neural Capture dialog.
+
+        **The capture flow is gated on the host.** Choosing "New Neural Capture" on
+        the unit does not open anything by itself: the device broadcasts
+        ``NeuralCapture{try_to_show_dialog: true}`` and waits for the connected host
+        to reply. With no reply the tap appears to do nothing at all - the unit simply
+        returns to the grid - which is what made this feature look inert while a host
+        was attached.
+
+        So a client that wants the flow has to answer::
+
+            NeuralCapture{UPDATE, show_dialog: true}
+
+        The message also carries ``show_dialog_fail_reason``, a string, for refusing
+        with an explanation.
+
+        **Do not answer this unless you are implementing the capture UI.** The dialog
+        is the HOST's to draw - the unit hands its capture flow to a connected editor,
+        which is what Cortex Control's Neural Capture does. Replying ``true`` from a
+        library that draws nothing puts the device into the flow with no interface
+        anywhere: the device reported ``state: 1`` and prepared its A/B model while the
+        unit's own screen stayed on the grid.
+
+        Worse, staying SILENT is not neutral either - the unit waits for the answer and
+        its own wizard never opens, so simply being connected suppresses on-device
+        capture. To use the unit's wizard, disconnect first.
+
+        Creating a capture is not implemented here. The engine is reachable though:
+        the catalog's Neural Capture Internal category holds ``NC_Recorder``,
+        ``NC_Trainer`` and ``NC_Refiner``, whose parameters are the controls (START
+        TRAINING, SET SEED, CANCEL TRAINING, START AUTO REFINE, SET LATENCY, OUTPUT
+        GAIN, EXPORT MODEL) and whose meters report progress, loss and a sanity check.
+        Using a capture that already exists is :meth:`set_capture`.
+        """
+        return self._t.send(pa.NeuralCaptureMessage(action=pa.MessageAction.UPDATE,
+                                                    show_dialog=shown))
+
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
                          timeout: float = 45.0, interval: float = 2.0):
         """Re-list ``setlist`` until ``until(entries)`` holds, and return them.

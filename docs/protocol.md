@@ -1571,6 +1571,38 @@ What the composite value encodes is unknown. 7 was Preset+Stomp, by elimination 
 Scene was the slot left standing. Other pairings have not been observed, so read the value
 back after making the pairing once on the unit.
 
+### 7.7b4 Neural Capture
+
+**Creating** a capture is not driven by this library, and there is a trap worth knowing
+about first: the unit hands its capture flow to a connected HOST.
+
+Choosing "New Neural Capture" on the unit broadcasts
+`NeuralCapture{try_to_show_dialog: true}` and then waits. The host is expected to answer
+`NeuralCapture{show_dialog: true}` and present the UI itself - which is what Cortex
+Control's Neural Capture does. Consequences, both observed:
+
+- **Staying silent is not neutral.** With a host connected and not answering, the tap does
+  nothing at all and the unit returns to the grid. Simply being connected suppresses
+  on-device capture; disconnect to use the unit's own wizard.
+- **Answering without a UI is worse.** Replying `show_dialog: true` from a library that
+  draws nothing put the device into the flow - it reported `state: 1` and prepared its A/B
+  model, `model_ab` carrying a cab - with no interface anywhere.
+
+`NeuralCapture` also carries `show_dialog_fail_reason`, `state`, `progress`,
+`toggle_ab_model`, `model_ab_bypass`, `save_info` and `error_id`.
+
+The engine itself is exposed as three internal models in the catalog's Neural Capture
+Internal category, whose parameters are the controls and whose meters are the telemetry:
+
+| model | parameters |
+|---|---|
+| `NC_Recorder` | Progress, Bulk Delay and Sanity Check meters |
+| `NC_Trainer` | START TRAINING, SET CONDUCTOR, SET NODE, CANCEL TRAINING, SET SEED; Progress and Loss meters |
+| `NC_Refiner` | START AUTO REFINE, START MANUAL REFINE, SET LATENCY, SET AB, OUTPUT GAIN, EXPORT MODEL, IMPORT MODEL |
+
+**Using** a capture that already exists needs none of that - see the `file_name` parameter
+above.
+
 ### 7.7c The folder tree, and what else is enumerable
 
 A single `File` READ makes the device enumerate far more than the two setlists. On the
@@ -1727,6 +1759,7 @@ visually on the device's own screen.
 | `set_param_option` | `Grid{UPDATE, ..., params{index, param_values{float_value}}}` | read-back + on-unit | picks a list parameter's option by name; the value is `index / (count - 1)` |
 | `set_output_mute` | `IOSettings{UPDATE, settings{out_port{output_port_id, mute}}}` | read-back + on-unit | must travel ALONE; dropped if another field shares the port entry |
 | `set_tuner_reference` | `Tuner{UPDATE, frequency}` | read-back + on-unit | an OFFSET in Hz from 440 |
+| `captures` / `set_capture` | `File{READ}` on `local_nc_root`; then `Grid{UPDATE, ..., params{index: 5, param_values{string_value}}}` | read-back + on-unit | a capture block's model id is the block TYPE; `file_name` = hash + display name selects the capture |
 | `master_volume` | `MasterVolume{READ}` | read-back | READ-ONLY: 0..1 mapping to the 0-100 on screen; a write is ignored |
 | `pin_model` / `unpin_model` / `pinned_models` | `PinnedModels{models}` with NO action / `{DELETE, models}` | read-back + on-unit | pinning APPENDS and can duplicate; DELETE removes every entry for an id |
 | `delete_setlist` | `File{DELETE, folder{key, name}}` | read-back | removes the setlist and its contents |
@@ -1932,20 +1965,32 @@ Because the catalog comes FROM the device it also covers Neural Captures
 generated constants only for factory content (412 of the 533 models on the observed
 unit) and resolves everything else at runtime.
 
-**Capture ids look like slots, and factory presets treat them as such.** What is
-observed on one unit: category 14 holds exactly two models, `14000` "Eltron 30" and
-`14001` "Capture 2", densely numbered from the category base. Thirteen of 17 surveyed
-factory presets reference id `14000`, from positions no single capture could fill at
-once - the amp slot in "Darkglass AO900 2" (28A) and "Cali Basswalk" (27E), a pedal
-slot ahead of the real amp in "OneStar Clean Tweed" (02C), row 0 column 2 in "Rols
-Jazz" (09A) opposite a real amp, row 3 column 4 in 06D. So a factory preset appears
-to reference a capture SLOT, resolved against whatever that unit happens to hold.
+**A capture id is a BLOCK TYPE, not a capture.** Category 14 holds only a couple of
+models - `14000` and `14001` on the observed unit - and saving a new capture does not add
+one. Which capture a block plays is the string parameter **`file_name`** at index 5:
 
-Whether the same id denotes different content on a DIFFERENT unit has NOT been tested
-here - it would take a second unit - so the slot reading is an inference from
-numbering and from the factory references, not a measurement. Either way, the
-practical consequence holds: a preset copied from factory content is unit-specific
-unless the capture ids in it are resolved at run time.
+```
+file_name = <64-char content hash><display name>
+```
+
+the hash being the `key` of the file in the Captures Library, concatenated directly with
+its name and no separator. Factory 28A's capture block holds
+`"3c06...3a2dDarkglass VMT 1"`.
+
+Confirmed both ways: read off factory content, and by creating a capture on the unit and
+then pointing a host-placed block at it - `set_block(model=14000)` followed by a
+`file_name` write read back exactly, with the new capture named on the unit.
+
+This corrects an earlier inference recorded here. Thirteen of 17 surveyed factory presets
+reference id `14000` from positions no single capture could fill at once - the amp slot in
+28A and 27E, a pedal slot ahead of the real amp in 02C, row 0 column 2 in 09A opposite a
+real amp - which had been read as evidence that the id was a per-unit SLOT. It is not:
+they all use the same block model with different `file_name` strings, and the earlier
+reading came from assuming the id carried the identity.
+
+**The catalog cannot enumerate what captures are available**, so browse the library
+instead - `local_nc_root`, over two thousand entries on the observed unit, sub-divided on
+screen into Factory Captures V1, Factory Captures V2 and My Captures.
 
 ## Open questions
 
