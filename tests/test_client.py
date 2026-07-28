@@ -2153,13 +2153,27 @@ def test_tempo_param_names_are_case_and_space_tolerant():
     assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 8
 
 
-def test_real_units_refused_for_tempo_params_the_catalog_does_not_describe():
-    # Indices 8 and 9 have no published range, so there is nothing to convert.
+def test_real_units_refused_for_a_tempo_param_the_catalog_does_not_describe():
+    # The real unit's catalog describes 0-22; a parameter beyond whatever it
+    # describes cannot be converted, so real= must refuse rather than guess.
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    with pytest.raises(ValueError, match="no range"):
+    with pytest.raises(ValueError, match="does not describe tempo parameter"):
         qc.set_tempo_param("ROUTING", real=3)
     assert qc._t.sent == []
+
+
+def test_set_tempo_option_range_checks_against_the_catalogs_step_count():
+    # The catalog's `steps` is the option count: ROUTING has 5, so 5 is out of range
+    # and 3 maps to 0.75 - which is what the unit stored for OUT 3/4.
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    routing = qc._catalog[25000].parameters[9] if len(qc._catalog[25000].parameters) > 9 else None
+    if routing is None:
+        pytest.skip("the sample catalog does not go that far")
+    qc.set_tempo_option("ROUTING", 3)
+    assert qc._t.sent[-1].preset.tempoProgramData[0].params[0] \
+        .param_values[0].float_value == pytest.approx(0.75)
 
 
 def test_a_raw_index_still_works():

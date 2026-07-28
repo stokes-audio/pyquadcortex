@@ -979,9 +979,34 @@ named order:
 | 8 | Sound | *absent from the catalog* |
 | 9 | Routing | *absent from the catalog* |
 
-The catalog describes only indices 0 to 7 for model `25000`, while the stored preset
-carries **24** parameters. `QuadCortex.TEMPO_PARAMS` maps the screen names, and `real=`
-is refused for 8 and 9 since no range is published for them.
+The catalog DOES describe these - 23 parameters for model `25000`, with 10 to 22 being
+`STEPSTATE0` to `STEPSTATE12` - while the stored preset carries 24. What it gets wrong is
+two of the NAMES, hence `QuadCortex.TEMPO_PARAMS`.
+
+**For the list-valued ones the catalog's `steps` IS the option count**, and the wire value
+of option N is `N / (count - 1)`. TIME SIGNATURE has 21 options, SUBDIVISIONS 4, SOUND 6,
+ROUTING 5 - and the observed values fit exactly: the second subdivision stored 0.3333
+(1/3), the second time signature 0.05 (1/20), the fourth routing 0.75 (3/4).
+
+That does NOT hold for a parameter whose options enumerate the preset's blocks - a
+Doubler's TRIGGER publishes `steps=45` while the real list is 19 to 25 entries. For those
+the preset's `dynamic_steps` is authoritative. Tempo parameters carry no `dynamic_steps`
+at all, so their option NAMES are not available from the device, and the manual does not
+enumerate them either. Confirmed pairings so far, from a named walk plus the factory defaults of 28A:
+
+| control | option | is |
+|---|---|---|
+| SUBDIVISIONS | 0 | 1/4 notes |
+| SUBDIVISIONS | 1 | 1/8 notes |
+| TIME SIGNATURE | 1 | 3/4 |
+| TIME SIGNATURE | 2 | 4/4 |
+| SOUND | 1 | Block |
+| ROUTING | 0 | HP |
+| ROUTING | 3 | OUT 3/4 |
+
+The remaining options are unnamed. Enum types for these are deliberately NOT shipped:
+a partial enum reads as a complete one, and two of five options named is not enough to
+put a name to.
 
 **In the stored preset these params are POSITIONAL.** All 24 arrive with `index` absent,
 so position is the index - the same convention as `models[]`. A host WRITE does set

@@ -57,6 +57,48 @@ class Parameter:
     steps: int | None = None
 
     @property
+    def option_count(self) -> int | None:
+        """How many options a list-valued parameter offers, or None.
+
+        For a ``comboBox`` or ``switch`` the catalog's ``steps`` IS the option
+        count, and the wire value of option N is ``N / (count - 1)``. Confirmed
+        against the tempo controls: NOTELENGTH has ``steps=4`` and selecting the
+        second option stored 0.3333 (1/3), TIME SIGNATURE has ``steps=21`` and the
+        second option stored 0.05 (1/20), ROUTING has ``steps=5`` and the fourth
+        stored 0.75 (3/4).
+
+        **Not reliable for a parameter whose options enumerate the preset's
+        blocks** - a Doubler's TRIGGER publishes ``steps=45`` while the real list is
+        19 to 25 entries depending on the preset. For those, read the list from the
+        preset with :func:`pyquadcortex.param_options`, which is authoritative.
+        """
+        if self.type in ("comboBox", "switch", "rotarySwitch") and self.steps:
+            return self.steps
+        return None
+
+    def option_to_value(self, option: int) -> float:
+        """The wire value that selects option ``option`` of this parameter."""
+        count = self.option_count
+        if count is None:
+            raise ValueError(
+                f"{self.name!r} is a {self.type or 'plain'} parameter, not a list, "
+                f"so it has no options - pass a value instead"
+            )
+        if not 0 <= option < count:
+            raise ValueError(
+                f"{self.name!r} has {count} options (0 to {count - 1}), "
+                f"got {option}"
+            )
+        return 0.0 if count == 1 else option / (count - 1)
+
+    def value_to_option(self, value: float) -> int:
+        """Which option a wire value selects."""
+        count = self.option_count
+        if count is None:
+            raise ValueError(f"{self.name!r} is not a list parameter")
+        return 0 if count == 1 else round(value * (count - 1))
+
+    @property
     def range_is_placeholder(self) -> bool:
         """Whether this parameter's catalog range supports no conversion.
 

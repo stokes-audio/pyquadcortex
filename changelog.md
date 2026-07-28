@@ -8,6 +8,44 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.22.0 - 2026-07-28
+
+Type-safety for the list-valued parameters, which is the shape the rest of the library
+already uses for fixed positions - `Input`, `Output`, `Scene`, `Footswitch`,
+`MidiOutType`, `SceneBypassBehavior`, `GlobalEQFilter`, `ExpressionBypassMode`,
+`LooperState`.
+
+### Added
+
+- **`Parameter.option_count`, `option_to_value()`, `value_to_option()`.** For a list
+  parameter the catalog's `steps` IS the option count and the wire value of option N is
+  `N / (count - 1)`. Verified against the tempo controls, whose stored values fit
+  exactly: the second subdivision is 0.3333, the second time signature 0.05, the fourth
+  routing 0.75.
+
+  Documented where this does NOT hold: a parameter whose options enumerate the preset's
+  blocks publishes a static `steps` that disagrees with reality - a Doubler's TRIGGER says
+  45 while the real list is 19 to 25 - so for those the preset's `dynamic_steps` remains
+  authoritative.
+- **`set_tempo_option(param, option)`** - sets a list-valued tempo control by option
+  number, range-checked against the count, rather than by a raw normalized float.
+  Verified on hardware for SUBDIVISIONS, TIME SIGNATURE, SOUND and ROUTING.
+
+### Corrected
+
+An earlier claim that "the catalog names only 8 tempo parameters" was wrong, and the
+mistake was mine: an early survey printed only the first 8 and the truncation got written
+down as a fact. The catalog describes 23 parameters for model 25000, indices 10 to 22
+being `STEPSTATE0` to `STEPSTATE12`. What it actually gets wrong is two NAMES, which is
+what `TEMPO_PARAMS` exists for.
+
+### Not shipped, deliberately
+
+No enums naming the tempo options. Seven pairings are now confirmed - subdivisions 0 and
+1, time signatures 1 and 2, sound 1, routing 0 and 3 - but the device supplies no option
+names for these parameters and the manual does not enumerate them, so most options remain
+unnamed. A partial enum reads as a complete one.
+
 ## 0.21.0 - 2026-07-28
 
 ### Added
@@ -17,11 +55,9 @@ major number is 0.
   LED LIGHT 2, VOLUME 3, MUTE 4, PAN 5, TIME SIGNATURE 6, SUBDIVISIONS 7, SOUND 8,
   ROUTING 9. `set_tempo_param()` resolves those names first.
 
-  The map exists because the catalog is neither complete nor consistent here: it
-  describes only indices 0 to 7 while the preset carries 24, and two of its names differ
-  from the screen - index 4 is MUTE on screen and START in the catalog, index 7 is
-  Subdivisions and NOTELENGTH. `real=` is refused for 8 and 9, which have no published
-  range.
+  The map exists because two of the catalog's names differ from the screen: index 4 is
+  MUTE on screen (PLAYBACK in the manual) and START in the catalog, and index 7 is
+  Subdivisions and NOTELENGTH.
 - **`tempo_params(preset)`** to read them back. This is needed because in the STORED
   preset all 24 arrive with `index` absent, so position is the index - the same
   convention as `models[]`. A host write does set `index`; only the device's stored form

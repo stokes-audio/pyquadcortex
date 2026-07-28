@@ -260,3 +260,38 @@ def test_a_unitless_parameter_on_the_same_model_still_converts(cat):
     pan = cat[11000].parameter("PAN A")
     assert pan.to_real(0.5) == pytest.approx(5.0)
     assert pan.to_normalized(10.0) == pytest.approx(1.0)
+
+
+# -- list parameters: the catalog's `steps` is the option count -----------------
+# Confirmed against the tempo controls: NOTELENGTH steps=4 and option 1 stored
+# 0.3333; TIME SIGNATURE steps=21 and option 1 stored 0.05; ROUTING steps=5 and
+# option 3 stored 0.75.
+
+
+def test_option_count_comes_from_steps_for_a_list_parameter(cat):
+    notelength = catalog.Parameter(index=7, name="NOTELENGTH", minimum=0.0,
+                                   maximum=3.0, default=0.0, type="comboBox", steps=4)
+    assert notelength.option_count == 4
+    assert notelength.option_to_value(1) == pytest.approx(1 / 3)
+    assert notelength.value_to_option(0.333333343) == 1
+    tsig = catalog.Parameter(index=6, name="TIME SIGNATURE", minimum=0.0,
+                             maximum=20.0, default=0.0, type="comboBox", steps=21)
+    assert tsig.option_to_value(1) == pytest.approx(0.05)
+    routing = catalog.Parameter(index=9, name="ROUTING", minimum=0.0, maximum=4.0,
+                                default=0.0, type="comboBox", steps=5)
+    assert routing.option_to_value(3) == pytest.approx(0.75)
+    assert routing.value_to_option(0.75) == 3
+
+
+def test_option_helpers_reject_a_non_list_parameter_and_a_bad_option(cat):
+    plain = catalog.Parameter(index=0, name="TEMPO", minimum=0.0, maximum=1.0,
+                              default=0.5, type="float", steps=201)
+    assert plain.option_count is None
+    with pytest.raises(ValueError, match="not a list"):
+        plain.option_to_value(1)
+    routing = catalog.Parameter(index=9, name="ROUTING", minimum=0.0, maximum=4.0,
+                               default=0.0, type="comboBox", steps=5)
+    with pytest.raises(ValueError, match="5 options"):
+        routing.option_to_value(5)
+    with pytest.raises(ValueError, match="5 options"):
+        routing.option_to_value(-1)

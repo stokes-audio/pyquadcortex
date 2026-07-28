@@ -783,8 +783,8 @@ class QuadCortex:
     INPUT_GATE_CONTROL = 28000
 
     #: Tempo-menu parameter indices, mapped by using each control on the unit in a
-    #: named order. The device catalog names only indices 0 to 7 for model 25000 and
-    #: two of those names differ from the screen, so this map is what
+    #: named order. The catalog DOES describe these (23 parameters for model 25000),
+    #: but two of its names differ from the screen, so this map is what
     #: :meth:`set_tempo_param` resolves a name through first.
     #:
     #: Note the discrepancies: index 4 is the screen's MUTE while the catalog calls it
@@ -825,17 +825,22 @@ class QuadCortex:
             0 TEMPO   2 LED LIGHT   3 VOLUME   4 MUTE   5 PAN
             6 TIME SIGNATURE   7 SUBDIVISIONS   8 SOUND   9 ROUTING
 
-        Two of those names disagree with the catalog, which is why the map exists:
-        index 4 is MUTE on screen and START in the catalog, and index 7 is
-        Subdivisions on screen and NOTELENGTH in the catalog. Indices 8 and 9 are
-        absent from the catalog, so ``real=`` cannot be used for them - there is no
-        published range to convert against.
+Two of those names disagree with the catalog, which is why the map
+        exists: index 4 is MUTE on screen (the manual calls it PLAYBACK) and START in
+        the catalog, and index 7 is Subdivisions on screen and NOTELENGTH in the
+        catalog.
+
+        The catalog describes 23 parameters here, indices 10 to 22 being
+        ``STEPSTATE0`` to ``STEPSTATE12``, while the preset carries 24. For the
+        list-valued ones prefer :meth:`set_tempo_option`, which range-checks an option
+        number instead of taking a raw float.
 
         The menu's MODE control - global or per-preset tempo - broadcasts NOTHING when
         changed, so it is not reachable here. Index 1, the catalog's TYPE, was not
         touched by any control in the menu.
 
-        Convenience wrappers: :meth:`set_tempo_led`, :meth:`set_metronome_volume`.
+        Convenience wrappers: :meth:`set_tempo_led`, :meth:`set_metronome_volume`,
+        and :meth:`set_tempo_option` for the lists.
         """
         index = param
         if isinstance(param, str):
@@ -848,9 +853,9 @@ class QuadCortex:
             model = self.catalog[self.TEMPO_CONTROL]
             if index >= len(model.parameters):
                 raise ValueError(
-                    f"the catalog has no range for tempo parameter {index}, so "
-                    f"real= cannot be converted - pass value= with the normalized "
-                    f"0..1 instead"
+                    f"the catalog does not describe tempo parameter {index} (it "
+                    f"describes 0 to {len(model.parameters) - 1}), so real= cannot be "
+                    f"converted - pass value= with the normalized 0..1 instead"
                 )
             value = model.parameters[index].to_normalized(real)
         if value is None:
@@ -862,6 +867,31 @@ class QuadCortex:
         prm.index = index
         prm.param_values.add().float_value = value
         return self._t.send(msg)
+
+    def set_tempo_option(self, param, option: int):
+        """Set a list-valued tempo parameter by OPTION NUMBER rather than a float.
+
+        Safer than :meth:`set_tempo_param` for the controls that are lists, because
+        the option is range-checked against the count the catalog publishes and the
+        normalized value is worked out for you::
+
+            qc.set_tempo_option("SUBDIVISIONS", 1)   # the second of four
+
+        The counts, from the catalog: TIME SIGNATURE 21, SUBDIVISIONS 4, SOUND 6,
+        ROUTING 5. What each option IS has not been established - the device supplies
+        no option names for these parameters (unlike block parameters, whose lists
+        arrive in the preset) and the manual does not enumerate them. Confirmed
+        pairings so far: SUBDIVISIONS option 1 is 1/8 notes, TIME SIGNATURE option 1
+        is 3/4, ROUTING option 3 is OUT 3/4, SOUND option 1 is Block.
+        """
+        index = param
+        if isinstance(param, str):
+            key = param.strip().upper()
+            index = self.TEMPO_PARAMS.get(key)
+            if index is None:
+                index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
+        spec = self.catalog[self.TEMPO_CONTROL].parameters[index]
+        return self.set_tempo_param(index, value=spec.option_to_value(option))
 
     def set_tempo_led(self, on: bool):
         """Turn this preset's TEMPO LED on or off."""
