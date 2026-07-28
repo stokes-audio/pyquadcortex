@@ -1632,6 +1632,9 @@ class QuadCortex:
     def set_global_eq_bypassed(self, bypassed: bool = True):
         """Turn the Global EQ off or on. Confirmed writable on hardware.
 
+        ``bypassed=True`` is the EQ OFF, which is how the observed unit ships. The
+        unit's own On/Off control is the inverse of this flag.
+
         Note that the unit disables the Global EQ by itself when a preset runs out
         of processing headroom, which arrives as
         ``CompilerInhibitedModules{global_eq}``.
@@ -2012,9 +2015,39 @@ class QuadCortex:
     GLOBAL_EQ_BAND_STRIDE = 5
     GLOBAL_EQ_BANDS = 5
 
+    #: Wire indices of the Global EQ's OUT tab, which sits outside the five bands.
+    GLOBAL_EQ_OUT_LEVEL = 25
+    GLOBAL_EQ_OUT_12 = 26
+    GLOBAL_EQ_OUT_34 = 27
+
+    def set_global_eq_output(self, level: float = None, out12: bool = None,
+                             out34: bool = None):
+        """Set the Global EQ's OUT tab: its overall level and which outputs it feeds.
+
+        The manual's OUT TAB - "assign the GLOBAL EQ to one or both output pairs and
+        adjust its overall output level". These are the three indices beyond the five
+        bands.
+
+        ``out12`` is index 26, confirmed by assigning OUT 1/2 on the unit. ``out34``
+        is index 27, which is the only index left and was never seen written, so it
+        is identified by elimination rather than observation.
+
+        ``level`` is index 25 and takes the normalized 0..1. Its dB mapping is NOT
+        established: the knob was watched moving continuously, so no value could be
+        tied to a reading on screen.
+        """
+        controls = [(self.GLOBAL_EQ_OUT_LEVEL, level),
+                    (self.GLOBAL_EQ_OUT_12, None if out12 is None else float(out12)),
+                    (self.GLOBAL_EQ_OUT_34, None if out34 is None else float(out34))]
+        controls = [(i, v) for i, v in controls if v is not None]
+        if not controls:
+            raise TypeError("set_global_eq_output needs level=, out12= or out34=")
+        for index, value in controls:
+            self.set_global_eq_band(index, value)
+
     def set_global_eq(self, band: int, gain: float = None,
                       frequency: float = None, q: float = None,
-                      filter_type=None):
+                      filter_type=None, enabled: bool = None):
         """Set one Global EQ band's controls, by band number rather than wire index.
 
         ``band`` is 1 to 5 as the unit numbers them. Every value is the normalized
@@ -2030,9 +2063,12 @@ class QuadCortex:
         five-band parametric EQ should - identical gains, identical Qs,
         monotonically increasing frequencies, and shelf/peak/peak/peak/shelf types.
 
-        Offset 4 is 1.0 on every band and is NOT identified, so it is not exposed
-        here. Indices 25 to 27 sit outside the bands and are likewise unidentified;
-        the manual's OUT tab is the obvious candidate.
+        ``enabled`` is offset 4 - the manual's EQ BAND BYPASS - where **1.0 means the
+        band is active** and 0.0 bypasses it. Confirmed by toggling band 1's bypass on
+        the unit, and consistent with every band shipping at 1.0.
+
+        Indices 25 to 27 are the OUT tab, reached through
+        :meth:`set_global_eq_output`.
 
         Writes are sparse by index, so only the controls given are sent.
         """
@@ -2042,7 +2078,8 @@ class QuadCortex:
         if filter_type is not None:
             filter_type = int(filter_type) / 4
         controls = [(offset, value) for offset, value in
-                    ((0, gain), (1, frequency), (2, q), (3, filter_type))
+                    ((0, gain), (1, frequency), (2, q), (3, filter_type),
+                     (4, None if enabled is None else float(enabled)))
                     if value is not None]
         if not controls:
             raise TypeError("set_global_eq needs at least one control to set")

@@ -20,12 +20,12 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **61 yes**, **16 partly**, **15 no**, **8 n/a**.
+Of 100 features audited: **61 yes**, **15 partly**, **14 no**, **10 n/a**.
 
-Of the 92 features a host could plausibly drive, **61 are fully covered** and 16 more
+Of the 90 features a host could plausibly drive, **61 are fully covered** and 15 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
-exercised. Only 15 remain untouched.
+exercised. Only 14 remain untouched.
 
 Six rounds got it there. Four were solo - the per-preset non-audio gap (footswitch
 assignments, expression assignments, Preset MIDI Out), then the global settings families,
@@ -59,14 +59,14 @@ documentation of the library.
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_metronome_volume()`, `set_tempo_led()`, `set_tempo_param()` |
-| Per-scene tempo | no | `BinaryPreset.scene_tempo` is ignored by a `Grid` update; reads back empty |
+| Per-scene tempo | n/a | `scene_tempo` is ignored and reads back empty, and the unit has no per-scene tempo - its Tempo MODE is global or per preset, nothing finer |
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
 | Modes: reorder, merge into HYBRID, remove | partly | `set_mode_cycle([...])` reorders and removes slots, confirmed. Merging two into a HYBRID slot is unexplored |
 | Gig View: open/close | yes | `set_gig_view()` |
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested. The headphone output's own level is NOT writable |
-| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | yes | `set_global_eq(band, gain=, frequency=, q=, filter_type=)` with `GlobalEQFilter`, plus `set_global_eq_bypassed()`. Offset 4 within a band and indices 25-27 (probably the OUT tab) are unidentified |
+| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | yes | `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)` and `set_global_eq_bypassed()`. Every control is reachable; only the OUT level's dB mapping is unknown |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
 | Footswitch presses, touch gestures, encoders | n/a | physical |
 
@@ -115,7 +115,7 @@ documentation of the library.
 | Save a preset ("Save As") | yes | `save_current_preset()` with name, instrument tag and default scene |
 | Preset descriptive tags | no | proven unwritable by three routes; a saved preset carries none at all |
 | Preset description, author, cloud id | no | ignored by a `Grid` update. The device stamps `author_name` from the signed-in cloud account on every save |
-| Preset volume and pan | no | ignored by a `Grid` update AND by `ProductData.gain` on the save. No route found |
+| Preset volume and pan | n/a | ignored by every route tried, and the unit has no control for them - they read 1.0 and 0.5 on every preset. Inert fields, not a gap |
 | Delete a preset | yes | `delete_preset()`, eventually consistent. `delete_setlist()` removes a whole setlist |
 | Move a preset | yes | `move_preset()`, same-setlist only observed |
 | Factory and My Presets setlists | yes | `Setlist.FACTORY`, `Setlist.USER` |

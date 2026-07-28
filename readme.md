@@ -191,7 +191,7 @@ These are all methods on the object `connect()` returns.
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `set_global_bypass()`, `set_master_volume_assignment()`, `mode()`, `set_mode()`, `set_mode_cycle()`, `set_gig_view()` |
-| **Global EQ** | `global_eq()`, `set_global_eq(band, gain=, frequency=, q=, filter_type=)`, `set_global_eq_bypassed()` |
+| **Global EQ** | `global_eq()`, `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)`, `set_global_eq_bypassed()` |
 | **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
 | **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`, `looper()` (states named by `LooperState`) |
 | **List parameters** | `set_param_option(row, column, param, option, source)`, `param_options(preset, ...)` - includes a block's side-chain SOURCE |

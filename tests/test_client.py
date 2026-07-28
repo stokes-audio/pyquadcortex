@@ -2102,3 +2102,27 @@ def test_set_global_eq_validates_the_band_and_needs_a_control():
     with pytest.raises(TypeError):
         qc.set_global_eq(band=1)
     assert qc._t.sent == []
+
+
+def test_set_global_eq_enabled_is_the_band_bypass_at_offset_4():
+    # 1.0 means the band is ACTIVE; 0.0 bypasses it. Confirmed by toggling band 1's
+    # bypass on the unit, and every band ships at 1.0.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_global_eq(band=1, enabled=False)
+    p = qc._t.sent[-1].parameters[0]
+    assert (p.parameter_index, p.value) == (4, pytest.approx(0.0))
+    qc.set_global_eq(band=3, enabled=True)
+    p = qc._t.sent[-1].parameters[0]
+    assert (p.parameter_index, p.value) == (14, pytest.approx(1.0))
+
+
+def test_set_global_eq_output_addresses_the_out_tab_indices():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_global_eq_output(out12=True)
+    p = qc._t.sent[-1].parameters[0]
+    assert (p.parameter_index, p.value) == (26, pytest.approx(1.0))
+    qc.set_global_eq_output(level=0.5, out34=False)
+    indices = [m.parameters[0].parameter_index for m in qc._t.sent[-2:]]
+    assert indices == [25, 27]
+    with pytest.raises(TypeError):
+        qc.set_global_eq_output()

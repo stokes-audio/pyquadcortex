@@ -1118,8 +1118,8 @@ Tried and refused, so nobody repeats them:
 | field | attempted | result |
 |---|---|---|
 | `BinaryPreset.author_name`, `description` | `Grid` update carrying them | ignored. The device stamps `author_name` itself from the signed-in Cortex Cloud account on every user save, so a factory preset's "Neural DSP" becomes the account name |
-| `BinaryPreset.volume`, `pan` | `Grid` update carrying them; `ProductData.gain` on the File save | both ignored, volume stays 1.0 and pan 0.5 |
-| `BinaryPreset.scene_tempo` | `Grid` update with eight values | ignored, reads back empty |
+| `BinaryPreset.volume`, `pan` | `Grid` update carrying them; `ProductData.gain` on the File save | both ignored. And **the unit has no control for them**: they read 1.0 and 0.5 on every preset examined, factory and user alike, so they are inert fields rather than a gap |
+| `BinaryPreset.scene_tempo` | `Grid` update with eight values | ignored, reads back empty. **The unit has no per-scene tempo either** - its Tempo menu has a MODE of global or preset, and nothing scene-specific |
 | `Model.sidechain_source_flag` | `Grid` update, row/column keyed | ignored, reads back false - it is bookkeeping. The SOURCE is a `comboBox` PARAMETER, see [7.6d](#76d-list-parameters-and-the-side-chain-source) |
 | `BinaryPreset.tags` | three routes, see [7.7](#77-file-operations) | ignored; a saved preset has no tags at all |
 
@@ -1441,7 +1441,7 @@ how a duplicate gets cleaned up.
 | 1 | FREQUENCY | |
 | 2 | Q | |
 | 3 | TYPE | a five-option list, so `index / 4` - see below |
-| 4 | ? | 1.0 on every band, not identified |
+| 4 | band ENABLE | 1.0 is ACTIVE, 0.0 bypasses the band - the manual's EQ BAND BYPASS |
 
 Established by changing each of band 1's controls in turn, with a scene change fencing
 each so only one index moved per window, and then checked structurally against the whole
@@ -1457,8 +1457,20 @@ band 5   gain 0.5   freq 0.729   Q 0.0613   type 0.75 (Hi Shelf)
 ```
 
 Identical gains and Qs, monotonically rising frequencies, and shelf/peak/peak/peak/shelf
-types. Indices 25 to 27 fall outside the bands and are unidentified; the manual's OUT tab
-is the obvious candidate.
+types.
+
+**Indices 25 to 27 are the OUT tab**, the manual's "assign the GLOBAL EQ to one or both
+output pairs and adjust its overall output level":
+
+| index | control |
+|---|---|
+| 25 | the OUT tab's overall level. Its dB mapping is NOT established - the knob was watched moving continuously, so no value could be tied to a reading |
+| 26 | assign to OUT 1/2, confirmed by assigning it on the unit |
+| 27 | assign to OUT 3/4, by elimination - it is the only index left and was never seen written |
+
+Note that `GlobalEQMessage.bypassed` is the whole EQ's switch and is the INVERSE of the
+unit's On/Off control: `bypassed: true` is the EQ off, which is how the observed unit
+ships.
 
 **Filter types** are `0.0 Peak, 0.25 Hi pass, 0.5 Lo pass, 0.75 Hi Shelf, 1.0 Lo Shelf`,
 mapped by cycling the control through every shape on the unit and confirmed independently

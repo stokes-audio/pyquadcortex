@@ -8,6 +8,34 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.20.0 - 2026-07-28
+
+### Added
+
+- **`set_global_eq_output(level=, out12=, out34=)`** - the Global EQ's OUT tab, which is
+  what indices 25 to 27 turned out to be: the overall level, and the two output-pair
+  assignments. `out12` is confirmed; `out34` is by elimination, being the only index left
+  and never seen written. The OUT level's dB mapping is not established, because the knob
+  was watched moving continuously so no value could be tied to a reading on screen.
+- **`set_global_eq(band, ..., enabled=)`** - offset 4 within a band is the manual's EQ
+  BAND BYPASS, where **1.0 means the band is active**. Confirmed by toggling band 1's
+  bypass on the unit, and consistent with every band shipping at 1.0. That accounts for
+  all 28 Global EQ parameters.
+
+Also documented: `GlobalEQMessage.bypassed` is the INVERSE of the unit's On/Off control,
+so `bypassed: true` is the EQ off - which is how the observed unit ships.
+
+### Closed as not applicable
+
+Two fields that looked like gaps are not:
+
+- **`BinaryPreset.volume` and `pan`** are ignored by every route tried, AND the unit has
+  no control for them - they read 1.0 and 0.5 on every preset examined, factory and user
+  alike. Inert fields rather than missing support.
+- **`BinaryPreset.scene_tempo`** likewise: ignored, reads back empty, and the unit has no
+  per-scene tempo at all. Its Tempo menu offers a MODE of global or per preset, nothing
+  finer.
+
 ## 0.19.0 - 2026-07-28
 
 ### Added
