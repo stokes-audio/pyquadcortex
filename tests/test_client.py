@@ -1956,3 +1956,17 @@ def test_looper_state_enum_omits_the_value_never_observed():
     from pyquadcortex.enums import LooperState
     assert [int(s) for s in LooperState] == [1, 2, 4, 5]
     assert 3 not in [int(s) for s in LooperState], "3 was never seen; do not invent it"
+
+
+def test_expression_bypass_mode_numbering_is_not_the_manual_order():
+    # Each set deliberately on the unit with a scene change fencing them apart:
+    # Heel-Toe stored 2, Switch 1, Stop 0. An earlier release had this reversed.
+    from pyquadcortex.enums import ExpressionBypassMode as M
+    assert (int(M.STOP), int(M.SWITCH), int(M.HEEL_TOE)) == (0, 1, 2)
+
+
+def test_set_expression_bypass_accepts_the_enum():
+    qc = client.QuadCortex(FakeTransport())
+    from pyquadcortex.enums import ExpressionBypassMode as M
+    qc.set_expression_bypass(row=0, column=1, pedal=1, mode=M.HEEL_TOE)
+    assert qc._t.sent[-1].preset.chains[0].models[0].expression_bypass_info[0].type == 2

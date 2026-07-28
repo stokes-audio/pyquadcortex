@@ -20,9 +20,9 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **59 yes**, **18 partly**, **15 no**, **8 n/a**.
+Of 100 features audited: **60 yes**, **17 partly**, **15 no**, **8 n/a**.
 
-Of the 92 features a host could plausibly drive, **59 are fully covered** and 18 more
+Of the 92 features a host could plausibly drive, **60 are fully covered** and 17 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
 exercised. Only 15 remain untouched.
@@ -66,7 +66,7 @@ documentation of the library.
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested. The headphone output's own level is NOT writable |
-| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` and `set_global_eq_band(index, value)` both confirmed; which parameter index is which band control is unestablished |
+| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` and `set_global_eq_band(index, value)` confirmed, and the layout is 5 indices per band with GAIN at offset 0 (band 1 = 0, band 3 = 10). The other four offsets per band are unidentified |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
 | Footswitch presses, touch gestures, encoders | n/a | physical |
 
@@ -99,7 +99,7 @@ documentation of the library.
 | Side-chaining: set a block's SOURCE/TRIGGER | yes | `set_param_option(row, column, param="SOURCE", option=...)`. It is an ordinary comboBox parameter; `sidechain_source_flag` is bookkeeping and ignores writes |
 | Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()` |
 | Expression pedal assignment to a parameter | yes | `set_expression(row, column, param, pedal, minimum, maximum)` |
-| Expression bypass (heel-toe / switch / stop) | partly | `set_expression_bypass()` with the `ExpressionBypassMode` enum. `STOP = 2` is confirmed from the unit; Heel-Toe and Switch follow the manual's ordering and are not individually observed |
+| Expression bypass (heel-toe / switch / stop) | yes | `set_expression_bypass()` with `ExpressionBypassMode`. All three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2 - not the manual's listed order |
 | Expression pedal calibration | no | candidate `IOSettings`. Manual calls it a global setting |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | it is an ordinary catalog model |

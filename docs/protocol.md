@@ -1258,8 +1258,13 @@ it again, and clearing row 0 left row 2's branch untouched.
 **Expression bypass** writes both halves in one message:
 `models{column, bypass_expression{expression, expression_min, expression_max},
 expression_bypass_info{type, invert, delay_ms, latch_emulation}}`. Confirmed round
-tripping pedal 1, type 1, invert, 250 ms and latch emulation. Which integer `type`
-denotes which of the manual's Heel-Toe, Switch and Stop behaviours is NOT established.
+tripping pedal 1, type 1, invert, 250 ms and latch emulation.
+
+**`type` is `STOP = 0`, `SWITCH = 1`, `HEEL_TOE = 2`** - not the manual's listed order.
+Established by setting each one deliberately with a scene change fencing them apart, so
+the value landed on in each window was unambiguous. It also explains the unit's SWITCH ON
+control cycling numerically: from Heel-Toe (2) a press gives Stop (0), then Switch (1),
+then Heel-Toe again.
 
 ### 7.7b Global device settings
 
@@ -1417,11 +1422,17 @@ write **APPENDS** rather than replacing: pinning something already pinned leaves
 entries for it. `action: DELETE` with an id removes EVERY entry for that id, which is
 how a duplicate gets cleaned up.
 
-**Global EQ parameter indices.** `parameters` is a flat list of 28
-`{parameter_index, value}` pairs, and writes are sparse by index. One index is pinned to
-a control: setting **band 3's GAIN to +6 dB** on the unit left index **10** at `0.75`,
-consistent with a -12..+12 dB range mapped onto 0..1. The rest of the layout is not
-established.
+**Global EQ parameter indices: 5 per band, GAIN first.** `parameters` is a flat list of
+28 `{parameter_index, value}` pairs, and writes are sparse by index. Two bands' GAIN
+controls are pinned, and they give the stride: setting **band 3's GAIN** to +6 dB left
+index **10** at `0.75`, and **band 1's GAIN** to +6 dB left index **0** at `0.75`. So
+band N's group starts at `(N - 1) * 5` with GAIN at offset 0, and 0.75 is +6 dB on a
+-12..+12 dB range.
+
+The other four offsets within a band - the manual lists type, frequency, Q and bypass -
+are not individually identified. Note also that a `parameters` block carrying no
+`parameter_index` IS index 0, since the field is a plain int32 and the zero is not
+serialized.
 
 ### 7.7c The folder tree, and what else is enumerable
 

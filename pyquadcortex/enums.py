@@ -188,14 +188,18 @@ class SceneBypassBehavior(IntEnum):
 class ExpressionBypassMode(IntEnum):
     """How an expression pedal bypasses a block (``expression_bypass_info.type``).
 
-    ``STOP`` is confirmed: setting the unit's SWITCH ON control to Stop broadcast
-    ``type: 2``. The other two follow the manual's ordering of the same control
-    (Heel-Toe, Switch, Stop) and have NOT been observed individually.
+    All three confirmed, by setting each one deliberately on the unit with a scene
+    change fencing them apart so the value landed on in each window was
+    unambiguous: Heel-Toe stored 2, Switch 1, Stop 0.
+
+    Note this is NOT the manual's listed order, and the unit's SWITCH ON control
+    cycles numerically - from Heel-Toe (2) a press gives Stop (0), then Switch (1),
+    then Heel-Toe again, which is what an earlier session had reported as its cycle.
     """
 
-    HEEL_TOE = 0
+    STOP = 0
     SWITCH = 1
-    STOP = 2
+    HEEL_TOE = 2
 
 
 class LooperState(IntEnum):

@@ -8,6 +8,33 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.17.0 - 2026-07-28
+
+### Fixed
+
+- **`ExpressionBypassMode` was reversed.** It is `STOP = 0`, `SWITCH = 1`,
+  `HEEL_TOE = 2` - not the manual's listed order, which is what 0.15.0 assumed.
+  Anyone who set `ExpressionBypassMode.STOP` on 0.15.0 or 0.16.x actually set
+  Heel-Toe. All three values are now confirmed, each set deliberately on the unit
+  with a scene change fencing them apart so the value landed on in each window was
+  unambiguous, and each round-trips through a save.
+
+  The earlier reading came from assuming what had been set rather than reading where
+  the control landed after a cycle. The corrected numbering also explains the unit's
+  SWITCH ON control cycling numerically: from Heel-Toe (2) a press gives Stop (0),
+  then Switch (1), then Heel-Toe again.
+
+### Documented
+
+- **Global EQ parameter layout: 5 per band, GAIN first.** Band N's group starts at
+  `(N - 1) * 5`, with GAIN at offset 0 - band 1's GAIN is index 0 and band 3's is
+  index 10, both reading 0.75 for +6 dB on a -12..+12 dB range. The other four
+  offsets in a band are not individually identified. Note that a `parameters` block
+  carrying no `parameter_index` IS index 0, the zero simply not being serialized.
+- The master volume is a separate gain stage: turning the knob changed no port level
+  across 114 pushes, so the nearest host equivalent is setting the individual output
+  levels. The headphone output's own level is not writable.
+
 ## 0.16.1 - 2026-07-28
 
 Documentation only.

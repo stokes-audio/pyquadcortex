@@ -1331,11 +1331,13 @@ class QuadCortex:
         ``expression_bypass_info`` (how it behaves). Confirmed round-tripping
         through a save: pedal 1, mode 1, invert, 250 ms, latch emulation.
 
-        The manual describes three ``mode`` behaviours - Heel-Toe, Switch and
-        Stop - but which integer denotes which is NOT established, so ``mode`` is
-        passed through as a number. ``invert`` reverses the value at which the
-        bypass engages, ``delay_ms`` is the switch delay (to 5000 ms), and
-        ``latch_emulation`` lets a momentary toe switch behave as latching.
+``mode`` is an
+        :class:`~pyquadcortex.enums.ExpressionBypassMode`: all three are confirmed
+        on the unit, and note the numbering is not the manual's listed order -
+        ``STOP`` is 0, ``SWITCH`` 1 and ``HEEL_TOE`` 2. ``invert`` reverses the
+        value at which the bypass engages, ``delay_ms`` is the switch delay (to
+        5000 ms), and ``latch_emulation`` lets a momentary toe switch behave as
+        latching.
         """
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
