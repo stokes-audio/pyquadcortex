@@ -20,9 +20,9 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **61 yes**, **15 partly**, **14 no**, **10 n/a**.
+Of 100 features audited: **62 yes**, **14 partly**, **14 no**, **10 n/a**.
 
-Of the 90 features a host could plausibly drive, **61 are fully covered** and 15 more
+Of the 90 features a host could plausibly drive, **62 are fully covered** and 14 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
 exercised. Only 14 remain untouched.
@@ -64,7 +64,7 @@ loading from the factory Captures Library.
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
 | Modes: reorder, merge into HYBRID, remove | partly | `set_mode_cycle([...])` reorders and removes slots. Merging into a HYBRID slot produces NO broadcast at all, so whatever holds the pairing has not been seen |
 | Gig View: open/close | yes | `set_gig_view()` |
-| I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
+| I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | yes | `set_input_port()` writes level, impedance, input type and ground lift - each in its own message, since some fields are dropped when packed together. Phantom power has no field in the schema |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested. The headphone output's own level is NOT writable |
 | Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | yes | `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)` and `set_global_eq_bypassed()`. Every control is reachable; only the OUT level's dB mapping is unknown |

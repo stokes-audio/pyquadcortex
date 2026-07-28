@@ -1382,11 +1382,15 @@ restoring: input `level`, `ground_lift` and `input_type`; output `level` and
 `ground_lift`; `usb_port.dry_wet`; `midi_port.midi_thru`; and the
 `xlr1_2_linked`/`out3_4_linked` pairing flags.
 
-Output **`mute`** is writable, but **only when it travels alone**. A port entry carrying
-`mute` and `ground_lift` together left the port unmuted; `mute` by itself worked, which
-matches the unit's own broadcast - it sends nothing but `{output_port_id, mute}`. Input
-**`input_zmode`** (impedance) did not change, which fits the manual's note that
-impedance is disabled while the input type is set to Mic.
+**Some port fields must travel ALONE.** Output `mute` and input `input_zmode`
+(impedance) are both writable, but both are silently dropped when they share a port entry
+with another field - and both work when sent by themselves. That matches the unit's own
+broadcast for a mute, which carries nothing but `{output_port_id, mute}`.
+
+This misled this project twice: mute was recorded as unwritable, and impedance's failure
+was wrongly explained by the manual's note about impedance being disabled for Mic inputs.
+Both were the same packing problem. Rather than work out which combinations are safe,
+`set_input_port()` and `set_output_port()` now send **one field per message**.
 
 **Tuner.** `ShowTuner{show}` opens and closes it, and `Tuner{input_port_id}` chooses
 the input (1 to 2 and back, confirmed). `Tuner.frequency` IS the reference pitch, but

@@ -8,6 +8,27 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.24.0 - 2026-07-28
+
+### Fixed
+
+- **`set_input_port()` and `set_output_port()` could silently drop fields.** The device
+  discards some port fields when they arrive alongside another in the same port entry, so
+  a call setting several at once would apply only some of them. Both now send **one field
+  per message**.
+
+  This had already produced two wrong conclusions in this project's own notes: output
+  `mute` was recorded as unwritable, and input `impedance`'s failure was explained away by
+  the manual's remark that impedance is disabled for Mic inputs. Neither was true - both
+  fields work perfectly when sent alone. Setting all four input fields in one call now
+  lands all four, verified on hardware.
+
+### Verified
+
+The typed metronome setters round-trip through hardware end to end -
+`TempoSubdivision.EIGHTH_TRIPLET` stored 0.6667, `MetronomeSound.COWBELL` 0.4,
+`MetronomeRouting.OUT_1_2` 0.5, `TimeSignature.SEVEN_EIGHT_2_3_2` 0.95.
+
 ## 0.23.0 - 2026-07-28
 
 ### Added

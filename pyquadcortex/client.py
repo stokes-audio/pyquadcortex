@@ -1593,44 +1593,57 @@ Two of those names disagree with the catalog, which is why the map
         confirmed on hardware, where writing one input left the other three
         byte-identical.
 
-        ``level`` is the gain and ``ground_lift`` is confirmed writable.
-        ``input_type`` is confirmed writable (the manual's Instrument/Mic switch on
-        the combo inputs). ``impedance`` did NOT take when written on its own, which
-        fits the manual's note that impedance is disabled while the type is set to
-        Mic - so treat it as unconfirmed.
+        ``level`` (the gain), ``impedance``, ``input_type`` (the manual's
+        Instrument/Mic switch) and ``ground_lift`` are all confirmed writable.
+
+        **Each field is sent in its own message**, because the device drops some
+        fields that share a port entry with another: `mute` on an output and
+        `impedance` on an input both failed when paired and both worked alone. Rather
+        than track which combinations are safe, this sends one at a time - a few extra
+        writes for a guarantee.
 
         These are global and survive power cycles, and an input gain is usually
         something a player has set by ear. Read :meth:`io_settings` first if you
         intend to put it back, and note that a read straight after a write can
         still report the old value.
         """
-        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
-        port = msg.settings.in_port.add()
-        port.input_port_id = input_port_id
-        for name, value in (("level", level), ("input_zmode", impedance),
-                            ("input_type", input_type),
-                            ("ground_lift", ground_lift)):
-            if value is not None:
-                setattr(port, name, value)
-        return self._t.send(msg)
+        return self._io_port_fields(
+            "in_port", "input_port_id", input_port_id,
+            (("level", level), ("input_zmode", impedance),
+             ("input_type", input_type), ("ground_lift", ground_lift)))
 
     def set_output_port(self, output_port_id: int, level: float = None,
                         ground_lift: float = None, mute: bool = None):
         """Change one output port's settings, sparsely.
 
-        ``level`` and ``ground_lift`` are confirmed writable. ``mute`` is NOT: a
-        write is accepted and the port reads back unmuted, on both a physical
-        output and a USB one. Whatever the unit's MUTE control sends, it is not
-        this field.
+        ``level``, ``ground_lift`` and ``mute`` are all confirmed writable.
+
+        **Each field is sent in its own message.** The device drops ``mute`` when it
+        shares a port entry with another field, which is why an earlier version of
+        this library reported mute as unwritable. Sending one at a time avoids having
+        to know which combinations are safe.
         """
-        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
-        port = msg.settings.out_port.add()
-        port.output_port_id = output_port_id
-        for name, value in (("level", level), ("ground_lift", ground_lift),
-                            ("mute", mute)):
-            if value is not None:
-                setattr(port, name, value)
-        return self._t.send(msg)
+        return self._io_port_fields(
+            "out_port", "output_port_id", output_port_id,
+            (("level", level), ("ground_lift", ground_lift), ("mute", mute)))
+
+    def _io_port_fields(self, collection, key, port_id, fields):
+        """Send each given port field in a message of its own.
+
+        The device silently drops some fields that arrive alongside another in the
+        same port entry - output ``mute`` and input ``input_zmode`` both failed when
+        paired and both worked alone. Rather than track which combinations are safe,
+        every field goes separately.
+        """
+        given = [(name, value) for name, value in fields if value is not None]
+        if not given:
+            raise TypeError(f"nothing to set on {collection} {port_id}")
+        for name, value in given:
+            msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+            port = getattr(msg.settings, collection).add()
+            setattr(port, key, port_id)
+            setattr(port, name, value)
+            self._t.send(msg)
 
     def set_usb_port(self, level: float = None, hp_select: float = None,
                      dry_wet: float = None):
@@ -1728,14 +1741,6 @@ Two of those names disagree with the catalog, which is why the map
     def set_output_level(self, output_port_id: int, level: float):
         """Set an output port's level, as the normalized 0..1 the wire carries."""
         return self.set_output_port(output_port_id, level=level)
-
-    def _io_port_write(self, collection: str, key: str, port_id: int,
-                       level: float):
-        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
-        port = getattr(msg.settings, collection).add()
-        setattr(port, key, port_id)
-        port.level = level
-        return self._t.send(msg)
 
     def global_eq(self, timeout: float = 10.0):
         """The Global EQ state: ``bypassed`` plus its five bands."""
@@ -1962,11 +1967,7 @@ Two of those names disagree with the catalog, which is why the map
         separate method - the shape came from watching the unit's own broadcast,
         which sends nothing but ``{output_port_id, mute}``.
         """
-        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
-        port = msg.settings.out_port.add()
-        port.output_port_id = output_port_id
-        port.mute = muted
-        return self._t.send(msg)
+        return self.set_output_port(output_port_id, mute=muted)
 
     def set_tuner_reference(self, offset_hz: float):
         """Set the tuner's reference pitch, as an OFFSET in Hz from 440.

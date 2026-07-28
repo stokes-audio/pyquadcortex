@@ -1507,6 +1507,7 @@ def test_input_and_output_level_writes_are_sparse_and_port_keyed():
     assert ports[0].input_port_id == 5
     assert ports[0].level == pytest.approx(0.25)
     assert not qc._t.sent[-1].settings.out_port
+    assert len(qc._t.sent) == 1
 
     qc.set_output_level(9, 0.5)
     out = qc._t.sent[-1].settings.out_port
@@ -1594,15 +1595,24 @@ def test_set_expression_bypass_writes_both_halves():
 # -- I/O ports, tuner, looper ---------------------------------------------------
 
 
-def test_set_input_port_is_sparse_and_only_sends_given_fields():
+def test_set_input_port_sends_one_field_per_message():
+    # The device drops some fields that share a port entry - impedance and output mute
+    # both failed when paired and both worked alone - so each goes in its own message.
     qc = client.QuadCortex(FakeTransport())
     qc.set_input_port(2, input_type=0.5)
     port = qc._t.sent[-1].settings.in_port[0]
     assert port.input_port_id == 2
     assert port.input_type == pytest.approx(0.5)
     assert not port.HasField("level")
-    assert not port.HasField("ground_lift")
-    assert not port.HasField("input_zmode")
+
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_input_port(2, level=0.4, impedance=0.875, input_type=0.5, ground_lift=0.0)
+    assert len(qc._t.sent) == 4, "four fields, four messages"
+    for msg in qc._t.sent:
+        port = msg.settings.in_port[0]
+        assert port.input_port_id == 2
+        set_fields = [f.name for f, _ in port.ListFields() if f.name != "input_port_id"]
+        assert len(set_fields) == 1, f"{set_fields} shared one message"
 
 
 def test_set_input_level_still_works_and_delegates():
@@ -1613,13 +1623,23 @@ def test_set_input_level_still_works_and_delegates():
     assert not port.HasField("input_type")
 
 
-def test_set_output_port_sends_ground_lift_and_mute_when_asked():
+def test_set_output_port_sends_ground_lift_and_mute_separately():
     qc = client.QuadCortex(FakeTransport())
     qc.set_output_port(1, ground_lift=1.0, mute=True)
-    port = qc._t.sent[-1].settings.out_port[0]
-    assert port.ground_lift == pytest.approx(1.0)
-    assert port.mute is True
-    assert not port.HasField("level")
+    assert len(qc._t.sent) == 2, "mute must not share a message with ground lift"
+    fields = []
+    for msg in qc._t.sent:
+        port = msg.settings.out_port[0]
+        assert port.output_port_id == 1
+        fields += [f.name for f, _ in port.ListFields() if f.name != "output_port_id"]
+    assert sorted(fields) == ["ground_lift", "mute"]
+
+
+def test_set_output_port_needs_something_to_set():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError):
+        qc.set_output_port(1)
+    assert qc._t.sent == []
 
 
 def test_usb_midi_and_pairing_writes():
