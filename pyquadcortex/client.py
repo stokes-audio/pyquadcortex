@@ -47,6 +47,11 @@ from pyquadcortex.proto import Preset_pb2 as preset
 #: one across 17 factory presets.
 UNITY_LEVEL = 0.76923077
 
+#: Where user setlists live. They sit SIDE BY SIDE here rather than nested inside
+#: "My Presets" - a folder created under My Presets is not a setlist and the device
+#: ignores it. :meth:`QuadCortex.create_setlist` builds a key from this.
+USER_SETLIST_ROOT = "/media/p4/Presets"
+
 #: How the unit stores "this scene has no label": a single space, not an empty
 #: string. So ``label.strip()`` detects a blank scene and ``label == ""`` does not.
 #: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
@@ -1782,6 +1787,98 @@ class QuadCortex:
         msg.available_modes.modes.extend(int(s) for s in slots)
         return self._t.send(msg)
 
+    def set_param_option(self, row: int, column: int, param, option,
+                         source: preset.BinaryPreset):
+        """Choose a list-valued parameter's option by NAME.
+
+        List (comboBox) parameters store ``index / (count - 1)``, and the option
+        names are not in the catalog - they are in the preset, per block. So this
+        needs a preset to read them from: pass the one you got from
+        :meth:`read_preset` for the currently loaded preset.
+
+        This is how a side-chain SOURCE is set, which is an ordinary parameter
+        rather than the ``sidechain_source_flag`` it looks like it should be::
+
+            p = qc.read_preset(Setlist.USER, "30A")
+            qc.set_param_option(row=1, column=0, param="SOURCE",
+                                option="Input 2", source=p)
+
+        ``param`` may be a wire index or a parameter NAME - the block's model is
+        taken from ``source``, so no ``model=`` is needed. On a "Solid State Comp
+        (S/C)" the catalog calls index 6 ``SOURCE``, of type ``comboBox``.
+
+        Confirmed on hardware both ways: the unit stored 0.2 for "Input 2" out of
+        16 options when set on screen, and a host write of 3/17 out of 18 options
+        read back as "Input 2".
+
+        Note the option list is per PRESET, because such a list can include one
+        entry per block earlier in the chain - the last two entries of a
+        side-chain SOURCE list were the two blocks ahead of it.
+        """
+        index = param
+        if isinstance(param, str):
+            model_id = next((b.model_id for b in blocks(source)
+                             if b.row == row and b.column == column), None)
+            if model_id is None:
+                raise ValueError(f"no block at row {row} column {column} in the "
+                                 f"preset given as source=")
+            index = self.catalog[model_id].parameter(param).index
+        options = param_options(source, row, column, index)
+        return self.set_param(row=row, column=column, param_index=index,
+                              value=option_value(options, option))
+
+    def set_output_mute(self, output_port_id: int, muted: bool = True):
+        """Mute or unmute an output port.
+
+        **Send it alone.** This is the same field :meth:`set_output_port` exposes,
+        but the device drops it when it arrives alongside another field in the same
+        port entry: a message carrying ``mute`` and ``ground_lift`` together left
+        the port unmuted, while ``mute`` on its own worked. That is why this is a
+        separate method - the shape came from watching the unit's own broadcast,
+        which sends nothing but ``{output_port_id, mute}``.
+        """
+        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+        port = msg.settings.out_port.add()
+        port.output_port_id = output_port_id
+        port.mute = muted
+        return self._t.send(msg)
+
+    def set_tuner_reference(self, offset_hz: float):
+        """Set the tuner's reference pitch, as an OFFSET in Hz from 440.
+
+        ``Tuner.frequency`` is not the absolute reference pitch: changing FREQ from
+        440 to 442 on the unit broadcast ``frequency: 1.99999809``. So pass 2.0 for
+        442 Hz and 0.0 for 440 Hz. Confirmed writable - 5.0 round-tripped - and
+        restored to 0.
+
+        That the scale is Hz rather than cents or steps rests on the single
+        observed pair (442 -> 2.0); it has not been checked against a second value
+        on screen.
+        """
+        return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
+                                            frequency=offset_hz))
+
+    def create_setlist(self, name: str):
+        """Create a new setlist, which the unit's Directory calls a folder.
+
+        Setlists live SIDE BY SIDE under ``/media/p4/Presets``, not nested inside
+        "My Presets" - which is what made an earlier attempt fail. Confirmed by
+        watching the unit create one and then doing the same from the host:
+
+            File{CREATE, type: 0, folder{key: "/media/p4/Presets/<name>",
+                                         name: "<name>", is_factory: false}}
+
+        The new key works everywhere a setlist path does, so presets can be saved
+        into it with :meth:`save_current_preset`. This is also what the MIDI
+        documentation's 'User folders' are - they are created, not built in.
+        """
+        msg = pa.FileMessage(type=0)
+        msg.folder.key = f"{USER_SETLIST_ROOT}/{name}"
+        msg.folder.name = name
+        msg.folder.is_factory = False
+        self._file_operation(msg)
+        return f"{USER_SETLIST_ROOT}/{name}"
+
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
                          timeout: float = 45.0, interval: float = 2.0):
         """Re-list ``setlist`` until ``until(entries)`` holds, and return them.
@@ -2240,6 +2337,33 @@ def param_options(p: preset.BinaryPreset, row: int, column: int,
             if param_index < len(model.params):
                 return list(model.params[param_index].dynamic_steps)
     return []
+
+
+def option_value(options, option) -> float:
+    """The normalized wire value that selects ``option`` from ``options``.
+
+    A list-valued (comboBox) parameter stores ``index / (count - 1)``. Confirmed
+    on two different lists: a side-chain SOURCE of 16 options stored 0.2 for
+    index 3 when set on the unit, and one of 18 options round-tripped 3/17 for
+    the same choice. ``options`` comes from :func:`param_options`.
+
+    ``option`` may be the name or the index.
+    """
+    if not options:
+        raise ValueError("no options: read them with param_options() first")
+    index = options.index(option) if isinstance(option, str) else int(option)
+    if not 0 <= index < len(options):
+        raise ValueError(f"option index {index} outside 0..{len(options) - 1}")
+    if len(options) == 1:
+        return 0.0
+    return index / (len(options) - 1)
+
+
+def option_at(options, value: float):
+    """Which of ``options`` a normalized wire ``value`` selects."""
+    if not options:
+        return None
+    return options[round(value * (len(options) - 1))]
 
 
 def free_rows(p: preset.BinaryPreset) -> list:

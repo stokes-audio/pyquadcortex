@@ -194,6 +194,8 @@ These are all methods on the object `connect()` returns.
 | **Global EQ** | `global_eq()`, `set_global_eq_bypassed()`, `set_global_eq_band()` |
 | **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
 | **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `looper()` |
+| **List parameters** | `set_param_option(row, column, param, option, source)`, `param_options(preset, ...)` - includes a block's side-chain SOURCE |
+| **Setlists** | `create_setlist(name)`, `list_folders()` |
 | **Discovery** | `list_folders()` - every folder the device knows, including the factory Captures Library and plugin artist presets; `favorites()` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 

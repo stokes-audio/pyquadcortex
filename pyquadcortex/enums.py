@@ -183,3 +183,16 @@ class SceneBypassBehavior(IntEnum):
     NONSTOMP_OVERWRITE = 1
     #: No bypass change is saved, by any method.
     NEVER_OVERWRITE = 2
+
+
+class ExpressionBypassMode(IntEnum):
+    """How an expression pedal bypasses a block (``expression_bypass_info.type``).
+
+    ``STOP`` is confirmed: setting the unit's SWITCH ON control to Stop broadcast
+    ``type: 2``. The other two follow the manual's ordering of the same control
+    (Heel-Toe, Switch, Stop) and have NOT been observed individually.
+    """
+
+    HEEL_TOE = 0
+    SWITCH = 1
+    STOP = 2

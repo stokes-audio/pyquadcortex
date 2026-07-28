@@ -1083,6 +1083,34 @@ That is the move plus a **full 4x8 snapshot of grid model IDs**. No row field wa
 sent for a row-0 move (proto3 default). The library registers this message type
 but does not yet wrap it in a client method.
 
+### 7.6d List parameters, and the side-chain source
+
+**A list (comboBox) parameter stores `index / (count - 1)`.** The option names are in
+the PRESET, not the catalog (see
+[dynamic_steps](#adding-a-block-rewrites-combobox-values-on-rows-you-never-wrote-to)),
+and the count is the length of that list. Confirmed in both directions: setting a
+side-chain SOURCE to "Input 2" on the unit stored `0.2` out of 16 options - index 3 of
+15 - and a host write of 3/17 on a block whose list held 18 options read back as the
+same choice.
+
+**The side-chain SOURCE is an ordinary parameter, not the flag it appears to be.**
+`Model.sidechain_source_flag` is device-side bookkeeping - it arrives on every recall
+as `input_control{sidechain_source_flag: false}` for all four rows, and a host write of
+it does nothing. What the unit actually sends when a SOURCE is chosen is a normal
+row/column-keyed parameter write. On a "Solid State Comp (S/C)" the catalog names index
+6 `SOURCE`, of type `comboBox`.
+
+Its options are the fixed inputs followed by **one entry per block earlier in the
+chain**, which is exactly what the manual describes as selectable:
+
+```
+Off, Follow Input, Input 1, Input 2, Input 1/2, Return 1, Return 2, Return 1/2,
+USB input 5..8, USB input 5/6, USB input 7/8, <blocks ahead of this one>
+```
+
+So the list - and therefore the value that selects a given entry - depends on the
+preset. `set_param_option()` takes the name and does the arithmetic.
+
 ### 7.6c Preset fields that are NOT writable
 
 Tried and refused, so nobody repeats them:
@@ -1092,7 +1120,7 @@ Tried and refused, so nobody repeats them:
 | `BinaryPreset.author_name`, `description` | `Grid` update carrying them | ignored. The device stamps `author_name` itself from the signed-in Cortex Cloud account on every user save, so a factory preset's "Neural DSP" becomes the account name |
 | `BinaryPreset.volume`, `pan` | `Grid` update carrying them; `ProductData.gain` on the File save | both ignored, volume stays 1.0 and pan 0.5 |
 | `BinaryPreset.scene_tempo` | `Grid` update with eight values | ignored, reads back empty |
-| `Model.sidechain_source_flag` | `Grid` update, row/column keyed | ignored, reads back false |
+| `Model.sidechain_source_flag` | `Grid` update, row/column keyed | ignored, reads back false - it is bookkeeping. The SOURCE is a `comboBox` PARAMETER, see [7.6d](#76d-list-parameters-and-the-side-chain-source) |
 | `BinaryPreset.tags` | three routes, see [7.7](#77-file-operations) | ignored; a saved preset has no tags at all |
 
 The side-chain case is worth a note: the flags are clearly part of how side-chaining is
@@ -1284,15 +1312,17 @@ restoring: input `level`, `ground_lift` and `input_type`; output `level` and
 `ground_lift`; `usb_port.dry_wet`; `midi_port.midi_thru`; and the
 `xlr1_2_linked`/`out3_4_linked` pairing flags.
 
-Two that did NOT take. Output **`mute`** is accepted and reads back unmuted, on both a
-physical and a USB output - whatever the unit's MUTE control sends, it is not this
-field. Input **`input_zmode`** (impedance) also did not change, which fits the manual's
-note that impedance is disabled while the input type is set to Mic.
+Output **`mute`** is writable, but **only when it travels alone**. A port entry carrying
+`mute` and `ground_lift` together left the port unmuted; `mute` by itself worked, which
+matches the unit's own broadcast - it sends nothing but `{output_port_id, mute}`. Input
+**`input_zmode`** (impedance) did not change, which fits the manual's note that
+impedance is disabled while the input type is set to Mic.
 
 **Tuner.** `ShowTuner{show}` opens and closes it, and `Tuner{input_port_id}` chooses
-the input (1 to 2 and back, confirmed). But `Tuner.frequency` reads 0 with nothing
-playing and ignores a write, so it is the DETECTED pitch rather than the reference
-pitch the manual's FREQ [Hz] control sets - where that setting lives is unresolved.
+the input (1 to 2 and back, confirmed). `Tuner.frequency` IS the reference pitch, but
+as an **offset in Hz from 440**: changing FREQ from 440 to 442 on the unit broadcast
+`frequency: 1.99999809`, which is why an earlier write of `442.0` did nothing. Writing
+`5.0` round-tripped. That the unit is Hz rather than cents rests on that single pair.
 
 **Looper.** `Looper{READ}` reports a full `status`: `state`, `progress`,
 `loop_length`, `free_samples`, `armed`, `in_reverse`, `half_speed`, `undo_count`,
@@ -1315,6 +1345,27 @@ levels are stored as float32, so a value must be written at full precision to
 round-trip: writing `0.769231` (six decimal places) stored something measurably
 different from the `0.769230783` already there, while writing `10/13` reproduced it
 exactly.
+
+### 7.7b2 Creating a setlist
+
+The Directory's folders are setlists, and they can be created. The mistake that made an
+earlier attempt fail was the path: **setlists sit side by side under
+`/media/p4/Presets`**, not nested inside "My Presets".
+
+```
+File{CREATE, type: 0, folder{key: "/media/p4/Presets/<name>", name: "<name>",
+                             is_factory: false}}
+```
+
+Captured from the unit's own "New Setlist" and then confirmed host-to-device: the new
+key appears in the folder listing and works anywhere a setlist path does. So the MIDI
+documentation's 'User folders' at bank-select LSB 2-12 are folders a player creates,
+not fixed setlists.
+
+**Duplicating a setlist is NOT settled.** The unit's duplicate action broadcasts
+`BulkOperation{type: 0, source_folder{...}, destination_folder{...}}` with
+`progress_message: "Duplicating, please wait."`, but that is the device REPORTING
+progress: replaying the same shape host-to-device created nothing.
 
 ### 7.7c The folder tree, and what else is enumerable
 
@@ -1469,6 +1520,10 @@ visually on the device's own screen.
 | `tuner` / `show_tuner` / `set_tuner_input` | `Tuner{READ}` / `ShowTuner{UPDATE, show}` / `Tuner{UPDATE, input_port_id}` | read-back | `frequency` is a readout, not the reference pitch |
 | `looper` | `Looper{READ}` | read-back | full status; transport not driven |
 | `set_input_port` / `set_output_port` / `set_usb_port` / `set_midi_thru` / `set_output_pairing` | `IOSettings{UPDATE, settings{...}}` | read-back | sparse and port-keyed. Output `mute` and input impedance did NOT take |
+| `set_param_option` | `Grid{UPDATE, ..., params{index, param_values{float_value}}}` | read-back + on-unit | picks a list parameter's option by name; the value is `index / (count - 1)` |
+| `set_output_mute` | `IOSettings{UPDATE, settings{out_port{output_port_id, mute}}}` | read-back + on-unit | must travel ALONE; dropped if another field shares the port entry |
+| `set_tuner_reference` | `Tuner{UPDATE, frequency}` | read-back + on-unit | an OFFSET in Hz from 440 |
+| `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root, not children of My Presets |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | the single splitter/mixer MUTE; reported back in `mixBypass`, and one write sets all eight scenes |
 | `set_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence; an UPDATE alone leaves the old assignment |
 | `set_expression` | `Grid{UPDATE, preset{chains{row, models{column, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit | pedal 1 or 2 with a normalized sweep range |

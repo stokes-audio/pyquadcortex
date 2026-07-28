@@ -8,6 +8,42 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.15.0 - 2026-07-28
+
+First interactive capture session: five things that host-side probing could not settle,
+because in each case the write this library was attempting was simply the wrong one.
+
+### Added
+
+- **`set_param_option(row, column, param, option, source)`** - choose a list (comboBox)
+  parameter's option by NAME. Such a parameter stores ``index / (count - 1)``, and the
+  names live in the preset rather than the catalog, so it takes a preset to read them
+  from. `option_value()` and `option_at()` expose the arithmetic.
+- **The side-chain SOURCE is reachable, and it is an ordinary parameter.**
+  `Model.sidechain_source_flag` turns out to be device bookkeeping that ignores writes;
+  what the unit sends is a normal keyed parameter write to a `comboBox` the catalog
+  names `SOURCE`. Its options are the fixed inputs followed by one entry per block
+  earlier in the chain, which is exactly what the manual says is selectable.
+- **`set_output_mute(port, muted)`** - output mute works, but **only when it travels
+  alone**: a port entry carrying `mute` alongside `ground_lift` left the port unmuted,
+  which is why an earlier attempt read as a refusal.
+- **`set_tuner_reference(offset_hz)`** - the tuner's reference pitch is an OFFSET in Hz
+  from 440. Changing FREQ to 442 on the unit broadcast `1.99999809`, so an earlier write
+  of `442.0` was far out of range. Writing 5.0 round-trips.
+- **`create_setlist(name)`** and `USER_SETLIST_ROOT`. Setlists are siblings under
+  `/media/p4/Presets`, NOT children of "My Presets" - the wrong parent is why an earlier
+  attempt created nothing. So the MIDI documentation's 'User folders' at bank-select LSB
+  2-12 are folders a player creates rather than fixed setlists.
+- **`ExpressionBypassMode`**, with `STOP = 2` confirmed from the unit. Heel-Toe and
+  Switch follow the manual's ordering of the same control and are not individually
+  observed - the enum's docstring says so.
+
+### Still not settled
+
+Duplicating a setlist: the unit's duplicate action broadcasts
+`BulkOperation{source_folder, destination_folder}`, but that is the device reporting
+progress, and replaying it host-to-device did nothing.
+
 ## 0.14.0 - 2026-07-28
 
 Fourth exploration round, still solo. Four more features covered, and one gotcha found

@@ -11,7 +11,7 @@ See the readme for a tour, and ``docs/`` for the protocol and internals.
 
 import logging
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 
 # A library must not write to the application's console. Without a handler,
 # Python's handler of last resort prints WARNING and above to stderr, so a
@@ -19,16 +19,18 @@ __version__ = "0.14.0"
 # Applications that want our logs can configure the "pyquadcortex" logger.
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
-from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL, Block,
+from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL,
+                                 USER_SETLIST_ROOT, Block,
                                  BlockRefused, Folder, MidiOut, QuadCortex, Split,
                                  StompAssignment, blocks, field_present,
-                                 free_rows, input_chain_rows, midi_out,
+                                 free_rows, input_chain_rows, midi_out, option_at,
+                                 option_value,
                                  param_options, position_to_slot,
                                  preset_load_midi_out, slot_to_position, splits,
                                  stomp_assignments)  # noqa: E402
 from pyquadcortex.enums import (Footswitch, Input, Instrument, MidiOutType,
-                                MidiSource, Output, Scene, SceneBypassBehavior,
-                                Setlist)
+                                ExpressionBypassMode, MidiSource, Output, Scene,
+                                SceneBypassBehavior, Setlist)
 from pyquadcortex.session import DeviceNotFoundError, connect, open_device
 from pyquadcortex import models  # noqa: E402  generated factory-block constants
 from pyquadcortex.catalog import Model, ModelCatalog, Parameter  # noqa: E402
@@ -48,6 +50,10 @@ __all__ = [
     "MidiSource",
     "MidiOutType",
     "SceneBypassBehavior",
+    "ExpressionBypassMode",
+    "USER_SETLIST_ROOT",
+    "option_value",
+    "option_at",
     "MidiOut",
     "midi_out",
     "preset_load_midi_out",

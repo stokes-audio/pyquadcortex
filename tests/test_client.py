@@ -1779,3 +1779,128 @@ def test_set_mode_cycle_replaces_the_whole_list():
     qc = client.QuadCortex(FakeTransport())
     qc.set_mode_cycle([1, 0, 2])
     assert list(qc._t.sent[-1].available_modes.modes) == [1, 0, 2]
+
+
+# -- list-valued (comboBox) parameters -----------------------------------------
+# A list parameter stores index / (count - 1), and the option NAMES live in the
+# preset rather than the catalog. Confirmed both directions on hardware: the unit
+# stored 0.2 for "Input 2" out of 16 options, and a host write of 3/17 out of 18
+# read back as the same choice.
+
+
+def test_option_value_maps_a_name_to_the_wire_value():
+    opts = ["Off", "Follow Input", "Input 1", "Input 2"]
+    assert client.option_value(opts, "Off") == 0.0
+    assert client.option_value(opts, "Input 3" if False else "Input 2") == 1.0
+    assert client.option_value(opts, "Input 1") == pytest.approx(2 / 3)
+    assert client.option_value(opts, 1) == pytest.approx(1 / 3)
+
+
+def test_option_value_matches_the_captured_side_chain_case():
+    # 16 options, "Input 2" at index 3, stored as 0.2 by the unit.
+    opts = ["Off", "Follow Input", "Input 1", "Input 2", "Input 1/2", "Return 1",
+            "Return 2", "Return 1/2", "USB input 5", "USB input 6", "USB input 7",
+            "USB input 8", "USB input 5/6", "USB input 7/8", "Legendary 87 (M)",
+            "Microtubes VMT"]
+    assert client.option_value(opts, "Input 2") == pytest.approx(0.2)
+    assert client.option_at(opts, 0.2) == "Input 2"
+
+
+def test_option_value_rejects_an_unknown_name_or_index():
+    with pytest.raises(ValueError):
+        client.option_value([], "anything")
+    with pytest.raises(ValueError):
+        client.option_value(["a", "b"], 5)
+    with pytest.raises(ValueError):
+        client.option_value(["a", "b"], "c")
+
+
+def test_option_at_round_trips_every_index():
+    opts = [f"o{i}" for i in range(18)]
+    for i, name in enumerate(opts):
+        assert client.option_at(opts, client.option_value(opts, name)) == name
+
+
+def test_set_param_option_resolves_the_name_through_the_preset():
+    p = preset.BinaryPreset()
+    chain = p.chains.add()
+    chain.row = 1
+    m = chain.models.add()
+    m.column = 0
+    m.hash = 5018
+    for i in range(7):
+        m.params.add().index = i
+    m.params[6].dynamic_steps.extend(["Off", "Follow Input", "Input 1", "Input 2"])
+
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_param_option(row=1, column=0, param=6, option="Input 2", source=p)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.index == 6
+    assert written.param_values[0].float_value == pytest.approx(1.0)
+
+
+def test_set_param_option_resolves_a_parameter_NAME_via_the_preset_block():
+    # The model comes from the preset, so no model= argument is needed.
+    p = preset.BinaryPreset()
+    chain = p.chains.add()
+    chain.row = 1
+    m = chain.models.add()
+    m.column = 0
+    m.hash = 5005
+    for i in range(1):
+        m.params.add().index = i
+    m.params[0].dynamic_steps.extend(["Off", "On"])
+
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    qc.set_param_option(row=1, column=0, param="THRESHOLD", option="On", source=p)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.index == 0
+    assert written.param_values[0].float_value == pytest.approx(1.0)
+
+
+def test_set_param_option_needs_the_block_to_be_in_the_source_preset():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="no block at row"):
+        qc.set_param_option(row=3, column=7, param="SOURCE", option="Off",
+                            source=preset.BinaryPreset())
+
+
+# -- output mute must travel alone ---------------------------------------------
+
+
+def test_set_output_mute_sends_only_the_port_and_the_flag():
+    # A message carrying mute AND ground_lift left the port unmuted on hardware;
+    # mute alone worked, matching the unit's own broadcast.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_output_mute(1, True)
+    port = qc._t.sent[-1].settings.out_port[0]
+    assert (port.output_port_id, port.mute) == (1, True)
+    assert not port.HasField("ground_lift")
+    assert not port.HasField("level")
+
+
+# -- tuner reference pitch is an offset ---------------------------------------
+
+
+def test_set_tuner_reference_writes_the_offset_from_440():
+    # Changing FREQ 440 -> 442 on the unit broadcast frequency: 1.99999809.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_tuner_reference(2.0)
+    assert qc._t.sent[-1].frequency == pytest.approx(2.0)
+    qc.set_tuner_reference(0.0)
+    assert qc._t.sent[-1].frequency == pytest.approx(0.0)
+
+
+# -- setlists are siblings, not children --------------------------------------
+
+
+def test_create_setlist_uses_a_sibling_path_under_the_presets_root():
+    qc = client.QuadCortex(FakeTransport())
+    path = qc.create_setlist("probe")
+    assert path == "/media/p4/Presets/probe"
+    folder = qc._t.sent[-1].folder
+    assert folder.key == "/media/p4/Presets/probe"
+    assert folder.name == "probe"
+    assert folder.is_factory is False
+    assert "My Presets" not in folder.key, "a setlist is not nested inside My Presets"

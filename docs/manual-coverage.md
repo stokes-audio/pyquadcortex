@@ -20,26 +20,26 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **52 yes**, **19 partly**, **21 no**, **8 n/a**.
+Of 100 features audited: **57 yes**, **17 partly**, **18 no**, **8 n/a**.
 
-Of the 92 features a host could plausibly drive, **52 are fully covered** and 19 more
+Of the 92 features a host could plausibly drive, **57 are fully covered** and 17 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
-exercised. Only 21 remain untouched.
+exercised. Only 18 remain untouched.
 
-Four exploration rounds got it there. The first closed the per-preset non-audio gap:
-footswitch assignments, expression assignments and Preset MIDI Out. The second opened
-the global settings families, `GeneralSettings` alone covering most of the Device
-Settings and System menus. The third added block moves, creating and clearing a branch,
-expression bypass, the Tuner and Looper state, the remaining I/O port fields, and folder
-discovery - which turned up a 2062-entry factory Captures Library nobody had looked
-for.
+Five rounds got it there. Four were solo - the per-preset non-audio gap (footswitch
+assignments, expression assignments, Preset MIDI Out), then the global settings families,
+then block moves and branches and the I/O ports and folder discovery, then the remaining
+settings submessages. The fifth was a capture session with the owner at the unit, which
+settled five things no amount of host-side probing would have: the side-chain SOURCE,
+output mute, the tuner's reference pitch, creating a setlist, and one expression-bypass
+mode.
 
-What is left falls into two kinds. A handful of writes are **confirmed no-ops**, so the
-shape must be something else: preset `volume`/`pan`, `scene_tempo`, the side-chain
-flags, output `mute`, creating a folder, and preset tags. The rest is **semantics** -
-shapes that work but whose numbering needs an eye on the unit: the Looper's `state`, the
-expression-bypass `mode`, and where the tuner's reference pitch lives. Those are in
+What is left falls into two kinds. Some writes are **confirmed no-ops**, so the shape is
+something else: preset `volume`/`pan`, `scene_tempo`, preset tags, pinning a model, and
+duplicating a setlist. The rest is **semantics** - shapes that work but whose numbering
+needs an eye on the unit, like the Looper's `state` and the Global EQ parameter indices.
+Both kinds are listed with what to do about them in
 [needs-hardware-interaction.md](needs-hardware-interaction.md).
 
 ---
@@ -55,7 +55,7 @@ expression-bypass `mode`, and where the tuner's reference pitch lives. Those are
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | partly | in `GeneralSettings`, so reachable via `update_settings()`; not individually exercised |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
-| Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` confirmed; `Tuner.frequency` is the detected pitch rather than the reference-pitch setting, which is not located |
+| Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` and `set_tuner_reference()` confirmed - the latter takes an OFFSET in Hz from 440. Tuner `mute` and Live Tuner are untested |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_metronome_volume()`, `set_tempo_led()`, `set_tempo_param()` |
@@ -64,7 +64,7 @@ expression-bypass `mode`, and where the tuner's reference pitch lives. Those are
 | Modes: reorder, merge into HYBRID, remove | partly | `set_mode_cycle([...])` reorders and removes slots, confirmed. Merging two into a HYBRID slot is unexplored |
 | Gig View: open/close | yes | `set_gig_view()` |
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
-| I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | partly | `set_output_port()` writes level and ground lift, `set_output_pairing()` the link flags. `mute` is accepted and does NOT take |
+| I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested |
 | Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` and `set_global_eq_band(index, value)` both confirmed; which parameter index is which band control is unestablished |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
@@ -96,10 +96,10 @@ expression-bypass `mode`, and where the tuner's reference pitch lives. Those are
 | Splitter parameters | yes | `set_splitter_param()` via `combined_splitter`; indices follow unified model 10004 |
 | Mixer parameters | yes | `set_mixer_param()` |
 | Splitter / Mixer MUTE | yes | `set_split_mute()`. It is ONE control, not two; the write goes to `splitBypass` and the device reports it in `mixBypass` |
-| Side-chaining: set a block's SOURCE/TRIGGER | no | `sidechain_source_flag` is ignored by a row/column-keyed `Grid` update, so the write travels some other way. The source list IS readable via `Param.dynamic_steps` |
+| Side-chaining: set a block's SOURCE/TRIGGER | yes | `set_param_option(row, column, param="SOURCE", option=...)`. It is an ordinary comboBox parameter; `sidechain_source_flag` is bookkeeping and ignores writes |
 | Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()` |
 | Expression pedal assignment to a parameter | yes | `set_expression(row, column, param, pedal, minimum, maximum)` |
-| Expression bypass (heel-toe / switch / stop) | partly | `set_expression_bypass()` round-trips, but which `mode` integer is Heel-Toe, Switch or Stop is unestablished |
+| Expression bypass (heel-toe / switch / stop) | partly | `set_expression_bypass()` with the `ExpressionBypassMode` enum. `STOP = 2` is confirmed from the unit; Heel-Toe and Switch follow the manual's ordering and are not individually observed |
 | Expression pedal calibration | no | candidate `IOSettings`. Manual calls it a global setting |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | it is an ordinary catalog model |
@@ -119,10 +119,10 @@ expression-bypass `mode`, and where the tuner's reference pitch lives. Those are
 | Delete a preset | yes | `delete_preset()`, eventually consistent |
 | Move a preset | yes | `move_preset()`, same-setlist only observed |
 | Factory and My Presets setlists | yes | `Setlist.FACTORY`, `Setlist.USER` |
-| User folders / additional setlists | partly | `list_folders()` enumerates all 399 folders and `list_presets()` accepts any key. Only ONE user setlist exists on this unit, so CC#32's 2-12 are creatable folders - and creating one is unresolved |
-| Create a folder, nested navigation | no | a `File` CREATE naming a new folder key was accepted and created nothing. Nesting itself works - the plugin tree is nested |
+| User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. CC#32's 'User folders' 2-12 are created, not built in |
+| Create a folder, nested navigation | yes | `create_setlist(name)`. The earlier failure was the path: setlists are siblings under `/media/p4/Presets`, not children of My Presets |
 | Favorites and Recents | partly | `favorites()` reads them (name, folder key, folder name); writing is untested |
-| Bulk actions | no | `BulkOperation` is decoded and subscribed; never driven |
+| Bulk actions | no | `BulkOperation` reports progress (a setlist duplicate broadcasts source and destination folders), but replaying that shape host-to-device did nothing |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
 | Neural Captures: list | yes | the catalog covers the unit's own capture slots, and `list_folders()` exposes the 2062-entry factory Captures Library grouped into 176 per-amp folders |
