@@ -8,6 +8,39 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.29.0 - 2026-07-28
+
+Three more of the coverage table's untested rows, and the method that turned out to be
+reading the wrong list.
+
+### Added
+
+- **`recents()`** - the unit's Recents list. This is the method that used to be called
+  `favorites()`.
+- All four `midi_clock_out` values (OFF, DIN only, USB only, both) confirmed writable
+  through `update_settings()`.
+
+### Changed
+
+- **`favorites()` never returned Favorites.** One message type carries both lists,
+  distinguished by an `is_favorites` flag the method never checked, so it returned whatever
+  arrived first - which is Recents, identifiable by the newest saved preset sitting at its
+  head. A `READ` asking for `is_favorites=True` draws no reply at all, so Favorites has no
+  known read path over USB. `favorites()` still works as a deprecated alias for
+  `recents()`; it just now says what it does.
+- The Recents list is confirmed **read-only**: sending all 51 entries back with one
+  appended left the device's list unchanged.
+- **IR Loaders are mapped**, which is a prerequisite for loading one. Models 29001-29008,
+  and every loader has TWO IR slots (parameters 0-7 and 8-15) needing **two** strings each:
+  `IR PATH` (2, 10) and `IR NAME` (22, 23) - not the single `<hash><name>` string a Neural
+  Capture block uses, and the IR library offers no hash anyway. All four strings write and
+  survive a save. What is NOT established is which path form the firmware resolves: a bare
+  name, a full path and a path with `.wav` all store back byte-identical, and so does
+  outright nonsense, so read-back is not evidence an IR loaded. Documented rather than
+  wrapped in a method, because a method implying it works would be overclaiming.
+- Documented that `params[].index` is unset on every entry the device sends, so **position
+  in the list is the parameter index**.
+
 ## 0.28.0 - 2026-07-28
 
 Sixteen device settings moved from "reachable in principle" to tested, and one packing bug

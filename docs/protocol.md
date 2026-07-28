@@ -1416,6 +1416,48 @@ line, so the Hz scale is measured rather than assumed.
 is sent, stays `false`, and `meter` stays `0.0`. So the needle itself is not readable over
 USB, which is the one part of the Tuner the host cannot see.
 
+## Recents is not Favorites
+
+`RecentsFavorites` carries both lists and distinguishes them with `is_favorites`. What the
+device actually answers a `READ` with is **Recents**: `is_favorites` unset, headed by the
+most recently saved preset. A `READ` carrying `is_favorites: true` draws **no reply at
+all** - not even an empty list - so that flag is not a query selector, and the Favorites
+list has no known read path over USB.
+
+The list is read-only. Sending all 51 entries back with one appended left the device's own
+list byte for byte unchanged.
+
+Two quirks when reading it: the device sometimes emits an EMPTY push before the populated
+one, and sometimes ignores the first `READ` entirely, so match on a non-empty list and be
+prepared to retry.
+
+## IR Loaders
+
+The IR Loader blocks are models **29001-29008** (`Single`/`Dual`, mono/stereo, each with a
+`Lite` variant), catalog category `IRLoaders`. Two things about their parameter layout are
+worth knowing before trying to load an IR from a host.
+
+**Every IR Loader has TWO IR slots**, whatever its name suggests: parameters 0-7 are the
+first (`MUTE`, `INVERT`, `IR PATH`, `LEVEL`, `HI PASS`, `LOW PASS`, `PAN`, `DELAY`) and
+8-15 repeat them for the second. 16-21 are shared (`ROOM MIX`, `PRE DELAY`, `REV HI PASS`,
+`REV LOW PASS`, `SIZE`, `GLOBAL OUTPUT`), and 22 and 23 are an `IR NAME` per slot.
+
+So an IR reference is **two strings, not one**: `IR PATH` (2 or 10) and `IR NAME` (22 or
+23). This differs from a Neural Capture block, which holds a single
+`<hash><name>` string - and the IR library gives you no hash to work with, only a name.
+
+All four strings are writable through `set_param(text=...)`, carry one value per scene like
+any other parameter, and survive a save. **But the device does not validate them.** A bare
+name, `/opt/neuraldsp/impulse_responses/<name>` and the same with `.wav` all store back
+byte-identical, and so does `"NOT AN IR AT ALL zzz"`. Nothing is normalised and nothing is
+rejected, so a successful read-back is not evidence that an IR loaded. Which form the
+firmware actually resolves is unresolved here, and the cheap way to settle it is to watch
+what the unit writes when a human loads an IR through its own UI.
+
+Note also that `params[].index` is unset on every entry the device sends, so **position in
+the list is the parameter index** - which is why the catalog's index lines up with
+`params[i]` directly.
+
 ## Global settings: what actually writes
 
 `GeneralSettings` is one wide message covering most of Device Settings. Fifteen fields are

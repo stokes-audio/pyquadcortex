@@ -1870,15 +1870,36 @@ Two of those names disagree with the catalog, which is why the map
                 best[f.key] = entry
         return sorted(best.values(), key=lambda e: e.key)
 
-    def favorites(self, timeout: float = 10.0):
-        """The unit's Favorites and Recents, as a ``RecentsFavorites`` message.
+    def recents(self, timeout: float = 10.0):
+        """The unit's RECENTS list, as a ``RecentsFavorites`` message.
 
         Each ``items`` entry carries ``name``, ``folder_key`` and ``folder_name``,
         so an entry can be fed straight back to :meth:`find_preset` or
-        :meth:`recall_preset`. Read-only here: writing it is untested.
+        :meth:`recall_preset`.
+
+        **This is Recents, not Favorites**, even though one message type carries
+        both. What comes back has ``is_favorites`` unset and is headed by the
+        most recently saved preset. A ``READ`` with ``is_favorites=True`` gets no
+        answer at all - not even an empty list - so either that flag is not a query
+        selector or the Favorites list is not readable over USB. This method was
+        called ``favorites()`` until the difference was noticed.
+
+        **Read-only.** Sending the list back with an extra entry changed nothing;
+        the device kept its own 51 entries byte for byte.
+
+        Note the device sometimes answers with an EMPTY push before the real one,
+        and occasionally does not answer the first request at all, so this matches
+        on a non-empty list and may need a retry - see the stale-read note above.
         """
         return self._read_state(pa.RecentsFavoritesMessage,
                                 lambda m: len(m.items) > 0, timeout)
+
+    def favorites(self, timeout: float = 10.0):
+        """Deprecated alias for :meth:`recents`, which is what the device returns.
+
+        Kept so existing code keeps working. It never returned Favorites.
+        """
+        return self.recents(timeout)
 
     def set_master_volume_assignment(self, out12: bool = None, out34: bool = None,
                                      send12: bool = None, headphones: bool = None):

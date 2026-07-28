@@ -122,14 +122,14 @@ loading from the factory Captures Library.
 | Factory and My Presets setlists | yes | `Setlist.FACTORY`, `Setlist.USER` |
 | User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. CC#32's 'User folders' 2-12 are created, not built in |
 | Create a folder, nested navigation | yes | `create_setlist(name)`. The earlier failure was the path: setlists are siblings under `/media/p4/Presets`, not children of My Presets |
-| Favorites and Recents | partly | `favorites()` reads them (name, folder key, folder name); writing is untested |
+| Favorites and Recents | partly | `recents()` reads the RECENTS list (name, folder key, folder name) and it is READ-ONLY - sending the list back with an extra entry changed nothing. Favorites proper is not reachable: a `READ` with `is_favorites=True` draws no reply at all. The method was called `favorites()` until this was tested; that name is now a deprecated alias |
 | Bulk actions | partly | there is no host-drivable bulk copy - `BulkOperation` only narrates progress - but `copy_preset()` and `duplicate_setlist()` achieve it by recall + save, at a few seconds per preset |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
 | Neural Captures: list | yes | `captures()` browses the library - over 2000 entries, shown on the unit as Factory Captures V1/V2 and My Captures. NOT the catalog, which does not grow when a capture is saved |
 | Load a capture onto the grid | yes | `set_capture(row, column, entry)` - the block model plus a `file_name` string of content hash + name |
 | Neural Captures: rename, delete, manage | no | candidate `File` |
-| Impulse responses: list and load into an IR Loader | partly | the 588 factory IRs are listable via `list_folders()`/`list_presets()`; loading one is unexplored (`FileMessage.ir_payload`) |
+| Impulse responses: list and load into an IR Loader | partly | the 588 factory IRs are listable (`/opt/neuraldsp/impulse_responses`, name only - no hash key, unlike captures). The block is mapped: models 29001-29008, TWO IR slots per block (params 0-7 and 8-15), each needing an `IR PATH` (2, 10) AND an `IR NAME` (22, 23) string. All four are writable and survive a save. The gap is that the device stores ANY string unchanged - bare name, full path and path+`.wav` all round-trip identically, and a deliberate non-existent name is kept without complaint - so read-back cannot tell a loaded IR from a broken reference. Which form is correct needs one look at the unit |
 | Plugin presets | no | candidate `License`, `CloudProduct` |
 | Upload to Cortex Cloud | no | candidates `CloudProduct`, `ProcessDownloadsQueue` |
 
@@ -156,7 +156,7 @@ loading from the factory Captures Library.
 | Feature | Status | Detail |
 |---|---|---|
 | Controlling the unit over MIDI (PC + CC#0-62) | yes | documented, not implemented here: this library speaks USB-HID. The full map is in the manual, ch 8 |
-| MIDI settings: channel, Thru, over USB, ignore duplicate PC, clock in/out | partly | these are in `GeneralSettings`, not the undecoded `MIDISettings`. `midi_channel`, `midi_over_usb`, `ignore_duplicate_pc` and `midi_clock_in_enabled` are confirmed writable via `update_settings()`, and Thru via `set_midi_thru()`. Two gaps: `internal_midi_clock_enabled` REFUSES a write (it stays true with external clock either way), and the `midi_clock_out` enum is untested |
+| MIDI settings: channel, Thru, over USB, ignore duplicate PC, clock in/out | partly | these are in `GeneralSettings`, not the undecoded `MIDISettings`. `midi_channel`, `midi_over_usb`, `ignore_duplicate_pc`, `midi_clock_in_enabled` and all four `midi_clock_out` values (OFF / DIN / USB / BOTH) are confirmed writable via `update_settings()`, and Thru via `set_midi_thru()`. One gap: `internal_midi_clock_enabled` REFUSES a write, and it stays true with external clock either way |
 | Preset MIDI Out: footswitch, expression and on-load messages | yes | `set_midi_out()` / `set_preset_load_midi_out()` via `MIDISettings`, NOT `Grid`. CC/CC Toggle/PC all confirmed |
 
 ## 10 Device Settings menu
