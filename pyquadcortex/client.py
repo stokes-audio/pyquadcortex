@@ -33,8 +33,9 @@ import uuid
 from typing import NamedTuple
 
 from pyquadcortex import catalog, registry
-from pyquadcortex.enums import (Footswitch, Input, Instrument, MidiOutType,  # noqa: F401
-                                MidiSource, Output, Setlist)
+from pyquadcortex.enums import (Footswitch, Input, Instrument,  # noqa: F401
+                                MidiOutType, MidiSource, Output,
+                                SceneBypassBehavior, Setlist)
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
@@ -1262,6 +1263,163 @@ class QuadCortex:
         prm.index = param_index
         prm.scene_mode = enabled
         return self._t.send(msg)
+
+
+    # -- global device settings ----------------------------------------------
+    #
+    # These are GLOBAL: unlike a preset edit, a write here changes the unit
+    # itself and there is nothing to save. Read the current value first if you
+    # intend to put it back.
+    #
+    # State pushes for these types can be PARTIAL - a push following an UPDATE
+    # may carry only what changed - so each reader below waits for a push that
+    # actually contains the field it needs rather than taking the first one.
+
+    def _read_state(self, cls, match, timeout: float = 10.0):
+        """READ a state type and return the first push satisfying ``match``."""
+        return self._t.await_broadcast(
+            cls, lambda: self._t.send(cls(action=pa.MessageAction.READ)),
+            timeout=timeout, match=match)
+
+    def settings(self, timeout: float = 10.0):
+        """The device's global settings, as a ``GeneralSettings`` message.
+
+        One message covers most of the unit's Device Settings and System menus:
+        ``screen_brightness``, ``led_brightness``, ``scene_block_bypass``,
+        ``global_bypass_cab``/``_ir``, ``stomp_mode_auto_assign``,
+        ``swap_tempo_tuner_access``, ``enable_dynamic_delay_compensation``,
+        ``hold_timing``, MIDI channel and clock settings, ``power_option``,
+        ``master_volume_assignment`` (the per-output checkboxes) and the
+        ``available_disk_space``/``total_disk_space`` pair, among others.
+
+        Returned raw rather than wrapped: it is a wide, firmware-defined message
+        and reshaping it would hide fields. Read fields with
+        :func:`field_present` before trusting them.
+        """
+        return self._read_state(pa.GeneralSettingsMessage,
+                                lambda m: m.HasField("scene_block_bypass"), timeout)
+
+    def update_settings(self, **fields):
+        """Change global settings, sparsely: only the fields named are sent.
+
+        Any scalar field of ``GeneralSettings`` may be given::
+
+            qc.update_settings(screen_brightness=60, swap_tempo_tuner_access=True)
+
+        Confirmed writable on hardware: ``screen_brightness``,
+        ``led_brightness`` and ``scene_block_bypass``. The rest of the message is
+        the same shape and the same action, but has not been individually
+        exercised - read it back if it matters.
+
+        Note that brightness is quantized: writing 30 read back as 31, and 60 as
+        59, so the device stores it on a coarser internal scale.
+
+        Values the device treats as commands rather than settings are refused
+        here to avoid an accident: ``power_option`` can shut the unit down or
+        reboot it, and ``reset_wifi_networks`` discards saved networks. Send
+        those yourself through the transport if you really mean to.
+        """
+        blocked = {"power_option", "reset_wifi_networks"}
+        bad = blocked.intersection(fields)
+        if bad:
+            raise ValueError(
+                f"{sorted(bad)} are device commands rather than settings and are "
+                f"not sent by this method - power_option can shut the unit down "
+                f"or reboot it"
+            )
+        unknown = [k for k in fields
+                   if k not in pa.GeneralSettingsMessage.DESCRIPTOR.fields_by_name]
+        if unknown:
+            raise TypeError(f"GeneralSettings has no field(s) {sorted(unknown)}")
+        msg = pa.GeneralSettingsMessage(action=pa.MessageAction.UPDATE, **fields)
+        return self._t.send(msg)
+
+    def set_scene_bypass_behavior(self, behavior):
+        """Set whether block bypass changes are saved per scene.
+
+        A :class:`~pyquadcortex.enums.SceneBypassBehavior`. This is global, and it
+        decides what :meth:`set_bypass` persists: under ``NEVER_OVERWRITE`` a
+        bypass write is applied but not kept, which looks exactly like a failed
+        write. Confirmed writable and restorable on hardware.
+        """
+        return self.update_settings(scene_block_bypass=int(behavior))
+
+    def io_settings(self, timeout: float = 10.0):
+        """The unit's input, output, headphone, USB, MIDI and expression ports.
+
+        An ``IOSettings`` message. ``settings.in_port[]`` carries each input's
+        ``level`` (the gain), ``input_zmode`` (impedance), ``input_type``,
+        ``ground_lift`` and ``plugged``; ``settings.out_port[]`` the output
+        levels and mutes; plus ``hp_port``, ``usb_port``, ``midi_port`` and
+        ``exp_port[]``. ``plugged`` is useful ground truth for what is physically
+        connected.
+        """
+        return self._read_state(pa.IOSettingsMessage,
+                                lambda m: len(m.settings.in_port) > 0, timeout)
+
+    def set_input_level(self, input_port_id: int, level: float):
+        """Set an input port's gain, as the normalized 0..1 the wire carries.
+
+        Sparse and keyed by ``input_port_id``, so other ports are untouched -
+        confirmed on hardware, where writing one input's level left the other
+        three byte-identical. Read :meth:`io_settings` first if you mean to
+        restore it: these are global, and an input gain is the kind of setting a
+        player has dialled in by ear.
+        """
+        return self._io_port_write("in_port", "input_port_id", input_port_id,
+                                   level)
+
+    def set_output_level(self, output_port_id: int, level: float):
+        """Set an output port's level, as the normalized 0..1 the wire carries."""
+        return self._io_port_write("out_port", "output_port_id", output_port_id,
+                                   level)
+
+    def _io_port_write(self, collection: str, key: str, port_id: int,
+                       level: float):
+        msg = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+        port = getattr(msg.settings, collection).add()
+        setattr(port, key, port_id)
+        port.level = level
+        return self._t.send(msg)
+
+    def global_eq(self, timeout: float = 10.0):
+        """The Global EQ state: ``bypassed`` plus its five bands."""
+        return self._read_state(pa.GlobalEQMessage,
+                                lambda m: m.HasField("bypassed"), timeout)
+
+    def set_global_eq_bypassed(self, bypassed: bool = True):
+        """Turn the Global EQ off or on. Confirmed writable on hardware.
+
+        Note that the unit disables the Global EQ by itself when a preset runs out
+        of processing headroom, which arrives as
+        ``CompilerInhibitedModules{global_eq}``.
+        """
+        return self._t.send(pa.GlobalEQMessage(action=pa.MessageAction.UPDATE,
+                                               bypassed=bypassed))
+
+    def mode(self, timeout: float = 10.0):
+        """The footswitch mode state: which slot is active, and which exist.
+
+        ``mode`` is an index into the unit's configured mode SLOTS, not a fixed
+        identifier - the slots are user-arranged (and can be merged into HYBRID
+        modes), so slot 0 is not necessarily PRESET mode. ``available_modes.modes``
+        lists the slots currently configured; the observed unit reports three.
+        """
+        return self._read_state(pa.ModeMessage, lambda m: m.HasField("mode"),
+                                timeout)
+
+    def set_mode(self, slot: int):
+        """Switch to a footswitch mode SLOT by index. Confirmed on hardware.
+
+        See :meth:`mode` on why this is a slot rather than a named mode.
+        """
+        return self._t.send(pa.ModeMessage(action=pa.MessageAction.UPDATE,
+                                           mode=slot))
+
+    def set_gig_view(self, shown: bool = True):
+        """Open or close Gig View on the unit. Confirmed on hardware."""
+        return self._t.send(pa.ShowGigViewMessage(action=pa.MessageAction.UPDATE,
+                                                  show=shown))
 
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
                          timeout: float = 45.0, interval: float = 2.0):

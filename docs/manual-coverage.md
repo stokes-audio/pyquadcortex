@@ -20,21 +20,22 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **38 yes**, **3 partly**, **51 no**, **8 n/a**.
+Of 100 features audited: **42 yes**, **13 partly**, **37 no**, **8 n/a**.
 
-Put another way: of the 92 features a host could plausibly drive, this library covers
-a little over 40%. The first exploration round closed the per-preset non-audio gap -
-footswitch assignments, expression assignments and Preset MIDI Out.
+Of the 92 features a host could plausibly drive, 42 are fully covered and 13 more are
+partly covered - usually meaning the state is readable and one field of it is confirmed
+writable, with the neighbouring fields the same shape but not individually exercised.
 
-The supported set is now most of what a preset contains: recall, scenes, grid blocks,
-parameters, routing, the four chain sub-collections, per-preset tempo, file management,
-and - since the first exploration round - footswitch assignments, expression
-assignments and Preset MIDI Out.
+Two exploration rounds got it there. The first closed the per-preset non-audio gap:
+footswitch assignments, expression assignments and Preset MIDI Out. The second opened
+the global settings families, which had been the largest untouched area -
+`GeneralSettings` alone covers most of the Device Settings and System menus.
 
-What remains is mostly *global* to the device rather than per preset: I/O port
-settings, Global EQ, modes, the Tuner, Gig View, Looper X, master volume, and the whole
-Device Settings menu. Within a preset the notable holes are creating a splitter,
-side-chaining, expression bypass, and `volume`/`pan`.
+What is left, roughly in order of usefulness: the Tuner and Looper X (both whole
+features with their own message types), creating a splitter, side-chaining, expression
+bypass, per-preset `volume`/`pan`, the directory's folders and favourites, and Neural
+Capture. Nothing left is blocked by a lack of leads - each row below names its
+candidate.
 
 ---
 
@@ -46,21 +47,21 @@ side-chaining, expression bypass, and `volume`/`pan`.
 | Switch scene | yes | `switch_scene()` |
 | Bank navigation | yes | any slot is addressable by name (`"28C"`) or index |
 | Master Volume level | no | `MasterVolume` is decoded and subscribed, so pushes can be read, but no wrapper and no write attempted |
-| Master Volume output assignment | no | manual: checkboxes assign the knob per output. Candidate `MasterVolume` / `IOSettings` |
-| Master Volume knob function (global vs per output) | no | a System setting. Candidate `GeneralSettings` |
+| Master Volume output assignment | partly | readable: `settings().master_volume_assignment{out12, out34, send12, headphones}`. Writing it is untested |
+| Master Volume knob function (global vs per output) | partly | in `GeneralSettings`, so reachable via `update_settings()`; not individually exercised |
 | Tuner: open/close | no | candidates `ShowTuner`, `Tuner`. Neither is decoded yet |
 | Tuner: reference pitch, input source, mute, Live Tuner | no | candidate `Tuner` |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_metronome_volume()`, `set_tempo_led()`, `set_tempo_param()` |
 | Per-scene tempo | no | `BinaryPreset.scene_tempo` exists and is unexplored |
-| Modes: read or set PRESET/SCENE/STOMP/HYBRID | no | `Mode` is decoded and subscribed; no wrapper, no write attempted |
+| Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
 | Modes: reorder, merge into HYBRID, remove | no | candidate `Mode`. Manual describes it as drag-and-drop only |
-| Gig View: open/close | no | `ShowGigView` is decoded and subscribed; `GigViewButton` is not decoded |
-| I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | no | `IOSettings` is decoded and subscribed. This library only reads its `plugged` flags |
-| I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | no | candidate `IOSettings` |
+| Gig View: open/close | yes | `set_gig_view()` |
+| I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `io_settings()` reads all of them and `set_input_level()` writes the gain; impedance, type and phantom are the same shape but untested |
+| I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | partly | `set_output_level()` confirmed; ground lift, mute and the `xlr1_2_linked`/`out3_4_linked` pairing flags are readable but untested |
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | no | candidate `IOSettings` |
-| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | no | `GlobalEQ` is decoded and subscribed; nothing written |
+| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` confirmed; `global_eq()` reads the 28 band parameters, writing them is untested |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
 | Footswitch presses, touch gestures, encoders | n/a | physical |
 
@@ -159,16 +160,16 @@ nothing has been written.
 
 | Feature | Status | Detail |
 |---|---|---|
-| GLOBAL BYPASS (Cab / IR Loader per row) | no | candidate `GeneralSettings`, or `GlobalEQ`-style dedicated message |
-| SCENE BYPASS BEHAVIOR (3 modes) | no | changes whether bypass edits persist per scene - directly relevant to `set_bypass` |
-| STOMP MODE BYPASS (auto-assign on load) | no | candidate `GeneralSettings` |
-| HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | no | candidate `GeneralSettings` |
-| LATENCY COMPENSATION | no | candidate `GeneralSettings` |
+| GLOBAL BYPASS (Cab / IR Loader per row) | partly | `settings().global_bypass_cab` / `_ir` read; writable in principle via `update_settings()`, untested |
+| SCENE BYPASS BEHAVIOR (3 modes) | yes | `set_scene_bypass_behavior()` with the `SceneBypassBehavior` enum. It decides what `set_bypass` persists |
+| STOMP MODE BYPASS (auto-assign on load) | partly | `stomp_mode_auto_assign` in `GeneralSettings`; reachable via `update_settings()`, untested |
+| HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | partly | all three read from `settings()`; reachable via `update_settings()`, untested |
+| LATENCY COMPENSATION | partly | `enable_dynamic_delay_compensation`; same as above |
 | Device name | no | candidate `Serialization`, `GeneralSettings` |
 | Firmware and serial | yes | `version()` |
 | Diagnostics (DSP, footswitches, USB) | no | `ModuleStats` is decoded and subscribed; `Diagnostics`, `DSPCommsDiagnostics` are not |
 | CorOS updates | no | `Updater` is decoded and subscribed; never driven. Risky to explore |
-| Wi-Fi, brightness, power sensitivity, storage, factory reset | no | candidate `GeneralSettings`. Factory reset should not be probed |
+| Brightness, power sensitivity, storage | yes | brightness confirmed (quantized: 30 reads back 31); disk space is reported. `power_option` and `reset_wifi_networks` are refused by `update_settings()` as commands |
 | Cloud sign-in and cloud backups | no | `CloudLogin`, `CloudBackup`, `BackupsForward` |
 | Local backups | no | `LocalBackup` |
 

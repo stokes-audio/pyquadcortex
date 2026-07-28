@@ -8,6 +8,53 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.12.0 - 2026-07-27
+
+Second exploration round against the manual audit, opening the global settings
+families - the largest area the audit found untouched. Nothing here is per preset:
+these change the UNIT, so there is nothing to save and nothing to recall to undo.
+Every field below was confirmed by writing it, reading it back, and restoring it.
+
+### Added
+
+- **`settings()` and `update_settings(**fields)`** for `GeneralSettings`, which turns
+  out to carry most of the unit's Device Settings and System menus in one message:
+  brightness (screen, LED, dimmed), the global Cab and IR bypasses, scene bypass
+  behaviour, STOMP auto-assign, hold timing, tempo/tuner swap, Gig View access, latency
+  compensation, MIDI channel and clock settings, power button sensitivity, the Master
+  Volume per-output assignment, Looper footswitch assignments and disk space.
+  `update_settings()` is sparse and validates field names. It deliberately REFUSES
+  `power_option` and `reset_wifi_networks`, which are commands rather than settings -
+  one can shut the unit down.
+- **`set_scene_bypass_behavior()`** and the `SceneBypassBehavior` enum. This one
+  matters beyond convenience: it decides what `set_bypass()` actually persists, so
+  under `NEVER_OVERWRITE` a bypass write is applied but not kept, which looks exactly
+  like a failed write.
+- **`io_settings()`, `set_input_level()`, `set_output_level()`.** Port writes are sparse
+  and keyed by port id - writing one input's level left the other three byte-identical.
+  `io_settings()` also reports impedance, input type, ground lift, mute, the headphone
+  and USB routing, expression pedal position, and `plugged` per port.
+- **`global_eq()` / `set_global_eq_bypassed()`**, **`mode()` / `set_mode()`**, and
+  **`set_gig_view()`**. `Mode.mode` is a SLOT index rather than a named mode, since the
+  slots are user-arranged and can be merged into HYBRID modes; `available_modes` lists
+  the configured slots.
+
+### Documentation
+
+Three things about global state that will otherwise waste someone's afternoon:
+
+- **State pushes can be partial.** A push following an UPDATE may carry only the field
+  that changed, so a reader has to wait for one that actually contains what it wants
+  rather than taking the first message of that type. The readers here do that.
+- **A read immediately after a write can return the previous value.** These are
+  eventually consistent like `File` listings are - a scene-bypass write read back as
+  the old value, and reading again a moment later showed the new one. Allow a settle
+  before deciding a write was refused.
+- **Values are quantized.** Brightness written as 30 reads back 31, and 60 as 59. Port
+  levels are float32, so they must be written at full precision to round-trip: writing
+  a six-decimal `0.769231` stored something measurably different from the
+  `0.769230783` already there, while writing `10/13` reproduced it exactly.
+
 ## 0.11.0 - 2026-07-27
 
 The first round of a manual-driven audit: [docs/manual-coverage.md](docs/manual-coverage.md)

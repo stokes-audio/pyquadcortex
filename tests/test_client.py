@@ -12,7 +12,7 @@ import pytest
 
 from pyquadcortex import catalog, client
 from pyquadcortex.enums import (Footswitch, Input, Instrument, MidiSource,
-                                Output, Setlist)
+                                Output, SceneBypassBehavior, Setlist)
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
@@ -1429,3 +1429,105 @@ def test_midi_out_builders_match_what_the_unit_stores():
     # An expression source sweeps, so even a plain CC carries min/max.
     assert client.MidiOut.expression_cc(channel=6, cc=40, minimum=12, maximum=13) \
         == (1, 6, 40, 12, 13)
+
+
+# -- global device settings ----------------------------------------------------
+# These change the unit rather than a preset, and there is nothing to save.
+# State pushes can be PARTIAL, so each reader waits for a push carrying the
+# field it needs rather than accepting the first one of that type.
+
+
+class StateTransport(FakeTransport):
+    """Serves a canned state push, recording the match predicate used."""
+
+    def __init__(self, push):
+        super().__init__()
+        self.push = push
+        self.matches = []
+
+    def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+        trigger()
+        self.matches.append(match)
+        return self.push
+
+
+def test_settings_reads_general_settings_and_requires_a_full_push():
+    full = pa.GeneralSettingsMessage(action=pa.MessageAction.UPDATE,
+                                     screen_brightness=50)
+    full.scene_block_bypass = 0
+    qc = client.QuadCortex(StateTransport(full))
+    got = qc.settings()
+    assert got.screen_brightness == 50
+    # the READ went out, and a push lacking scene_block_bypass is not accepted
+    assert qc._t.sent[-1].action == pa.MessageAction.READ
+    match = qc._t.matches[-1]
+    assert match(full) is True
+    assert match(pa.GeneralSettingsMessage(screen_brightness=1)) is False
+
+
+def test_update_settings_sends_only_the_named_fields():
+    qc = client.QuadCortex(FakeTransport())
+    qc.update_settings(screen_brightness=60, swap_tempo_tuner_access=True)
+    msg = qc._t.sent[-1]
+    assert msg.action == pa.MessageAction.UPDATE
+    assert msg.screen_brightness == 60
+    assert msg.swap_tempo_tuner_access is True
+    assert not msg.HasField("led_brightness")
+
+
+def test_update_settings_rejects_unknown_fields():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="no field"):
+        qc.update_settings(nonsense=1)
+    assert qc._t.sent == []
+
+
+def test_update_settings_refuses_the_power_and_wifi_commands():
+    # power_option can shut the unit down or reboot it; these are not settings.
+    qc = client.QuadCortex(FakeTransport())
+    for field in ("power_option", "reset_wifi_networks"):
+        with pytest.raises(ValueError, match="device commands"):
+            qc.update_settings(**{field: 1})
+    assert qc._t.sent == []
+
+
+def test_set_scene_bypass_behavior_writes_the_enum():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_scene_bypass_behavior(SceneBypassBehavior.NEVER_OVERWRITE)
+    assert qc._t.sent[-1].scene_block_bypass == 2
+
+
+def test_input_and_output_level_writes_are_sparse_and_port_keyed():
+    # One port per message: writing one input's level left the other three
+    # byte-identical on hardware.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_input_level(5, 0.25)
+    ports = qc._t.sent[-1].settings.in_port
+    assert len(ports) == 1
+    assert ports[0].input_port_id == 5
+    assert ports[0].level == pytest.approx(0.25)
+    assert not qc._t.sent[-1].settings.out_port
+
+    qc.set_output_level(9, 0.5)
+    out = qc._t.sent[-1].settings.out_port
+    assert (out[0].output_port_id, round(out[0].level, 3)) == (9, 0.5)
+
+
+def test_global_eq_and_mode_and_gig_view_writes():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_global_eq_bypassed(False)
+    assert qc._t.sent[-1].bypassed is False
+    qc.set_mode(2)
+    assert qc._t.sent[-1].mode == 2
+    qc.set_gig_view(True)
+    assert qc._t.sent[-1].show is True
+
+
+def test_mode_reader_waits_for_a_push_carrying_mode():
+    push = pa.ModeMessage(action=pa.MessageAction.UPDATE, mode=1)
+    push.available_modes.modes.extend([0, 1, 2])
+    qc = client.QuadCortex(StateTransport(push))
+    got = qc.mode()
+    assert got.mode == 1
+    assert list(got.available_modes.modes) == [0, 1, 2]
+    assert qc._t.matches[-1](pa.ModeMessage()) is False

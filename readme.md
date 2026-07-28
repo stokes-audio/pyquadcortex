@@ -189,6 +189,7 @@ These are all methods on the object `connect()` returns.
 | **Inspect a preset** | `blocks(preset)`, `splits(preset)`, `free_rows(preset)`, `param_options(preset, row, column, index)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
+| **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `io_settings()`, `set_input_level()`, `set_output_level()`, `global_eq()`, `set_global_eq_bypassed()`, `mode()`, `set_mode()`, `set_gig_view()` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 
 **Rows and columns are zero-based, and the unit displays rows 1 to 4.** `row=0` is

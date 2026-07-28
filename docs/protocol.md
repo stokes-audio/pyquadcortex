@@ -46,6 +46,7 @@ confirming each finding live against hardware.
   - [Per-preset tempo, LED and metronome](#per-preset-tempo-led-and-metronome)
   - [Grid block move](#grid-block-move)
   - [7.6 Per-preset MIDI Out](#76-per-preset-midi-out)
+  - [7.7b Global device settings](#77b-global-device-settings)
   - [7.7 File operations](#77-file-operations)
   - [7.8 Other observed traffic](#78-other-observed-traffic)
 - [8. Port, instrument, and preset enums](#8-port-instrument-and-preset-enums)
@@ -1178,6 +1179,58 @@ unit and reading the saved preset:
 Note that a plain CC means different things by source: a footswitch sends one value,
 while an expression pedal sweeps, so the unit asks for a range even for `type: 1`.
 
+### 7.7b Global device settings
+
+Unlike a preset edit, these change the UNIT: there is nothing to save, and nothing
+to recall in order to undo. Each is an ordinary `{action: UPDATE, <field>}` on its own
+message type, sparse - only the fields sent are changed - and each is confirmed on
+hardware by writing a value, reading it back, and restoring it.
+
+| message | confirmed writable | notes |
+|---|---|---|
+| `GeneralSettings` | `screen_brightness`, `led_brightness`, `scene_block_bypass` | most of the Device Settings and System menus in one message |
+| `IOSettings` | `in_port[].level`, `out_port[].level` | sparse and keyed by `input_port_id` / `output_port_id`; writing one port left the other three byte-identical |
+| `GlobalEQ` | `bypassed` | the unit also disables it itself under CPU pressure |
+| `Mode` | `mode` | a SLOT index, not a named mode |
+| `ShowGigView` | `show` | opens and closes Gig View |
+
+**`GeneralSettings` is where the Device Settings menu lives.** One READ returns
+`screen_brightness`, `led_brightness`, `dimmed_led_brightness`, the three
+`enable_*_dimmed` flags, `lock_screen_and_volume_knob`, `global_bypass_cab` and
+`global_bypass_ir`, `scene_block_bypass`, `stomp_mode_auto_assign`, `hold_timing`,
+`swap_tempo_tuner_access`, `gig_view_stomp_access_enabled`,
+`enable_dynamic_delay_compensation`, `midi_over_usb`, `midi_channel`,
+`ignore_duplicate_pc`, `internal_midi_clock_enabled`, `midi_clock_out`,
+`power_button_sensitivity`, `master_volume_assignment{out12, out34, send12,
+headphones}`, `looper_stomp_assignments`, `cloud_endpoint` and the
+`available_disk_space`/`total_disk_space` pair.
+
+**`scene_block_bypass` changes what `set_bypass` persists**, so it is worth reading
+before concluding a bypass write failed. Its three values are the manual's three
+choices: `ALWAYS_OVERWRITE` (the default), `NONSTOMP_OVERWRITE` (footswitch presses in
+STOMP mode are not saved) and `NEVER_OVERWRITE` (nothing is saved).
+
+**Do not confuse settings with commands.** `GeneralSettings.power_option` takes
+`SHUTDOWN`, `REBOOT`, `STANDBY` or `WAKE_UP`, and `reset_wifi_networks` discards saved
+networks. `QuadCortex.update_settings()` refuses both rather than risk an accident.
+
+**Two things to know before trusting a read-back.**
+
+*State pushes can be partial.* A push following an UPDATE may carry only what changed,
+so a reader must wait for one that actually contains the field it wants rather than
+taking the first message of that type. This library's readers do that.
+
+*A read immediately after a write can return the PREVIOUS value.* These pushes are
+eventually consistent in the same way `File` listings are: a scene-bypass write read
+back as the old value, and reading again a moment later showed the new one. Allow a
+settle, or re-read, before deciding a write was refused.
+
+**Values are quantized.** Brightness written as 30 read back as 31, and 60 as 59. Port
+levels are stored as float32, so a value must be written at full precision to
+round-trip: writing `0.769231` (six decimal places) stored something measurably
+different from the `0.769230783` already there, while writing `10/13` reproduced it
+exactly.
+
 ### 7.8 Other observed traffic
 
 - `Mode{action: UPDATE, mode: 0|1|2}` fires as the UI changes views.
@@ -1302,6 +1355,12 @@ visually on the device's own screen.
 | `set_midi_out` / `set_preset_load_midi_out` | `MIDISettings{UPDATE, general_midi_messages` or `preset_load_messages{messages{source, msg}}}` | read-back | per-preset MIDI Out. A `Grid` update carrying the preset's own midi fields does nothing |
 | `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
 | `param_options` | reads `Param.dynamic_steps` | read-back | the option names of a list parameter, which the catalog does not carry |
+| `settings` / `update_settings` | `GeneralSettings{READ}` / `{UPDATE, <fields>}` | read-back | the Device Settings and System menus; sparse. `power_option` and `reset_wifi_networks` are refused as commands rather than settings |
+| `set_scene_bypass_behavior` | `GeneralSettings{UPDATE, scene_block_bypass}` | read-back | global, and it decides what `set_bypass` persists |
+| `io_settings` / `set_input_level` / `set_output_level` | `IOSettings{READ}` / `{UPDATE, settings{in_port` or `out_port{port_id, level}}}` | read-back | sparse and port-keyed; also reports impedance, type, ground lift and `plugged` |
+| `global_eq` / `set_global_eq_bypassed` | `GlobalEQ{READ}` / `{UPDATE, bypassed}` | read-back | five bands reported as 28 parameters |
+| `mode` / `set_mode` | `Mode{READ}` / `{UPDATE, mode}` | read-back | a slot index; `available_modes` lists the configured slots |
+| `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
 | `set_input_gate` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |
 | `free_rows` | reads `models[]` + `Chain.split_control_points` | read-back | rows available for an independent chain: excludes the lane row of a branch, which is spoken for even when empty |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |

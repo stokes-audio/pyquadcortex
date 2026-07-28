@@ -166,3 +166,20 @@ class MidiOutType(IntEnum):
     CC = 1
     CC_TOGGLE = 2
     PC = 3
+
+
+class SceneBypassBehavior(IntEnum):
+    """How block bypass changes are kept when working with scenes.
+
+    This is a GLOBAL device setting, and it changes what
+    :meth:`~pyquadcortex.QuadCortex.set_bypass` actually persists - worth reading
+    before concluding a bypass write failed. The three values are the manual's
+    three choices, in its order.
+    """
+
+    #: Every bypass change is saved per scene. The device's default.
+    ALWAYS_OVERWRITE = 0
+    #: Footswitch presses in STOMP mode are not saved; touchscreen edits are.
+    NONSTOMP_OVERWRITE = 1
+    #: No bypass change is saved, by any method.
+    NEVER_OVERWRITE = 2
