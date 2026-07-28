@@ -1362,10 +1362,56 @@ key appears in the folder listing and works anywhere a setlist path does. So the
 documentation's 'User folders' at bank-select LSB 2-12 are folders a player creates,
 not fixed setlists.
 
-**Duplicating a setlist is NOT settled.** The unit's duplicate action broadcasts
+**Deleting a setlist works**, with `File{DELETE, folder{key, name}}` against the
+setlist's own key - the folder leaves the listing, subject to the usual eventual
+consistency.
+
+**Duplicating one is NOT settled.** The unit's duplicate action sends the same `File`
+CREATE for the destination and then broadcasts
 `BulkOperation{type: 0, source_folder{...}, destination_folder{...}}` with
-`progress_message: "Duplicating, please wait."`, but that is the device REPORTING
-progress: replaying the same shape host-to-device created nothing.
+`progress_message: "Duplicating, please wait."`. Doing both in that order from the host
+creates the destination and leaves it EMPTY, so the BulkOperation is the device
+reporting progress rather than the command that copies.
+
+### 7.7b3 Looper X, master volume, pinning, and the Global EQ
+
+**Looper X state.** `LooperStatus.state` was mapped by watching each transport
+control pressed in a known order:
+
+| state | meaning | how it was seen |
+|---|---|---|
+| 1 | idle / stopped | at rest, and after an UNDO removed the loop |
+| 2 | playing | after PLAY/STOP |
+| 4 | recording | after RECORD, with `loop_length` streaming upward |
+| 5 | armed | after RECORD with no signal present |
+
+`3` was never observed. Two things a caller should know: with nothing plugged in the
+Looper sits in **armed** indefinitely, because RECORD waits for the input to cross the
+threshold, and the other controls stay inert until it does. And **REVERSE and HALF SPEED
+do not change `state`** - they set `in_reverse` and `half_speed` while playback
+continues.
+
+**Master volume is READ-ONLY.** `MasterVolume.volume` is normalized 0..1 and maps
+linearly to the 0-100 on screen (the knob at 47 reported 0.471074373). A `MasterVolume`
+UPDATE carrying a new level is accepted and changes nothing, which fits the device's own
+pushes carrying `calibrate` rather than a setpoint.
+
+**Pinning a model** works, but not the way the other state types do:
+
+```
+PinnedModels{models: [<id>]}          <- note: NO action field
+```
+
+An `UPDATE` does nothing, which is why an earlier attempt read as a refusal. And the
+write **APPENDS** rather than replacing: pinning something already pinned leaves two
+entries for it. `action: DELETE` with an id removes EVERY entry for that id, which is
+how a duplicate gets cleaned up.
+
+**Global EQ parameter indices.** `parameters` is a flat list of 28
+`{parameter_index, value}` pairs, and writes are sparse by index. One index is pinned to
+a control: setting **band 3's GAIN to +6 dB** on the unit left index **10** at `0.75`,
+consistent with a -12..+12 dB range mapped onto 0..1. The rest of the layout is not
+established.
 
 ### 7.7c The folder tree, and what else is enumerable
 
@@ -1523,6 +1569,9 @@ visually on the device's own screen.
 | `set_param_option` | `Grid{UPDATE, ..., params{index, param_values{float_value}}}` | read-back + on-unit | picks a list parameter's option by name; the value is `index / (count - 1)` |
 | `set_output_mute` | `IOSettings{UPDATE, settings{out_port{output_port_id, mute}}}` | read-back + on-unit | must travel ALONE; dropped if another field shares the port entry |
 | `set_tuner_reference` | `Tuner{UPDATE, frequency}` | read-back + on-unit | an OFFSET in Hz from 440 |
+| `master_volume` | `MasterVolume{READ}` | read-back | READ-ONLY: 0..1 mapping to the 0-100 on screen; a write is ignored |
+| `pin_model` / `unpin_model` / `pinned_models` | `PinnedModels{models}` with NO action / `{DELETE, models}` | read-back + on-unit | pinning APPENDS and can duplicate; DELETE removes every entry for an id |
+| `delete_setlist` | `File{DELETE, folder{key, name}}` | read-back | removes the setlist and its contents |
 | `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root, not children of My Presets |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | the single splitter/mixer MUTE; reported back in `mixBypass`, and one write sets all eight scenes |
 | `set_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence; an UPDATE alone leaves the old assignment |

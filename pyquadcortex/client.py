@@ -1585,9 +1585,16 @@ class QuadCortex:
         top-level ``one_shot_play``, ``sync_start_waiting`` and
         ``quantize_enabled``.
 
-        Readable; DRIVING the transport is not implemented, because what the
-        ``state`` numbers mean has not been established - the manual notes MIDI
-        CC#48-61 control the Looper, which is a second route worth comparing.
+        ``status.state`` values are in :class:`~pyquadcortex.enums.LooperState`,
+        mapped by watching each transport control being pressed in a known order.
+        Two things worth knowing from that session: with nothing plugged in the
+        Looper sits in ``ARMED`` forever and its other controls stay inert, since
+        RECORD waits for a signal to cross the threshold; and REVERSE and HALF
+        SPEED do not change ``state`` at all, they set ``in_reverse`` and
+        ``half_speed`` while playback continues.
+
+        Readable only - the transport is not driven from here. The manual notes
+        MIDI CC#48-61 control the Looper, which is the other available route.
         """
         return self._read_state(pa.LooperMessage, lambda m: m.HasField("status"),
                                 timeout)
@@ -1878,6 +1885,62 @@ class QuadCortex:
         msg.folder.is_factory = False
         self._file_operation(msg)
         return f"{USER_SETLIST_ROOT}/{name}"
+
+    def master_volume(self, timeout: float = 10.0):
+        """The Master Volume state.
+
+        ``volume`` is normalized 0..1 and maps linearly to the 0-100 the unit
+        displays: the knob left at 47 on screen reported 0.471074373.
+
+        Read-only. A ``MasterVolume`` UPDATE carrying a new level is accepted and
+        changes nothing - the knob appears to be the only way to move it, which
+        also fits the device's own pushes carrying ``calibrate`` rather than a
+        setpoint. There is deliberately no setter here.
+        """
+        return self._read_state(pa.MasterVolumeMessage,
+                                lambda m: m.HasField("volume"), timeout)
+
+    def pinned_models(self, timeout: float = 8.0):
+        """Which models are pinned to the top of their category, as ids."""
+        msg = self._read_state(pa.PinnedModelsMessage, lambda m: True, timeout)
+        return list(msg.models) if msg is not None else []
+
+    def pin_model(self, model):
+        """Pin a model to the top of its category in the device list.
+
+        Note the shape: the unit's own broadcast carries **no action field**, and
+        an UPDATE does nothing - which is why an earlier attempt looked refused.
+
+        **Pinning APPENDS.** The list is not replaced and not de-duplicated:
+        pinning something already pinned leaves two entries for it. Check
+        :meth:`pinned_models` first if that matters.
+        """
+        msg = pa.PinnedModelsMessage()
+        msg.models.append(int(getattr(model, "id", model)))
+        return self._t.send(msg)
+
+    def unpin_model(self, model):
+        """Unpin a model, removing EVERY entry for it.
+
+        ``PinnedModels`` with action DELETE. Removes all occurrences, which is how
+        a duplicated pin gets cleaned up.
+        """
+        msg = pa.PinnedModelsMessage(action=pa.MessageAction.DELETE)
+        msg.models.append(int(getattr(model, "id", model)))
+        return self._t.send(msg)
+
+    def delete_setlist(self, name: str):
+        """Delete a setlist and whatever it holds.
+
+        ``File{DELETE, folder{key, name}}`` against the setlist's own key.
+        Confirmed: the folder disappears from the listing. Like the other file
+        operations this is eventually consistent, so re-enumerate rather than
+        checking immediately.
+        """
+        msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
+        msg.folder.key = f"{USER_SETLIST_ROOT}/{name}"
+        msg.folder.name = name
+        return self._file_operation(msg)
 
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
                          timeout: float = 45.0, interval: float = 2.0):

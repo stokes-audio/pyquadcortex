@@ -1904,3 +1904,55 @@ def test_create_setlist_uses_a_sibling_path_under_the_presets_root():
     assert folder.name == "probe"
     assert folder.is_factory is False
     assert "My Presets" not in folder.key, "a setlist is not nested inside My Presets"
+
+
+# -- master volume, pinning, setlist deletion ----------------------------------
+
+
+def test_master_volume_is_readable_and_has_no_setter():
+    # The wire is 0..1 mapping to the 0-100 on screen: 47 read back 0.471074373.
+    # A write is accepted and changes nothing, so no setter is offered.
+    push = pa.MasterVolumeMessage(action=pa.MessageAction.UPDATE, volume=0.471074373)
+    qc = client.QuadCortex(StateTransport(push))
+    assert round(qc.master_volume().volume * 100) == 47
+    assert qc._t.matches[-1](pa.MasterVolumeMessage()) is False
+    assert not hasattr(qc, "set_master_volume")
+
+
+def test_pin_model_sends_no_action_because_update_does_nothing():
+    # The unit's own broadcast carries no action field; an UPDATE is ignored.
+    qc = client.QuadCortex(FakeTransport())
+    qc.pin_model(4006)
+    msg = qc._t.sent[-1]
+    assert list(msg.models) == [4006]
+    assert msg.action == pa.MessageAction.CREATE, "the default action, as the unit sends"
+
+
+def test_unpin_model_uses_delete():
+    qc = client.QuadCortex(FakeTransport())
+    qc.unpin_model(4006)
+    msg = qc._t.sent[-1]
+    assert msg.action == pa.MessageAction.DELETE
+    assert list(msg.models) == [4006]
+
+
+def test_pin_model_accepts_a_catalog_model():
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    qc.pin_model(qc._catalog[5005])
+    assert list(qc._t.sent[-1].models) == [5005]
+
+
+def test_delete_setlist_addresses_the_folder_key():
+    qc = client.QuadCortex(FakeTransport())
+    qc.delete_setlist("probe")
+    msg = qc._t.sent[-1]
+    assert msg.action == pa.MessageAction.DELETE
+    assert msg.folder.key == "/media/p4/Presets/probe"
+    assert msg.folder.name == "probe"
+
+
+def test_looper_state_enum_omits_the_value_never_observed():
+    from pyquadcortex.enums import LooperState
+    assert [int(s) for s in LooperState] == [1, 2, 4, 5]
+    assert 3 not in [int(s) for s in LooperState], "3 was never seen; do not invent it"

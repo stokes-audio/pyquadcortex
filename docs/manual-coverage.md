@@ -20,20 +20,20 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **57 yes**, **17 partly**, **18 no**, **8 n/a**.
+Of 100 features audited: **59 yes**, **18 partly**, **15 no**, **8 n/a**.
 
-Of the 92 features a host could plausibly drive, **57 are fully covered** and 17 more
+Of the 92 features a host could plausibly drive, **59 are fully covered** and 18 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
-exercised. Only 18 remain untouched.
+exercised. Only 15 remain untouched.
 
-Five rounds got it there. Four were solo - the per-preset non-audio gap (footswitch
+Six rounds got it there. Four were solo - the per-preset non-audio gap (footswitch
 assignments, expression assignments, Preset MIDI Out), then the global settings families,
 then block moves and branches and the I/O ports and folder discovery, then the remaining
-settings submessages. The fifth was a capture session with the owner at the unit, which
-settled five things no amount of host-side probing would have: the side-chain SOURCE,
-output mute, the tuner's reference pitch, creating a setlist, and one expression-bypass
-mode.
+settings submessages. Two were capture sessions with the owner at the unit, and they settled nine things no
+amount of host-side probing would have: the side-chain SOURCE, output mute, the tuner's
+reference pitch, creating a setlist, an expression-bypass mode, the Looper's state
+numbering, the master volume scale, how pinning is written, and one Global EQ index.
 
 What is left falls into two kinds. Some writes are **confirmed no-ops**, so the shape is
 something else: preset `volume`/`pan`, `scene_tempo`, preset tags, pinning a model, and
@@ -51,7 +51,7 @@ Both kinds are listed with what to do about them in
 | Recall a preset | yes | `recall_preset()`, `read_preset()` |
 | Switch scene | yes | `switch_scene()` |
 | Bank navigation | yes | any slot is addressable by name (`"28C"`) or index |
-| Master Volume level | no | `MasterVolume` is decoded and subscribed, so pushes can be read, but no wrapper and no write attempted |
+| Master Volume level | partly | `master_volume()` reads it (0..1 mapping to the 0-100 on screen). READ-ONLY: a write is accepted and ignored, so there is no setter |
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | partly | in `GeneralSettings`, so reachable via `update_settings()`; not individually exercised |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
@@ -77,7 +77,7 @@ Both kinds are listed with what to do about them in
 | Grid layout: 4 rows x 8 slots | yes | `blocks()`; rows are 0-based here and 1-4 on screen |
 | Which rows are free for a new chain | yes | `free_rows()`, which excludes a branch's lane row |
 | Browse the virtual device list | yes | `catalog` - the device's own ModelRepo, so it covers purchased and captured content |
-| Pin a device to the top of its category | no | a `PinnedModels` UPDATE listing model ids was accepted and pinned nothing |
+| Pin a device to the top of its category | yes | `pin_model()` / `unpin_model()` / `pinned_models()`. The write carries NO action field - an UPDATE is ignored - and pinning APPENDS rather than replacing |
 | Place or replace a block | yes | `set_block()`, which verifies the device accepted the cell |
 | Remove a block | yes | `remove_block()` (the DELETE action; an UPDATE with `hash: 0` is ignored) |
 | Move a block | yes | `move_block(from_row, from_col, to_row, to_col)`; a cross-row move makes the device create a branch |
@@ -103,7 +103,7 @@ Both kinds are listed with what to do about them in
 | Expression pedal calibration | no | candidate `IOSettings`. Manual calls it a global setting |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | it is an ordinary catalog model |
-| Looper X: transport actions and parameters | partly | `looper()` reads the full status; the transport is not driven because the `state` numbering is unestablished |
+| Looper X: transport actions and parameters | partly | `looper()` reads the full status and `LooperState` names the states (mapped by watching each control pressed). The transport is not driven from here; MIDI CC#48-61 is the documented route |
 | Undo / redo | no | `UndoRedo` is decoded and subscribed. It arrives after accepted grid edits - useful as an acceptance signal |
 
 ## 05 The Directory
@@ -116,13 +116,13 @@ Both kinds are listed with what to do about them in
 | Preset descriptive tags | no | proven unwritable by three routes; a saved preset carries none at all |
 | Preset description, author, cloud id | no | ignored by a `Grid` update. The device stamps `author_name` from the signed-in cloud account on every save |
 | Preset volume and pan | no | ignored by a `Grid` update AND by `ProductData.gain` on the save. No route found |
-| Delete a preset | yes | `delete_preset()`, eventually consistent |
+| Delete a preset | yes | `delete_preset()`, eventually consistent. `delete_setlist()` removes a whole setlist |
 | Move a preset | yes | `move_preset()`, same-setlist only observed |
 | Factory and My Presets setlists | yes | `Setlist.FACTORY`, `Setlist.USER` |
 | User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. CC#32's 'User folders' 2-12 are created, not built in |
 | Create a folder, nested navigation | yes | `create_setlist(name)`. The earlier failure was the path: setlists are siblings under `/media/p4/Presets`, not children of My Presets |
 | Favorites and Recents | partly | `favorites()` reads them (name, folder key, folder name); writing is untested |
-| Bulk actions | no | `BulkOperation` reports progress (a setlist duplicate broadcasts source and destination folders), but replaying that shape host-to-device did nothing |
+| Bulk actions | no | `BulkOperation` reports progress. Reproducing a setlist duplicate - create the destination, then send the BulkOperation - creates the destination and leaves it empty, so that message is not the command |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
 | Neural Captures: list | yes | the catalog covers the unit's own capture slots, and `list_folders()` exposes the 2062-entry factory Captures Library grouped into 176 per-amp folders |

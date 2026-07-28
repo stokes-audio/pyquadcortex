@@ -8,6 +8,51 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.16.0 - 2026-07-28
+
+Second interactive capture session, and the results split neatly: three features gained,
+one method removed because testing proved it does not work, and one claim deliberately
+left unconfirmed.
+
+### Added
+
+- **`looper()` state names** - `LooperState`, mapped by watching each transport control
+  pressed in a known order: 1 idle, 2 playing, 4 recording, 5 armed. `3` was never
+  observed and is deliberately absent. Two behaviours worth knowing: with nothing plugged
+  in the Looper sits in ARMED indefinitely, because RECORD waits for a signal to cross
+  the threshold and the other controls stay inert; and REVERSE and HALF SPEED do not
+  change `state` at all, they set `in_reverse` and `half_speed` while playback continues.
+- **`master_volume()`** - the level as a normalized 0..1, mapping linearly to the 0-100
+  the unit shows (47 on screen read 0.471074373).
+- **`pin_model()`, `unpin_model()`, `pinned_models()`** - pinning a model to the top of
+  its category. The write carries **no action field** (an UPDATE is ignored, which is why
+  an earlier attempt looked refused), and it **APPENDS** rather than replacing, so
+  pinning something twice leaves two entries. DELETE removes every entry for an id.
+- **`delete_setlist(name)`** - removes a setlist and its contents.
+
+### Removed before it shipped
+
+There is no `set_master_volume()`. The read mapping was clear enough to write one, but a
+`MasterVolume` UPDATE carrying a new level is accepted and changes nothing - the knob
+appears to be the only way to move it, which fits the device's own pushes carrying
+`calibrate` rather than a setpoint.
+
+### Left unconfirmed on purpose
+
+`ExpressionBypassMode.STOP = 2` remains the only confirmed value. The cycle captured in
+this session - `2, 0, 1, 2` across three presses of one control - could not be aligned
+with the order reported from the screen, and it conflicts with the earlier session where
+Stop was chosen directly and stored 2. Rather than pick a reading, HEEL_TOE and SWITCH
+stay marked as assumed from the manual's ordering.
+
+### Documented
+
+Global EQ index 10 is band 3's GAIN: setting +6 dB on the unit left it at 0.75,
+consistent with a -12..+12 dB range. The rest of the 28-index layout is still unknown.
+Duplicating a setlist is still unsettled - reproducing the unit's create-then-BulkOperation
+sequence creates the destination and leaves it empty, so that message reports progress
+rather than performing the copy.
+
 ## 0.15.0 - 2026-07-28
 
 First interactive capture session: five things that host-side probing could not settle,

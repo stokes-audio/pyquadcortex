@@ -196,3 +196,27 @@ class ExpressionBypassMode(IntEnum):
     HEEL_TOE = 0
     SWITCH = 1
     STOP = 2
+
+
+class LooperState(IntEnum):
+    """What the Looper X is doing (``LooperStatus.state``).
+
+    Mapped by watching the owner press each transport control in a known order:
+    RECORD, PLAY/STOP, REVERSE, HALF SPEED, UNDO. The device reported 5 while
+    waiting for a signal, 4 once recording actually began, 2 on play, and 1 after
+    the undo removed the loop. REVERSE and HALF SPEED did not change the state at
+    all - they set ``in_reverse`` and ``half_speed`` while playback continued.
+
+    ``3`` was never observed and is deliberately absent; overdub is the obvious
+    candidate but nothing here establishes it.
+    """
+
+    #: Stopped, with no loop playing.
+    IDLE = 1
+    #: Playing back.
+    PLAYING = 2
+    #: Recording.
+    RECORDING = 4
+    #: Armed, waiting for an input signal to cross the threshold. The Looper sits
+    #: here indefinitely with nothing plugged in, and the other controls stay inert.
+    ARMED = 5

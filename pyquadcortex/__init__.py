@@ -11,7 +11,7 @@ See the readme for a tour, and ``docs/`` for the protocol and internals.
 
 import logging
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"
 
 # A library must not write to the application's console. Without a handler,
 # Python's handler of last resort prints WARNING and above to stderr, so a
@@ -29,7 +29,8 @@ from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL,
                                  preset_load_midi_out, slot_to_position, splits,
                                  stomp_assignments)  # noqa: E402
 from pyquadcortex.enums import (Footswitch, Input, Instrument, MidiOutType,
-                                ExpressionBypassMode, MidiSource, Output, Scene,
+                                ExpressionBypassMode, LooperState, MidiSource,
+                                Output, Scene,
                                 SceneBypassBehavior, Setlist)
 from pyquadcortex.session import DeviceNotFoundError, connect, open_device
 from pyquadcortex import models  # noqa: E402  generated factory-block constants
@@ -51,6 +52,7 @@ __all__ = [
     "MidiOutType",
     "SceneBypassBehavior",
     "ExpressionBypassMode",
+    "LooperState",
     "USER_SETLIST_ROOT",
     "option_value",
     "option_at",
