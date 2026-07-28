@@ -992,32 +992,41 @@ That does NOT hold for a parameter whose options enumerate the preset's blocks -
 Doubler's TRIGGER publishes `steps=45` while the real list is 19 to 25 entries. For those
 the preset's `dynamic_steps` is authoritative. Tempo parameters carry no `dynamic_steps`
 at all, so their option NAMES are not available from the device, and the manual does not
-enumerate them either. Confirmed pairings so far, from a named walk plus the factory defaults of 28A:
+enumerate them either. **All four lists are now named**, read off the unit's own dropdowns top to bottom, with
+the ordering confirmed by selecting the LAST entry of each and seeing the wire store
+exactly 1.0:
 
-| control | option | is |
-|---|---|---|
-| SUBDIVISIONS | 0 | 1/4 notes |
-| SUBDIVISIONS | 1 | 1/8 notes |
-| TIME SIGNATURE | 1 | 3/4 |
-| TIME SIGNATURE | 2 | 4/4 |
-| SOUND | 1 | Block |
-| ROUTING | 0 | HP |
-| ROUTING | 3 | OUT 3/4 |
+| control | options, in order |
+|---|---|
+| SUBDIVISIONS (4) | `1/4`, `1/8`, `1/8T`, `1/16` |
+| ROUTING (5) | `MULTI`, `HP`, `OUT 1/2`, `OUT 3/4`, `SEND 1/2` |
+| SOUND (6) | `BLIP`, `BLOCK`, `COWBELL`, `DIGITAL`, `DRUM KIT`, `SOFT KIT` |
+| TIME SIGNATURE (21) | `2/4` to `13/4`, then `3/8`, `6/8`, `9/8`, `12/8`, then `5/8 (3+2)`, `5/8 (2+3)`, `7/8 (3+2+2)`, `7/8 (2+3+2)`, `7/8 (2+2+3)` |
 
-The remaining options are unnamed. Enum types for these are deliberately NOT shipped:
-a partial enum reads as a complete one, and two of five options named is not enough to
-put a name to.
+Every earlier one-off pairing agrees: 1/8 notes stored 0.3333 (option 1 of 4), 3/4 stored
+0.05 (option 1 of 21), the factory default 0.1 is 4/4 (option 2), Block stored 0.2 (option
+1 of 6), OUT 3/4 stored 0.75 (option 3 of 5). They are the enums
+`TempoSubdivision`, `MetronomeRouting`, `MetronomeSound` and `TimeSignature`.
+
+One correction: an earlier note had ROUTING option 0 as the headphones. It is `MULTI` -
+the wrong reading came from assuming an operator's starting point matched the factory
+default.
+
+**Changing the time signature also rewrites STEPSTATE parameters.** Selecting the last
+signature wrote indices 6, 12 and 14 together - `STEPSTATE2` and `STEPSTATE4` - so those
+hold the per-beat accent pattern the manual describes as "how accents are distributed".
 
 **In the stored preset these params are POSITIONAL.** All 24 arrive with `index` absent,
 so position is the index - the same convention as `models[]`. A host WRITE does set
 `index`; it is only the device's stored form that omits it. `pyquadcortex.tempo_params()`
 reads them positionally.
 
-**The menu's MODE control (global or per-preset tempo) broadcast nothing** when toggled.
-The likely reason, from the operator: the menu was not confirmed with OK until the end of
-the session, and MODE governs where the tempo is persisted - so it may only be applied on
-commit. The preset was also never saved. Worth a dedicated experiment rather than
-recording as unreachable.
+**The menu's MODE control (global or per-preset tempo) is NOT on the wire.** It broadcast
+nothing when toggled, and a dedicated test settled that this is not a matter of
+committing: toggling to GLOBAL, pressing OK, toggling back to PRESET, pressing OK again
+and then saving the preset produced no `Grid`, `GlobalTempo` or `GeneralSettings` traffic
+of any kind. So it is either carried by a message this project has never seen or is not
+broadcast at all.
 
 Two related dead ends, for the record. `GlobalTempo` is global rather than
 per-preset and, when READ, returned only a running clock (`current_beat`,

@@ -186,7 +186,8 @@ These are all methods on the object `connect()` returns.
 | **Footswitches** | `set_stomp_assignment(row, column, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `stomp_assignments(preset)` |
 | **Expression pedals** | `set_expression(row, column, param, pedal, minimum, maximum)` |
 | **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `midi_out(preset)` |
-| **Per-preset tempo** | `set_tempo_param(name, ...)` by screen name (TEMPO, MUTE, SUBDIVISIONS, SOUND, ROUTING...), `tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
+| **Per-preset tempo** | `set_tempo_param(name, ...)`, `set_tempo_option(name, n)`, `tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
+| **Metronome** | `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()` - all taking full enums |
 | **Inspect a preset** | `blocks(preset)`, `splits(preset)`, `free_rows(preset)`, `param_options(preset, row, column, index)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |

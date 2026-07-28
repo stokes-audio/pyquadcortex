@@ -8,6 +8,43 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.23.0 - 2026-07-28
+
+### Added
+
+Complete, named enums for the metronome's four list controls - read off the unit's own
+dropdowns and ordered, so these are the real option sets rather than a partial guess:
+
+- **`TempoSubdivision`** (4): QUARTER, EIGHTH, EIGHTH_TRIPLET, SIXTEENTH.
+- **`MetronomeRouting`** (5): MULTI, HEADPHONES, OUT_1_2, OUT_3_4, SEND_1_2.
+- **`MetronomeSound`** (6): BLIP, BLOCK, COWBELL, DIGITAL, DRUM_KIT, SOFT_KIT.
+- **`TimeSignature`** (21): 2/4 through 13/4, the 3/8 family, and the compound 5/8 and
+  7/8 signatures with their accent groupings.
+
+Plus typed setters that take them and range-check anything else:
+`set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`,
+`set_time_signature()`.
+
+Each list's length matches the count the catalog publishes, the ordering was confirmed by
+selecting the last entry and watching the wire store exactly 1.0, and every earlier
+one-off pairing agrees - 1/8 notes stored 0.3333, 3/4 stored 0.05, the factory default is
+4/4, Block stored 0.2, OUT 3/4 stored 0.75.
+
+### Corrected
+
+An earlier note put ROUTING option 0 at the headphones. It is MULTI. That guess came from
+assuming an operator's starting point matched the factory default, which is not a safe
+inference and produced a wrong answer.
+
+### Settled
+
+The Tempo menu's MODE (global vs per-preset) is **not on the wire**. A dedicated test
+ruled out the commit theory: toggling to GLOBAL, pressing OK, toggling back, pressing OK
+again and then saving the preset produced no traffic of any kind.
+
+Also noted: changing the time signature rewrites some `STEPSTATE` parameters, which hold
+the per-beat accent pattern.
+
 ## 0.22.0 - 2026-07-28
 
 Type-safety for the list-valued parameters, which is the shape the rest of the library

@@ -27,20 +27,21 @@ are partly covered - which here means the state is readable and at least one fie
 is confirmed writable, with the neighbours the same shape but not individually
 exercised. Only 14 remain untouched.
 
-Six rounds got it there. Four were solo - the per-preset non-audio gap (footswitch
-assignments, expression assignments, Preset MIDI Out), then the global settings families,
-then block moves and branches and the I/O ports and folder discovery, then the remaining
-settings submessages. Two were capture sessions with the owner at the unit, and they settled nine things no
-amount of host-side probing would have: the side-chain SOURCE, output mute, the tuner's
-reference pitch, creating a setlist, an expression-bypass mode, the Looper's state
-numbering, the master volume scale, how pinning is written, and one Global EQ index.
+Four solo rounds and several sessions with the owner at the unit got it there. The solo
+rounds closed the per-preset non-audio gap (footswitch assignments, expression
+assignments, Preset MIDI Out), the global settings families, block moves and branches and
+the I/O ports and folder discovery, and the settings submessages. The sessions at the unit
+settled what no host-side probing could: the side-chain SOURCE, output mute, the tuner's
+reference pitch, creating a setlist, the expression-bypass numbering, the Looper's states,
+the master volume scale, how pinning is written, the Global EQ's whole 28-index layout,
+and every option of the metronome's four lists.
 
-What is left falls into two kinds. Some writes are **confirmed no-ops**, so the shape is
-something else: preset `volume`/`pan`, `scene_tempo`, preset tags, pinning a model, and
-duplicating a setlist. The rest is **semantics** - shapes that work but whose numbering
-needs an eye on the unit, like the Looper's `state` and the Global EQ parameter indices.
-Both kinds are tracked outside this repo, since a list of open build questions is not
-documentation of the library.
+What is left is of two kinds. A few writes are **confirmed no-ops** with no route found:
+preset tags, and duplicating a setlist as a device operation (the library does it by
+recall-and-save instead). A few features are **simply not on the wire** - the Tempo
+menu's MODE and the HYBRID mode pairing both broadcast nothing, even on commit. And two
+whole features remain unexplored because they need the physical world: Neural Capture, and
+loading from the factory Captures Library.
 
 ---
 
@@ -58,7 +59,7 @@ documentation of the library.
 | Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` and `set_tuner_reference()` confirmed, the latter an OFFSET in Hz from 440 (442 and 445 both measured). Tuner `mute` and Live Tuner are untested |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
-| Metronome level, LED, time signature, note length | yes | `set_tempo_param()` with screen names via `TEMPO_PARAMS` - TEMPO, LED LIGHT, VOLUME, MUTE, PAN, TIME SIGNATURE, SUBDIVISIONS, SOUND, ROUTING - plus `tempo_params()` to read them. The menu's MODE is not reachable |
+| Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is not on the wire at all |
 | Per-scene tempo | n/a | `scene_tempo` is ignored and reads back empty, and the unit has no per-scene tempo - its Tempo MODE is global or per preset, nothing finer |
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
 | Modes: reorder, merge into HYBRID, remove | partly | `set_mode_cycle([...])` reorders and removes slots. Merging into a HYBRID slot produces NO broadcast at all, so whatever holds the pairing has not been seen |

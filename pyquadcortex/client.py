@@ -34,8 +34,9 @@ from typing import NamedTuple
 
 from pyquadcortex import catalog, registry
 from pyquadcortex.enums import (Footswitch, Input, Instrument,  # noqa: F401
-                                MidiOutType, MidiSource, Output,
-                                SceneBypassBehavior, Setlist)
+                                MetronomeRouting, MetronomeSound, MidiOutType,
+                                MidiSource, Output, SceneBypassBehavior, Setlist,
+                                TempoSubdivision, TimeSignature)
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
@@ -892,6 +893,34 @@ Two of those names disagree with the catalog, which is why the map
                 index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
         spec = self.catalog[self.TEMPO_CONTROL].parameters[index]
         return self.set_tempo_param(index, value=spec.option_to_value(option))
+
+    def set_tempo_subdivision(self, subdivision: "TempoSubdivision"):
+        """Set the metronome's SUBDIVISIONS, by name rather than by number.
+
+        Takes a :class:`~pyquadcortex.enums.TempoSubdivision`. A plain int is
+        accepted and range-checked - an unknown one raises rather than storing a
+        value that means nothing.
+        """
+        return self.set_tempo_option("SUBDIVISIONS", int(TempoSubdivision(subdivision)))
+
+    def set_metronome_sound(self, sound: "MetronomeSound"):
+        """Set the metronome's SOUND. Takes a
+        :class:`~pyquadcortex.enums.MetronomeSound`."""
+        return self.set_tempo_option("SOUND", int(MetronomeSound(sound)))
+
+    def set_metronome_routing(self, routing: "MetronomeRouting"):
+        """Set where metronome playback goes. Takes a
+        :class:`~pyquadcortex.enums.MetronomeRouting`."""
+        return self.set_tempo_option("ROUTING", int(MetronomeRouting(routing)))
+
+    def set_time_signature(self, signature: "TimeSignature"):
+        """Set the metronome's time signature. Takes a
+        :class:`~pyquadcortex.enums.TimeSignature`.
+
+        Note the device also rewrites some ``STEPSTATE`` parameters when this
+        changes - they hold the per-beat accents.
+        """
+        return self.set_tempo_option("TIME SIGNATURE", int(TimeSignature(signature)))
 
     def set_tempo_led(self, on: bool):
         """Turn this preset's TEMPO LED on or off."""

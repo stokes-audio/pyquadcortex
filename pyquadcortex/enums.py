@@ -248,3 +248,75 @@ class GlobalEQFilter(IntEnum):
     LOW_PASS = 2
     HIGH_SHELF = 3
     LOW_SHELF = 4
+
+
+class TempoSubdivision(IntEnum):
+    """Metronome SUBDIVISIONS - the rhythmic pulses per beat.
+
+    Read off the unit's own list, top to bottom, and the ordering confirmed by
+    selecting the last entry and seeing the wire store exactly 1.0. Four options,
+    so the wire value is ``option / 3``.
+    """
+
+    QUARTER = 0            #: "1/4"
+    EIGHTH = 1             #: "1/8"
+    EIGHTH_TRIPLET = 2     #: "1/8T"
+    SIXTEENTH = 3          #: "1/16"
+
+
+class MetronomeSound(IntEnum):
+    """Metronome SOUND. Six options, so the wire value is ``option / 5``."""
+
+    BLIP = 0
+    BLOCK = 1
+    COWBELL = 2
+    DIGITAL = 3
+    DRUM_KIT = 4
+    SOFT_KIT = 5
+
+
+class MetronomeRouting(IntEnum):
+    """Where metronome playback is sent. Five options, wire value ``option / 4``.
+
+    Note MULTI is FIRST: an earlier guess that option 0 was the headphones came from
+    assuming an operator's starting point matched the factory default, and was wrong.
+    """
+
+    MULTI = 0          #: "MULTI"
+    HEADPHONES = 1     #: "HP"
+    OUT_1_2 = 2        #: "OUT 1/2"
+    OUT_3_4 = 3        #: "OUT 3/4"
+    SEND_1_2 = 4       #: "SEND 1/2"
+
+
+class TimeSignature(IntEnum):
+    """Metronome T/SIGNATURE. Twenty-one options, wire value ``option / 20``.
+
+    The compound signatures carry their grouping, as the unit displays it - 5/8 and
+    7/8 each appear more than once with different accent patterns.
+
+    Changing this also rewrites some of the ``STEPSTATE`` parameters, which hold the
+    per-beat accents.
+    """
+
+    TWO_FOUR = 0
+    THREE_FOUR = 1
+    FOUR_FOUR = 2
+    FIVE_FOUR = 3
+    SIX_FOUR = 4
+    SEVEN_FOUR = 5
+    EIGHT_FOUR = 6
+    NINE_FOUR = 7
+    TEN_FOUR = 8
+    ELEVEN_FOUR = 9
+    TWELVE_FOUR = 10
+    THIRTEEN_FOUR = 11
+    THREE_EIGHT = 12
+    SIX_EIGHT = 13
+    NINE_EIGHT = 14
+    TWELVE_EIGHT = 15
+    FIVE_EIGHT_3_2 = 16    #: "5/8 (3+2)"
+    FIVE_EIGHT_2_3 = 17    #: "5/8 (2+3)"
+    SEVEN_EIGHT_3_2_2 = 18  #: "7/8 (3+2+2)"
+    SEVEN_EIGHT_2_3_2 = 19  #: "7/8 (2+3+2)"
+    SEVEN_EIGHT_2_2_3 = 20  #: "7/8 (2+2+3)"

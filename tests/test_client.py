@@ -2202,3 +2202,74 @@ def test_tempo_params_reads_positionally_because_the_device_omits_the_index():
 
 def test_tempo_params_is_empty_when_the_preset_carries_none():
     assert client.tempo_params(preset.BinaryPreset()) == {}
+
+
+# -- metronome option enums ----------------------------------------------------
+# Read off the unit's own dropdowns, top to bottom, with the ordering confirmed by
+# selecting the LAST entry of each and seeing the wire store exactly 1.0. Every
+# earlier one-off pairing agrees: 1/8 notes = 1, 3/4 = 1, 4/4 = 2, BLOCK = 1,
+# OUT 3/4 = 3.
+
+
+def test_the_option_lists_match_the_counts_the_catalog_publishes():
+    from pyquadcortex.enums import (MetronomeRouting, MetronomeSound,
+                                    TempoSubdivision, TimeSignature)
+    assert len(TempoSubdivision) == 4
+    assert len(MetronomeRouting) == 5
+    assert len(MetronomeSound) == 6
+    assert len(TimeSignature) == 21
+
+
+def test_the_earlier_one_off_pairings_agree_with_the_full_lists():
+    from pyquadcortex.enums import (MetronomeRouting, MetronomeSound,
+                                    TempoSubdivision, TimeSignature)
+    assert int(TempoSubdivision.EIGHTH) == 1        # stored 0.3333 = 1/3
+    assert int(TimeSignature.THREE_FOUR) == 1       # stored 0.05 = 1/20
+    assert int(TimeSignature.FOUR_FOUR) == 2        # the factory default, 0.1
+    assert int(MetronomeSound.BLOCK) == 1           # stored 0.2 = 1/5
+    assert int(MetronomeRouting.OUT_3_4) == 3       # stored 0.75 = 3/4
+    # and MULTI is first - an earlier guess had the headphones at 0
+    assert int(MetronomeRouting.MULTI) == 0
+    assert int(MetronomeRouting.HEADPHONES) == 1
+
+
+def test_the_last_option_of_each_list_is_the_wire_value_1():
+    # This is what the ordering was confirmed with on the unit.
+    from pyquadcortex.enums import (MetronomeRouting, MetronomeSound,
+                                    TempoSubdivision, TimeSignature)
+    for enum_cls, count in ((TempoSubdivision, 4), (MetronomeRouting, 5),
+                            (MetronomeSound, 6), (TimeSignature, 21)):
+        last = max(int(m) for m in enum_cls)
+        assert last == count - 1
+        assert last / (count - 1) == pytest.approx(1.0)
+
+
+def test_typed_metronome_setters_send_the_right_index_and_value():
+    from pyquadcortex.enums import (MetronomeRouting, MetronomeSound,
+                                    TempoSubdivision, TimeSignature)
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    if len(qc._catalog[25000].parameters) <= 9:
+        pytest.skip("the sample catalog stops before the metronome lists")
+    for call, index, value in (
+            (lambda: qc.set_tempo_subdivision(TempoSubdivision.EIGHTH), 7, 1 / 3),
+            (lambda: qc.set_metronome_sound(MetronomeSound.BLOCK), 8, 0.2),
+            (lambda: qc.set_metronome_routing(MetronomeRouting.OUT_3_4), 9, 0.75),
+            (lambda: qc.set_time_signature(TimeSignature.THREE_FOUR), 6, 0.05)):
+        call()
+        prm = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
+        assert prm.index == index
+        assert prm.param_values[0].float_value == pytest.approx(value)
+
+
+def test_typed_setters_reject_a_value_outside_the_list():
+    # A bare int is accepted but range-checked, so a wrong number cannot be stored
+    # as something meaningless.
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError):
+        qc.set_tempo_subdivision(9)
+    with pytest.raises(ValueError):
+        qc.set_metronome_routing(5)
+    with pytest.raises(ValueError):
+        qc.set_time_signature(21)
+    assert qc._t.sent == []
