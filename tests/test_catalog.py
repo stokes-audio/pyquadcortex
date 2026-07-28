@@ -46,6 +46,14 @@ SAMPLE_XML = """<?xml version="1.0" ?><Models>
     <Parameter defaultValue="5" max="10" min="0" name="PAN A" type="float" units=""/>
   </Model>
 </Category>
+<Category id="25" name="Tempo">
+  <Model blob="ttt" id="25000" name="TempoControl" internal="true">
+    <Parameter defaultValue="0.5" max="1" min="0" name="TEMPO" type="float" units="BPM"/>
+    <Parameter defaultValue="0" max="1" min="0" name="TYPE" type="switch"/>
+    <Parameter defaultValue="1" max="1" min="0" name="LED LIGHT" type="switch"/>
+    <Parameter defaultValue="0.6" max="9" min="-60" name="VOLUME" type="float" units="dB"/>
+  </Model>
+</Category>
 <Category id="22" name="Internal Routing">
   <Model blob="hhh" id="22000" name="Router" internal="true"/>
 </Category>
@@ -136,9 +144,9 @@ def test_by_category_groups_models(cat):
 
 
 def test_catalog_is_iterable_and_sized(cat):
-    assert len(cat) == 11
+    assert len(cat) == 12
     assert {m.id for m in cat} == {1, 30, 31, 5005, 11000, 14000, 20000, 19000,
-                                   22000, 24003, 24006}
+                                   22000, 24003, 24006, 25000}
 
 
 def test_missing_model_raises_keyerror(cat):

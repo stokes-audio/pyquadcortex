@@ -58,10 +58,10 @@ documentation of the library.
 | Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` and `set_tuner_reference()` confirmed, the latter an OFFSET in Hz from 440 (442 and 445 both measured). Tuner `mute` and Live Tuner are untested |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
-| Metronome level, LED, time signature, note length | yes | `set_metronome_volume()`, `set_tempo_led()`, `set_tempo_param()` |
+| Metronome level, LED, time signature, note length | yes | `set_tempo_param()` with screen names via `TEMPO_PARAMS` - TEMPO, LED LIGHT, VOLUME, MUTE, PAN, TIME SIGNATURE, SUBDIVISIONS, SOUND, ROUTING - plus `tempo_params()` to read them. The menu's MODE is not reachable |
 | Per-scene tempo | n/a | `scene_tempo` is ignored and reads back empty, and the unit has no per-scene tempo - its Tempo MODE is global or per preset, nothing finer |
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
-| Modes: reorder, merge into HYBRID, remove | partly | `set_mode_cycle([...])` reorders and removes slots, confirmed. Merging two into a HYBRID slot is unexplored |
+| Modes: reorder, merge into HYBRID, remove | partly | `set_mode_cycle([...])` reorders and removes slots. Merging into a HYBRID slot produces NO broadcast at all, so whatever holds the pairing has not been seen |
 | Gig View: open/close | yes | `set_gig_view()` |
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |

@@ -963,6 +963,37 @@ that a Grid update only ever applies row/column-keyed elements, so it is worth
 stating plainly. Confirmed: `LED LIGHT` 1.0 -> 0.0 turns the tempo LED off, and
 `VOLUME` 0.6131 -> 0.0 silences the metronome.
 
+**The Tempo menu's parameter indices**, mapped by using each control on the unit in a
+named order:
+
+| index | control on screen | catalog name |
+|---|---|---|
+| 0 | TEMPO | TEMPO |
+| 1 | - | TYPE. NOT written by any control in the menu |
+| 2 | Tempo LED | LED LIGHT |
+| 3 | Volume | VOLUME |
+| 4 | **Mute** | START - the names disagree |
+| 5 | Pan | PAN |
+| 6 | Time Signature | TIME SIGNATURE |
+| 7 | **Subdivisions** | NOTELENGTH - the names disagree |
+| 8 | Sound | *absent from the catalog* |
+| 9 | Routing | *absent from the catalog* |
+
+The catalog describes only indices 0 to 7 for model `25000`, while the stored preset
+carries **24** parameters. `QuadCortex.TEMPO_PARAMS` maps the screen names, and `real=`
+is refused for 8 and 9 since no range is published for them.
+
+**In the stored preset these params are POSITIONAL.** All 24 arrive with `index` absent,
+so position is the index - the same convention as `models[]`. A host WRITE does set
+`index`; it is only the device's stored form that omits it. `pyquadcortex.tempo_params()`
+reads them positionally.
+
+**The menu's MODE control (global or per-preset tempo) broadcast nothing** when toggled.
+The likely reason, from the operator: the menu was not confirmed with OK until the end of
+the session, and MODE governs where the tempo is persisted - so it may only be applied on
+commit. The preset was also never saved. Worth a dedicated experiment rather than
+recording as unreachable.
+
 Two related dead ends, for the record. `GlobalTempo` is global rather than
 per-preset and, when READ, returned only a running clock (`current_beat`,
 `current_bar`, `current_tick`) with no parameters. And `MetronomeStatusUpdate`
@@ -1479,6 +1510,13 @@ by those defaults.
 Note that a `parameters` block carrying no `parameter_index` IS index 0, and one carrying
 no `value` IS 0.0 - both fields are plain scalars, so their zeros are not serialized. Two
 writes were missed on a first pass for exactly that reason.
+
+**Merging two modes into a HYBRID slot is not visible on the wire.** Merging Stomp into
+Preset on the unit produced NO `Mode` broadcast at all, and `available_modes` still
+carried three entries. Un-merging then broadcast the new ORDER -
+`available_modes{modes: 0, modes: 2, modes: 1}`, Stomp having moved to the middle - so the
+slot ordering is reported while the hybrid pairing is not. Whatever holds it is either a
+message this project has not seen or is not broadcast.
 
 ### 7.7c The folder tree, and what else is enumerable
 

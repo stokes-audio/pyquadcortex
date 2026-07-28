@@ -782,6 +782,30 @@ class QuadCortex:
 
     INPUT_GATE_CONTROL = 28000
 
+    #: Tempo-menu parameter indices, mapped by using each control on the unit in a
+    #: named order. The device catalog names only indices 0 to 7 for model 25000 and
+    #: two of those names differ from the screen, so this map is what
+    #: :meth:`set_tempo_param` resolves a name through first.
+    #:
+    #: Note the discrepancies: index 4 is the screen's MUTE while the catalog calls it
+    #: START, and index 7 is the screen's Subdivisions while the catalog calls it
+    #: NOTELENGTH. Indices 8 and 9 are not in the catalog at all.
+    #:
+    #: Index 1 - the catalog's TYPE - was NOT written by any control in the Tempo
+    #: menu. The menu's MODE (global or per preset) broadcasts nothing at all, so it
+    #: may be that, but nothing establishes it.
+    TEMPO_PARAMS = {
+        "TEMPO": 0,
+        "LED LIGHT": 2, "LED": 2,
+        "VOLUME": 3,
+        "MUTE": 4,
+        "PAN": 5,
+        "TIME SIGNATURE": 6,
+        "NOTELENGTH": 7, "SUBDIVISIONS": 7,
+        "SOUND": 8,
+        "ROUTING": 9,
+    }
+
     def set_tempo_param(self, param, value: float = None, real=None):
         """Set a per-preset tempo/metronome parameter.
 
@@ -795,16 +819,40 @@ class QuadCortex:
         keyed - it sits outside ``chains[]`` - a ``Grid`` UPDATE carrying it is
         applied anyway, and survives a save and recall. The hash is optional.
 
+        ``param`` may be an index or a NAME from :attr:`TEMPO_PARAMS`, which was
+        built by using each control in the unit's Tempo menu in a named order::
+
+            0 TEMPO   2 LED LIGHT   3 VOLUME   4 MUTE   5 PAN
+            6 TIME SIGNATURE   7 SUBDIVISIONS   8 SOUND   9 ROUTING
+
+        Two of those names disagree with the catalog, which is why the map exists:
+        index 4 is MUTE on screen and START in the catalog, and index 7 is
+        Subdivisions on screen and NOTELENGTH in the catalog. Indices 8 and 9 are
+        absent from the catalog, so ``real=`` cannot be used for them - there is no
+        published range to convert against.
+
+        The menu's MODE control - global or per-preset tempo - broadcasts NOTHING when
+        changed, so it is not reachable here. Index 1, the catalog's TYPE, was not
+        touched by any control in the menu.
+
         Convenience wrappers: :meth:`set_tempo_led`, :meth:`set_metronome_volume`.
         """
         index = param
-        if isinstance(param, str) or real is not None:
+        if isinstance(param, str):
+            key = param.strip().upper()
+            if key in self.TEMPO_PARAMS:
+                index = self.TEMPO_PARAMS[key]
+            else:
+                index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
+        if real is not None:
             model = self.catalog[self.TEMPO_CONTROL]
-            spec = (model.parameter(param) if isinstance(param, str)
-                    else model.parameters[param])
-            index = spec.index
-            if real is not None:
-                value = spec.to_normalized(real)
+            if index >= len(model.parameters):
+                raise ValueError(
+                    f"the catalog has no range for tempo parameter {index}, so "
+                    f"real= cannot be converted - pass value= with the normalized "
+                    f"0..1 instead"
+                )
+            value = model.parameters[index].to_normalized(real)
         if value is None:
             raise TypeError("set_tempo_param needs value= (0..1) or real= (own units)")
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
@@ -1380,9 +1428,15 @@ class QuadCortex:
     # itself and there is nothing to save. Read the current value first if you
     # intend to put it back.
     #
-    # State pushes for these types can be PARTIAL - a push following an UPDATE
-    # may carry only what changed - so each reader below waits for a push that
-    # actually contains the field it needs rather than taking the first one.
+    # Two things about these that have caused wrong conclusions more than once:
+    #
+    #   1. State pushes can be PARTIAL - a push following an UPDATE may carry only
+    #      what changed - so each reader below waits for a push that actually
+    #      contains the field it needs rather than taking the first one.
+    #   2. A read immediately after a write can return the PREVIOUS value. Three
+    #      separate settings looked like they had refused a write when the write had
+    #      in fact landed and the read was simply stale. Allow a settle, or re-read,
+    #      before concluding anything.
 
     def _read_state(self, cls, match, timeout: float = 10.0):
         """READ a state type and return the first push satisfying ``match``."""
@@ -2521,6 +2575,28 @@ def preset_load_midi_out(p: preset.BinaryPreset) -> list:
                     param2=m.param2, param3=m.param3)
             for m in p.midi_messages
             if m.type or m.channel or m.param1 or m.param2 or m.param3]
+
+
+def tempo_params(p: preset.BinaryPreset) -> dict:
+    """A preset's tempo parameters, keyed by index.
+
+    Read POSITIONALLY, because the stored preset carries 24 of them and none has an
+    explicit ``index`` - the field is absent on every one, so position is the index.
+    (A host WRITE does set ``index``; it is only the device's stored form that is
+    positional.) Names for the indices are in
+    :attr:`QuadCortex.TEMPO_PARAMS`.
+
+    Values are the normalized 0..1 of the ACTIVE scene, as elsewhere.
+    """
+    if not len(p.tempoProgramData):
+        return {}
+    out = {}
+    for index, prm in enumerate(p.tempoProgramData[0].params):
+        values = [x.float_value for x in prm.param_values
+                  if field_present(x, "float_value")]
+        if values:
+            out[index] = values[0]
+    return out
 
 
 def param_options(p: preset.BinaryPreset, row: int, column: int,

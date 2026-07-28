@@ -2126,3 +2126,65 @@ def test_set_global_eq_output_addresses_the_out_tab_indices():
     assert indices == [25, 27]
     with pytest.raises(TypeError):
         qc.set_global_eq_output()
+
+
+# -- tempo parameter names -----------------------------------------------------
+# Mapped by using each control in the unit's Tempo menu in a named order. Two names
+# disagree with the catalog (index 4 is MUTE on screen, START in the catalog; index 7
+# is Subdivisions on screen, NOTELENGTH in the catalog) and 8 and 9 are absent from
+# the catalog entirely.
+
+
+def test_set_tempo_param_resolves_the_screen_names():
+    qc = client.QuadCortex(FakeTransport())
+    for name, index in (("TEMPO", 0), ("LED LIGHT", 2), ("VOLUME", 3), ("MUTE", 4),
+                        ("PAN", 5), ("TIME SIGNATURE", 6), ("SUBDIVISIONS", 7),
+                        ("SOUND", 8), ("ROUTING", 9)):
+        qc.set_tempo_param(name, value=0.5)
+        got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
+        assert got.index == index, f"{name} should resolve to {index}"
+
+
+def test_tempo_param_names_are_case_and_space_tolerant():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_tempo_param("routing", value=0.75)
+    assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 9
+    qc.set_tempo_param(" Sound ", value=0.2)
+    assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 8
+
+
+def test_real_units_refused_for_tempo_params_the_catalog_does_not_describe():
+    # Indices 8 and 9 have no published range, so there is nothing to convert.
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    with pytest.raises(ValueError, match="no range"):
+        qc.set_tempo_param("ROUTING", real=3)
+    assert qc._t.sent == []
+
+
+def test_a_raw_index_still_works():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_tempo_param(11, value=0.3)
+    assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 11
+
+
+def test_tempo_params_reads_positionally_because_the_device_omits_the_index():
+    # A stored preset carries 24 tempo params and sets `index` on NONE of them, so
+    # position is the index. Values here are from a real read-back.
+    p = preset.BinaryPreset()
+    tp = p.tempoProgramData.add()
+    tp.hash = 25000
+    for value in (0.4, 0.0, 1.0, 0.6131, 1.0, 0.5, 0.1, 0.3333, 0.2, 0.75):
+        prm = tp.params.add()
+        prm.param_values.add().float_value = value
+    got = client.tempo_params(p)
+    assert got[0] == pytest.approx(0.4)
+    assert got[4] == pytest.approx(1.0), "MUTE"
+    assert got[7] == pytest.approx(0.3333), "SUBDIVISIONS"
+    assert got[8] == pytest.approx(0.2), "SOUND"
+    assert got[9] == pytest.approx(0.75), "ROUTING"
+    assert all(not prm.HasField("index") for prm in tp.params)
+
+
+def test_tempo_params_is_empty_when_the_preset_carries_none():
+    assert client.tempo_params(preset.BinaryPreset()) == {}

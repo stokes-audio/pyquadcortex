@@ -8,6 +8,36 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.21.0 - 2026-07-28
+
+### Added
+
+- **Tempo parameters by their screen names.** `QuadCortex.TEMPO_PARAMS` maps the unit's
+  Tempo menu onto wire indices, built by using each control in a named order: TEMPO 0,
+  LED LIGHT 2, VOLUME 3, MUTE 4, PAN 5, TIME SIGNATURE 6, SUBDIVISIONS 7, SOUND 8,
+  ROUTING 9. `set_tempo_param()` resolves those names first.
+
+  The map exists because the catalog is neither complete nor consistent here: it
+  describes only indices 0 to 7 while the preset carries 24, and two of its names differ
+  from the screen - index 4 is MUTE on screen and START in the catalog, index 7 is
+  Subdivisions and NOTELENGTH. `real=` is refused for 8 and 9, which have no published
+  range.
+- **`tempo_params(preset)`** to read them back. This is needed because in the STORED
+  preset all 24 arrive with `index` absent, so position is the index - the same
+  convention as `models[]`. A host write does set `index`; only the device's stored form
+  omits it.
+
+### Documented
+
+- **Merging two modes into a HYBRID slot produces no broadcast.** Merging on the unit
+  emitted no `Mode` message at all, and `available_modes` still held three entries.
+  Un-merging then reported the new ORDER, so slot ordering is broadcast while the hybrid
+  pairing is not.
+- **The Tempo menu's MODE control also broadcast nothing.** The likely reason is that the
+  menu was not confirmed with OK until later and MODE governs where the tempo is
+  persisted, so it may only apply on commit - recorded as a question to test rather than
+  as unreachable.
+
 ## 0.20.0 - 2026-07-28
 
 ### Added
