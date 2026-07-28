@@ -2293,3 +2293,14 @@ def test_typed_setters_reject_a_value_outside_the_list():
     with pytest.raises(ValueError):
         qc.set_time_signature(21)
     assert qc._t.sent == []
+
+
+def test_set_mode_cycle_accepts_a_hybrid_slot_value():
+    # A merged HYBRID slot is just another value in the list: the unit reported
+    # available_modes{7, 1} for Preset+Stomp merged with Scene standing alone, and
+    # sending the same pair back creates it.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_mode_cycle([7, 1])
+    assert list(qc._t.sent[-1].available_modes.modes) == [7, 1]
+    qc.set_mode(7)
+    assert qc._t.sent[-1].mode == 7

@@ -1763,10 +1763,13 @@ Two of those names disagree with the catalog, which is why the map
     def mode(self, timeout: float = 10.0):
         """The footswitch mode state: which slot is active, and which exist.
 
-        ``mode`` is an index into the unit's configured mode SLOTS, not a fixed
-        identifier - the slots are user-arranged (and can be merged into HYBRID
-        modes), so slot 0 is not necessarily PRESET mode. ``available_modes.modes``
-        lists the slots currently configured; the observed unit reports three.
+        ``mode`` identifies the active SLOT, not a fixed mode - the slots are
+        user-arranged, so slot 0 is not necessarily PRESET mode.
+        ``available_modes.modes`` lists the slots configured, three by default.
+
+        A merged HYBRID slot appears as a single composite value: a unit with Preset
+        and Stomp merged reported ``available_modes{7, 1}`` and cycling alternated
+        ``mode: 7`` and ``mode: 1``. See :meth:`set_mode_cycle`.
         """
         return self._read_state(pa.ModeMessage, lambda m: m.HasField("mode"),
                                 timeout)
@@ -1907,11 +1910,22 @@ Two of those names disagree with the catalog, which is why the map
         """Set which footswitch mode slots are in the cycle, and their order.
 
         The manual's Modes Configuration menu, where slots are dragged to reorder.
-        Confirmed writable: sending ``[1, 0, 2]`` read back in that order. The
-        whole list is replaced, which matches the feature - it IS the cycle.
+        Confirmed writable: sending ``[1, 0, 2]`` read back in that order. The whole
+        list is replaced, which matches the feature - it IS the cycle.
 
-        Merging two slots into a HYBRID mode is a separate matter and is not
-        covered here.
+        **A HYBRID slot is just another value in this list**, so merging is reachable
+        the same way. Merging on the unit produced ``available_modes{7, 1}`` - one
+        hybrid plus Scene - and sending ``[7, 1]`` from the host creates the same
+        thing, with :meth:`set_mode` able to select it.
+
+        What the composite value ENCODES is not established. 7 was the pairing of
+        Preset with Stomp, arrived at by elimination since Scene (1) was the slot left
+        standing; how other pairings are numbered has not been observed. To use a
+        specific pairing, make it once on the unit and read the value back.
+
+        Note this only became visible after the menu was CONFIRMED on the unit: an
+        earlier session merged without pressing OK and the device broadcast nothing at
+        all.
         """
         msg = pa.ModeMessage(action=pa.MessageAction.UPDATE)
         msg.available_modes.modes.extend(int(s) for s in slots)

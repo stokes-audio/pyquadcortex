@@ -8,6 +8,27 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.25.0 - 2026-07-28
+
+### Documented, and it reverses an earlier finding
+
+**A HYBRID mode slot is a composite value in `available_modes`, and creating one is
+drivable from the host.** Merging Preset with Stomp on the unit and then confirming the
+menu reported `available_modes{7, 1}` - the hybrid as 7, Scene as 1 - with cycling
+alternating `mode: 7` and `mode: 1`. Sending `[7, 1]` through `set_mode_cycle()` creates
+the same arrangement and `set_mode(7)` selects it, both verified.
+
+0.21.0 recorded that merging "produces no broadcast at all, so whatever holds the pairing
+has not been seen". That was wrong, and the reason is worth keeping: the earlier session
+merged and un-merged WITHOUT confirming the menu, and this state is not published until
+commit. The owner had proposed exactly that explanation at the time.
+
+It does not generalise, though - the Tempo menu's MODE control stayed silent through an OK
+press AND a save, so "silent" has more than one cause.
+
+What the composite value encodes is still unknown: 7 was Preset+Stomp, by elimination.
+Read the value back after making a pairing once on the unit.
+
 ## 0.24.0 - 2026-07-28
 
 ### Fixed

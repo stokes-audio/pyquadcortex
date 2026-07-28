@@ -20,9 +20,9 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **62 yes**, **14 partly**, **14 no**, **10 n/a**.
+Of 100 features audited: **63 yes**, **13 partly**, **14 no**, **10 n/a**.
 
-Of the 90 features a host could plausibly drive, **62 are fully covered** and 14 more
+Of the 90 features a host could plausibly drive, **63 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
 exercised. Only 14 remain untouched.
@@ -62,7 +62,7 @@ loading from the factory Captures Library.
 | Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is not on the wire at all |
 | Per-scene tempo | n/a | `scene_tempo` is ignored and reads back empty, and the unit has no per-scene tempo - its Tempo MODE is global or per preset, nothing finer |
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
-| Modes: reorder, merge into HYBRID, remove | partly | `set_mode_cycle([...])` reorders and removes slots. Merging into a HYBRID slot produces NO broadcast at all, so whatever holds the pairing has not been seen |
+| Modes: reorder, merge into HYBRID, remove | yes | `set_mode_cycle([...])`. A HYBRID slot is just a composite value in the list - `[7, 1]` creates one, confirmed - though which pairing a given value denotes is unknown |
 | Gig View: open/close | yes | `set_gig_view()` |
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | yes | `set_input_port()` writes level, impedance, input type and ground lift - each in its own message, since some fields are dropped when packed together. Phantom power has no field in the schema |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |

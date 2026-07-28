@@ -1549,12 +1549,27 @@ Note that a `parameters` block carrying no `parameter_index` IS index 0, and one
 no `value` IS 0.0 - both fields are plain scalars, so their zeros are not serialized. Two
 writes were missed on a first pass for exactly that reason.
 
-**Merging two modes into a HYBRID slot is not visible on the wire.** Merging Stomp into
-Preset on the unit produced NO `Mode` broadcast at all, and `available_modes` still
-carried three entries. Un-merging then broadcast the new ORDER -
-`available_modes{modes: 0, modes: 2, modes: 1}`, Stomp having moved to the middle - so the
-slot ordering is reported while the hybrid pairing is not. Whatever holds it is either a
-message this project has not seen or is not broadcast.
+**A HYBRID slot is a composite value in `available_modes`, and it IS drivable.**
+
+Merging Preset with Stomp on the unit and then CONFIRMING the menu produced:
+
+```
+Mode{UPDATE, available_modes{modes: 7, modes: 1}}
+```
+
+Two slots - the hybrid as `7`, Scene as `1` - and cycling modes alternated `mode: 7` and
+`mode: 1`, matching what the screen showed. Sending `available_modes{7, 1}` from the host
+creates the same arrangement, and `Mode{UPDATE, mode: 7}` selects it.
+
+**It only appears once the menu is confirmed.** An earlier session merged and un-merged
+WITHOUT pressing OK, and the merge broadcast nothing - which had been recorded here as the
+pairing not being on the wire at all. It is; the state simply is not published until
+commit. Note this does NOT generalise: the Tempo menu's MODE control stayed silent through
+an OK press and a save.
+
+What the composite value encodes is unknown. 7 was Preset+Stomp, by elimination since
+Scene was the slot left standing. Other pairings have not been observed, so read the value
+back after making the pairing once on the unit.
 
 ### 7.7c The folder tree, and what else is enumerable
 
