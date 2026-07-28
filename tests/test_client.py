@@ -1727,3 +1727,55 @@ def test_favorites_waits_for_a_push_with_items():
     got = qc.favorites()
     assert got.items[0].name == "Brit 2203"
     assert qc._t.matches[-1](pa.RecentsFavoritesMessage()) is False
+
+
+# -- submessage writes replace the whole submessage -----------------------------
+# Sending master_volume_assignment with one flag set left the other three FALSE on
+# hardware, quietly stopping the knob controlling those outputs. So these read the
+# current value and merge, rather than sending one field.
+
+
+def _settings_push(**mv):
+    m = pa.GeneralSettingsMessage(action=pa.MessageAction.UPDATE)
+    m.scene_block_bypass = 0
+    for k, v in mv.items():
+        setattr(m.master_volume_assignment, k, v)
+    return m
+
+
+def test_set_master_volume_assignment_sends_all_four_flags():
+    push = _settings_push(out12=True, out34=True, send12=True, headphones=True)
+    qc = client.QuadCortex(StateTransport(push))
+    qc.set_master_volume_assignment(send12=False)
+    got = qc._t.sent[-1].master_volume_assignment
+    assert (got.out12, got.out34, got.send12, got.headphones) \
+        == (True, True, False, True), "the untouched flags must be carried through"
+
+
+def test_set_global_bypass_needs_four_rows_and_carries_the_other_one():
+    push = _settings_push(out12=True)
+    push.global_bypass_ir.row2 = True
+    qc = client.QuadCortex(StateTransport(push))
+    qc.set_global_bypass(cab=(True, False, False, False))
+    msg = qc._t.sent[-1]
+    assert (msg.global_bypass_cab.row1, msg.global_bypass_cab.row2) == (True, False)
+    assert msg.global_bypass_ir.row2 is True, "the untouched collection is preserved"
+
+    with pytest.raises(ValueError, match="four booleans"):
+        qc.set_global_bypass(cab=(True, False))
+    with pytest.raises(TypeError):
+        qc.set_global_bypass()
+
+
+def test_set_global_eq_band_is_sparse_by_parameter_index():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_global_eq_band(1, 0.6)
+    params = qc._t.sent[-1].parameters
+    assert len(params) == 1
+    assert (params[0].parameter_index, round(params[0].value, 3)) == (1, 0.6)
+
+
+def test_set_mode_cycle_replaces_the_whole_list():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_mode_cycle([1, 0, 2])
+    assert list(qc._t.sent[-1].available_modes.modes) == [1, 0, 2]

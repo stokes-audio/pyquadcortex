@@ -1416,6 +1416,11 @@ class QuadCortex:
         Note that brightness is quantized: writing 30 read back as 31, and 60 as
         59, so the device stores it on a coarser internal scale.
 
+        **Top-level fields are sparse, but a SUBMESSAGE is replaced wholesale.**
+        Sending ``master_volume_assignment`` with one flag set leaves the other
+        three false. Use :meth:`set_master_volume_assignment` and
+        :meth:`set_global_bypass`, which read the current value and merge.
+
         Values the device treats as commands rather than settings are refused
         here to avoid an accident: ``power_option`` can shut the unit down or
         reboot it, and ``reset_wifi_networks`` discards saved networks. Send
@@ -1696,6 +1701,86 @@ class QuadCortex:
         """
         return self._read_state(pa.RecentsFavoritesMessage,
                                 lambda m: len(m.items) > 0, timeout)
+
+    def set_master_volume_assignment(self, out12: bool = None, out34: bool = None,
+                                     send12: bool = None, headphones: bool = None):
+        """Choose which outputs the Master Volume knob governs.
+
+        The manual's checkboxes in the Master Volume overlay. Confirmed writable.
+
+        **A submessage write REPLACES the whole submessage.** Unlike the top-level
+        fields of ``GeneralSettings``, which are sparse, sending
+        ``master_volume_assignment`` with one field set leaves the other three
+        FALSE - which quietly stops the knob controlling those outputs. So this
+        reads the current assignment first and sends all four, with ``None``
+        meaning "leave as it is".
+        """
+        current = self.settings().master_volume_assignment
+        msg = pa.GeneralSettingsMessage(action=pa.MessageAction.UPDATE)
+        target = msg.master_volume_assignment
+        for name, value in (("out12", out12), ("out34", out34),
+                            ("send12", send12), ("headphones", headphones)):
+            setattr(target, name,
+                    getattr(current, name) if value is None else value)
+        return self._t.send(msg)
+
+    def set_global_bypass(self, cab=None, ir=None):
+        """Bypass Cab or IR Loader blocks across ALL presets, per grid row.
+
+        ``cab`` and ``ir`` are four booleans, one per row, or ``None`` to leave
+        that one alone. The manual's GLOBAL BYPASS. Confirmed writable.
+
+        Subject to the same whole-submessage rule as
+        :meth:`set_master_volume_assignment`, so the current value is read and
+        merged rather than sent piecemeal.
+        """
+        if cab is None and ir is None:
+            raise TypeError("set_global_bypass needs cab= or ir=")
+        current = self.settings()
+        msg = pa.GeneralSettingsMessage(action=pa.MessageAction.UPDATE)
+        for field, rows in (("global_bypass_cab", cab), ("global_bypass_ir", ir)):
+            if rows is None:
+                continue
+            if len(rows) != 4:
+                raise ValueError(f"{field} needs four booleans, one per row")
+            target = getattr(msg, field)
+            for i, value in enumerate(rows, start=1):
+                setattr(target, f"row{i}", bool(value))
+        # carry the untouched one through unchanged
+        if cab is None:
+            msg.global_bypass_cab.CopyFrom(current.global_bypass_cab)
+        if ir is None:
+            msg.global_bypass_ir.CopyFrom(current.global_bypass_ir)
+        return self._t.send(msg)
+
+    def set_global_eq_band(self, parameter_index: int, value: float):
+        """Set one Global EQ parameter, by its wire index.
+
+        The Global EQ reports 28 ``parameters`` entries, each
+        ``{parameter_index, value}``. Confirmed writable and sparse: writing index
+        1 left the rest alone. Which index is which band's type, gain, frequency
+        or Q is not established, so read :meth:`global_eq` and compare rather than
+        guessing.
+        """
+        msg = pa.GlobalEQMessage(action=pa.MessageAction.UPDATE)
+        prm = msg.parameters.add()
+        prm.parameter_index = parameter_index
+        prm.value = value
+        return self._t.send(msg)
+
+    def set_mode_cycle(self, slots):
+        """Set which footswitch mode slots are in the cycle, and their order.
+
+        The manual's Modes Configuration menu, where slots are dragged to reorder.
+        Confirmed writable: sending ``[1, 0, 2]`` read back in that order. The
+        whole list is replaced, which matches the feature - it IS the cycle.
+
+        Merging two slots into a HYBRID mode is a separate matter and is not
+        covered here.
+        """
+        msg = pa.ModeMessage(action=pa.MessageAction.UPDATE)
+        msg.available_modes.modes.extend(int(s) for s in slots)
+        return self._t.send(msg)
 
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
                          timeout: float = 45.0, interval: float = 2.0):

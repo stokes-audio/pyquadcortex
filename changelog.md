@@ -8,6 +8,40 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.14.0 - 2026-07-28
+
+Fourth exploration round, still solo. Four more features covered, and one gotcha found
+the hard way that changes how any settings write should be built.
+
+### Added
+
+- **`set_master_volume_assignment()`** - which outputs the Master Volume knob governs.
+- **`set_global_bypass(cab=..., ir=...)`** - the manual's GLOBAL BYPASS, four booleans
+  per collection, bypassing Cab or IR Loader blocks across all presets by row.
+- **`set_global_eq_band(index, value)`** - any of the Global EQ's 28 parameters. Sparse
+  by index: writing one left the other 27 alone. Which index is which band control is
+  not established, so read and compare rather than guess.
+- **`set_mode_cycle([...])`** - reorder or remove footswitch mode slots, the manual's
+  Modes Configuration menu. The whole list is replaced, which is what the feature is.
+
+### A submessage write replaces the whole submessage
+
+Top-level `GeneralSettings` fields are sparse - send `screen_brightness` alone and only
+that changes. A nested SUBMESSAGE is not: sending `master_volume_assignment` with only
+`send12` set left the other three flags false, quietly stopping the knob governing
+outputs 1/2, 3/4 and the headphones.
+
+So `set_master_volume_assignment()` and `set_global_bypass()` read the current value and
+merge before sending. Repeated fields keyed by an index behave like the top level and are
+genuinely sparse.
+
+### Documented as not working
+
+`PinnedModels` accepted an UPDATE and pinned nothing. `BinaryPreset.author_name` and
+`description` are ignored by a `Grid` update - and the device stamps `author_name` itself
+from the signed-in Cortex Cloud account on every user save, so a factory preset's
+"Neural DSP" becomes the account name whatever the host sends.
+
 ## 0.13.0 - 2026-07-28
 
 Third exploration round, worked through without anyone at the unit. Everything below was

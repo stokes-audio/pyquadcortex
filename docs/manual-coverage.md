@@ -20,14 +20,14 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **48 yes**, **20 partly**, **24 no**, **8 n/a**.
+Of 100 features audited: **52 yes**, **19 partly**, **21 no**, **8 n/a**.
 
-Of the 92 features a host could plausibly drive, **48 are fully covered** and 20 more
+Of the 92 features a host could plausibly drive, **52 are fully covered** and 19 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
-exercised. Only 24 remain untouched.
+exercised. Only 21 remain untouched.
 
-Three exploration rounds got it there. The first closed the per-preset non-audio gap:
+Four exploration rounds got it there. The first closed the per-preset non-audio gap:
 footswitch assignments, expression assignments and Preset MIDI Out. The second opened
 the global settings families, `GeneralSettings` alone covering most of the Device
 Settings and System menus. The third added block moves, creating and clearing a branch,
@@ -52,7 +52,7 @@ expression-bypass `mode`, and where the tuner's reference pitch lives. Those are
 | Switch scene | yes | `switch_scene()` |
 | Bank navigation | yes | any slot is addressable by name (`"28C"`) or index |
 | Master Volume level | no | `MasterVolume` is decoded and subscribed, so pushes can be read, but no wrapper and no write attempted |
-| Master Volume output assignment | partly | readable: `settings().master_volume_assignment{out12, out34, send12, headphones}`. Writing it is untested |
+| Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | partly | in `GeneralSettings`, so reachable via `update_settings()`; not individually exercised |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
 | Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` confirmed; `Tuner.frequency` is the detected pitch rather than the reference-pitch setting, which is not located |
@@ -61,12 +61,12 @@ expression-bypass `mode`, and where the tuner's reference pitch lives. Those are
 | Metronome level, LED, time signature, note length | yes | `set_metronome_volume()`, `set_tempo_led()`, `set_tempo_param()` |
 | Per-scene tempo | no | `BinaryPreset.scene_tempo` is ignored by a `Grid` update; reads back empty |
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
-| Modes: reorder, merge into HYBRID, remove | no | candidate `Mode`. Manual describes it as drag-and-drop only |
+| Modes: reorder, merge into HYBRID, remove | partly | `set_mode_cycle([...])` reorders and removes slots, confirmed. Merging two into a HYBRID slot is unexplored |
 | Gig View: open/close | yes | `set_gig_view()` |
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | partly | `set_output_port()` writes level and ground lift, `set_output_pairing()` the link flags. `mute` is accepted and does NOT take |
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested |
-| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` confirmed; `global_eq()` reads the 28 band parameters, writing them is untested |
+| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` and `set_global_eq_band(index, value)` both confirmed; which parameter index is which band control is unestablished |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
 | Footswitch presses, touch gestures, encoders | n/a | physical |
 
@@ -77,7 +77,7 @@ expression-bypass `mode`, and where the tuner's reference pitch lives. Those are
 | Grid layout: 4 rows x 8 slots | yes | `blocks()`; rows are 0-based here and 1-4 on screen |
 | Which rows are free for a new chain | yes | `free_rows()`, which excludes a branch's lane row |
 | Browse the virtual device list | yes | `catalog` - the device's own ModelRepo, so it covers purchased and captured content |
-| Pin a device to the top of its category | no | `PinnedModels` is decoded and subscribed; never written |
+| Pin a device to the top of its category | no | a `PinnedModels` UPDATE listing model ids was accepted and pinned nothing |
 | Place or replace a block | yes | `set_block()`, which verifies the device accepted the cell |
 | Remove a block | yes | `remove_block()` (the DELETE action; an UPDATE with `hash: 0` is ignored) |
 | Move a block | yes | `move_block(from_row, from_col, to_row, to_col)`; a cross-row move makes the device create a branch |
@@ -114,7 +114,7 @@ expression-bypass `mode`, and where the tuner's reference pitch lives. Those are
 | Wait for the directory to settle | yes | `wait_for_listing()` |
 | Save a preset ("Save As") | yes | `save_current_preset()` with name, instrument tag and default scene |
 | Preset descriptive tags | no | proven unwritable by three routes; a saved preset carries none at all |
-| Preset description, author, cloud id | no | `BinaryPreset.description`, `author_name`, `author_id`, `cloud_id`. Unexplored |
+| Preset description, author, cloud id | no | ignored by a `Grid` update. The device stamps `author_name` from the signed-in cloud account on every save |
 | Preset volume and pan | no | ignored by a `Grid` update AND by `ProductData.gain` on the save. No route found |
 | Delete a preset | yes | `delete_preset()`, eventually consistent |
 | Move a preset | yes | `move_preset()`, same-setlist only observed |
@@ -165,7 +165,7 @@ nothing has been written.
 
 | Feature | Status | Detail |
 |---|---|---|
-| GLOBAL BYPASS (Cab / IR Loader per row) | partly | `settings().global_bypass_cab` / `_ir` read; writable in principle via `update_settings()`, untested |
+| GLOBAL BYPASS (Cab / IR Loader per row) | yes | `set_global_bypass(cab=..., ir=...)`, four booleans per collection |
 | SCENE BYPASS BEHAVIOR (3 modes) | yes | `set_scene_bypass_behavior()` with the `SceneBypassBehavior` enum. It decides what `set_bypass` persists |
 | STOMP MODE BYPASS (auto-assign on load) | partly | `stomp_mode_auto_assign` in `GeneralSettings`; reachable via `update_settings()`, untested |
 | HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | partly | all three read from `settings()`; reachable via `update_settings()`, untested |

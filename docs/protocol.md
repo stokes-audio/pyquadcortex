@@ -1089,6 +1089,7 @@ Tried and refused, so nobody repeats them:
 
 | field | attempted | result |
 |---|---|---|
+| `BinaryPreset.author_name`, `description` | `Grid` update carrying them | ignored. The device stamps `author_name` itself from the signed-in Cortex Cloud account on every user save, so a factory preset's "Neural DSP" becomes the account name |
 | `BinaryPreset.volume`, `pan` | `Grid` update carrying them; `ProductData.gain` on the File save | both ignored, volume stays 1.0 and pan 0.5 |
 | `BinaryPreset.scene_tempo` | `Grid` update with eight values | ignored, reads back empty |
 | `Model.sidechain_source_flag` | `Grid` update, row/column keyed | ignored, reads back false |
@@ -1299,6 +1300,16 @@ pitch the manual's FREQ [Hz] control sets - where that setting lives is unresolv
 so nothing here drives the transport. The manual notes MIDI CC#48-61 also control the
 Looper, which is a second route worth comparing against.
 
+**A SUBMESSAGE write replaces the whole submessage.** Top-level fields are sparse -
+sending `screen_brightness` alone changes only that - but a nested submessage is not.
+Sending `master_volume_assignment` with only `send12` set left the other three flags
+FALSE, which quietly stops the Master Volume knob governing outputs 1/2, 3/4 and the
+headphones. So read the current submessage and send it complete.
+
+The same applies to `global_bypass_cab` and `global_bypass_ir`. Repeated fields keyed by
+an index are different again: writing one `GlobalEQ.parameters{parameter_index, value}`
+left the other 27 alone.
+
 **Values are quantized.** Brightness written as 30 read back as 31, and 60 as 59. Port
 levels are stored as float32, so a value must be written at full precision to
 round-trip: writing `0.769231` (six decimal places) stored something measurably
@@ -1464,6 +1475,10 @@ visually on the device's own screen.
 | `set_midi_out` / `set_preset_load_midi_out` | `MIDISettings{UPDATE, general_midi_messages` or `preset_load_messages{messages{source, msg}}}` | read-back | per-preset MIDI Out. A `Grid` update carrying the preset's own midi fields does nothing |
 | `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
 | `param_options` | reads `Param.dynamic_steps` | read-back | the option names of a list parameter, which the catalog does not carry |
+| `set_master_volume_assignment` | `GeneralSettings{UPDATE, master_volume_assignment{...}}` | read-back | which outputs the knob governs. Read-merge-write, because a submessage is replaced wholesale |
+| `set_global_bypass` | `GeneralSettings{UPDATE, global_bypass_cab` / `_ir{row1..row4}}` | read-back | global Cab / IR bypass per row |
+| `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index; which index is which band control is unestablished |
+| `set_mode_cycle` | `Mode{UPDATE, available_modes{modes}}` | read-back | the mode cycle order; the whole list is replaced |
 | `settings` / `update_settings` | `GeneralSettings{READ}` / `{UPDATE, <fields>}` | read-back | the Device Settings and System menus; sparse. `power_option` and `reset_wifi_networks` are refused as commands rather than settings |
 | `set_scene_bypass_behavior` | `GeneralSettings{UPDATE, scene_block_bypass}` | read-back | global, and it decides what `set_bypass` persists |
 | `io_settings` / `set_input_level` / `set_output_level` | `IOSettings{READ}` / `{UPDATE, settings{in_port` or `out_port{port_id, level}}}` | read-back | sparse and port-keyed; also reports impedance, type, ground lift and `plugged` |

@@ -27,6 +27,9 @@ Two kinds of entry:
 | 11 | confirm | Check whether **MidiSource 8 and 9** are Expression 1 and 2 on screen | Inferred from slot arithmetic and confirmed for 8 by an assignment landing in slot 96; 9 is by symmetry |
 | 12 | capture | Run a **Neural Capture** start to finish | `NeuralCapture`, `GainCalibration`, `EnableCaptureOut` undecoded, and the flow needs real cabling |
 | 13 | capture | **Load a capture from the Captures Library** onto the grid | The 2062-entry library is listable, but how an entry becomes a usable block is unexplored |
+| 14 | capture | **Pin a device** to the top of its category in the Virtual Device List | A `PinnedModels` UPDATE listing model ids was accepted and pinned nothing |
+| 15 | confirm | Say which **Global EQ band control** each parameter index is | `set_global_eq_band()` writes any of the 28 indices, but the mapping to band type / gain / frequency / Q is unknown |
+| 16 | capture | **Merge two modes into a HYBRID slot** | `set_mode_cycle()` reorders and removes slots; merging is a different operation |
 
 ## Settled without help
 
