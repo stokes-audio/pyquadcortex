@@ -2007,6 +2007,49 @@ class QuadCortex:
                                            instrument=entry.instrument))
         return stored
 
+    #: How many parameters each Global EQ band occupies, and the offset of each
+    #: control within a band. See :meth:`set_global_eq`.
+    GLOBAL_EQ_BAND_STRIDE = 5
+    GLOBAL_EQ_BANDS = 5
+
+    def set_global_eq(self, band: int, gain: float = None,
+                      frequency: float = None, q: float = None,
+                      filter_type=None):
+        """Set one Global EQ band's controls, by band number rather than wire index.
+
+        ``band`` is 1 to 5 as the unit numbers them. Every value is the normalized
+        0..1 the wire carries; ``gain`` is 0.5 for 0 dB and 0.75 for +6 dB on the
+        -12..+12 dB range the manual gives. ``filter_type`` takes a
+        :class:`~pyquadcortex.enums.GlobalEQFilter`.
+
+        The layout is **5 parameters per band**, at offsets ``0 GAIN``,
+        ``1 FREQUENCY``, ``2 Q``, ``3 TYPE``, so band N's controls live at
+        ``(N - 1) * 5 + offset``. Established by changing each of band 1's controls
+        in turn and reading which index moved, then checked against the whole
+        28-parameter list: laid out five per band the defaults line up exactly as a
+        five-band parametric EQ should - identical gains, identical Qs,
+        monotonically increasing frequencies, and shelf/peak/peak/peak/shelf types.
+
+        Offset 4 is 1.0 on every band and is NOT identified, so it is not exposed
+        here. Indices 25 to 27 sit outside the bands and are likewise unidentified;
+        the manual's OUT tab is the obvious candidate.
+
+        Writes are sparse by index, so only the controls given are sent.
+        """
+        if not 1 <= band <= self.GLOBAL_EQ_BANDS:
+            raise ValueError(f"band must be 1 to {self.GLOBAL_EQ_BANDS}, got {band}")
+        base = (band - 1) * self.GLOBAL_EQ_BAND_STRIDE
+        if filter_type is not None:
+            filter_type = int(filter_type) / 4
+        controls = [(offset, value) for offset, value in
+                    ((0, gain), (1, frequency), (2, q), (3, filter_type))
+                    if value is not None]
+        if not controls:
+            raise TypeError("set_global_eq needs at least one control to set")
+        for offset, value in controls:
+            self.set_global_eq_band(base + offset, value)
+        return None
+
     def wait_for_listing(self, setlist: str = Setlist.USER, until=None,
                          timeout: float = 45.0, interval: float = 2.0):
         """Re-list ``setlist`` until ``until(entries)`` holds, and return them.

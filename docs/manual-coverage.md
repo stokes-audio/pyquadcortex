@@ -20,9 +20,9 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 100 features audited: **60 yes**, **17 partly**, **15 no**, **8 n/a**.
+Of 100 features audited: **61 yes**, **16 partly**, **15 no**, **8 n/a**.
 
-Of the 92 features a host could plausibly drive, **60 are fully covered** and 17 more
+Of the 92 features a host could plausibly drive, **61 are fully covered** and 16 more
 are partly covered - which here means the state is readable and at least one field of it
 is confirmed writable, with the neighbours the same shape but not individually
 exercised. Only 15 remain untouched.
@@ -55,7 +55,7 @@ documentation of the library.
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | partly | in `GeneralSettings`, so reachable via `update_settings()`; not individually exercised |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
-| Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` and `set_tuner_reference()` confirmed - the latter takes an OFFSET in Hz from 440. Tuner `mute` and Live Tuner are untested |
+| Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()` and `set_tuner_reference()` confirmed, the latter an OFFSET in Hz from 440 (442 and 445 both measured). Tuner `mute` and Live Tuner are untested |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_metronome_volume()`, `set_tempo_led()`, `set_tempo_param()` |
@@ -66,7 +66,7 @@ documentation of the library.
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested. The headphone output's own level is NOT writable |
-| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` and `set_global_eq_band(index, value)` confirmed, and the layout is 5 indices per band with GAIN at offset 0 (band 1 = 0, band 3 = 10). The other four offsets per band are unidentified |
+| Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | yes | `set_global_eq(band, gain=, frequency=, q=, filter_type=)` with `GlobalEQFilter`, plus `set_global_eq_bypassed()`. Offset 4 within a band and indices 25-27 (probably the OUT tab) are unidentified |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
 | Footswitch presses, touch gestures, encoders | n/a | physical |
 
@@ -103,7 +103,7 @@ documentation of the library.
 | Expression pedal calibration | no | candidate `IOSettings`. Manual calls it a global setting |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | it is an ordinary catalog model |
-| Looper X: transport actions and parameters | partly | `looper()` reads the full status and `LooperState` names the states (mapped by watching each control pressed). The transport is not driven from here; MIDI CC#48-61 is the documented route |
+| Looper X: transport actions and parameters | partly | `looper()` reads the full status and `LooperState` names five states including OVERDUBBING. The transport is not driven from here; MIDI CC#48-61 is the documented route |
 | Undo / redo | no | `UndoRedo` is decoded and subscribed. It arrives after accepted grid edits - useful as an acceptance signal |
 
 ## 05 The Directory

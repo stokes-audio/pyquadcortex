@@ -1325,9 +1325,9 @@ impedance is disabled while the input type is set to Mic.
 
 **Tuner.** `ShowTuner{show}` opens and closes it, and `Tuner{input_port_id}` chooses
 the input (1 to 2 and back, confirmed). `Tuner.frequency` IS the reference pitch, but
-as an **offset in Hz from 440**: changing FREQ from 440 to 442 on the unit broadcast
-`frequency: 1.99999809`, which is why an earlier write of `442.0` did nothing. Writing
-`5.0` round-tripped. That the unit is Hz rather than cents rests on that single pair.
+as an **offset in Hz from 440**: 442 on the unit broadcast `frequency: 1.99999809` and
+445 broadcast `5`, which is why an earlier write of `442.0` did nothing. Two points on a
+line, so the Hz scale is measured rather than assumed.
 
 **Looper.** `Looper{READ}` reports a full `status`: `state`, `progress`,
 `loop_length`, `free_samples`, `armed`, `in_reverse`, `half_speed`, `undo_count`,
@@ -1396,8 +1396,10 @@ control pressed in a known order:
 | 2 | playing | after PLAY/STOP |
 | 4 | recording | after RECORD, with `loop_length` streaming upward |
 | 5 | armed | after RECORD with no signal present |
+| 6 | overdubbing | after OVERDUB during playback; pressing it again returned to 2 |
 
-`3` was never observed. Two things a caller should know: with nothing plugged in the
+`3` has never been observed. Overdub was the obvious guess for it and turned out to be 6,
+which is a reason not to guess again. Two things a caller should know: with nothing plugged in the
 Looper sits in **armed** indefinitely, because RECORD waits for the input to cross the
 threshold, and the other controls stay inert until it does. And **REVERSE and HALF SPEED
 do not change `state`** - they set `in_reverse` and `half_speed` while playback
@@ -1429,17 +1431,42 @@ write **APPENDS** rather than replacing: pinning something already pinned leaves
 entries for it. `action: DELETE` with an id removes EVERY entry for that id, which is
 how a duplicate gets cleaned up.
 
-**Global EQ parameter indices: 5 per band, GAIN first.** `parameters` is a flat list of
-28 `{parameter_index, value}` pairs, and writes are sparse by index. Two bands' GAIN
-controls are pinned, and they give the stride: setting **band 3's GAIN** to +6 dB left
-index **10** at `0.75`, and **band 1's GAIN** to +6 dB left index **0** at `0.75`. So
-band N's group starts at `(N - 1) * 5` with GAIN at offset 0, and 0.75 is +6 dB on a
--12..+12 dB range.
+**Global EQ parameter layout: 5 per band.** `parameters` is a flat list of 28
+`{parameter_index, value}` pairs, sparse by index on write. Band N's controls sit at
+`(N - 1) * 5 + offset`:
 
-The other four offsets within a band - the manual lists type, frequency, Q and bypass -
-are not individually identified. Note also that a `parameters` block carrying no
-`parameter_index` IS index 0, since the field is a plain int32 and the zero is not
-serialized.
+| offset | control | notes |
+|---|---|---|
+| 0 | GAIN | 0.5 is 0 dB, 0.75 is +6 dB on the manual's -12..+12 dB |
+| 1 | FREQUENCY | |
+| 2 | Q | |
+| 3 | TYPE | a five-option list, so `index / 4` - see below |
+| 4 | ? | 1.0 on every band, not identified |
+
+Established by changing each of band 1's controls in turn, with a scene change fencing
+each so only one index moved per window, and then checked structurally against the whole
+list. Laid out five per band the shipped defaults line up exactly as a five-band
+parametric EQ should:
+
+```
+band 1   gain 0.5   freq 0.142   Q 0.0613   type 1.00 (Lo Shelf)
+band 2   gain 0.5   freq 0.207   Q 0.0613   type 0.00 (Peak)
+band 3   gain 0.5   freq 0.405   Q 0.0613   type 0.00 (Peak)
+band 4   gain 0.5   freq 0.616   Q 0.0613   type 0.00 (Peak)
+band 5   gain 0.5   freq 0.729   Q 0.0613   type 0.75 (Hi Shelf)
+```
+
+Identical gains and Qs, monotonically rising frequencies, and shelf/peak/peak/peak/shelf
+types. Indices 25 to 27 fall outside the bands and are unidentified; the manual's OUT tab
+is the obvious candidate.
+
+**Filter types** are `0.0 Peak, 0.25 Hi pass, 0.5 Lo pass, 0.75 Hi Shelf, 1.0 Lo Shelf`,
+mapped by cycling the control through every shape on the unit and confirmed independently
+by those defaults.
+
+Note that a `parameters` block carrying no `parameter_index` IS index 0, and one carrying
+no `value` IS 0.0 - both fields are plain scalars, so their zeros are not serialized. Two
+writes were missed on a first pass for exactly that reason.
 
 ### 7.7c The folder tree, and what else is enumerable
 

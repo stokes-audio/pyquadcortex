@@ -8,6 +8,36 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.19.0 - 2026-07-28
+
+### Added
+
+- **`set_global_eq(band, gain=, frequency=, q=, filter_type=)`** - the Global EQ by
+  band number rather than wire index, with `GlobalEQFilter` for the filter shapes
+  (PEAK, HIGH_PASS, LOW_PASS, HIGH_SHELF, LOW_SHELF).
+
+  The layout is 5 parameters per band at offsets GAIN 0, FREQUENCY 1, Q 2, TYPE 3, so
+  band N sits at `(N - 1) * 5`. That started as a guess from two data points and was
+  properly checked before shipping: changing each of band 1's controls in turn showed
+  which index moved, and the whole 28-parameter list then lines up exactly as a
+  five-band parametric EQ should - identical gains, identical Qs, monotonically
+  increasing frequencies, and shelf/peak/peak/peak/shelf filter types. The filter
+  mapping is confirmed twice over: by cycling the control on the unit, and by those
+  shipped defaults.
+
+  Offset 4 is 1.0 on every band and is NOT identified, so it is not exposed. Indices
+  25 to 27 sit outside the bands and are likewise unidentified.
+- **`LooperState.OVERDUBBING = 6`**, observed by pressing OVERDUB during playback and
+  again to leave it. `3` is still unobserved - overdub was the obvious guess for it,
+  which is a reason not to guess again.
+
+### Confirmed
+
+The tuner's reference pitch is an offset in **Hz**: 442 gave 2.0 and 445 gave 5.0. Two
+points on a line, so the scale is settled rather than inferred. And MIDI sources 8 and 9
+are the expression pedals - the unit labels them "Exp 1"/"Exp 2" in the MIDI Out list and
+"Expression pedal 1" on the detail screen.
+
 ## 0.18.0 - 2026-07-28
 
 ### Added

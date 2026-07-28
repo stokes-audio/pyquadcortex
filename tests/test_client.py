@@ -1953,8 +1953,10 @@ def test_delete_setlist_addresses_the_folder_key():
 
 
 def test_looper_state_enum_omits_the_value_never_observed():
+    # Overdub was the obvious guess for 3 and turned out to be 6, so 3 stays out.
     from pyquadcortex.enums import LooperState
-    assert [int(s) for s in LooperState] == [1, 2, 4, 5]
+    assert [int(s) for s in LooperState] == [1, 2, 4, 5, 6]
+    assert int(LooperState.OVERDUBBING) == 6
     assert 3 not in [int(s) for s in LooperState], "3 was never seen; do not invent it"
 
 
@@ -2050,3 +2052,53 @@ def test_copy_preset_does_recall_the_source_which_changes_the_grid():
                    to_position=0)
     assert "RecallPresetMessage" in t.calls
     assert any(isinstance(m, pa.SetlistPositionMessage) for m in qc._t.sent)
+
+
+# -- Global EQ by band, not by wire index --------------------------------------
+# 5 parameters per band at offsets GAIN 0, FREQUENCY 1, Q 2, TYPE 3. Established by
+# changing each of band 1's controls and seeing which index moved, then checked
+# against the whole 28-parameter list, whose defaults line up as a five-band
+# parametric EQ should: identical gains and Qs, rising frequencies, and
+# shelf/peak/peak/peak/shelf types.
+
+
+def test_set_global_eq_maps_band_and_control_to_the_wire_index():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_global_eq(band=1, gain=0.75)
+    assert qc._t.sent[-1].parameters[0].parameter_index == 0
+    qc.set_global_eq(band=3, gain=0.75)
+    assert qc._t.sent[-1].parameters[0].parameter_index == 10
+    qc.set_global_eq(band=5, q=0.2)
+    assert qc._t.sent[-1].parameters[0].parameter_index == 22
+    qc.set_global_eq(band=2, frequency=0.4)
+    assert qc._t.sent[-1].parameters[0].parameter_index == 6
+
+
+def test_set_global_eq_sends_the_filter_type_as_an_option_value():
+    from pyquadcortex.enums import GlobalEQFilter
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_global_eq(band=1, filter_type=GlobalEQFilter.LOW_SHELF)
+    p = qc._t.sent[-1].parameters[0]
+    assert (p.parameter_index, p.value) == (3, pytest.approx(1.0))
+    qc.set_global_eq(band=1, filter_type=GlobalEQFilter.PEAK)
+    assert qc._t.sent[-1].parameters[0].value == pytest.approx(0.0)
+    qc.set_global_eq(band=5, filter_type=GlobalEQFilter.HIGH_SHELF)
+    p = qc._t.sent[-1].parameters[0]
+    assert (p.parameter_index, p.value) == (23, pytest.approx(0.75))
+
+
+def test_set_global_eq_sends_only_the_controls_given():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_global_eq(band=2, gain=0.6, q=0.1)
+    indices = [m.parameters[0].parameter_index for m in qc._t.sent]
+    assert indices == [5, 7], "gain and Q only, no frequency or type write"
+
+
+def test_set_global_eq_validates_the_band_and_needs_a_control():
+    qc = client.QuadCortex(FakeTransport())
+    for bad in (0, 6, -1):
+        with pytest.raises(ValueError, match="band must be"):
+            qc.set_global_eq(band=bad, gain=0.5)
+    with pytest.raises(TypeError):
+        qc.set_global_eq(band=1)
+    assert qc._t.sent == []

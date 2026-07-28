@@ -211,8 +211,9 @@ class LooperState(IntEnum):
     the undo removed the loop. REVERSE and HALF SPEED did not change the state at
     all - they set ``in_reverse`` and ``half_speed`` while playback continued.
 
-    ``3`` was never observed and is deliberately absent; overdub is the obvious
-    candidate but nothing here establishes it.
+    ``3`` has never been observed and is deliberately absent. Overdub was the
+    obvious guess for it and turned out to be 6, so there is no reason to assume
+    what 3 might be.
     """
 
     #: Stopped, with no loop playing.
@@ -224,3 +225,26 @@ class LooperState(IntEnum):
     #: Armed, waiting for an input signal to cross the threshold. The Looper sits
     #: here indefinitely with nothing plugged in, and the other controls stay inert.
     ARMED = 5
+    #: Overdubbing. Observed by pressing OVERDUB during playback and again to leave
+    #: it, which returned to PLAYING.
+    OVERDUBBING = 6
+
+
+class GlobalEQFilter(IntEnum):
+    """Filter shape of a Global EQ band, as an option index.
+
+    The control is a five-option list, so its wire value is ``index / 4``:
+    :func:`pyquadcortex.option_value` does that, and
+    :meth:`~pyquadcortex.QuadCortex.set_global_eq` takes this enum directly.
+
+    Mapped by cycling the control through every shape on the unit with the values
+    read off the wire, and confirmed independently by the shipped defaults: a
+    factory-fresh Global EQ reads Lo Shelf on band 1, Peak on bands 2 to 4 and Hi
+    Shelf on band 5 - the canonical layout for a five-band parametric EQ.
+    """
+
+    PEAK = 0
+    HIGH_PASS = 1
+    LOW_PASS = 2
+    HIGH_SHELF = 3
+    LOW_SHELF = 4
