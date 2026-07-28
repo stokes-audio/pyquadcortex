@@ -22,10 +22,13 @@ import pyquadcortex
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 
 # Chatter that arrives constantly and drowns everything else. On the firmware
-# measured, GlobalTempoMessage is the only heavy one - about 50 in 10 seconds -
+# measured, GlobalTempoMessage is the only heavy one - about 60 every 15 seconds -
 # so start by counting arrivals BY TYPE and filter from what you actually see
 # rather than from this list. (CPULoadMessage, for instance, never arrives at
 # all, subscribed or not, so filtering it is harmless but pointless.)
+#
+# Note this is a NOISE list, not an allow-list, and pair it with a heartbeat -
+# see "Two ways a listener lies about silence" above.
 NOISE = {"GlobalTempoMessage", "IOMeterMessage", "GridModelMeterMessage",
          "KeepAliveMessage", "ModuleStatsMessage"}
 
@@ -49,6 +52,36 @@ with lock:
     for name, body in seen:
         print(f"{name}: {body[:400]}")
 ```
+
+## Two ways a listener lies about silence
+
+Both of these produced wrong conclusions in this project, and both look exactly like "the
+device broadcasts nothing".
+
+**A message type you have not registered is DISCARDED before you see it.** The RX path
+decodes by type and drops what it cannot decode, so a listener watching decoded traffic is
+blind to every unregistered type. "New Neural Capture" appeared to do nothing on the unit
+AND produce nothing on the wire; with the type registered, the same tap immediately showed
+`NeuralCapture{try_to_show_dialog: true}`. This library now decodes 70 of the device's 72
+types for exactly this reason - but if you are filtering by type in your own listener, make
+sure the filter is a NOISE list rather than an allow-list.
+
+**Filtering chatter makes a dead link look like a quiet one.** The device sends
+`GlobalTempo` constantly, so it is the first thing anyone filters out - and then a log with
+nothing in it is indistinguishable from a USB link that died mid-session, which does happen
+(see [troubleshooting.md](troubleshooting.md)). Write a periodic heartbeat that COUNTS the
+chatter you suppressed:
+
+```python
+# every 15 seconds
+LOG.write(f"-- heartbeat: {suppressed} chatter msgs, "
+          f"{'ALIVE' if quiet < 10 else 'LINK MAY BE DEAD'}\n")
+```
+
+A silent log with a beating heart is a finding. A silent log without one is nothing at all.
+The conclusion that the Tempo menu's MODE control is not on the wire was reached twice: the
+first time with neither safeguard, and again with both, and only the second time was worth
+anything.
 
 ## Five things that make the difference between a result and a wasted hour
 
