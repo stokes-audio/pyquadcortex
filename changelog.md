@@ -8,6 +8,19 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.16.1 - 2026-07-28
+
+Documentation only.
+
+- **The master volume is a gain stage of its own.** Across 114 pushes while the knob was
+  turned, no port level changed - so it is applied downstream of the stored levels rather
+  than rewriting them. The nearest host-side equivalent is setting the individual output
+  levels, which are writable; the headphone output's level is not, refusing a write even
+  when sent alone.
+- The list of open questions that need someone at the unit has moved out of this repo. It
+  is about how the library is being built rather than how it works, which is not what this
+  repo documents.
+
 ## 0.16.0 - 2026-07-28
 
 Second interactive capture session, and the results split neatly: three features gained,
@@ -127,9 +140,7 @@ from the signed-in Cortex Cloud account on every user save, so a factory preset'
 
 Third exploration round, worked through without anyone at the unit. Everything below was
 established by driving the device and reading it back; what could NOT be settled that way
-is now listed in
-[docs/needs-hardware-interaction.md](docs/needs-hardware-interaction.md) rather than left
-implicit.
+is tracked outside this repo rather than left implicit.
 
 ### Added
 

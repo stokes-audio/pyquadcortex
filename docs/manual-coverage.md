@@ -39,8 +39,8 @@ What is left falls into two kinds. Some writes are **confirmed no-ops**, so the 
 something else: preset `volume`/`pan`, `scene_tempo`, preset tags, pinning a model, and
 duplicating a setlist. The rest is **semantics** - shapes that work but whose numbering
 needs an eye on the unit, like the Looper's `state` and the Global EQ parameter indices.
-Both kinds are listed with what to do about them in
-[needs-hardware-interaction.md](needs-hardware-interaction.md).
+Both kinds are tracked outside this repo, since a list of open build questions is not
+documentation of the library.
 
 ---
 
@@ -51,7 +51,7 @@ Both kinds are listed with what to do about them in
 | Recall a preset | yes | `recall_preset()`, `read_preset()` |
 | Switch scene | yes | `switch_scene()` |
 | Bank navigation | yes | any slot is addressable by name (`"28C"`) or index |
-| Master Volume level | partly | `master_volume()` reads it (0..1 mapping to the 0-100 on screen). READ-ONLY: a write is accepted and ignored, so there is no setter |
+| Master Volume level | partly | `master_volume()` reads it (0..1 mapping to the 0-100 on screen). READ-ONLY, and it is a separate gain stage - turning the knob changes no port level. The nearest equivalent is setting the individual output levels |
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | partly | in `GeneralSettings`, so reachable via `update_settings()`; not individually exercised |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
@@ -65,7 +65,7 @@ Both kinds are listed with what to do about them in
 | Gig View: open/close | yes | `set_gig_view()` |
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | partly | `set_input_port()` writes level, ground lift and input type. Impedance did NOT take, matching the manual's note that it is disabled for Mic inputs; phantom has no field |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |
-| I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested |
+| I/O: USB LEVEL, HP SOURCE, DRY/WET | partly | `set_usb_port()`; `dry_wet` confirmed, level and hp_select untested. The headphone output's own level is NOT writable |
 | Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | partly | `set_global_eq_bypassed()` and `set_global_eq_band(index, value)` both confirmed; which parameter index is which band control is unestablished |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
 | Footswitch presses, touch gestures, encoders | n/a | physical |

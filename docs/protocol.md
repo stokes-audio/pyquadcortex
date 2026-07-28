@@ -1396,6 +1396,16 @@ linearly to the 0-100 on screen (the knob at 47 reported 0.471074373). A `Master
 UPDATE carrying a new level is accepted and changes nothing, which fits the device's own
 pushes carrying `calibrate` rather than a setpoint.
 
+**And it is a gain stage of its own, not a rewrite of the port levels.** Across 114
+`MasterVolume` pushes while the knob was turned, no `IOSettings` port level changed at
+all - the only I/O traffic in that window was `plugged` notifications. So the knob is
+applied downstream of the stored levels.
+
+The nearest host-side equivalent is therefore to set the individual OUTPUT levels, which
+are writable, and `master_volume_assignment` says which outputs the knob is governing.
+That covers the physical outputs but not everything: `hp_port.level` is NOT writable,
+refusing a write even when sent alone, so the headphone level cannot be driven this way.
+
 **Pinning a model** works, but not the way the other state types do:
 
 ```
