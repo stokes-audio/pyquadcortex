@@ -8,6 +8,60 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.11.0 - 2026-07-27
+
+The first round of a manual-driven audit: [docs/manual-coverage.md](docs/manual-coverage.md)
+lists every feature the Quad Cortex manual describes against what this library can do,
+and this release closes the biggest gap it found - the parts of a preset that are not
+audio. Each item below was established by performing the action on the unit, reading
+what the device broadcast, replaying that shape from the host, and confirming by
+save-and-read-back.
+
+### Added
+
+- **`set_stomp_assignment(row, column, footswitch)`** and `clear_stomp_assignment()`,
+  for binding a block to a STOMP-mode footswitch, plus `set_stomp_momentary()` and
+  `set_stomp_label()` for the maps that travel with it, and `stomp_assignments()` to
+  read them. Assigning takes the unit's own two-message sequence - a DELETE of the
+  cell's existing assignment, then the new one; an UPDATE alone leaves the old one in
+  place. New `Footswitch` enum (A-H = 0-7).
+- **`set_expression(row, column, param, pedal, minimum, maximum)`**, assigning an
+  expression pedal to a parameter with a sweep range. Setting minimum above maximum
+  reverses it, which is how the manual describes inverting a parameter.
+- **Per-preset MIDI Out**: `set_midi_out(source, messages)` and
+  `set_preset_load_midi_out(messages)`, with `midi_out()` / `preset_load_midi_out()`
+  to read them, the `MidiSource` and `MidiOutType` enums, and a `MidiOut` builder
+  (`MidiOut.cc()`, `MidiOut.cc_toggle()`, `MidiOut.pc()`, `MidiOut.expression_cc()`).
+  These do NOT travel by `Grid` - the preset stores them, but a `Grid` update carrying
+  those fields is ignored. `MIDISettings` applies them, and is now registered.
+- **`set_split_mute(row, muted)`** for the splitter/mixer MUTE. The manual lists a MUTE
+  under both editors and it is ONE control: muting the splitter shows the mixer's MUTE
+  already engaged.
+- **`set_param(..., text=...)`** for string-valued parameters. A `ParamValue` can carry
+  a `string_value`, which is how a cab's microphone is selected.
+- **`param_options(preset, row, column, index)`** - the option names of a list
+  parameter.
+
+### Documentation
+
+- **Corrected:** comboBox option names were documented as unrecoverable. They are not in
+  `ModelRepo`, but the PRESET carries the rendered list in `Param.dynamic_steps`. That
+  also answers a question recorded as open: the Doubler `TRIGGER` option index 1 is
+  'Follow Input', a fixed entry, and the per-block entries follow the fixed ones - which
+  is why the stored value's denominator tracks the preset's block count.
+- New protocol sections for per-preset MIDI Out (source layout, type codes, and what
+  each of the three generic params means per type), STOMP assignments, expression
+  assignment, the split/mix mute, and string-valued parameters.
+- `MIDISettings` is write-only in practice: a READ gets no reply, so verify against the
+  saved preset.
+
+### Known gaps
+
+- `BinaryPreset.volume` and `pan` are ignored by a `Grid` update and no other route has
+  been found.
+- `scene_tempo` is untested.
+- DSP load remains unreadable; `CPULoad` never arrives, subscribed or not.
+
 ## 0.10.0 - 2026-07-27
 
 Everything below was re-derived on hardware against factory presets before being

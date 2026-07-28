@@ -33,7 +33,8 @@ import uuid
 from typing import NamedTuple
 
 from pyquadcortex import catalog, registry
-from pyquadcortex.enums import Input, Instrument, Output, Setlist  # noqa: F401
+from pyquadcortex.enums import (Footswitch, Input, Instrument, MidiOutType,  # noqa: F401
+                                MidiSource, Output, Setlist)
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
@@ -497,7 +498,7 @@ class QuadCortex:
 
     def set_param(self, row: int, column: int, param_index=None,
                   value: float = 0.0, scene=None, param=None, model=None,
-                  real=None, promote: bool = True):
+                  real=None, promote: bool = True, text: str = None):
         """Set one block parameter on the grid (row/column-keyed sparse update).
 
         Confirmed shape: a knob change streams
@@ -544,7 +545,17 @@ class QuadCortex:
         Without ``scene``, the write lands on the active scene - which for a
         parameter that is not scene-following is its single global value, and so
         appears in all eight scenes.
+
+        **Not every parameter is a number.** A ``ParamValue`` can carry a
+        ``string_value`` instead, which is how a cab's microphone selection is
+        stored - the unit broadcasts ``string_value: "NG_212 DG Neo_Condenser
+        U47"`` when a mic is chosen. Pass ``text=`` for those; confirmed to
+        survive a save and read-back. The readable option list for a parameter
+        that has one is in ``Param.dynamic_steps`` on the preset, not in the
+        catalog (see :meth:`param_options`).
         """
+        if text is not None and real is not None:
+            raise TypeError("pass text= or real=, not both")
         if real is not None:
             if param is None or model is None:
                 raise TypeError(
@@ -571,7 +582,10 @@ class QuadCortex:
         model_msg.column = column
         p = model_msg.params.add()
         p.index = param_index
-        p.param_values.add().float_value = value
+        if text is not None:
+            p.param_values.add().string_value = text
+        else:
+            p.param_values.add().float_value = value
         return self._t.send(msg)
 
     def set_param_scene_mode(self, row: int, column: int, param_index: int,
@@ -1077,6 +1091,160 @@ class QuadCortex:
         return self._t.send(self._sub_param_message(
             "input_control", self.INPUT_GATE_CONTROL, row, index, value=value))
 
+    def set_split_mute(self, row: int, muted: bool = True):
+        """Mute or unmute the split/mix path on ``row``.
+
+        The manual lists a MUTE under both SPLITTER PARAMETERS and MIXER
+        PARAMETERS. It is **one control**, not two: muting the splitter on the
+        unit shows the mixer's MUTE already engaged (confirmed on the unit).
+        Neither appears in the catalog's parameter list for either model, which
+        is why it is here rather than a ``param`` on
+        :meth:`set_splitter_param`.
+
+        The write goes to ``Chain.splitBypass`` and the device reports the result
+        in ``Chain.mixBypass`` - the same write-here/read-there split as
+        ``combined_splitter`` versus ``splitter[]``. A write to ``mixBypass``
+        does nothing.
+
+        Both fields are ``repeated SceneBypass``, one entry per scene, but a
+        single write sets **all eight**: it is not per-scene in practice.
+
+        ``row`` must be 0 or 2, as for any splitter or mixer.
+        """
+        _require_even_row(row, "splitter or mixer")
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        chain.splitBypass.add().bypass = muted
+        return self._t.send(msg)
+
+    def set_stomp_assignment(self, row: int, column: int, footswitch):
+        """Assign the block at ``row``/``column`` to a STOMP-mode footswitch.
+
+        ``footswitch`` is a :class:`~pyquadcortex.enums.Footswitch` (or 0-7 for
+        A-H). One footswitch may drive several blocks - factory content does
+        this - so assigning does not displace anything else.
+
+        Reproducing the unit's own two-message sequence, which is what makes it
+        stick: a DELETE of any existing assignment for that cell, then the new
+        one. Sending only the UPDATE leaves the old assignment in place.
+
+        Read them back with :func:`stomp_assignments`.
+        """
+        self.clear_stomp_assignment(row, column)
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        a = msg.preset.stomp_mode_assignments.add()
+        a.row = row
+        a.column = column
+        a.stomp_index = int(footswitch)
+        return self._t.send(msg)
+
+    def clear_stomp_assignment(self, row: int, column: int):
+        """Unassign the block at ``row``/``column`` from its footswitch."""
+        msg = pa.GridMessage(action=pa.MessageAction.DELETE)
+        a = msg.preset.stomp_mode_assignments.add()
+        a.row = row
+        a.column = column
+        return self._t.send(msg)
+
+    def set_stomp_momentary(self, footswitch, momentary: bool = True):
+        """Make a footswitch momentary rather than latching, for this preset.
+
+        ``BinaryPreset.stomp_is_momentary`` is a map keyed by footswitch index.
+        Confirmed writable by a ``Grid`` update carrying the map entry alone.
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        msg.preset.stomp_is_momentary[int(footswitch)] = momentary
+        return self._t.send(msg)
+
+    def set_stomp_label(self, footswitch, label: str, single: bool = False):
+        """Label a footswitch for this preset.
+
+        Two maps exist: ``stomp_labels`` and ``single_stomp_labels``, the latter
+        used when the footswitch drives exactly one block. The unit clears both
+        when an assignment is removed. ``single=True`` writes the second.
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        target = (msg.preset.single_stomp_labels if single
+                  else msg.preset.stomp_labels)
+        target[int(footswitch)] = label
+        return self._t.send(msg)
+
+    def set_expression(self, row: int, column: int, param, pedal: int = 1,
+                       minimum: float = 0.0, maximum: float = 1.0, model=None):
+        """Assign an expression pedal to one block parameter.
+
+        ``pedal`` is 1 or 2, matching EXP 1 and EXP 2 on the back panel.
+        ``minimum`` and ``maximum`` are the normalized 0..1 ends of the sweep;
+        setting minimum above maximum reverses the pedal, which is how the
+        manual describes inverting a parameter.
+
+        Row/column-keyed like :meth:`set_param`, and confirmed on hardware both
+        as the device's own broadcast when a pedal is assigned on the unit and
+        as a host write surviving a save and read-back.
+
+        Note the manual's warning: a parameter assigned to an expression pedal is
+        excluded from Scene data and will not change when switching scenes.
+        """
+        index = self._resolve_param_index(param, model) if not isinstance(param, int) \
+            else param
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        model_msg = chain.models.add()
+        model_msg.column = column
+        p = model_msg.params.add()
+        p.index = index
+        p.expression = int(pedal)
+        p.expression_min = minimum
+        p.expression_max = maximum
+        return self._t.send(msg)
+
+    def set_midi_out(self, source, messages):
+        """Set the MIDI messages a footswitch or expression pedal sends.
+
+        ``source`` is a :class:`~pyquadcortex.enums.MidiSource` - footswitches A-H
+        (0-7) or the two expression pedals (8, 9). ``messages`` is a list of
+        :class:`MidiOut` entries, up to 12; the list REPLACES whatever that source
+        had.
+
+        These do NOT travel by ``Grid``. The preset stores them in
+        ``midi_messages_general_v2``, but a ``Grid`` update carrying that field is
+        accepted and ignored - ``MIDISettings`` is what applies them::
+
+            qc.set_midi_out(MidiSource.FOOTSWITCH_A, [MidiOut.cc(channel=3, cc=10, value=64)])
+
+        Confirmed on hardware: the values survive a save and read-back, and the
+        120-slot array is 10 sources x 12 messages, so source N occupies slots
+        ``N*12`` onward. The device mirrors the first message of each source into
+        the 10-slot legacy ``midi_messages_general``.
+
+        A ``MIDISettings`` READ gets no reply on this firmware, so read the saved
+        preset to verify rather than asking the device.
+        """
+        return self._midi_settings("general_midi_messages", source, messages)
+
+    def set_preset_load_midi_out(self, messages):
+        """Set the MIDI messages sent when this preset is loaded (up to 12).
+
+        Same mechanism as :meth:`set_midi_out`; these land in
+        ``BinaryPreset.midi_messages``.
+        """
+        return self._midi_settings("preset_load_messages", 0, messages)
+
+    def _midi_settings(self, field: str, source, messages):
+        msg = pa.MIDISettingsMessage(action=pa.MessageAction.UPDATE)
+        group = getattr(msg, field).messages.add()
+        group.source = int(source)
+        for m in messages:
+            entry = group.msg.add()
+            entry.type = int(m.type)
+            entry.channel = int(m.channel)
+            entry.param1 = int(m.param1)
+            entry.param2 = int(m.param2)
+            entry.param3 = int(m.param3)
+        return self._t.send(msg)
+
     def set_lane_output_scene_mode(self, row: int, param_index: int,
                                    enabled: bool = True):
         """Make a Lane Output Control parameter follow scenes.
@@ -1417,6 +1585,132 @@ def splits(p: preset.BinaryPreset) -> list:
                 continue
             found.append(Split(row=row, split_column=scp.split, mix_column=scp.mix))
     return found
+
+
+class MidiOut(NamedTuple):
+    """One per-preset MIDI Out message.
+
+    The wire carries a generic ``{type, channel, param1, param2, param3}``, so
+    build these with :meth:`cc` or :meth:`pc` rather than by hand - what the
+    three params mean depends on the type. Both mappings are confirmed by
+    entering a message on the unit and reading the saved preset.
+    """
+
+    type: int
+    channel: int
+    param1: int = 0
+    param2: int = 0
+    param3: int = 0
+
+    @classmethod
+    def cc(cls, channel: int, cc: int, value: int):
+        """A Control Change sending one value, for a footswitch source.
+
+        ``param1`` is the CC number and ``param2`` the value.
+        """
+        return cls(type=MidiOutType.CC, channel=channel, param1=cc, param2=value)
+
+    @classmethod
+    def cc_toggle(cls, channel: int, cc: int, minimum: int, maximum: int):
+        """A Control Change that alternates between two values on each press.
+
+        ``param2`` and ``param3`` are the MIN and MAX the manual describes.
+        Confirmed: entering CC Toggle on the unit stored ``type: 2`` with
+        ``param2: 5, param3: 120`` for a 5/120 range.
+        """
+        return cls(type=MidiOutType.CC_TOGGLE, channel=channel, param1=cc,
+                   param2=minimum, param3=maximum)
+
+    @classmethod
+    def expression_cc(cls, channel: int, cc: int, minimum: int, maximum: int):
+        """A Control Change swept by an expression pedal.
+
+        An expression source sends a RANGE rather than a single value, so the
+        unit asks for min and max even for a plain CC: the stored message is
+        ``type: 1`` with ``param2``/``param3`` holding the ends of the sweep.
+        Use this for :attr:`~pyquadcortex.enums.MidiSource.EXPRESSION_1` and
+        ``EXPRESSION_2``; use :meth:`cc` for a footswitch.
+        """
+        return cls(type=MidiOutType.CC, channel=channel, param1=cc,
+                   param2=minimum, param3=maximum)
+
+    @classmethod
+    def pc(cls, channel: int, program: int, bank_msb: int = 0, bank_lsb: int = 0):
+        """A Program Change: ``param1``/``param2`` are the bank select bytes
+        (CC#0 and CC#32) and ``param3`` the program number."""
+        return cls(type=MidiOutType.PC, channel=channel, param1=bank_msb,
+                   param2=bank_lsb, param3=program)
+
+
+class StompAssignment(NamedTuple):
+    """A block bound to a STOMP-mode footswitch."""
+
+    row: int
+    column: int
+    footswitch: int
+
+
+def stomp_assignments(p: preset.BinaryPreset) -> list:
+    """Which blocks are bound to which footswitches, as :class:`StompAssignment`.
+
+    Note that ``row``, ``column`` and ``stomp_index`` all lack presence, so a
+    zero is indistinguishable from unset - an entry for row 0, column 0,
+    footswitch A reads as a bare, apparently empty entry. Factory content
+    populates this: "Darkglass AO900 2" binds eight blocks to A-H.
+    """
+    return [StompAssignment(row=a.row, column=a.column, footswitch=a.stomp_index)
+            for a in p.stomp_mode_assignments]
+
+
+def midi_out(p: preset.BinaryPreset, source=None) -> dict:
+    """The per-preset MIDI Out messages, keyed by :class:`MidiSource`.
+
+    Reads the 120-slot ``midi_messages_general_v2`` as 10 sources x 12 messages.
+    Pass ``source`` to get one source's list instead of the whole map. Empty
+    slots are dropped, so a source with nothing assigned is absent.
+    """
+    out = {}
+    for i, m in enumerate(p.midi_messages_general_v2):
+        if not (m.type or m.channel or m.param1 or m.param2 or m.param3):
+            continue
+        out.setdefault(i // 12, []).append(
+            MidiOut(type=m.type, channel=m.channel, param1=m.param1,
+                    param2=m.param2, param3=m.param3))
+    if source is not None:
+        return out.get(int(source), [])
+    return out
+
+
+def preset_load_midi_out(p: preset.BinaryPreset) -> list:
+    """The MIDI messages this preset sends when it is loaded."""
+    return [MidiOut(type=m.type, channel=m.channel, param1=m.param1,
+                    param2=m.param2, param3=m.param3)
+            for m in p.midi_messages
+            if m.type or m.channel or m.param1 or m.param2 or m.param3]
+
+
+def param_options(p: preset.BinaryPreset, row: int, column: int,
+                  param_index: int) -> list:
+    """The option names of a list-valued parameter, from the preset.
+
+    A comboBox parameter's options are NOT in the device catalog, which gives
+    only ``min``, ``max`` and ``steps`` - but the preset carries the rendered
+    list in ``Param.dynamic_steps``. Reading factory "US TWN Vibrato" (01C), the
+    Doubler's TRIGGER options are ``Off, Follow Input, Input 1, Input 2, Input
+    1/2, Return 1, Return 2, Return 1/2, USB input 5..8, ...``.
+
+    Some of those lists include one entry per block in the preset, which is why
+    such a parameter's stored value changes when the block count does.
+    """
+    for i, chain in enumerate(p.chains):
+        if (chain.row if field_present(chain, "row") else i) != row:
+            continue
+        for j, model in enumerate(chain.models):
+            if (model.column if field_present(model, "column") else j) != column:
+                continue
+            if param_index < len(model.params):
+                return list(model.params[param_index].dynamic_steps)
+    return []
 
 
 def free_rows(p: preset.BinaryPreset) -> list:

@@ -58,6 +58,10 @@ _BY_NAME = {
     "SystemTimeSync": pa.SystemTimeSyncMessage,
     "CloudLogin": pa.CloudLoginMessage,
     "CloudProduct": pa.CloudProductMessage,
+    # Per-preset MIDI output. The preset stores these in
+    # BinaryPreset.midi_messages/_general/_general_v2, but a Grid update carrying
+    # those fields does nothing - MIDISettings is what applies them.
+    "MIDISettings": pa.MIDISettingsMessage,
 }
 _ENUM = pa.CortexMessageType.Enum
 _BY_TYPE = {_ENUM.Value(name): cls for name, cls in _BY_NAME.items()}

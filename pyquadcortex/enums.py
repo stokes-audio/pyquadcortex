@@ -112,3 +112,57 @@ class Setlist(StrEnum):
     # WITHOUT the trailing slash, so anything matching a folder key against this
     # value must normalize it (see QuadCortex.list_presets).
     FACTORY = "/opt/neuraldsp/Factory Library/"
+
+
+class Footswitch(IntEnum):
+    """The eight footswitches, as ``stomp_index`` numbers them.
+
+    Confirmed against factory content: "Darkglass AO900 2" assigns its row 0
+    blocks to A-D and its row 2 blocks to E-H, in this order.
+    """
+
+    A = 0
+    B = 1
+    C = 2
+    D = 3
+    E = 4
+    F = 5
+    G = 6
+    H = 7
+
+
+class MidiSource(IntEnum):
+    """What sends a per-preset MIDI Out message (``GeneralMIDIMessage.source``).
+
+    Ten sources, which is why the preset's ``midi_messages_general_v2`` holds
+    120 slots: 10 sources x 12 messages, source N starting at slot ``N*12``.
+    Confirmed by writing distinct messages to sources 0, 1, 2, 7, 8 and 9 and
+    reading back slots 0, 12/13, 24, 84, 96 and 108.
+
+    Footswitches A-H are 0-7, and 8 and 9 are the two expression pedals: a
+    message assigned to Expression 1 on the unit landed in slot 96, which is
+    source 8.
+    """
+
+    FOOTSWITCH_A = 0
+    FOOTSWITCH_B = 1
+    FOOTSWITCH_C = 2
+    FOOTSWITCH_D = 3
+    FOOTSWITCH_E = 4
+    FOOTSWITCH_F = 5
+    FOOTSWITCH_G = 6
+    FOOTSWITCH_H = 7
+    EXPRESSION_1 = 8
+    EXPRESSION_2 = 9
+
+
+class MidiOutType(IntEnum):
+    """Type code of a per-preset MIDI Out message (``MidiMessageInfo.type``).
+
+    Confirmed on hardware by entering each on the unit and reading the saved
+    preset: CC stored ``type: 1``, CC Toggle ``type: 2``, PC ``type: 3``.
+    """
+
+    CC = 1
+    CC_TOGGLE = 2
+    PC = 3

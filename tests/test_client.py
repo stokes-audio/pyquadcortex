@@ -11,7 +11,8 @@ import itertools
 import pytest
 
 from pyquadcortex import catalog, client
-from pyquadcortex.enums import Input, Instrument, Output, Setlist
+from pyquadcortex.enums import (Footswitch, Input, Instrument, MidiSource,
+                                Output, Setlist)
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
@@ -1258,3 +1259,173 @@ def test_set_mixer_param_refuses_real_units_for_a_placeholder_range():
     qc.set_mixer_param(row=0, param="MIXER LEVEL", value=client.UNITY_LEVEL)
     written = qc._t.sent[-1].preset.chains[0].mixer[0].params[0]
     assert written.param_values[0].float_value == pytest.approx(0.76923077)
+
+
+# -- split/mix mute -----------------------------------------------------------
+# One control, not two: muting the splitter on the unit shows the mixer's MUTE
+# already engaged. The write goes to splitBypass and the device reports it in
+# mixBypass; a write to mixBypass does nothing. Established by a four-trial
+# matrix (each field x rows 0 and 2, one write per fresh recall).
+
+
+def test_set_split_mute_writes_splitbypass_not_mixbypass():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_split_mute(row=2, muted=True)
+    chain = qc._t.sent[-1].preset.chains[0]
+    assert chain.row == 2
+    assert [x.bypass for x in chain.splitBypass] == [True]
+    assert len(chain.mixBypass) == 0, "mixBypass is the report field, not the write"
+
+
+def test_set_split_mute_can_unmute():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_split_mute(row=0, muted=False)
+    assert [x.bypass for x in qc._t.sent[-1].preset.chains[0].splitBypass] == [False]
+
+
+def test_set_split_mute_refuses_an_odd_row():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="row 0 or"):
+        qc.set_split_mute(row=1)
+    assert qc._t.sent == []
+
+
+# -- STOMP footswitch assignments ---------------------------------------------
+
+
+def test_set_stomp_assignment_deletes_the_old_then_writes_the_new():
+    # The unit's own sequence. An UPDATE alone leaves the previous assignment.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_stomp_assignment(row=2, column=3, footswitch=Footswitch.D)
+    delete, update = qc._t.sent[-2:]
+    assert delete.action == pa.MessageAction.DELETE
+    gone = delete.preset.stomp_mode_assignments[0]
+    assert (gone.row, gone.column) == (2, 3)
+    assert update.action == pa.MessageAction.UPDATE
+    made = update.preset.stomp_mode_assignments[0]
+    assert (made.row, made.column, made.stomp_index) == (2, 3, 3)
+
+
+def test_stomp_assignments_reads_them_back():
+    p = preset.BinaryPreset()
+    for row, col, idx in ((0, 1, 0), (2, 6, 7)):
+        a = p.stomp_mode_assignments.add()
+        a.row, a.column, a.stomp_index = row, col, idx
+    assert client.stomp_assignments(p) == [
+        client.StompAssignment(row=0, column=1, footswitch=0),
+        client.StompAssignment(row=2, column=6, footswitch=7),
+    ]
+
+
+def test_set_stomp_momentary_writes_the_map_entry():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_stomp_momentary(Footswitch.H, True)
+    assert dict(qc._t.sent[-1].preset.stomp_is_momentary) == {7: True}
+
+
+# -- expression pedal assignment ----------------------------------------------
+
+
+def test_set_expression_is_row_column_keyed_with_a_range():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_expression(row=0, column=2, param=4, pedal=2, minimum=0.1, maximum=0.9)
+    chain = qc._t.sent[-1].preset.chains[0]
+    assert chain.row == 0
+    prm = chain.models[0].params[0]
+    assert chain.models[0].column == 2
+    assert prm.index == 4
+    assert prm.expression == 2
+    assert prm.expression_min == pytest.approx(0.1)
+    assert prm.expression_max == pytest.approx(0.9)
+
+
+# -- per-preset MIDI out ------------------------------------------------------
+# Not a Grid write: the preset stores these, but a Grid update carrying the
+# field is ignored. MIDISettings applies them.
+
+
+def test_set_midi_out_uses_midisettings_not_grid():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_midi_out(MidiSource.FOOTSWITCH_A,
+                    [client.MidiOut.cc(channel=3, cc=10, value=64)])
+    msg = qc._t.sent[-1]
+    assert isinstance(msg, pa.MIDISettingsMessage)
+    assert msg.action == pa.MessageAction.UPDATE
+    group = msg.general_midi_messages.messages[0]
+    assert group.source == 0
+    one = group.msg[0]
+    assert (one.type, one.channel, one.param1, one.param2) == (1, 3, 10, 64)
+
+
+def test_preset_load_midi_out_goes_to_its_own_field():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_preset_load_midi_out([client.MidiOut.pc(channel=5, program=7,
+                                                   bank_msb=1, bank_lsb=2)])
+    msg = qc._t.sent[-1]
+    assert not msg.general_midi_messages.messages
+    one = msg.preset_load_messages.messages[0].msg[0]
+    assert (one.type, one.channel, one.param1, one.param2, one.param3) == (3, 5, 1, 2, 7)
+
+
+def test_midi_out_reader_maps_the_120_slots_to_ten_sources():
+    # 10 sources x 12 messages: source N starts at slot N*12. Confirmed on
+    # hardware by writing to sources 0, 1, 2, 7, 8, 9 and reading slots 0,
+    # 12/13, 24, 84, 96, 108.
+    p = preset.BinaryPreset()
+    for _ in range(120):
+        p.midi_messages_general_v2.add()
+    for slot, cc in ((0, 11), (12, 21), (13, 22), (108, 111)):
+        m = p.midi_messages_general_v2[slot]
+        m.type, m.channel, m.param1, m.param2 = 1, 1, cc, 1
+    got = client.midi_out(p)
+    assert sorted(got) == [0, 1, 9]
+    assert [m.param1 for m in got[1]] == [21, 22]
+    assert client.midi_out(p, MidiSource.EXPRESSION_2)[0].param1 == 111
+    assert client.midi_out(p, MidiSource.FOOTSWITCH_C) == []
+
+
+# -- string-valued parameters and option lists --------------------------------
+
+
+def test_set_param_can_write_a_string_value():
+    # A cab's microphone selection travels as string_value, not float_value.
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_param(row=0, column=5, param_index=1, text="NG_212 DG Neo_Condenser U47")
+    val = qc._t.sent[-1].preset.chains[0].models[0].params[0].param_values[0]
+    assert val.string_value == "NG_212 DG Neo_Condenser U47"
+    assert not val.HasField("float_value")
+
+
+def test_set_param_rejects_text_and_real_together():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError):
+        qc.set_param(row=0, column=0, param_index=0, text="x", real=1.0)
+
+
+def test_param_options_reads_the_list_the_catalog_lacks():
+    p = preset.BinaryPreset()
+    chain = p.chains.add()
+    chain.row = 2
+    for c in range(8):
+        m = chain.models.add()
+        m.column = c
+        for i in range(5):
+            m.params.add().index = i
+    chain.models[0].params[4].dynamic_steps.extend(["Off", "Follow Input", "Input 1"])
+    assert client.param_options(p, row=2, column=0, param_index=4) == [
+        "Off", "Follow Input", "Input 1"]
+    assert client.param_options(p, row=2, column=1, param_index=4) == []
+
+
+def test_midi_out_builders_match_what_the_unit_stores():
+    # Each confirmed by entering the message on the unit and reading the preset:
+    # CC -> type 1 with a value; CC Toggle -> type 2 with min/max; PC -> type 3
+    # with the two bank bytes then the program.
+    assert client.MidiOut.cc(channel=3, cc=10, value=64) == (1, 3, 10, 64, 0)
+    assert client.MidiOut.cc_toggle(channel=4, cc=30, minimum=5, maximum=120) \
+        == (2, 4, 30, 5, 120)
+    assert client.MidiOut.pc(channel=5, program=7, bank_msb=1, bank_lsb=2) \
+        == (3, 5, 1, 2, 7)
+    # An expression source sweeps, so even a plain CC carries min/max.
+    assert client.MidiOut.expression_cc(channel=6, cc=40, minimum=12, maximum=13) \
+        == (1, 6, 40, 12, 13)

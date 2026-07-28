@@ -45,6 +45,7 @@ confirming each finding live against hardware.
   - [7.5 Grid edits and the edit path](#75-grid-edits-and-the-edit-path)
   - [Per-preset tempo, LED and metronome](#per-preset-tempo-led-and-metronome)
   - [Grid block move](#grid-block-move)
+  - [7.6 Per-preset MIDI Out](#76-per-preset-midi-out)
   - [7.7 File operations](#77-file-operations)
   - [7.8 Other observed traffic](#78-other-observed-traffic)
 - [8. Port, instrument, and preset enums](#8-port-instrument-and-preset-enums)
@@ -976,6 +977,57 @@ carries a fifth, index 4, that the catalog does not document. A keyed write into
 `output_control` persists exactly like one into `models` (confirmed: PAN 0.5 ->
 0.0 survived a save and read-back).
 
+**Splitter and mixer MUTE is ONE control**, and it is not a catalog parameter of
+either model. Muting the splitter on the unit shows the mixer's MUTE already engaged
+(confirmed on the unit). The write goes to `Chain.splitBypass`:
+
+```
+Grid{UPDATE, preset{chains{row: 0, splitBypass{bypass: true}}}}
+```
+
+and the device reports the result in `Chain.mixBypass` - the same write-here,
+read-there arrangement as `combined_splitter` versus `splitter[]`. A write addressed to
+`mixBypass` does nothing. Established by a four-trial matrix, one write per fresh
+recall, across both fields and rows 0 and 2.
+
+Both fields are `repeated SceneBypass`, one entry per scene, but a single write sets
+**all eight** - so despite the type, this is not per-scene.
+
+**STOMP footswitch assignments** live in `BinaryPreset.stomp_mode_assignments`, entries
+of `{row, column, stomp_index}` where `stomp_index` 0-7 is footswitch A-H. None of the
+three fields has presence, so an entry for row 0 / column 0 / footswitch A arrives
+looking empty. Factory content populates this: "Darkglass AO900 2" binds its row 0
+blocks to A-D and its row 2 blocks to E-H. One footswitch may drive several blocks.
+
+Assigning takes TWO messages, which is what the unit itself sends:
+
+```
+Grid{DELETE, preset{stomp_mode_assignments{row, column}}}
+Grid{UPDATE, preset{stomp_mode_assignments{row, column, stomp_index}}}
+```
+
+The UPDATE alone leaves the previous assignment in place. Three map fields travel with
+it and are writable the same way: `stomp_labels`, `single_stomp_labels` (both
+`map<uint32, string>`) and `stomp_is_momentary` (`map<uint32, bool>`), all keyed by
+footswitch index. The unit clears the label maps when an assignment is removed.
+
+**Expression pedal assignment** is a row/column-keyed parameter write like any other,
+using three fields on `Param`:
+
+```
+Grid{UPDATE, preset{chains{row, models{column, params{index, expression,
+                                        expression_min, expression_max}}}}}
+```
+
+`expression` is the pedal (1 or 2) and the two floats are the normalized ends of the
+sweep; min above max reverses it. Confirmed both as the device's broadcast when a pedal
+is assigned on the unit and as a host write surviving save and read-back. Per the
+manual, a parameter assigned to a pedal is excluded from scene data.
+
+**A `ParamValue` can carry a `string_value`.** Cab microphone selection uses it - the
+unit broadcasts `string_value: "NG_212 DG Neo_Condenser U47"`. A host write of the same
+shape persists, so a parameter is not necessarily a number.
+
 **Input Gate Control** is model `28000`, in `chains[].input_control[]`, one per row.
 Parameters: `0 NOISE REDUCTION` (%, 0..100), `1 BYPASS` (1.0 bypasses), `2 GAIN
 REDUCTION`, `3 INPUT GAIN` (dB, -24..+24, where 0.5 on the wire is 0 dB), and an
@@ -1089,6 +1141,42 @@ preset derived from a guitar preset is simply untagged, not mislabelled - and
 `instrument`, which IS settable and is what the unit filters on, is the metadata that
 matters. Whether the unit's own screen can add tags to a user preset is not
 established.
+
+### 7.6 Per-preset MIDI Out
+
+A preset can send MIDI when a footswitch is pressed, when an expression pedal moves,
+and when the preset loads. The preset STORES these in `BinaryPreset.midi_messages`
+(on load), `midi_messages_general_v2` (footswitch and expression) and the legacy
+`midi_messages_general` - **but a `Grid` update carrying any of those fields is
+accepted and ignored.** They are applied by `MIDISettings` (type 8) instead:
+
+```
+MIDISettings{UPDATE, general_midi_messages{messages{source: 0,
+                        msg{type, channel, param1, param2, param3}}}}
+MIDISettings{UPDATE, preset_load_messages{messages{msg{...}}}}
+```
+
+A `MIDISettings` READ gets no reply on this firmware, so verify by reading the saved
+preset rather than asking the device.
+
+**Sources.** `GeneralMIDIMessage.source` is 0-7 for footswitches A-H and 8-9 for the
+two expression pedals. `midi_messages_general_v2` is 10 sources x 12 messages with a
+stride of 12, so source N starts at slot `N*12`: writing to sources 0, 1, 2, 7, 8 and 9
+landed in slots 0, 12/13, 24, 84, 96 and 108. The device mirrors each source's FIRST
+message into the 10-slot legacy `midi_messages_general`.
+
+**Types and what the three params mean.** Each confirmed by entering the message on the
+unit and reading the saved preset:
+
+| type | meaning | param1 | param2 | param3 |
+|---|---|---|---|---|
+| 1 | CC (footswitch) | CC number | value | - |
+| 1 | CC (expression source) | CC number | sweep min | sweep max |
+| 2 | CC Toggle | CC number | min | max |
+| 3 | PC | bank MSB (CC#0) | bank LSB (CC#32) | program |
+
+Note that a plain CC means different things by source: a footswitch sends one value,
+while an expression pedal sweeps, so the unit asks for a range even for `type: 1`.
 
 ### 7.8 Other observed traffic
 
@@ -1208,6 +1296,12 @@ visually on the device's own screen.
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
+| `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | the single splitter/mixer MUTE; reported back in `mixBypass`, and one write sets all eight scenes |
+| `set_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence; an UPDATE alone leaves the old assignment |
+| `set_expression` | `Grid{UPDATE, preset{chains{row, models{column, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit | pedal 1 or 2 with a normalized sweep range |
+| `set_midi_out` / `set_preset_load_midi_out` | `MIDISettings{UPDATE, general_midi_messages` or `preset_load_messages{messages{source, msg}}}` | read-back | per-preset MIDI Out. A `Grid` update carrying the preset's own midi fields does nothing |
+| `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
+| `param_options` | reads `Param.dynamic_steps` | read-back | the option names of a list parameter, which the catalog does not carry |
 | `set_input_gate` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |
 | `free_rows` | reads `models[]` + `Chain.split_control_points` | read-back | rows available for an independent chain: excludes the lane row of a branch, which is spoken for even when empty |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |
@@ -1365,13 +1459,20 @@ The consequence is for diffing: the natural way to show "I added a chain and lef
 rest alone" is to compare the untouched rows against what shipped, and that comparison
 fails on a row never addressed.
 
-**comboBox option NAMES are not recoverable from ModelRepo.** It gives comboBox
-parameters only `min`, `max`, `steps` and `type`, never the option list, so there is
-no way to tell from the catalog whether a given index is a fixed entry or a per-block
-reference whose meaning shifts as blocks are added. `TRIGGER` is published as
+**comboBox option names are not in ModelRepo - they are in the PRESET.** The catalog
+gives such a parameter only `min`, `max`, `steps` and `type` (`TRIGGER` is published as
 `min=0 max=44 steps=45`, static and inconsistent with the observed option count of
-19/20/23 - the same class of problem as the placeholder ranges above. What option
-index 1 actually denotes is not established; only the unit's screen can say.
+19/20/23). The rendered list is carried per preset in `Param.dynamic_steps`, with
+`Param.dynamic_icons` alongside. Read from 01C, the Doubler's `TRIGGER` options are:
+
+```
+Off, Follow Input, Input 1, Input 2, Input 1/2, Return 1, Return 2, Return 1/2,
+USB input 5, USB input 6, USB input 7, USB input 8, ...
+```
+
+So option index 1 is **'Follow Input'**, a fixed entry, and the fixed entries are
+followed by one per block in the preset - which is exactly why the stored value's
+denominator tracks the block count. `pyquadcortex.param_options()` reads this.
 
 Attributes that classify a model:
 
@@ -1420,8 +1521,6 @@ Stated explicitly so nobody builds on a guess:
 - **DSP cost per model** is not published anywhere reachable, and `CPULoad` never
   arrives (see [above](#a-placement-can-be-refused-for-want-of-dsp-capacity)), so
   whether a block will fit can only be discovered by placing it.
-- **comboBox option names**, and therefore what a given comboBox index denotes, are
-  not in `ModelRepo`. Only the unit's screen can say.
 - **The true spans behind the placeholder 0..1 ranges** (mixer/splitter/lane levels,
   `TEMPO`) are not recoverable from the catalog. Unity for the levels is measured;
   the endpoints are not.

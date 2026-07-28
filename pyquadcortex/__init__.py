@@ -11,7 +11,7 @@ See the readme for a tour, and ``docs/`` for the protocol and internals.
 
 import logging
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 # A library must not write to the application's console. Without a handler,
 # Python's handler of last resort prints WARNING and above to stderr, so a
@@ -20,11 +20,14 @@ __version__ = "0.10.0"
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL, Block,
-                                 BlockRefused, QuadCortex, Split, blocks,
-                                 field_present, free_rows, input_chain_rows,
-                                 position_to_slot, slot_to_position,
-                                 splits)  # noqa: E402
-from pyquadcortex.enums import Input, Instrument, Output, Scene, Setlist
+                                 BlockRefused, MidiOut, QuadCortex, Split,
+                                 StompAssignment, blocks, field_present,
+                                 free_rows, input_chain_rows, midi_out,
+                                 param_options, position_to_slot,
+                                 preset_load_midi_out, slot_to_position, splits,
+                                 stomp_assignments)  # noqa: E402
+from pyquadcortex.enums import (Footswitch, Input, Instrument, MidiOutType,
+                                MidiSource, Output, Scene, Setlist)
 from pyquadcortex.session import DeviceNotFoundError, connect, open_device
 from pyquadcortex import models  # noqa: E402  generated factory-block constants
 from pyquadcortex.catalog import Model, ModelCatalog, Parameter  # noqa: E402
@@ -40,6 +43,15 @@ __all__ = [
     "Split",
     "splits",
     "free_rows",
+    "Footswitch",
+    "MidiSource",
+    "MidiOutType",
+    "MidiOut",
+    "midi_out",
+    "preset_load_midi_out",
+    "StompAssignment",
+    "stomp_assignments",
+    "param_options",
     "BlockRefused",
     "UNITY_LEVEL",
     "SCENE_UNLABELLED",

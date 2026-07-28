@@ -181,9 +181,12 @@ These are all methods on the object `connect()` returns.
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
 | **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
 | **Input gate** | `set_input_gate(row, param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
-| **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `splits(preset)` |
+| **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `set_split_mute(row)`, `splits(preset)` |
+| **Footswitches** | `set_stomp_assignment(row, column, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `stomp_assignments(preset)` |
+| **Expression pedals** | `set_expression(row, column, param, pedal, minimum, maximum)` |
+| **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `midi_out(preset)` |
 | **Per-preset tempo** | `set_tempo_led(on)`, `set_metronome_volume(v)`, `set_tempo_param(param, ...)` |
-| **Inspect a preset** | `blocks(preset)`, `splits(preset)`, `free_rows(preset)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
+| **Inspect a preset** | `blocks(preset)`, `splits(preset)`, `free_rows(preset)`, `param_options(preset, row, column, index)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
