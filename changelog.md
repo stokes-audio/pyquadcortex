@@ -16,6 +16,16 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## Unreleased
+
+### Added
+
+- **`input_level_db()` / `db_to_input_level()`** - convert an input port's wire `level`
+  to and from the dB the unit displays. The scale is `dB = -12 + 72 * level` (input gain
+  runs -12 to +60 dB), solved from four owner-set trims read on the screen and on the
+  wire at the same moment, and matching the spec sheet's "+60dB max input gain". Input
+  ports only - lane and mixer levels use a different span (`UNITY_LEVEL`).
+
 ## 0.33.1 - 2026-07-29
 
 The PyPI project page, fixed. Docs only - no code changes.

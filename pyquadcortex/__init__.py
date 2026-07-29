@@ -20,6 +20,7 @@ __version__ = "0.33.1"
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL,
+                                 db_to_input_level, input_level_db,
                                  USER_SETLIST_ROOT, Block,
                                  BlockRefused, Folder, MidiOut, QuadCortex, Split,
                                  StompAssignment, blocks, field_present,
@@ -81,6 +82,8 @@ __all__ = [
     "tempo_params",
     "BlockRefused",
     "UNITY_LEVEL",
+    "input_level_db",
+    "db_to_input_level",
     "SCENE_UNLABELLED",
     "field_present",
     "Input",

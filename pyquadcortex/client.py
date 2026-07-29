@@ -48,6 +48,35 @@ from pyquadcortex.proto import Preset_pb2 as preset
 #: one across 17 factory presets.
 UNITY_LEVEL = 0.76923077
 
+
+def input_level_db(level: float) -> float:
+    """Convert an input port's wire ``level`` (0..1) to the dB the unit displays.
+
+    An input port's gain spans **-12 to +60 dB**, so ``dB = -12 + 72 * level``.
+    Solved from four owner-set trims read simultaneously on screen and on the wire
+    (screen +17.2/+16.8/+24.0/0.0 against wire 0.40556/0.40043/0.50009/0.16667 -
+    every point lands within display rounding, and 0 dB is exactly 1/6). It also
+    matches the hardware spec sheet's "MAX INPUT GAIN: +60dB".
+
+    INPUT ports only. Output, lane and mixer levels use different spans -
+    :data:`UNITY_LEVEL` documents the -100..+30 dB one.
+    """
+    return -12.0 + 72.0 * level
+
+
+def db_to_input_level(db: float) -> float:
+    """Convert displayed input-gain dB to the wire ``level`` an input port takes.
+
+    Inverse of :func:`input_level_db`; see it for how the scale was measured.
+    Values outside -12..+60 dB do not exist on the unit and are refused rather
+    than silently clamped.
+    """
+    if not -12.0 <= db <= 60.0:
+        raise ValueError(
+            f"input gain runs -12..+60 dB on the unit; {db} dB does not exist"
+        )
+    return (db + 12.0) / 72.0
+
 #: Where user setlists live. They sit SIDE BY SIDE here rather than nested inside
 #: "My Presets" - a folder created under My Presets is not a setlist and the device
 #: ignores it. :meth:`QuadCortex.create_setlist` builds a key from this.

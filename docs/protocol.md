@@ -1389,6 +1389,26 @@ restoring: input `level`, `ground_lift` and `input_type`; output `level` and
 `ground_lift`; `usb_port.dry_wet`; `midi_port.midi_thru`; and the
 `xlr1_2_linked`/`out3_4_linked` pairing flags.
 
+**An input port's `level` is -12..+60 dB: `dB = -12 + 72 * level`.** Solved from four
+owner-set trims read simultaneously on screen and on the wire:
+
+| wire | screen | -12 + 72w |
+|---|---|---|
+| 0.4055555462837219 | +17.2 | +17.200 |
+| 0.40042707324028015 | +16.8 | +16.831 |
+| 0.5000885725021362 | +24.0 | +24.006 |
+| 0.1666666716337204 | 0.0 | 0.000 (the wire value is exactly 1/6) |
+
+It also matches the spec sheet's "MAX INPUT GAIN: +60dB". `input_level_db()` /
+`db_to_input_level()` convert. This is the INPUT span only - lane and mixer levels
+run -100..+30 dB (see `UNITY_LEVEL`), and the output span has not been measured.
+
+A cautionary note on how this was nearly gotten wrong: before the screen readings
+existed, the wire values were fitted to the Input Gate block's catalog range (-24..+24 dB)
+and produced two suspiciously clean landings - 0.5 sitting at "unity" and 1/6 at exactly
+-16. Both were coincidence; the true scale puts them at +24 and 0. Two clean points can
+confirm a wrong line. It takes simultaneous readings of both sides to pin a scale.
+
 **Some port fields must travel ALONE.** Output `mute` and input `input_zmode`
 (impedance) are both writable, but both are silently dropped when they share a port entry
 with another field - and both work when sent by themselves. That matches the unit's own

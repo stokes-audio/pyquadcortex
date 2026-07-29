@@ -1475,6 +1475,25 @@ def test_update_settings_sends_only_the_named_fields():
     assert not msg.HasField("led_brightness")
 
 
+def test_input_level_db_matches_the_four_measured_points():
+    """Owner-set trims read on screen and on the wire at the same moment."""
+    from pyquadcortex import db_to_input_level, input_level_db
+    for wire, screen in ((0.4055555462837219, 17.2), (0.40042707324028015, 16.8),
+                         (0.5000885725021362, 24.0), (0.1666666716337204, 0.0)):
+        assert abs(input_level_db(wire) - screen) < 0.05   # display rounds to 0.1
+        assert abs(db_to_input_level(screen) - wire) < 0.0005
+    assert input_level_db(0.0) == -12.0
+    assert input_level_db(1.0) == 60.0                     # the spec sheet's max
+
+
+def test_db_to_input_level_refuses_gains_the_unit_does_not_have():
+    from pyquadcortex import db_to_input_level
+    with pytest.raises(ValueError, match="does not exist"):
+        db_to_input_level(61)
+    with pytest.raises(ValueError, match="does not exist"):
+        db_to_input_level(-12.1)
+
+
 def test_hybrid_mode_maps_all_six_ordered_pairs():
     """Read off the unit's own MODE indicator, which names the TOP row first."""
     from pyquadcortex.enums import FootswitchMode as M
