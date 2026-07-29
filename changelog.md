@@ -8,6 +8,40 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.31.0 - 2026-07-28
+
+**`favorites()` now returns your Favorites.** In 0.29.0 and 0.30.0 it was a deprecated alias
+for `recents()`, on the strength of a conclusion that turned out to be my measurement error
+rather than a device limitation.
+
+### Changed
+
+- **`favorites()` reads the Favorites list**, returning entries (possibly an empty list)
+  rather than a raw message. The request's `is_favorites` flag selects which list the device
+  answers with: measured 10/10 with the flag and 0/5 without.
+
+  The catch, and the reason this was missed: **the reply does not set the flag.** Both lists
+  come back with `is_favorites` absent, so a predicate like `m.is_favorites == True` rejects
+  every valid answer - which is exactly what the earlier code did, producing a clean
+  repeatable timeout that read like a device refusing to answer. `favorites()` correlates on
+  `request_id`, which the device does echo.
+
+  If you wrote code against 0.29.0 or 0.30.0 expecting `favorites()` to return Recents, call
+  `recents()` instead. Neither version reached PyPI, so this affects TestPyPI installs only.
+
+- An empty Favorites list answers with a real empty push, so `[]` means "none favourited"
+  rather than "no answer". The first read after connecting is often dropped, so `favorites()`
+  retries before raising, and its `TimeoutError` says so.
+
+- Favorites entries carry `name`, `folder_key`, `folder_name` and `is_factory`, and feed
+  straight into `find_preset()`, `recall_preset()` and `remove_favorite()` - round-tripped on
+  hardware.
+
+- `docs/capture.md` now lists **three** ways an instrument reports silence that is not there,
+  this being the third. All three looked identical from outside and all three were the tool
+  rather than the device. The heuristic that fell out is worth more than any of them: a flaky
+  negative is usually the device, a perfectly consistent negative is often the observer.
+
 ## 0.30.0 - 2026-07-28
 
 Favorites can be written, and HOLD TIMING makes sense now. Both came from watching the unit
@@ -23,7 +57,8 @@ do the thing rather than guessing at it.
   **ignored in silence** - "Fuzz This" lives in the Factory Library, and naming it under My
   Presets produced no error and no favourite. `verify=True` (the default) waits for the
   device to echo the changed entry back and raises `TimeoutError` explaining exactly that,
-  which is the only way to tell a mismatch from success: the Favorites list cannot be read.
+  which is how a silent mismatch becomes visible. (0.30.0 said the Favorites list could not
+  be read at all, which 0.31.0 corrects - see below.)
 - **`set_hold_timing(ms)` / `hold_timing_ms()`** - the HOLD action timing in milliseconds.
   The unit offers 500-1000 ms in 100 ms steps and stores the INDEX, so the 3 the field
   reported was 800 ms on screen. The device stores any integer there unvalidated, so these
@@ -34,8 +69,8 @@ do the thing rather than guessing at it.
 - Two dead ends are now recorded as dead ends rather than left as open questions. There is
   **no per-preset favourite flag** anywhere in the schema (`ProductData` has 21 fields and
   none is one), and **no folder** carries `FolderInfo.is_favorites` - none of 810 folder
-  pushes set it. "Favorites and Recent" is a view over `RecentsFavorites`, not a folder that
-  can be listed, so reading Favorites has no route at all.
+  pushes set it. "Favorites and Recent" is a view over `RecentsFavorites` rather than a
+  folder that can be listed - but reading Favorites does have a route, which 0.31.0 found.
 - The IR library is not what it appears. The 588 entries under
   `/opt/neuraldsp/impulse_responses` all carry plugin prefixes (333 `NG_`, 134 `ME_`, 97
   `ML_`, 18 `CW_`, 6 `JP_`) and none was loadable on the unit tested, whose IR browser was

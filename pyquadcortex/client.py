@@ -1911,12 +1911,11 @@ Two of those names disagree with the catalog, which is why the map
         so an entry can be fed straight back to :meth:`find_preset` or
         :meth:`recall_preset`.
 
-        **This is Recents, not Favorites**, even though one message type carries
-        both. What comes back has ``is_favorites`` unset and is headed by the
-        most recently saved preset. A ``READ`` with ``is_favorites=True`` gets no
-        answer at all - not even an empty list - so either that flag is not a query
-        selector or the Favorites list is not readable over USB. This method was
-        called ``favorites()`` until the difference was noticed.
+        **This is Recents, not Favorites**, even though one message type carries both.
+        A plain ``READ`` returns Recents, headed by the most recently saved preset;
+        adding ``is_favorites: true`` to the request returns Favorites instead, which
+        is what :meth:`favorites` does. Neither REPLY sets the flag, so the two are
+        told apart by what you asked for - correlate on ``request_id``.
 
         **Writing needs ONE ENTRY, not the whole list.** Sending all 51 entries back
         with an extra item does nothing - the device maintains both lists with a
@@ -1998,12 +1997,50 @@ Two of those names disagree with the catalog, which is why the map
         """Un-favourite a preset. See :meth:`add_favorite` for the argument."""
         return self._favorite(entry, remove=True, verify=verify, timeout=timeout)
 
-    def favorites(self, timeout: float = 10.0):
-        """Deprecated alias for :meth:`recents`, which is what the device returns.
+    def favorites(self, timeout: float = 20.0, attempts: int = 3):
+        """The unit's FAVORITES, as a list of entries - possibly empty.
 
-        Kept so existing code keeps working. It never returned Favorites.
+        Ask with the flag set and the device answers with the Favorites list::
+
+            RecentsFavorites{READ, is_favorites: true, request_id: N}
+
+        Each entry carries ``name``, ``folder_key``, ``folder_name`` and
+        ``is_factory``, so it can be fed straight to :meth:`recall_preset`,
+        :meth:`find_preset` or :meth:`remove_favorite`.
+
+        **The reply does NOT set `is_favorites`.** Both lists come back with the flag
+        absent, so a predicate like ``m.is_favorites == True`` rejects every valid
+        answer - which is exactly how an earlier version of this library concluded the
+        Favorites list could not be read at all. Correlate on ``request_id``, which the
+        device does echo, and which is what this method matches on.
+
+        An empty Favorites list answers with a real, empty push rather than silence, so
+        ``[]`` here means "no favourites", not "no answer". The first request after
+        connecting is sometimes dropped, so this retries up to ``attempts`` times before
+        raising ``TimeoutError``.
         """
-        return self.recents(timeout)
+        last = None
+        for _ in range(max(1, attempts)):
+            request_id = self._t.next_request_id()
+            message = pa.RecentsFavoritesMessage(
+                action=pa.MessageAction.READ, is_favorites=True,
+                request_id=request_id)
+            try:
+                reply = self._t.await_broadcast(
+                    pa.RecentsFavoritesMessage,
+                    lambda m=message: self._t.send(m),
+                    timeout=timeout / max(1, attempts),
+                    match=lambda m: (m.HasField("request_id")
+                                     and m.request_id == request_id))
+                return list(reply.items)
+            except TimeoutError as exc:
+                last = exc
+        raise TimeoutError(
+            f"the device did not answer a Favorites read in {attempts} attempts "
+            f"({timeout}s total). Reads are lazy - the first request after connecting "
+            f"is often dropped - so this is usually worth retrying rather than a sign "
+            f"that Favorites is unreadable."
+        ) from last
 
     def set_master_volume_assignment(self, out12: bool = None, out34: bool = None,
                                      send12: bool = None, headphones: bool = None):

@@ -1837,16 +1837,73 @@ def test_list_folders_keeps_the_fullest_push_per_key():
     assert (got[0].slots, got[0].occupied) == (6, 4)
 
 
-def test_favorites_waits_for_a_push_with_items():
-    push = pa.RecentsFavoritesMessage(action=pa.MessageAction.UPDATE)
+def test_favorites_asks_with_the_flag_and_returns_the_entries():
+    """READ + is_favorites gets Favorites; the REPLY does not set the flag."""
+    push = pa.RecentsFavoritesMessage(action=pa.MessageAction.UPDATE, request_id=1)
     it = push.items.add()
     it.name = "Brit 2203"
     it.folder_key = "/opt/neuraldsp/Factory Library"
     it.folder_name = "Factory Library"
     qc = client.QuadCortex(StateTransport(push))
     got = qc.favorites()
-    assert got.items[0].name == "Brit 2203"
-    assert qc._t.matches[-1](pa.RecentsFavoritesMessage()) is False
+    assert [e.name for e in got] == ["Brit 2203"]
+    asked = qc._t.sent[-1]
+    assert asked.action == pa.MessageAction.READ
+    assert asked.is_favorites is True
+    assert asked.HasField("request_id")
+
+
+def test_favorites_matches_on_request_id_not_the_flag():
+    """Matching on the flag rejected every valid reply and hid this feature."""
+    push = pa.RecentsFavoritesMessage(request_id=1)
+    push.items.add().name = "Brit 2203"
+    qc = client.QuadCortex(StateTransport(push))
+    qc.favorites()
+    match = qc._t.matches[-1]
+    assert match(push) is True                                   # right id, no flag
+    other = pa.RecentsFavoritesMessage(request_id=999)
+    other.items.add().name = "Something Else"
+    assert match(other) is False                                 # a different request
+    assert match(pa.RecentsFavoritesMessage()) is False           # no id at all
+
+
+def test_favorites_returns_an_empty_list_when_there_are_none():
+    """An empty Favorites list is a real, empty push - not a missing answer."""
+    qc = client.QuadCortex(StateTransport(pa.RecentsFavoritesMessage(request_id=1)))
+    assert qc.favorites() == []
+
+
+def test_favorites_retries_before_giving_up():
+    """The first read after connecting is often dropped, so one timeout is normal."""
+
+    class FlakyOnce(FakeTransport):
+        def __init__(self):
+            super().__init__()
+            self.tries = 0
+
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            self.tries += 1
+            if self.tries == 1:
+                raise TimeoutError("dropped, as the device does")
+            reply = pa.RecentsFavoritesMessage(request_id=self.sent[-1].request_id)
+            reply.items.add().name = "Brit 2203"
+            return reply
+
+    qc = client.QuadCortex(FlakyOnce())
+    assert [e.name for e in qc.favorites()] == ["Brit 2203"]
+    assert qc._t.tries == 2
+
+
+def test_favorites_timeout_says_reads_are_lazy():
+    class NeverAnswers(FakeTransport):
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            raise TimeoutError("nothing")
+
+    qc = client.QuadCortex(NeverAnswers())
+    with pytest.raises(TimeoutError, match="Reads are lazy"):
+        qc.favorites(timeout=0.03, attempts=2)
 
 
 # -- submessage writes replace the whole submessage -----------------------------

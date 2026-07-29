@@ -53,12 +53,24 @@ with lock:
         print(f"{name}: {body[:400]}")
 ```
 
-## Two ways a listener lies about silence
+## Three ways your instrument lies about silence
+
+Every one of these produced a confident wrong conclusion in this project, and all three
+look identical from the outside: **the device appears not to answer.** The device was
+behaving correctly all three times.
+
+A useful heuristic came out of it. A *flaky* negative is usually the device - reads here are
+lazy and the first request after connecting is often dropped. A *perfectly consistent*
+negative is often the observer, because a filter or predicate that rejects the answer
+rejects it every single time. So the cleaner and more repeatable your negative result, the
+harder you should look at the tool before believing it.
+
+**1. A message type you have not registered is DISCARDED before you see it.**
 
 Both of these produced wrong conclusions in this project, and both look exactly like "the
 device broadcasts nothing".
 
-**A message type you have not registered is DISCARDED before you see it.** The RX path
+The RX path
 decodes by type and drops what it cannot decode, so a listener watching decoded traffic is
 blind to every unregistered type. "New Neural Capture" appeared to do nothing on the unit
 AND produce nothing on the wire; with the type registered, the same tap immediately showed
@@ -66,7 +78,7 @@ AND produce nothing on the wire; with the type registered, the same tap immediat
 types for exactly this reason - but if you are filtering by type in your own listener, make
 sure the filter is a NOISE list rather than an allow-list.
 
-**Filtering chatter makes a dead link look like a quiet one.** The device sends
+**2. Filtering chatter makes a dead link look like a quiet one.** The device sends
 `GlobalTempo` constantly, so it is the first thing anyone filters out - and then a log with
 nothing in it is indistinguishable from a USB link that died mid-session, which does happen
 (see [troubleshooting.md](troubleshooting.md)). Write a periodic heartbeat that COUNTS the
@@ -82,6 +94,20 @@ A silent log with a beating heart is a finding. A silent log without one is noth
 The conclusion that the Tempo menu's MODE control is not on the wire was reached twice: the
 first time with neither safeguard, and again with both, and only the second time was worth
 anything.
+
+**3. A match predicate that tests a field the reply never sets rejects every valid answer.**
+Reading the unit's Favorites list needs `RecentsFavorites{READ, is_favorites: true}`, and
+the reply comes back with `is_favorites` ABSENT - the flag selects which list you get, it is
+not repeated in the answer. Waiting with
+
+```python
+match=lambda m: bool(m.is_favorites) == want    # discards the correct reply
+```
+
+timed out cleanly and repeatably, and "Favorites cannot be read over USB" went into the
+documentation, along with a method that quietly returned the wrong list. Correlate on
+`request_id`, which the device does echo, and when a match predicate times out, log what DID
+arrive before concluding nothing did.
 
 ## Five things that make the difference between a result and a wasted hour
 

@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 101 features audited: **59 yes**, **11 partly**, **21 no**, **10 n/a**.
+Of 101 features audited: **60 yes**, **10 partly**, **21 no**, **10 n/a**.
 
 Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
@@ -122,7 +122,7 @@ loading from the factory Captures Library.
 | Factory and My Presets setlists | yes | `Setlist.FACTORY`, `Setlist.USER` |
 | User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. CC#32's 'User folders' 2-12 are created, not built in |
 | Create a folder, nested navigation | yes | `create_setlist(name)`. The earlier failure was the path: setlists are siblings under `/media/p4/Presets`, not children of My Presets |
-| Favorites and Recents | partly | `recents()` reads the RECENTS list; `add_favorite()`/`remove_favorite()` write Favorites and are confirmed on hardware, verified by the device's echo of the changed entry. Both lists are maintained ONE ENTRY at a time (`DELETE`+`CREATE`) - an earlier "read-only" conclusion came from sending the whole list, the wrong shape. The remaining gap is READING Favorites: asking for `is_favorites=True` draws no reply, the list only arrives unbidden after a change, there is no per-preset favourite flag in `ProductData`, and no folder sets `FolderInfo.is_favorites` |
+| Favorites and Recents | yes | `recents()` and `favorites()` read the two lists - the request's `is_favorites` flag selects which, though the REPLY never sets it, so correlate on `request_id`. `add_favorite()`/`remove_favorite()` write, one entry at a time, confirmed by the device's echo of the changed entry. Entries feed straight into `find_preset()`/`recall_preset()`. Only presets can be favourited |
 | Bulk actions | partly | there is no host-drivable bulk copy - `BulkOperation` only narrates progress - but `copy_preset()` and `duplicate_setlist()` achieve it by recall + save, at a few seconds per preset |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |

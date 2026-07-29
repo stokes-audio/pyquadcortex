@@ -1416,58 +1416,88 @@ line, so the Hz scale is measured rather than assumed.
 is sent, stays `false`, and `meter` stays `0.0`. So the needle itself is not readable over
 USB, which is the one part of the Tuner the host cannot see.
 
-## Recents is not Favorites
+## Recents and Favorites
 
-`RecentsFavorites` carries both lists. The flag `is_favorites` tells them apart **when the
-device narrates a change**, but NOT when it answers a read:
+`RecentsFavorites` carries both lists, and **the request's `is_favorites` flag chooses
+which one you get**:
 
-* A `READ` is answered with the **Recents** list, `is_favorites` unset, headed by the most
-  recently saved preset.
-* A `READ` carrying `is_favorites: true` draws **no reply at all**, so the flag is not a
-  query selector.
-* The Favorites list does turn up occasionally in reply to an ordinary `READ` - as a second,
-  much shorter push, also with `is_favorites` unset - but only right after it changes. Over
-  15 consecutive reads in a settled state, only Recents ever came back. So there is no
-  reliable on-demand read of Favorites, and the two lists cannot be told apart by any field
-  when they do arrive; only by content.
+```
+RecentsFavorites{READ, request_id: N}                      -> Recents  (51 entries here)
+RecentsFavorites{READ, is_favorites: true, request_id: N}   -> Favorites
+```
 
-**Both lists are maintained one ENTRY at a time, not by sending the whole list.** This was
-read wrong at first: sending all 51 entries back with one appended changed nothing, and that
-was written down as "the list is read-only". Watching the unit recall a preset shows the
-real idiom - a pair of single-entry messages:
+Measured 10/10 and 0/5: asking with the flag returned Favorites every time, and a plain
+read never once returned it.
+
+**The REPLY does not set the flag.** Both lists come back with `is_favorites` absent, so
+the two are told apart by what you asked, not by what arrives. The device does echo
+`request_id`, so correlate on that.
+
+An empty Favorites list answers with a real, EMPTY push rather than silence, so zero
+entries means "none favourited". The first read after connecting is often dropped
+entirely - a lazy-delivery trait shared with folder listings - so retry rather than
+concluding anything from one timeout.
+
+Entries carry `name`, `folder_key`, `folder_name` and `is_factory`, and can be fed straight
+to `find_preset()` / `recall_preset()` / `remove_favorite()` with no translation.
+
+### How this was nearly written off
+
+An earlier version of this document claimed the Favorites list "has no known read path over
+USB". That was wrong, and the reason is worth recording: the read was being made with
+
+```python
+match=lambda m: bool(m.is_favorites) == want    # rejects every valid reply
+```
+
+Since no reply ever sets the flag, the predicate discarded the correct answer and the
+symptom was a clean, repeatable timeout - which read exactly like a device that refuses to
+answer. Two conclusions were then built on it: that Favorites was unreadable, and that
+`favorites()` should be an alias for `recents()`.
+
+That is the **third** time in this project a measuring instrument hid a working feature,
+and the three share a shape worth naming:
+
+| The instrument | What it hid |
+|---|---|
+| Unregistered message types dropped before dispatch | ~27 types, so features looked silent |
+| Filtering the device's constant chatter | a dead USB link looked like a quiet one |
+| Matching a reply on a field the reply never sets | a readable list looked unreadable |
+
+In all three the device was behaving correctly and the tooling was lying. When a negative
+result is clean and repeatable, suspect the instrument before believing the finding - a
+flaky failure is usually the device, but a perfectly consistent one is often the observer.
+
+### Writing both lists
+
+**Both lists are maintained one ENTRY at a time.** Sending the whole list back with an
+extra item does nothing - which is how an earlier session concluded, also wrongly, that the
+list was read-only. Watching the unit recall a preset shows the real idiom, a pair of
+single-entry messages:
 
 ```
 RecentsFavorites{DELETE, items{name, folder_key, folder_name}}   # drop any existing copy
 RecentsFavorites{CREATE, items{name, folder_key, folder_name}}   # add it at the head
 ```
 
-`action` unset is `CREATE` (0), so the second message carries no action field on the wire.
-Favouriting a preset on the unit uses the same shape with the flag set:
+`action` unset is `CREATE` (0), so the second carries no action field on the wire.
+Favouriting uses the same pair with the flag set, alongside a `BulkOperation` narrating
+`"Adding to Favorites, please wait."` On the unit it is multiselect plus the heart button,
+and only presets can be favourited.
 
-```
-RecentsFavorites{CREATE, is_favorites: true, items{name: "IR probe", folder_key: ...}}
-```
+**The device echoes the changed entry back** with `is_favorites` set, and that echo is what
+`add_favorite()`/`remove_favorite()` wait for. It matters because a mismatched entry is
+ignored in silence: the name, `folder_key` and `is_factory` must match the device's record.
+"Fuzz This" lives in `/opt/neuraldsp/Factory Library` with `is_factory: true`, and naming it
+under My Presets produced no error, no echo and no favourite.
 
-alongside a `BulkOperation` narrating `"Adding to Favorites, please wait."` - the unit does
-it through multiselect and the heart button, and only presets can be favourited.
-
-That shape works as a host write, and **the device echoes the changed entry back** with
-`is_favorites` set - which is the confirmation, since the list itself cannot be read. That is
-the same trick `set_block(verify=True)` uses on the Grid echo, and it is what
-`add_favorite()`/`remove_favorite()` wait for.
-
-**A mismatched entry is ignored in silence.** The name, `folder_key` and `is_factory` have to
-match the device's own record. "Fuzz This" lives in `/opt/neuraldsp/Factory Library` with
-`is_factory: true`; naming it under My Presets produced no error, no echo and no favourite.
-So pass an item straight from a Recents listing rather than building one, and leave `verify`
-on - without the echo there is nothing at all to distinguish a mismatch from success.
-
-Two things the schema does NOT offer, both checked: there is no per-preset favourite flag
-anywhere (`ProductData` has 21 fields and none of them is one), and no folder carries
-`FolderInfo.is_favorites` - across 810 folder pushes, none was set and none was named for it.
-So "Favorites and Recent" is a view over this message, not a folder that can be enumerated.
-
-## IR Loaders
+Two things the schema does NOT offer, both checked, so neither is worth hunting for: there
+is no per-preset favourite flag anywhere (`ProductData` has 21 fields and none is one), and
+no folder carries `FolderInfo.is_favorites` - across 810 folder pushes none was set. So
+"Favorites and Recent" is a view over this message rather than a folder to enumerate, and
+`local_nc_root`-style magic keys do not apply either: `list_presets()` sends a BARE
+`File{READ}` and filters the flood, so that key is what the device REPORTS, not a request
+parameter.
 
 **A caution about the IR library first.** `/opt/neuraldsp/impulse_responses` lists 588
 entries, but on the unit measured here NONE of them were loadable and the owner had no IRs
