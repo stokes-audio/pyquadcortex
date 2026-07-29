@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 101 features audited: **61 yes**, **9 partly**, **21 no**, **10 n/a**.
+Of 102 features audited: **62 yes**, **8 partly**, **22 no**, **10 n/a**.
 
 Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
@@ -55,7 +55,8 @@ need the physical world: Neural Capture, and loading from the factory Captures L
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | yes | `set_master_volume_assignment()`, which reads and merges - the raw field is a submessage, and writing one flag through `update_settings()` clears the other three |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
-| Tuner: reference pitch, input source, mute, Live Tuner | partly | `set_tuner_input()`, `set_tuner_reference()` and `set_tuner_mute()` all confirmed. Reference is an OFFSET in Hz from 440 (442 and 445 both measured). The gap is Live Tuner: `enable_meter` refuses a write and `meter` stays 0.0, so the needle is not readable over USB |
+| Tuner: reference pitch, input source, mute | yes | `set_tuner_input()`, `set_tuner_reference()` and `set_tuner_mute()` all confirmed. Reference is an OFFSET in Hz from 440 (442 and 445 both measured) |
+| Tuner: Live Tuner (the needle) | no | UNSUPPORTED by decision. `enable_meter` refuses a host write - it stays false and `meter` stays 0.0 - so the needle never streams. Not worth chasing for an instrument you have to be holding; see `docs/roadmap.md` |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is not on the wire at all |

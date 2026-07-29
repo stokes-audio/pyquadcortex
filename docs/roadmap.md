@@ -106,6 +106,48 @@ device actually requires.
 - **Scene labels and colors as first-class scene properties**, rather than
   index-addressed setters.
 
+## Wishlist: device features not implemented yet
+
+Things the unit demonstrably does that this library does not. None is blocked by the
+hardware - each is a gap in what has been worked out - and each entry records how far
+the investigation got, so picking one up does not start from zero. Nobody is working
+on these; they are here to be claimed.
+
+- **Import an Impulse Response from the host.** Everything but the payload is mapped:
+  `File{CREATE, type: 1, total_bulk_create_count: 1, folder{key: "2_q"}, ir_payload}`
+  makes the device start a real "Importing IRs" operation against "My IRs" and report
+  it finished - but nothing is imported. Eight encodings were tried (16- and 24-bit PCM
+  WAV at 48 and 44.1 kHz, 1024 and 4096 samples, an IEEE-float32 WAV, raw int24, raw
+  float32, with and without a `.wav` name and a sha256 key). Transport is not the
+  problem: outbound fragmentation is proven sound to 26 reports. The manual says
+  uploaded WAVs are "automatically resized to 1024 samples", so the conversion is
+  probably done off-device and the firmware wants a pre-processed form. **Until this
+  lands, import IRs with Cortex Control's drag-and-drop** - `list_irs()` and `set_ir()`
+  then use them normally. Note the USB link died during a run of these attempts and
+  needed a power cycle, so pace them and do not run them unattended.
+
+- **Create a Neural Capture.** The handshake is understood - the unit hands the flow to
+  a connected host (`NeuralCapture{try_to_show_dialog}`, answered with `show_dialog`),
+  and the engine is the internal `NC_Recorder`/`NC_Trainer`/`NC_Refiner` models. A
+  connected client SUPPRESSES the on-device wizard, which is why this looked dead twice
+  before the handshake was found. Everything after that handshake is unexplored.
+  Realistically this stays low value: capturing requires physically re-patching an amp
+  and a load box at the unit, so a host can automate the paperwork but not the part that
+  takes the time. Using an existing capture is already supported (`captures()`,
+  `set_capture()`).
+
+- **Drive the Looper transport.** `looper()` reads the full status and `LooperState`
+  names five states, so the inbound side is done. No host-side transport control has
+  been found; MIDI CC#48-61 is the documented route, and the unit's own buttons emit
+  `update_type: BUTTONS` pushes, so the shape of what a press looks like is visible even
+  though the way to send one is not.
+
+- **Cloud sign-in, backups and capture sharing.** `CloudLogin`, `CloudProduct`,
+  `CloudBackup`, `BackupsForward` and `CloudTransferState` are all decoded and none has
+  ever been driven. Lower value for a library about local control, and it touches the
+  owner's account and cloud storage - so it needs explicit permission before anyone
+  starts probing, not just a free afternoon.
+
 ## Looked at and set aside
 
 Recorded so nobody spends a weekend rediscovering a dead end.
@@ -116,3 +158,15 @@ Recorded so nobody spends a weekend rediscovering a dead end.
   implemented. The specific blocker is not written down here; if you are picking
   this up, treat "someone already found this closed" as the starting point rather
   than an answer, and please record what you learn.
+
+- **The Tuner's live needle.** `Tuner.enable_meter` and `Tuner.meter` exist and are
+  decoded, but `enable_meter` refuses a host write - it stays false and `meter` stays
+  0.0 - so the needle never streams. **Deliberately unsupported.** The tuner's useful
+  parts already work (`show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`,
+  `set_tuner_mute()`), and a remote needle for an instrument you have to be holding is
+  not worth chasing the write that would enable it.
+
+- **Firmware updates.** `Updater` is decoded and has never been sent anything, on
+  purpose. A botched firmware write is the one mistake in this protocol that a factory
+  reset does not fix, and there is no version of this library that should risk a
+  player's unit to save them a menu tap. Out of scope permanently, not pending.
