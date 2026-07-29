@@ -1589,8 +1589,9 @@ library entry       = {key: "CIR_eb6d6d347e75f988010a9746580c31c",
 ```
 
 The key is `CIR_` plus a content id. Both strings come straight from `list_irs()`, and
-`set_ir()` writes them - confirmed by pointing a loader at a DIFFERENT IR from the host and
-reading back the library's own key and name byte for byte, on both slots.
+`set_ir()` writes them - confirmed twice over: by pointing a loader at a DIFFERENT IR from the
+host and reading back the library's own key and name byte for byte on both slots, and by then
+looking at the unit, which showed that IR loaded with no warning icon.
 
 This differs from a Neural Capture block, which holds ONE string concatenating hash and name.
 

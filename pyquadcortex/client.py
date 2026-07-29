@@ -2578,6 +2578,9 @@ Two of those names disagree with the catalog, which is why the map
         bare name - only the key does. This differs from a Neural Capture block,
         which holds ONE string concatenating hash and name.
 
+        Confirmed end to end: a loader pointed at an IR from the host showed that IR
+        on the unit with no warning icon.
+
         A bad reference is not reported to the host - the device stores any string
         unchanged - but the unit shows a warning icon and "<IR NAME> is missing" on
         screen, so check there if a block goes quiet.
