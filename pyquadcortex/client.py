@@ -32,7 +32,7 @@ import time
 import uuid
 from typing import NamedTuple
 
-from pyquadcortex import catalog, registry
+from pyquadcortex import catalog, enums, registry
 from pyquadcortex.enums import (Footswitch, Input, Instrument,  # noqa: F401
                                 MetronomeRouting, MetronomeSound, MidiOutType,
                                 MidiSource, Output, SceneBypassBehavior, Setlist,
@@ -2134,22 +2134,63 @@ Two of those names disagree with the catalog, which is why the map
         Confirmed writable: sending ``[1, 0, 2]`` read back in that order. The whole
         list is replaced, which matches the feature - it IS the cycle.
 
-        **A HYBRID slot is just another value in this list**, so merging is reachable
-        the same way. Merging on the unit produced ``available_modes{7, 1}`` - one
-        hybrid plus Scene - and sending ``[7, 1]`` from the host creates the same
-        thing, with :meth:`set_mode` able to select it.
+        **A HYBRID slot is just another value in this list**, and all six are now
+        mapped - build them with :func:`~pyquadcortex.hybrid_mode`::
 
-        What the composite value ENCODES is not established. 7 was the pairing of
-        Preset with Stomp, arrived at by elimination since Scene (1) was the slot left
-        standing; how other pairings are numbered has not been observed. To use a
-        specific pairing, make it once on the unit and read the value back.
+            from pyquadcortex import FootswitchMode as Mode, hybrid_mode
+            qc.set_mode_cycle([hybrid_mode(Mode.PRESET, Mode.STOMP), Mode.SCENE])
 
-        Note this only became visible after the menu was CONFIRMED on the unit: an
+        A hybrid gives footswitches A-D one mode and E-H another, so the composite
+        encodes an ORDERED pair - 3 to 8, the six pairs in lexicographic order over
+        PRESET, SCENE, STOMP. 4 and 7 are the two arrangements of Preset/Stomp, which
+        is the manual's "tap the right edge to swap the Modes rows". See
+        :data:`~pyquadcortex.HYBRID_MODES` for the table and
+        :func:`~pyquadcortex.describe_mode` to name a value.
+
+        Two limits, both measured:
+
+        * **A cycle holds at most ONE composite.** ``[3, 4, 5]`` comes back as ``[3]``,
+          and a composite cannot be the only slot either - ``[7]`` alone is refused and
+          the device reverts to its default. Pair a hybrid with a base mode.
+        * **9 is refused here.** The device ACCEPTS it, and it is broken: the indicator
+          reads "<blank> + Scene" and the footswitches stop responding altogether. 10
+          and above the device rejects itself. So the range it accepts is wider than the
+          range that works, and this method will not send the difference.
+
+        Note the merge only became visible after the menu was CONFIRMED on the unit: an
         earlier session merged without pressing OK and the device broadcast nothing at
         all.
         """
+        values = [int(s) for s in slots]
+        broken = [v for v in values if v == enums.BROKEN_MODE_VALUE]
+        if broken:
+            raise ValueError(
+                f"mode value {enums.BROKEN_MODE_VALUE} is accepted by the device but "
+                f"leaves the footswitches non-functional (the indicator shows "
+                f"'<blank> + Scene'), so it is not sent. Valid slots are 0-2 for the "
+                f"base modes and 3-8 for the hybrids - see HYBRID_MODES."
+            )
+        unknown = [v for v in values if v < 0 or v > 8]
+        if unknown:
+            raise ValueError(
+                f"the device rejects mode values above 9; {unknown} would be dropped "
+                f"from the cycle. Valid slots are 0-2 and 3-8."
+            )
+        hybrids = [v for v in values if v in enums.HYBRID_MODES]
+        if len(hybrids) > 1:
+            raise ValueError(
+                f"a cycle holds at most one HYBRID slot; {hybrids} were given and the "
+                f"device would keep only the first"
+            )
+        if hybrids and len(values) == 1:
+            raise ValueError(
+                f"a HYBRID cannot be the only slot - the device refuses it and reverts "
+                f"to its default. Pair {values[0]} "
+                f"({enums.describe_mode(values[0])}) with a base mode, e.g. "
+                f"[{values[0]}, {int(enums.FootswitchMode.SCENE)}]"
+            )
         msg = pa.ModeMessage(action=pa.MessageAction.UPDATE)
-        msg.available_modes.modes.extend(int(s) for s in slots)
+        msg.available_modes.modes.extend(values)
         return self._t.send(msg)
 
     def set_param_option(self, row: int, column: int, param, option,

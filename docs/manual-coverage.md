@@ -38,10 +38,9 @@ and every option of the metronome's four lists.
 
 What is left is of two kinds. A few writes are **confirmed no-ops** with no route found:
 preset tags, and duplicating a setlist as a device operation (the library does it by
-recall-and-save instead). A few features are **simply not on the wire** - the Tempo
-menu's MODE and the HYBRID mode pairing both broadcast nothing, even on commit. And two
-whole features remain unexplored because they need the physical world: Neural Capture, and
-loading from the factory Captures Library.
+recall-and-save instead). One feature is **simply not on the wire** - the Tempo menu's MODE
+broadcasts nothing, even on commit. And two whole features remain unexplored because they
+need the physical world: Neural Capture, and loading from the factory Captures Library.
 
 ---
 
@@ -61,8 +60,8 @@ loading from the factory Captures Library.
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is not on the wire at all |
 | Per-scene tempo | n/a | `scene_tempo` is ignored and reads back empty, and the unit has no per-scene tempo - its Tempo MODE is global or per preset, nothing finer |
-| Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`. Note `mode` is a SLOT index, not a named mode |
-| Modes: reorder, merge into HYBRID, remove | yes | `set_mode_cycle([...])`. A HYBRID slot is just a composite value in the list - `[7, 1]` creates one, confirmed - though which pairing a given value denotes is unknown |
+| Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`, plus `mode_cycle()` to read the cycle - `mode()` accepts partial pushes and can report an empty one. `FootswitchMode` names the three base modes and `describe_mode()` names any value |
+| Modes: reorder, merge into HYBRID, remove | yes | `set_mode_cycle([...])`. All six HYBRID pairings are mapped and built with `hybrid_mode(top, bottom)`: a hybrid gives footswitches A-D one mode and E-H another, so 3-8 are the six ORDERED pairs (4 and 7 being the same pair swapped). A cycle holds at most one hybrid and a hybrid cannot be the only slot; value 9 is ACCEPTED by the device but leaves the footswitches dead, so it is refused here |
 | Gig View: open/close | yes | `set_gig_view()` |
 | I/O: input LEVEL, IMPEDANCE, TYPE, PHANTOM 48V | yes | `set_input_port()` writes level, impedance, input type and ground lift - each in its own message, since some fields are dropped when packed together. Phantom power has no field in the schema |
 | I/O: output LEVEL, GROUND LIFT, MUTE, output pairing | yes | `set_output_port()` for level and ground lift, `set_output_mute()` for mute - which must travel alone - and `set_output_pairing()` for the link flags |

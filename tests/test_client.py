@@ -1475,6 +1475,64 @@ def test_update_settings_sends_only_the_named_fields():
     assert not msg.HasField("led_brightness")
 
 
+def test_hybrid_mode_maps_all_six_ordered_pairs():
+    """Read off the unit's own MODE indicator, which names the TOP row first."""
+    from pyquadcortex.enums import FootswitchMode as M
+    from pyquadcortex.enums import HYBRID_MODES, hybrid_mode
+    assert hybrid_mode(M.PRESET, M.SCENE) == 3
+    assert hybrid_mode(M.PRESET, M.STOMP) == 4
+    assert hybrid_mode(M.SCENE, M.PRESET) == 5
+    assert hybrid_mode(M.SCENE, M.STOMP) == 6
+    assert hybrid_mode(M.STOMP, M.PRESET) == 7
+    assert hybrid_mode(M.STOMP, M.SCENE) == 8
+    # 4 and 7 are the two arrangements of the same pair - the unit's "swap rows"
+    assert HYBRID_MODES[4] == (M.PRESET, M.STOMP)
+    assert HYBRID_MODES[7] == (M.STOMP, M.PRESET)
+    assert set(HYBRID_MODES) == {3, 4, 5, 6, 7, 8}
+
+
+def test_hybrid_mode_refuses_the_same_mode_on_both_rows():
+    from pyquadcortex.enums import FootswitchMode as M
+    from pyquadcortex.enums import hybrid_mode
+    with pytest.raises(ValueError, match="DIFFERENT modes"):
+        hybrid_mode(M.SCENE, M.SCENE)
+
+
+def test_describe_mode_names_base_hybrid_and_the_broken_value():
+    from pyquadcortex.enums import describe_mode
+    assert describe_mode(1) == "SCENE"
+    assert describe_mode(7) == "HYBRID STOMP (A-D) + PRESET (E-H)"
+    assert "INVALID" in describe_mode(9)
+    assert "unknown" in describe_mode(42)
+
+
+def test_set_mode_cycle_refuses_the_value_that_breaks_the_footswitches():
+    """The device ACCEPTS 9 and the footswitches then stop working."""
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="non-functional"):
+        qc.set_mode_cycle([9, 1])
+    assert qc._t.sent == []
+
+
+def test_set_mode_cycle_refuses_what_the_device_would_silently_drop():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="rejects mode values above 9"):
+        qc.set_mode_cycle([12, 1])
+    with pytest.raises(ValueError, match="at most one HYBRID"):
+        qc.set_mode_cycle([3, 4, 1])
+    with pytest.raises(ValueError, match="cannot be the only slot"):
+        qc.set_mode_cycle([7])
+    assert qc._t.sent == []
+
+
+def test_set_mode_cycle_sends_a_valid_hybrid():
+    from pyquadcortex.enums import FootswitchMode as M
+    from pyquadcortex.enums import hybrid_mode
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_mode_cycle([hybrid_mode(M.PRESET, M.STOMP), M.SCENE])
+    assert list(qc._t.sent[-1].available_modes.modes) == [4, 1]
+
+
 def test_mode_cycle_waits_for_a_push_that_contains_the_cycle():
     """mode() accepts any push carrying `mode`, and the device sends it alone."""
     partial = pa.ModeMessage(action=pa.MessageAction.UPDATE, mode=7)

@@ -1814,20 +1814,40 @@ Two slots - the hybrid as `7`, Scene as `1` - and cycling modes alternated `mode
 `mode: 1`, matching what the screen showed. Sending `available_modes{7, 1}` from the host
 builds the same thing.
 
-**The device accepts mode values 0-9 and refuses 10 and up.** Measured by writing `[N, 1]` for
-N in 3..15 and polling until the cycle stopped changing: 0-9 all survive, and anything higher
-is dropped from the list, leaving `[1]`. Since 0, 1 and 2 are the base modes, 3-9 are seven
-composite values.
+**A HYBRID gives each footswitch ROW its own mode** - A-D and E-H - so the composite
+encodes an ORDERED pair. All six are mapped, read one at a time off the unit's own MODE
+indicator, which names the top row first:
 
-Resist inferring the encoding from that. Seven accepted values is equally consistent with a
-plain **range check** that stores whatever fits, and three base modes only make four
-multi-mode subsets (three pairs and one triple), not seven. `7 = 0b111` would be "all three"
-under a Preset=1/Scene=2/Stomp=4 bitmask, which does not match the two-slot cycle observed
-alongside a standalone Scene - so even the one composite with a known origin does not pin the
-scheme down. What each of 3-9 means needs reading off the screen.
+| value | A-D (top) | E-H (bottom) |
+|---|---|---|
+| 3 | Preset | Scene |
+| 4 | Preset | Stomp |
+| 5 | Scene | Preset |
+| 6 | Scene | Stomp |
+| 7 | Stomp | Preset |
+| 8 | Stomp | Scene |
 
-**A composite cannot be the only slot.** `set_mode_cycle([7])` is refused and the device
-reverts to its default; every accepted probe paired the composite with a base mode.
+The six ordered pairs in lexicographic order over Preset=0, Scene=1, Stomp=2. So **4 and 7
+are the same pairing in opposite arrangements**, which is what the manual's "tap the right
+edge of the HYBRID slot to swap the Modes rows" produces - and it retro-explains the original
+capture, where merging Preset with Stomp reported `7`, i.e. Stomp on top.
+
+Build them with `hybrid_mode(top, bottom)`; name any value with `describe_mode()`.
+
+**The range the device accepts is wider than the range that works.** Writing `[N, 1]` for N in
+3..15 and polling until the cycle settled: 0-9 survive and 10+ are dropped. But **9 is
+broken** - its indicator reads "<blank> + Scene" and the footswitches stop responding
+altogether. It is a genuine trap, since the device gives no hint: the write is accepted, the
+value reads back, and the unit is left unusable until the mode is changed. `set_mode_cycle()`
+refuses it.
+
+This is also a caution about the accept/reject method itself. Acceptance was measured
+mechanically and reported seven composites; only reading the screen showed that one of them
+does not work. A device that stores a value is not a device that supports it.
+
+**Two structural limits**, both measured: a cycle holds at most ONE composite (`[3, 4, 5]`
+comes back as `[3]`), and a composite cannot be the only slot (`[7]` alone is refused and the
+unit reverts to its default). Pair a hybrid with a base mode.
 
 **Mode pushes are frequently PARTIAL** - a mode switch broadcasts `mode` alone, with no
 `available_modes` - so a read that accepts any push mentioning `mode` can hand back an empty

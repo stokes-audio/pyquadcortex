@@ -114,6 +114,76 @@ class Setlist(StrEnum):
     FACTORY = "/opt/neuraldsp/Factory Library/"
 
 
+class FootswitchMode(IntEnum):
+    """What the footswitches do: the three base modes, as ``Mode.mode`` numbers them.
+
+    A merged HYBRID slot is a different value entirely - see
+    :func:`~pyquadcortex.enums.hybrid_mode`.
+    """
+
+    PRESET = 0
+    SCENE = 1
+    STOMP = 2
+
+
+# Every HYBRID composite, mapped to (top row A-D, bottom row E-H).
+#
+# Read off the unit one value at a time: the MODE indicator names the pair with the
+# TOP row first. The six ordered pairs occupy 3-8 in lexicographic order over
+# PRESET, SCENE, STOMP - so 4 and 7 are the two arrangements of Preset/Stomp, which
+# is what the manual's "tap the right edge of the HYBRID slot to swap the Modes rows"
+# produces.
+HYBRID_MODES = {
+    3: (FootswitchMode.PRESET, FootswitchMode.SCENE),
+    4: (FootswitchMode.PRESET, FootswitchMode.STOMP),
+    5: (FootswitchMode.SCENE, FootswitchMode.PRESET),
+    6: (FootswitchMode.SCENE, FootswitchMode.STOMP),
+    7: (FootswitchMode.STOMP, FootswitchMode.PRESET),
+    8: (FootswitchMode.STOMP, FootswitchMode.SCENE),
+}
+
+# The device ACCEPTS 9 and it is broken: the indicator reads "<blank> + Scene" and the
+# footswitches stop working entirely. It is refused by set_mode_cycle() for that reason.
+# 10 and above are rejected by the device itself.
+BROKEN_MODE_VALUE = 9
+
+
+def hybrid_mode(top, bottom) -> int:
+    """The composite value that puts ``top`` on footswitches A-D and ``bottom`` on E-H.
+
+    Both are :class:`FootswitchMode` members and must differ - a hybrid splits the two
+    rows between two different modes::
+
+        qc.set_mode_cycle([hybrid_mode(FootswitchMode.PRESET, FootswitchMode.STOMP)])
+
+    All six combinations were confirmed on hardware by reading the unit's own MODE
+    indicator.
+    """
+    top, bottom = FootswitchMode(top), FootswitchMode(bottom)
+    if top == bottom:
+        raise ValueError(
+            f"a HYBRID splits the two footswitch rows between DIFFERENT modes; "
+            f"{top.name} was given for both"
+        )
+    for value, pair in HYBRID_MODES.items():
+        if pair == (top, bottom):
+            return value
+    raise ValueError(f"no composite value for {top.name} over {bottom.name}")
+
+
+def describe_mode(value: int) -> str:
+    """Name a ``Mode.mode`` value, base or hybrid, for logs and error messages."""
+    if value in HYBRID_MODES:
+        top, bottom = HYBRID_MODES[value]
+        return f"HYBRID {top.name} (A-D) + {bottom.name} (E-H)"
+    if value == BROKEN_MODE_VALUE:
+        return f"{value} - INVALID, breaks the footswitches"
+    try:
+        return FootswitchMode(value).name
+    except ValueError:
+        return f"unknown mode value {value}"
+
+
 class Footswitch(IntEnum):
     """The eight footswitches, as ``stomp_index`` numbers them.
 

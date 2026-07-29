@@ -44,6 +44,25 @@ IRs are loadable. The blocker was that `IR PATH` is not a path.
 
 ### Added (footswitch modes)
 
+- **All six HYBRID pairings are mapped**, and `hybrid_mode(top, bottom)` builds them from the
+  new `FootswitchMode` enum. A hybrid gives footswitches **A-D one mode and E-H another**, so
+  a composite encodes an ORDERED pair - 3 to 8, in lexicographic order over PRESET, SCENE,
+  STOMP. That makes 4 and 7 the same pairing in opposite arrangements, which is the manual's
+  "tap the right edge to swap the Modes rows", and it explains the original capture where
+  merging Preset with Stomp reported 7. `describe_mode()` names any value; `HYBRID_MODES` is
+  the table.
+
+- **`set_mode_cycle()` now refuses value 9.** The device ACCEPTS it and the unit is left with
+  a "<blank> + Scene" indicator and **non-functional footswitches** - no error, and the value
+  reads back cleanly. It also refuses what the device would silently mangle: values above 9
+  (dropped from the cycle), more than one hybrid in a cycle (`[3, 4, 5]` comes back as `[3]`),
+  and a hybrid as the only slot (`[7]` alone is refused and the unit reverts).
+
+  Worth noting how close this came to being published as fact: the accept/reject sweep was
+  mechanical and reported seven usable composites. Only reading the unit's screen showed that
+  one of the seven breaks the instrument. A device that stores a value is not a device that
+  supports it.
+
 - **`mode_cycle()`** - the configured mode slots, read from a push that actually contains
   them. `mode()` matches any push carrying `mode`, and the device frequently sends that field
   alone, so reading the cycle through `mode()` could hand back an empty list from a partial
