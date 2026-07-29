@@ -73,6 +73,11 @@ tree instead of the installed package and prove nothing.
 Username `__token__`, password a TestPyPI API token. TestPyPI is a separate system
 from PyPI: separate account, separate token, separate namespace.
 
+The tokens live in `.env` (gitignored): `TEST_PYPI_TOKEN` for TestPyPI, `PYPI_TOKEN`
+for the real index. The names are deliberately distinct so a rehearsal and a real
+publish cannot pick up each other's credential - load the right one into
+`TWINE_PASSWORD` and never echo either.
+
 Then install from it, remembering that dependencies live on real PyPI:
 
 ```bash

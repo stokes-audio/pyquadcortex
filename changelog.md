@@ -8,6 +8,32 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+That is a deliberate signal, not neglect. Everything here is verified against ONE
+unit on one firmware, protocol facts are still being corrected at a live rate, and
+the roadmap plans a reshape of the public API (the domain model in
+`docs/roadmap.md`). 1.0.0 happens when all three stop being true: the domain model
+has landed or been deliberately dropped, the library has been verified on a second
+unit or firmware, and the protocol record has gone a sustained stretch without a
+correction.
+
+## 0.33.0 - 2026-07-29
+
+The first release on real PyPI: `pip install pyquadcortex` now works without pointing at
+TestPyPI. Everything before this version was published to TestPyPI only.
+
+### Changed
+
+- `set_ir()`'s documentation records that it is confirmed end to end - a loader pointed at
+  an IR from the host shows that IR on the unit, with no warning icon. (The code shipped in
+  0.32.0; only the read-back had been verified at the time.)
+- `docs/roadmap.md` gained a wishlist of device features the unit has and the library does
+  not - IR import, Neural Capture creation, Looper transport, cloud - each recording how far
+  the investigation got. Two more are set aside by decision rather than pending: the tuner's
+  live needle, and firmware updates (the one unrecoverable mistake available over this
+  protocol).
+- The tuner's Live Tuner needle is now its own row in the coverage table, marked
+  unsupported, rather than hiding inside a "partly" beside three tuner features that work.
+
 ## 0.32.0 - 2026-07-29
 
 IRs are loadable. The blocker was that `IR PATH` is not a path.
