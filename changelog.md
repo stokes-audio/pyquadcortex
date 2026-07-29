@@ -16,6 +16,21 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## 0.33.1 - 2026-07-29
+
+The PyPI project page, fixed. Docs only - no code changes.
+
+### Fixed
+
+- **Every readme link is now absolute.** PyPI renders the long description with no base
+  URL, so the relative links that work on GitHub all 404ed on the project page. They now
+  point at the GitHub repo explicitly, and a test enforces it so a relative link can never
+  ship again - including inside badge links, whose nested image syntax hid the one that
+  survived the first pass.
+- The readme no longer claims "five runnable examples" while linking to nine - counts in
+  prose drift, so it just says where the examples are. And it links the examples directory
+  once instead of both the directory and its readme, which GitHub renders together anyway.
+
 ## 0.33.0 - 2026-07-29
 
 The first release on real PyPI: `pip install pyquadcortex` now works without pointing at

@@ -1,7 +1,7 @@
 # pyquadcortex
 
 [![CI](https://github.com/stokes-audio/pyquadcortex/actions/workflows/ci.yml/badge.svg)](https://github.com/stokes-audio/pyquadcortex/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/stokes-audio/pyquadcortex/blob/main/LICENSE)
 
 Control a Neural DSP Quad Cortex from Python, over USB.
 
@@ -15,7 +15,7 @@ Recall and edit presets, build scenes, place and route blocks, drive the I/O and
 Global EQ, browse the unit's own catalogue of blocks and Neural Captures, and manage
 setlists - the operations you would do in Cortex Control or on the touchscreen, from a
 script. What is and is not covered is listed feature by feature in
-[docs/manual-coverage.md](docs/manual-coverage.md).
+[docs/manual-coverage.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/manual-coverage.md).
 
 The library imports as `pyquadcortex`; a command-line tool named `qcctl` comes
 with it.
@@ -33,7 +33,7 @@ fully offline, with no device attached.
 
 The device protocol carries no version of its own, so a future CorOS update could
 change it. If you are on a newer version and something misbehaves, that is the
-first thing to suspect - see [docs/protocol.md](docs/protocol.md).
+first thing to suspect - see [docs/protocol.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/protocol.md).
 
 ## Install
 
@@ -105,7 +105,7 @@ instrument tags all have readable names, so nothing here is a bare number.
 ## What it can do
 
 Four things worth knowing about, each with the full detail in
-**[docs/api.md](docs/api.md)**.
+**[docs/api.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/api.md)**.
 
 ### Edit a preset
 
@@ -148,7 +148,7 @@ qc.set_global_eq(band=3, gain=0.75, filter_type=GlobalEQFilter.PEAK)
 qc.set_scene_bypass_behavior(SceneBypassBehavior.ALWAYS_OVERWRITE)
 ```
 
-Read [Reading global settings safely](docs/api.md#reading-global-settings-safely)
+Read [Reading global settings safely](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/api.md#reading-global-settings-safely)
 first - a read straight after a write can return the old value, which looks exactly
 like a refusal.
 
@@ -166,9 +166,9 @@ qc.captures()                                # the Neural Capture library
 
 ## Examples
 
-Five runnable examples are in **[examples/](examples/)**, with
-[examples/readme.md](examples/readme.md) describing each. Start with
-[`inspect_preset.py`](examples/inspect_preset.py) - it only reads, and it prints what a
+Runnable examples are in **[examples/](https://github.com/stokes-audio/pyquadcortex/tree/main/examples)**, each described in the readme
+there. Start with
+[`inspect_preset.py`](https://github.com/stokes-audio/pyquadcortex/blob/main/examples/inspect_preset.py) - it only reads, and it prints what a
 preset actually contains.
 
 The ones that write are dry runs unless you pass `--write`, and they name the slot they
@@ -177,7 +177,7 @@ would overwrite.
 ## Troubleshooting
 
 If the device disappears mid-session with `DeviceNotFoundError`, see
-[docs/troubleshooting.md](docs/troubleshooting.md).
+[docs/troubleshooting.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/troubleshooting.md).
 
 If all you need is to change presets or scenes, you may not need this library at all -
 the unit accepts MIDI over USB and DIN: bank select plus program change for presets,
@@ -198,26 +198,26 @@ qcctl dump-preset --slot 28C
 
 ## Documentation
 
-- **[docs/api.md](docs/api.md)** - everything the library can do, grouped by what it
+- **[docs/api.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/api.md)** - everything the library can do, grouped by what it
   touches. The reference to the introduction above.
-- **[docs/manual-coverage.md](docs/manual-coverage.md)** - every feature the Quad
+- **[docs/manual-coverage.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/manual-coverage.md)** - every feature the Quad
   Cortex manual describes, against what this library covers. Read this to find out
   whether your case is supported before you start.
-- **[docs/protocol.md](docs/protocol.md)** - how the device's USB protocol works:
+- **[docs/protocol.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/protocol.md)** - how the device's USB protocol works:
   framing, the connect handshake, each operation, and what has been verified.
-- **[docs/architecture.md](docs/architecture.md)** - how this library is put
+- **[docs/architecture.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/architecture.md)** - how this library is put
   together, and how to add support for something it does not do yet.
-- **[docs/capture.md](docs/capture.md)** - how to read the device's own traffic when
+- **[docs/capture.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/capture.md)** - how to read the device's own traffic when
   you need a message shape this library does not implement yet.
-- **[docs/roadmap.md](docs/roadmap.md)** - where this is meant to go, including
+- **[docs/roadmap.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/roadmap.md)** - where this is meant to go, including
   the object model of the device that should eventually hide the protocol's rough
   edges entirely.
-- **[changelog.md](changelog.md)** - what changed between released versions.
-- **[docs/releasing.md](docs/releasing.md)** - the release checklist, and why each
+- **[changelog.md](https://github.com/stokes-audio/pyquadcortex/blob/main/changelog.md)** - what changed between released versions.
+- **[docs/releasing.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/releasing.md)** - the release checklist, and why each
   step exists.
-- **[docs/troubleshooting.md](docs/troubleshooting.md)** - when the device stops
+- **[docs/troubleshooting.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/troubleshooting.md)** - when the device stops
   answering.
-- **[contributing.md](contributing.md)** - development setup and how to submit a
+- **[contributing.md](https://github.com/stokes-audio/pyquadcortex/blob/main/contributing.md)** - development setup and how to submit a
   change.
 
 ## Acknowledgements
@@ -226,4 +226,4 @@ Inspired by [OpenCortex](https://github.com/VanIseghemThomas/OpenCortex).
 
 ## License
 
-[MIT](LICENSE).
+[MIT](https://github.com/stokes-audio/pyquadcortex/blob/main/LICENSE).
