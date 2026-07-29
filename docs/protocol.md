@@ -1499,6 +1499,64 @@ no folder carries `FolderInfo.is_favorites` - across 810 folder pushes none was 
 `File{READ}` and filters the flood, so that key is what the device REPORTS, not a request
 parameter.
 
+## IR import: how far the host can get
+
+Cortex Control imports IRs by drag-and-drop, over this same interface, so a host path
+exists. Most of it is now mapped, and it stops at one unknown.
+
+**`FileMessage.type` is a category selector**, which nothing else in this document needed
+until now. Attributed by `request_id` (without that, replies from earlier requests
+contaminate the counts):
+
+| `type` | what it lists |
+|---|---|
+| 0 | Presets - 223 folders, the setlists and user folders |
+| 1 | **IRs** - `local_ir_root` ("IRs Library"), `2_q` ("My IRs", `is_user_default`), and `/opt/neuraldsp/impulse_responses` (588 plugin assets) |
+| 2 | Captures - `local_nc_root` (2063), plus per-product folders |
+| 3+ | nothing |
+
+So the user's own IR folder is `2_q`, whose parent is `local_ir_root`. Both were empty on
+the unit measured, which is why its IR browser had nothing in it.
+
+**The import request needs `total_bulk_create_count`.** Without it the device does not react
+at all - no reply, no error, nothing. With it set, the same message starts a real operation:
+
+```
+File{CREATE, type: 1, total_bulk_create_count: 1, folder{key: "2_q", files{name: "..."}},
+     ir_payload: <bytes>}
+
+  -> BulkOperation{progress_message: "Importing IRs, please wait.", blocking: true,
+                   type: 1, destination_folder{key: "2_q", parent_key: "local_ir_root",
+                                               name: "My IRs", is_user_default: true}}
+  -> BulkOperation{UPDATE, progress: 1}
+  -> BulkOperation{DELETE, finished: true}
+```
+
+The device resolves the destination correctly and reports the operation finished. **But no
+file appears**, in either folder, on a short or full listing, after 60 s of polling.
+
+**What `ir_payload` should contain is the open question.** Eight encodings were tried, all
+producing the same "finished, nothing imported" result: 16- and 24-bit PCM WAV at 48 kHz and
+44.1 kHz, 1024 and 4096 samples, a hand-built IEEE-float32 WAV, raw int24 and raw float32
+sample arrays, with and without a `.wav` extension on the entry name, and with and without a
+sha256 `key` on the entry. The manual's note that uploaded WAVs are "automatically resized to
+1024 samples" suggests the conversion happens off-device, so the device may expect a
+pre-processed form that none of these matched.
+
+**One hypothesis was tested and refuted**, worth recording because it would have been the
+tidy explanation: that outbound FRAGMENTATION was at fault. This was by far the largest host
+write ever attempted here (~25 reports), and multi-report host writes had never been
+verified. Measured directly by writing strings of growing length into a parameter and reading
+them back after a save: 50, 100, 120, 130, 200, 400, 800, 1600 and **3200 characters (26
+fragments) all round-tripped exactly**. Outbound fragmentation is sound, so the import
+failure is about payload content, not transport.
+
+**A caution while probing this:** the unit's USB link died during a run of repeated
+multi-kilobyte import attempts, and only a power cycle brought it back. Causation is not
+established - this link has died spontaneously before - but a large unvalidated payload aimed
+at a file-import path is a plausible trigger. Space these attempts out, and expect to power
+cycle.
+
 **A caution about the IR library first.** `/opt/neuraldsp/impulse_responses` lists 588
 entries, but on the unit measured here NONE of them were loadable and the owner had no IRs
 available in the IR Loader's browser at all. Every name carries a plugin prefix - 333 `NG_`,
