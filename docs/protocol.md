@@ -1418,20 +1418,51 @@ USB, which is the one part of the Tuner the host cannot see.
 
 ## Recents is not Favorites
 
-`RecentsFavorites` carries both lists and distinguishes them with `is_favorites`. What the
-device actually answers a `READ` with is **Recents**: `is_favorites` unset, headed by the
-most recently saved preset. A `READ` carrying `is_favorites: true` draws **no reply at
-all** - not even an empty list - so that flag is not a query selector, and the Favorites
-list has no known read path over USB.
+`RecentsFavorites` carries both lists. The flag `is_favorites` tells them apart **when the
+device narrates a change**, but NOT when it answers a read:
 
-The list is read-only. Sending all 51 entries back with one appended left the device's own
-list byte for byte unchanged.
+* A `READ` is answered with the **Recents** list, `is_favorites` unset, headed by the most
+  recently saved preset.
+* A `READ` carrying `is_favorites: true` draws **no reply at all**, so the flag is not a
+  query selector.
+* The Favorites list does turn up occasionally in reply to an ordinary `READ` - as a second,
+  much shorter push, also with `is_favorites` unset - but only right after it changes. Over
+  15 consecutive reads in a settled state, only Recents ever came back. So there is no
+  reliable on-demand read of Favorites, and the two lists cannot be told apart by any field
+  when they do arrive; only by content.
 
-Two quirks when reading it: the device sometimes emits an EMPTY push before the populated
-one, and sometimes ignores the first `READ` entirely, so match on a non-empty list and be
-prepared to retry.
+**Both lists are maintained one ENTRY at a time, not by sending the whole list.** This was
+read wrong at first: sending all 51 entries back with one appended changed nothing, and that
+was written down as "the list is read-only". Watching the unit recall a preset shows the
+real idiom - a pair of single-entry messages:
+
+```
+RecentsFavorites{DELETE, items{name, folder_key, folder_name}}   # drop any existing copy
+RecentsFavorites{CREATE, items{name, folder_key, folder_name}}   # add it at the head
+```
+
+`action` unset is `CREATE` (0), so the second message carries no action field on the wire.
+Favouriting a preset on the unit uses the same shape with the flag set:
+
+```
+RecentsFavorites{CREATE, is_favorites: true, items{name: "IR probe", folder_key: ...}}
+```
+
+alongside a `BulkOperation` narrating `"Adding to Favorites, please wait."` - the unit does
+it through multiselect and the heart button, and only presets can be favourited.
+
+That shape is taken from the device's own traffic, so it is what the firmware accepts. It is
+NOT confirmed as a host write, because the verification path is the unreliable read above.
 
 ## IR Loaders
+
+**A caution about the IR library first.** `/opt/neuraldsp/impulse_responses` lists 588
+entries, but on the unit measured here NONE of them were loadable and the owner had no IRs
+available in the IR Loader's browser at all. Every name carries a plugin prefix - 333 `NG_`,
+134 `ME_`, 97 `ML_`, 18 `CW_`, 6 `JP_` - so these are assets belonging to purchased desktop
+plugins rather than IRs installed on the hardware. That is consistent with a block pointed at
+one of them reporting the file missing. So "588 IRs are listable" does not mean 588 IRs are
+usable, and testing IR loading needs an IR the owner has actually imported.
 
 The IR Loader blocks are models **29001-29008** (`Single`/`Dual`, mono/stereo, each with a
 `Lite` variant), catalog category `IRLoaders`. Two things about their parameter layout are

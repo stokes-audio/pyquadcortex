@@ -28,8 +28,11 @@ reading the wrong list.
   head. A `READ` asking for `is_favorites=True` draws no reply at all, so Favorites has no
   known read path over USB. `favorites()` still works as a deprecated alias for
   `recents()`; it just now says what it does.
-- The Recents list is confirmed **read-only**: sending all 51 entries back with one
-  appended left the device's list unchanged.
+- The Recents list is NOT read-only, though 0.29.0 said so on the strength of a whole-list
+  write being ignored. Watching the unit recall a preset shows both lists are maintained one
+  ENTRY at a time, as a `DELETE` then `CREATE` pair - so the earlier write was simply the
+  wrong shape. Favouriting uses the same pair with `is_favorites` set. Neither is wrapped in
+  a method yet: Favorites cannot be read on demand, so a host write of it cannot be verified.
 - **IR Loaders are mapped**, which is a prerequisite for loading one. Models 29001-29008,
   and every loader has TWO IR slots (parameters 0-7 and 8-15) needing **two** strings each:
   `IR PATH` (2, 10) and `IR NAME` (22, 23) - not the single `<hash><name>` string a Neural
