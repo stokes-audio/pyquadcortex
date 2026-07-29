@@ -1451,8 +1451,21 @@ RecentsFavorites{CREATE, is_favorites: true, items{name: "IR probe", folder_key:
 alongside a `BulkOperation` narrating `"Adding to Favorites, please wait."` - the unit does
 it through multiselect and the heart button, and only presets can be favourited.
 
-That shape is taken from the device's own traffic, so it is what the firmware accepts. It is
-NOT confirmed as a host write, because the verification path is the unreliable read above.
+That shape works as a host write, and **the device echoes the changed entry back** with
+`is_favorites` set - which is the confirmation, since the list itself cannot be read. That is
+the same trick `set_block(verify=True)` uses on the Grid echo, and it is what
+`add_favorite()`/`remove_favorite()` wait for.
+
+**A mismatched entry is ignored in silence.** The name, `folder_key` and `is_factory` have to
+match the device's own record. "Fuzz This" lives in `/opt/neuraldsp/Factory Library` with
+`is_factory: true`; naming it under My Presets produced no error, no echo and no favourite.
+So pass an item straight from a Recents listing rather than building one, and leave `verify`
+on - without the echo there is nothing at all to distinguish a mismatch from success.
+
+Two things the schema does NOT offer, both checked: there is no per-preset favourite flag
+anywhere (`ProductData` has 21 fields and none of them is one), and no folder carries
+`FolderInfo.is_favorites` - across 810 folder pushes, none was set and none was named for it.
+So "Favorites and Recent" is a view over this message, not a folder that can be enumerated.
 
 ## IR Loaders
 

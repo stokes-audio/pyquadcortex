@@ -8,6 +8,41 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.30.0 - 2026-07-28
+
+Favorites can be written, and HOLD TIMING makes sense now. Both came from watching the unit
+do the thing rather than guessing at it.
+
+### Added
+
+- **`add_favorite(entry)` / `remove_favorite(entry)`** - mark and unmark a preset as a
+  Favorite, using the exact message the unit sends when you use multiselect and the heart
+  button. Confirmed on hardware for both a factory and a user preset.
+
+  Pass an item straight from `recents()`. A mismatched `folder_key` or `is_factory` is
+  **ignored in silence** - "Fuzz This" lives in the Factory Library, and naming it under My
+  Presets produced no error and no favourite. `verify=True` (the default) waits for the
+  device to echo the changed entry back and raises `TimeoutError` explaining exactly that,
+  which is the only way to tell a mismatch from success: the Favorites list cannot be read.
+- **`set_hold_timing(ms)` / `hold_timing_ms()`** - the HOLD action timing in milliseconds.
+  The unit offers 500-1000 ms in 100 ms steps and stores the INDEX, so the 3 the field
+  reported was 800 ms on screen. The device stores any integer there unvalidated, so these
+  convert and check rather than passing a raw index through.
+
+### Changed
+
+- Two dead ends are now recorded as dead ends rather than left as open questions. There is
+  **no per-preset favourite flag** anywhere in the schema (`ProductData` has 21 fields and
+  none is one), and **no folder** carries `FolderInfo.is_favorites` - none of 810 folder
+  pushes set it. "Favorites and Recent" is a view over `RecentsFavorites`, not a folder that
+  can be listed, so reading Favorites has no route at all.
+- The IR library is not what it appears. The 588 entries under
+  `/opt/neuraldsp/impulse_responses` all carry plugin prefixes (333 `NG_`, 134 `ME_`, 97
+  `ML_`, 18 `CW_`, 6 `JP_`) and none was loadable on the unit tested, whose IR browser was
+  empty. A block pointed at one shows a warning icon and "<IR NAME> is missing" on screen -
+  so the firmware does resolve these strings and does fail loudly, just not anywhere a host
+  can observe. Listable is not loadable, and the correct path format remains unknown.
+
 ## 0.29.0 - 2026-07-28
 
 Three more of the coverage table's untested rows, and the method that turned out to be

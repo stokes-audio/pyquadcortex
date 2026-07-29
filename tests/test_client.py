@@ -1475,6 +1475,71 @@ def test_update_settings_sends_only_the_named_fields():
     assert not msg.HasField("led_brightness")
 
 
+class _FavEntry:
+    def __init__(self, name, folder_key, folder_name, is_factory=False):
+        self.name, self.folder_key = name, folder_key
+        self.folder_name, self.is_factory = folder_name, is_factory
+
+
+def test_add_favorite_sends_one_entry_with_the_flag_and_create():
+    """The shape captured from the unit: CREATE, is_favorites, a single item."""
+    qc = client.QuadCortex(FakeTransport())
+    entry = _FavEntry("Brit 2203", "/opt/neuraldsp/Factory Library",
+                      "Factory Library", is_factory=True)
+    qc.add_favorite(entry, verify=False)
+    sent = qc._t.sent[-1]
+    assert sent.action == pa.MessageAction.CREATE
+    assert sent.is_favorites is True
+    assert len(sent.items) == 1
+    assert sent.items[0].name == "Brit 2203"
+    assert sent.items[0].folder_key == "/opt/neuraldsp/Factory Library"
+    assert sent.items[0].is_factory is True
+
+
+def test_remove_favorite_uses_delete():
+    qc = client.QuadCortex(FakeTransport())
+    qc.remove_favorite(_FavEntry("x", "/k", "k"), verify=False)
+    assert qc._t.sent[-1].action == pa.MessageAction.DELETE
+
+
+def test_favorite_requires_a_name_and_folder_key():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="name and folder_key"):
+        qc.add_favorite(_FavEntry("", "", ""), verify=False)
+    assert qc._t.sent == []
+
+
+def test_add_favorite_verifies_via_the_echo():
+    """The device echoes the changed entry back; that is the only confirmation."""
+    echo = pa.RecentsFavoritesMessage(is_favorites=True)
+    echo.items.add().name = "Brit 2203"
+    qc = client.QuadCortex(StateTransport(echo))
+    got = qc.add_favorite(_FavEntry("Brit 2203", "/k", "k"))
+    assert got is echo
+    match = qc._t.matches[-1]
+    assert match(echo) is True
+    # a Recents push (no flag) must not be mistaken for the acknowledgement
+    recents = pa.RecentsFavoritesMessage()
+    recents.items.add().name = "Brit 2203"
+    assert match(recents) is False
+
+
+def test_add_favorite_explains_a_silent_mismatch_on_timeout():
+    """A wrong folder_key is ignored in silence, so the timeout has to teach."""
+
+    class NoEcho(FakeTransport):
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            raise TimeoutError("no RecentsFavoritesMessage broadcast")
+
+    qc = client.QuadCortex(NoEcho())
+    with pytest.raises(TimeoutError, match="IGNORED SILENTLY"):
+        qc.add_favorite(_FavEntry("Fuzz This", "/media/p4/Presets/My Presets",
+                                  "My Presets"), timeout=0.01)
+    # the write still went out; it is the acknowledgement that never came
+    assert qc._t.sent[-1].items[0].name == "Fuzz This"
+
+
 def test_set_hold_timing_writes_the_index_not_the_milliseconds():
     """The device stores an index; 800 ms is 3, which is what the unit showed."""
     qc = client.QuadCortex(FakeTransport())

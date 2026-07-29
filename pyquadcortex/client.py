@@ -1918,8 +1918,10 @@ Two of those names disagree with the catalog, which is why the map
         selector or the Favorites list is not readable over USB. This method was
         called ``favorites()`` until the difference was noticed.
 
-        **Read-only.** Sending the list back with an extra entry changed nothing;
-        the device kept its own 51 entries byte for byte.
+        **Writing needs ONE ENTRY, not the whole list.** Sending all 51 entries back
+        with an extra item does nothing - the device maintains both lists with a
+        single-entry ``DELETE`` then ``CREATE`` pair, which is what it does itself on
+        every preset recall. See :meth:`add_favorite` and :meth:`remove_favorite`.
 
         Note the device sometimes answers with an EMPTY push before the real one,
         and occasionally does not answer the first request at all, so this matches
@@ -1927,6 +1929,74 @@ Two of those names disagree with the catalog, which is why the map
         """
         return self._read_state(pa.RecentsFavoritesMessage,
                                 lambda m: len(m.items) > 0, timeout)
+
+    def _favorite(self, entry, remove, verify, timeout):
+        """Add or remove one Favorites entry, optionally waiting for the echo."""
+        name = getattr(entry, "name", None)
+        folder_key = getattr(entry, "folder_key", None) or getattr(entry, "key", None)
+        if not name or not folder_key:
+            raise TypeError(
+                "a favorite needs an entry carrying name and folder_key - pass an "
+                "item from recents(), or a Folder/preset entry"
+            )
+        msg = pa.RecentsFavoritesMessage(
+            action=pa.MessageAction.DELETE if remove else pa.MessageAction.CREATE,
+            is_favorites=True)
+        item = msg.items.add()
+        item.name = name
+        item.folder_key = folder_key
+        folder_name = (getattr(entry, "folder_name", None)
+                       or folder_key.rsplit("/", 1)[-1])
+        item.folder_name = folder_name
+        item.is_factory = bool(getattr(entry, "is_factory", False))
+        if not verify:
+            return self._t.send(msg)
+        # The device echoes the changed entry back with is_favorites set. That echo
+        # is the only confirmation available: the Favorites LIST cannot be read on
+        # demand (see recents()), so there is nothing to read back afterwards.
+        try:
+            return self._t.await_broadcast(
+                pa.RecentsFavoritesMessage, lambda: self._t.send(msg), timeout=timeout,
+                match=lambda m: (m.is_favorites
+                                 and any(i.name == name for i in m.items)))
+        except TimeoutError:
+            raise TimeoutError(
+                f"the device did not acknowledge {'un-' if remove else ''}favouriting "
+                f"{name!r} in {folder_name!r}. The entry has to match the device's own "
+                f"record - a wrong folder_key or is_factory is IGNORED SILENTLY, which "
+                f"is what this echo exists to catch. Pass an item straight from "
+                f"recents() rather than building one: 'Fuzz This' lives in "
+                f"/opt/neuraldsp/Factory Library with is_factory=True, and naming it "
+                f"under My Presets produced exactly this timeout."
+            ) from None
+
+    def add_favorite(self, entry, verify: bool = True, timeout: float = 10.0):
+        """Mark a preset as a Favorite.
+
+        ``entry`` is anything carrying ``name`` and ``folder_key`` - an item from
+        :meth:`recents`, or a preset entry from :meth:`list_presets` paired with its
+        folder. On the unit this is multiselect plus the heart button, and **only
+        presets can be favourited**; there is no favouriting of captures or IRs.
+
+        The list is maintained one ENTRY at a time. Sending the whole list back with
+        an extra item does nothing at all, which is what made this look read-only at
+        first.
+
+        **Pass the device's own entry, not one you built.** The name, ``folder_key``
+        and ``is_factory`` must match its record; a mismatch is ignored in silence.
+        "Fuzz This" lives in the Factory Library, and naming it under My Presets
+        produced no error and no favourite.
+
+        With ``verify`` (the default) this waits for the device to echo the change
+        back and raises ``TimeoutError`` if it does not, which is what turns that
+        silent mismatch into a visible failure. The echo is the only confirmation
+        available - :meth:`recents` cannot read the Favorites list.
+        """
+        return self._favorite(entry, remove=False, verify=verify, timeout=timeout)
+
+    def remove_favorite(self, entry, verify: bool = True, timeout: float = 10.0):
+        """Un-favourite a preset. See :meth:`add_favorite` for the argument."""
+        return self._favorite(entry, remove=True, verify=verify, timeout=timeout)
 
     def favorites(self, timeout: float = 10.0):
         """Deprecated alias for :meth:`recents`, which is what the device returns.
