@@ -1475,6 +1475,18 @@ def test_update_settings_sends_only_the_named_fields():
     assert not msg.HasField("led_brightness")
 
 
+def test_mode_cycle_waits_for_a_push_that_contains_the_cycle():
+    """mode() accepts any push carrying `mode`, and the device sends it alone."""
+    partial = pa.ModeMessage(action=pa.MessageAction.UPDATE, mode=7)
+    full = pa.ModeMessage(action=pa.MessageAction.UPDATE, mode=7)
+    full.available_modes.modes.extend([7, 1])
+    qc = client.QuadCortex(StateTransport(full))
+    assert qc.mode_cycle() == [7, 1]
+    match = qc._t.matches[-1]
+    assert match(full) is True
+    assert match(partial) is False        # the partial push must not satisfy it
+
+
 class _IR:
     def __init__(self, key, name):
         self.key, self.name = key, name

@@ -1803,9 +1803,8 @@ Note that a `parameters` block carrying no `parameter_index` IS index 0, and one
 no `value` IS 0.0 - both fields are plain scalars, so their zeros are not serialized. Two
 writes were missed on a first pass for exactly that reason.
 
-**A HYBRID slot is a composite value in `available_modes`, and it IS drivable.**
-
-Merging Preset with Stomp on the unit and then CONFIRMING the menu produced:
+**A HYBRID slot is a composite value in `available_modes`, and it IS drivable.** Merging two
+modes on the unit produced
 
 ```
 Mode{UPDATE, available_modes{modes: 7, modes: 1}}
@@ -1813,7 +1812,29 @@ Mode{UPDATE, available_modes{modes: 7, modes: 1}}
 
 Two slots - the hybrid as `7`, Scene as `1` - and cycling modes alternated `mode: 7` and
 `mode: 1`, matching what the screen showed. Sending `available_modes{7, 1}` from the host
-creates the same arrangement, and `Mode{UPDATE, mode: 7}` selects it.
+builds the same thing.
+
+**The device accepts mode values 0-9 and refuses 10 and up.** Measured by writing `[N, 1]` for
+N in 3..15 and polling until the cycle stopped changing: 0-9 all survive, and anything higher
+is dropped from the list, leaving `[1]`. Since 0, 1 and 2 are the base modes, 3-9 are seven
+composite values.
+
+Resist inferring the encoding from that. Seven accepted values is equally consistent with a
+plain **range check** that stores whatever fits, and three base modes only make four
+multi-mode subsets (three pairs and one triple), not seven. `7 = 0b111` would be "all three"
+under a Preset=1/Scene=2/Stomp=4 bitmask, which does not match the two-slot cycle observed
+alongside a standalone Scene - so even the one composite with a known origin does not pin the
+scheme down. What each of 3-9 means needs reading off the screen.
+
+**A composite cannot be the only slot.** `set_mode_cycle([7])` is refused and the device
+reverts to its default; every accepted probe paired the composite with a base mode.
+
+**Mode pushes are frequently PARTIAL** - a mode switch broadcasts `mode` alone, with no
+`available_modes` - so a read that accepts any push mentioning `mode` can hand back an empty
+cycle for a perfectly configured unit. This produced two contradictory accept/reject tables
+before it was noticed. `mode_cycle()` waits for a push that actually contains the cycle; see
+the partial-push warning at the top of this document.
+
 
 **It only appears once the menu is confirmed.** An earlier session merged and un-merged
 WITHOUT pressing OK, and the merge broadcast nothing - which had been recorded here as the

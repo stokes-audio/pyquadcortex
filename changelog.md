@@ -42,6 +42,21 @@ IRs are loadable. The blocker was that `IR PATH` is not a path.
   is not loadable, and a block pointed at one shows a warning icon and "<IR NAME> is missing"
   on the unit - the only failure signal, since the host cannot see it.
 
+### Added (footswitch modes)
+
+- **`mode_cycle()`** - the configured mode slots, read from a push that actually contains
+  them. `mode()` matches any push carrying `mode`, and the device frequently sends that field
+  alone, so reading the cycle through `mode()` could hand back an empty list from a partial
+  push and make a configured unit look unconfigured. That misread produced two contradictory
+  answers about which mode values the device accepts before it was spotted.
+
+- Measured, with settle-then-decide reads: the device **accepts mode values 0-9 and rejects 10
+  and above** (an out-of-range value is dropped, leaving the rest of the cycle). 0, 1 and 2 are
+  the base modes, so 3-9 are seven composite (HYBRID) values. What each composite MEANS is
+  still unknown - and note that acceptance may only reflect a range check rather than seven
+  meaningful pairings, so no encoding should be inferred from it. A composite also cannot be
+  the only slot: `[7]` alone is refused and the device reverts to its default.
+
 ### Still open
 
 - **Importing** an IR from the host. `File{CREATE, type: 1, total_bulk_create_count: 1,

@@ -1844,9 +1844,28 @@ Two of those names disagree with the catalog, which is why the map
         A merged HYBRID slot appears as a single composite value: a unit with Preset
         and Stomp merged reported ``available_modes{7, 1}`` and cycling alternated
         ``mode: 7`` and ``mode: 1``. See :meth:`set_mode_cycle`.
+
+        **This may not carry the cycle.** Mode pushes are often PARTIAL - a switch
+        broadcasts ``mode`` alone - so ``available_modes.modes`` can read empty here
+        even though slots are configured. Use :meth:`mode_cycle` to read the cycle;
+        it waits for a push that actually contains one.
         """
         return self._read_state(pa.ModeMessage, lambda m: m.HasField("mode"),
                                 timeout)
+
+    def mode_cycle(self, timeout: float = 10.0) -> list:
+        """The configured footswitch mode slots, in cycle order.
+
+        Waits for a push that CONTAINS the cycle, rather than the first one
+        mentioning modes at all. :meth:`mode` accepts any push carrying ``mode``,
+        and the device frequently sends that field alone - so reading the cycle
+        through it can hand back an empty list from a partial push and make a
+        perfectly good configuration look empty. That misread produced two
+        contradictory answers about which composite values the device accepts.
+        """
+        state = self._read_state(
+            pa.ModeMessage, lambda m: len(m.available_modes.modes) > 0, timeout)
+        return list(state.available_modes.modes)
 
     def set_mode(self, slot: int):
         """Switch to a footswitch mode SLOT by index. Confirmed on hardware.
