@@ -129,7 +129,7 @@ loading from the factory Captures Library.
 | Neural Captures: list | yes | `captures()` browses the library - over 2000 entries, shown on the unit as Factory Captures V1/V2 and My Captures. NOT the catalog, which does not grow when a capture is saved |
 | Load a capture onto the grid | yes | `set_capture(row, column, entry)` - the block model plus a `file_name` string of content hash + name |
 | Neural Captures: rename, delete, manage | no | candidate `File` |
-| Impulse responses: list and load into an IR Loader | partly | the 588 factory IRs are listable (`/opt/neuraldsp/impulse_responses`, name only - no hash key, unlike captures). The block is mapped: models 29001-29008, TWO IR slots per block (params 0-7 and 8-15), each needing an `IR PATH` (2, 10) AND an `IR NAME` (22, 23) string. All four are writable and survive a save. The gap is that the device stores ANY string unchanged - bare name, full path and path+`.wav` all round-trip identically, and a deliberate non-existent name is kept without complaint - so read-back cannot tell a loaded IR from a broken reference. Which form is correct needs one look at the unit |
+| Impulse responses: list and load into an IR Loader | partly | the 588 factory IRs are listable (`/opt/neuraldsp/impulse_responses`, name only - no hash key, unlike captures). The block is mapped: models 29001-29008, TWO IR slots per block (params 0-7 and 8-15), each needing an `IR PATH` (2, 10) AND an `IR NAME` (22, 23) string. All four are writable and survive a save. The gap is the path FORMAT. The device stores any string unchanged on write, so no host-side read can tell a working reference from a broken one - but the unit does resolve it at load time and shows a warning icon plus `"<IR NAME> is missing"`, which is how the full-path-with-`.wav` form was ruled out. The library lists IRs by display name only, with no hash or filename, so the correct form is still unknown |
 | Plugin presets | no | candidate `License`, `CloudProduct` |
 | Upload to Cortex Cloud | no | candidates `CloudProduct`, `ProcessDownloadsQueue` |
 
@@ -173,7 +173,7 @@ on 25, 9 and 56 as `led_brightness` was 28, 13 and 59).
 | GLOBAL BYPASS (Cab / IR Loader per row) | yes | `set_global_bypass(cab=..., ir=...)`, four booleans per collection |
 | SCENE BYPASS BEHAVIOR (3 modes) | yes | `set_scene_bypass_behavior()` with the `SceneBypassBehavior` enum. It decides what `set_bypass` persists |
 | STOMP MODE BYPASS (auto-assign on load) | yes | `update_settings(stomp_mode_auto_assign=...)`, confirmed writable |
-| HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | yes | all three confirmed writable via `update_settings()`. `hold_timing` is NOT milliseconds despite the manual's 500-1000 ms range - it defaults to 3 and stores any integer unvalidated, so it is presumably an index into that range |
+| HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | yes | all three confirmed writable via `update_settings()`. `set_hold_timing()` takes MILLISECONDS and writes the index the device stores - the unit offers 500-1000 ms in 100 ms steps and the field is the index, confirmed by reading 3 while the screen showed 800 ms. `hold_timing_ms()` reads it back |
 | LATENCY COMPENSATION | yes | `update_settings(enable_dynamic_delay_compensation=...)`, confirmed writable |
 | Device name | no | candidate `Serialization`, `GeneralSettings` |
 | Firmware and serial | yes | `version()` |

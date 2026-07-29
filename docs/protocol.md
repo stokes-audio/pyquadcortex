@@ -1447,12 +1447,22 @@ So an IR reference is **two strings, not one**: `IR PATH` (2 or 10) and `IR NAME
 `<hash><name>` string - and the IR library gives you no hash to work with, only a name.
 
 All four strings are writable through `set_param(text=...)`, carry one value per scene like
-any other parameter, and survive a save. **But the device does not validate them.** A bare
-name, `/opt/neuraldsp/impulse_responses/<name>` and the same with `.wav` all store back
-byte-identical, and so does `"NOT AN IR AT ALL zzz"`. Nothing is normalised and nothing is
-rejected, so a successful read-back is not evidence that an IR loaded. Which form the
-firmware actually resolves is unresolved here, and the cheap way to settle it is to watch
-what the unit writes when a human loads an IR through its own UI.
+any other parameter, and survive a save. **But the device does not validate them on write.**
+A bare name, `/opt/neuraldsp/impulse_responses/<name>` and the same with `.wav` all store
+back byte-identical, and so does `"NOT AN IR AT ALL zzz"`. Nothing is normalised and nothing
+is rejected, so no host-side read can tell a working reference from a broken one.
+
+**The unit does report it, on screen.** A block written with
+`IR PATH = /opt/neuraldsp/impulse_responses/CW_212 Cory Wong Cab 1_Condenser 184.wav` and
+the matching `IR NAME` came up with a WARNING ICON on the grid, and opening it showed
+`"CW_212 Cory Wong Cab 1_Condenser 184 is missing"` - the name from `IR NAME` - while still
+allowing its other parameters to be edited. So the firmware does resolve the reference at
+load time and does fail loudly; it just fails somewhere a host cannot see.
+
+Two things follow. That full-path-with-extension form is **wrong**, so the path the library
+would need is still unknown - and since the IR library lists entries by display name only,
+with no hash and no filename, the on-disk name may differ from what is shown. That is why
+this is documented rather than wrapped in a method.
 
 Note also that `params[].index` is unset on every entry the device sends, so **position in
 the list is the parameter index** - which is why the catalog's index lines up with
@@ -1480,10 +1490,11 @@ state has to stay dimmer than the normal one. This first read as a flat refusal,
 poll demanding the exact value written cannot tell a clamp from a rejection - worth
 remembering when testing any bounded field.
 
-**`hold_timing` is not milliseconds.** The manual describes HOLD TIMING as a 500-1000 ms
-range, but the field's default is 3, and the device stores any integer without validation:
-0 and 5000 both round-tripped. It is presumably an index into that range. What the unit
-shows for a given value has not been read back, so only the default is trustworthy.
+**`hold_timing` is an index, not milliseconds.** The unit offers six values - 500 to 1000
+ms in 100 ms steps - and the field is the index into them, settled by reading 3 over USB
+while the screen showed 800 ms. So `ms = 500 + 100 * hold_timing`. The device does not
+validate the field: 0 and 5000 both round-tripped, which is why `set_hold_timing()` takes
+milliseconds and checks them rather than passing an index straight through.
 
 Also worth knowing: the MIDI settings the manual lists under a MIDI submenu - channel,
 over USB, ignore duplicate PC, clock in - are in `GeneralSettings`, NOT in the

@@ -1475,6 +1475,41 @@ def test_update_settings_sends_only_the_named_fields():
     assert not msg.HasField("led_brightness")
 
 
+def test_set_hold_timing_writes_the_index_not_the_milliseconds():
+    """The device stores an index; 800 ms is 3, which is what the unit showed."""
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_hold_timing(800)
+    assert qc._t.sent[-1].hold_timing == 3
+    qc.set_hold_timing(500)
+    assert qc._t.sent[-1].hold_timing == 0
+    qc.set_hold_timing(1000)
+    assert qc._t.sent[-1].hold_timing == 5
+
+
+@pytest.mark.parametrize("bad", [450, 550, 1100, 3, 0])
+def test_set_hold_timing_rejects_values_the_unit_does_not_offer(bad):
+    """The field takes any integer unvalidated, so the check has to be here."""
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="hold timing must be one of"):
+        qc.set_hold_timing(bad)
+    assert qc._t.sent == []
+
+
+def test_hold_timing_ms_converts_back():
+    push = pa.GeneralSettingsMessage(action=pa.MessageAction.UPDATE, hold_timing=3)
+    push.scene_block_bypass = 0
+    qc = client.QuadCortex(StateTransport(push))
+    assert qc.hold_timing_ms() == 800
+
+
+def test_hold_timing_ms_refuses_to_invent_a_value_for_an_out_of_range_index():
+    push = pa.GeneralSettingsMessage(action=pa.MessageAction.UPDATE, hold_timing=5000)
+    push.scene_block_bypass = 0
+    qc = client.QuadCortex(StateTransport(push))
+    with pytest.raises(ValueError, match="outside the six values"):
+        qc.hold_timing_ms()
+
+
 def test_update_settings_rejects_unknown_fields():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError, match="no field"):

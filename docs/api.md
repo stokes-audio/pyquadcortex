@@ -260,7 +260,7 @@ qc.update_settings(screen_brightness=before.screen_brightness)
 Fifteen `GeneralSettings` fields are confirmed writable this way; the exceptions are
 worth knowing before you trust a read-back. `internal_midi_clock_enabled` refuses writes
 outright. `dimmed_led_brightness` is capped just below `led_brightness`, so a high value
-silently lands lower. `hold_timing` is an index, not the milliseconds the manual describes.
+silently lands lower. `hold_timing` is an index into six values (500-1000 ms in 100 ms steps), so use `set_hold_timing()` / `hold_timing_ms()`, which convert and validate.
 See `update_settings()`'s docstring for the full list.
 
 `update_settings()` refuses `power_option` and `reset_wifi_networks`: those are

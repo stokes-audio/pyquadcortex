@@ -1548,11 +1548,12 @@ Two of those names disagree with the catalog, which is why the map
           the dimmed value has to be dimmer. Asking for 100 landed on 25 with
           ``led_brightness`` at 28, on 9 with it at 13, and on 56 with it at 59. So
           raise ``led_brightness`` first if you want a high dimmed value.
-        * **``hold_timing`` is not milliseconds.** The manual describes a 500-1000 ms
-          range but the field's default is 3, and it stores any integer you send
-          without validation (0 and 5000 both round-tripped). It is presumably an
-          index into that range; the corresponding on-screen value has not been
-          read back, so treat anything outside roughly 0-5 as unknown territory.
+        * **``hold_timing`` is an INDEX, not milliseconds.** The unit offers six
+          values - 500 to 1000 ms in 100 ms steps - and the field is the index into
+          them, confirmed by reading 3 over USB while the screen showed 800 ms. So
+          ``ms = 500 + 100 * hold_timing``. The device does NOT validate it: 0 and
+          5000 both round-tripped, so only 0-5 are meaningful. Use
+          :meth:`set_hold_timing` to pass milliseconds and have this checked.
 
         **Top-level fields are sparse, but a SUBMESSAGE is replaced wholesale.**
         Sending ``master_volume_assignment`` with one flag set leaves the other
@@ -1578,6 +1579,39 @@ Two of those names disagree with the catalog, which is why the map
             raise TypeError(f"GeneralSettings has no field(s) {sorted(unknown)}")
         msg = pa.GeneralSettingsMessage(action=pa.MessageAction.UPDATE, **fields)
         return self._t.send(msg)
+
+    HOLD_TIMING_MS = (500, 600, 700, 800, 900, 1000)
+
+    def set_hold_timing(self, milliseconds: int):
+        """How long a footswitch must be held to fire its HOLD action.
+
+        Takes MILLISECONDS - one of 500, 600, 700, 800, 900 or 1000, the six values
+        the unit offers - and writes the index the device actually stores.
+        ``GeneralSettings.hold_timing`` is that index, confirmed by reading 3 while
+        the screen showed 800 ms, so ``ms = 500 + 100 * index``.
+
+        The device accepts any integer in that field without validation, storing 0
+        and 5000 as happily as a real index, so this rejects anything outside the
+        six rather than letting a meaningless value through.
+        """
+        try:
+            index = self.HOLD_TIMING_MS.index(int(milliseconds))
+        except ValueError:
+            raise ValueError(
+                f"hold timing must be one of {list(self.HOLD_TIMING_MS)} ms, "
+                f"not {milliseconds}"
+            ) from None
+        return self.update_settings(hold_timing=index)
+
+    def hold_timing_ms(self, timeout: float = 10.0) -> int:
+        """The current HOLD action timing, in milliseconds."""
+        index = self.settings(timeout).hold_timing
+        if 0 <= index < len(self.HOLD_TIMING_MS):
+            return self.HOLD_TIMING_MS[index]
+        raise ValueError(
+            f"hold_timing reads {index}, which is outside the six values the unit "
+            f"offers - something wrote an unvalidated value into it"
+        )
 
     def set_scene_bypass_behavior(self, behavior):
         """Set whether block bypass changes are saved per scene.
