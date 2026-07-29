@@ -8,6 +8,48 @@ Versions follow the usual 0.x convention: the minor number moves for new
 capability, the patch number for fixes. Anything may still change while the
 major number is 0.
 
+## 0.32.0 - 2026-07-29
+
+IRs are loadable. The blocker was that `IR PATH` is not a path.
+
+### Added
+
+- **`list_irs(folder=None)`** - the Impulse Responses the unit can actually load, each with
+  the `key` and `name` `set_ir()` needs. IRs are `FileMessage.type: 1`, a category selector a
+  listing request must set. Pass `"2_q"` for "My IRs" only.
+
+  The 588 entries under `/opt/neuraldsp/impulse_responses` are excluded on purpose: they are
+  assets belonging to purchased desktop plugins, they carry a name and **no key**, and the
+  unit's own IR browser does not show them.
+
+- **`set_ir(row, column, ir, slot=0)`** - point an IR Loader at a library entry. Every loader
+  has **two** IR slots whatever its name suggests, and `slot` picks one.
+
+### Changed
+
+- **`IR PATH` takes the library entry's KEY, not a path.** Read off a block loaded by hand on
+  the unit: `IR PATH = "CIR_eb6d6d347e75f988010a9746580c31c"` with
+  `IR NAME = "Rex 57 on axis"` beside it, matching that entry's `key` and `name` exactly.
+  Confirmed by pointing a loader at a different IR from the host and reading back the
+  library's own strings byte for byte, on both slots.
+
+  An earlier session burned real time guessing path forms - bare name, full path, path with
+  `.wav` - all of which the device stores unchanged without complaint. Two things conspired:
+  the parameter is *called* `IR PATH`, and the only IR listing available then reported entries
+  with a name and no key, so the field that mattered was absent from the data on hand.
+
+- The IR library documentation no longer implies those 588 plugin entries are usable. Listable
+  is not loadable, and a block pointed at one shows a warning icon and "<IR NAME> is missing"
+  on the unit - the only failure signal, since the host cannot see it.
+
+### Still open
+
+- **Importing** an IR from the host. `File{CREATE, type: 1, total_bulk_create_count: 1,
+  folder{key: "2_q"}, ir_payload}` starts a real "Importing IRs" operation and reports it
+  finished, but nothing is imported and eight payload encodings failed. Use Cortex Control's
+  drag-and-drop, which is the documented route. Note the USB link died during a run of those
+  attempts and needed a power cycle.
+
 ## 0.31.0 - 2026-07-28
 
 **`favorites()` now returns your Favorites.** In 0.29.0 and 0.30.0 it was a deprecated alias

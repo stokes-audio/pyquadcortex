@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 101 features audited: **60 yes**, **10 partly**, **21 no**, **10 n/a**.
+Of 101 features audited: **61 yes**, **9 partly**, **21 no**, **10 n/a**.
 
 Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
@@ -129,7 +129,7 @@ loading from the factory Captures Library.
 | Neural Captures: list | yes | `captures()` browses the library - over 2000 entries, shown on the unit as Factory Captures V1/V2 and My Captures. NOT the catalog, which does not grow when a capture is saved |
 | Load a capture onto the grid | yes | `set_capture(row, column, entry)` - the block model plus a `file_name` string of content hash + name |
 | Neural Captures: rename, delete, manage | no | candidate `File` |
-| Impulse responses: list and load into an IR Loader | partly | the 588 entries under `/opt/neuraldsp/impulse_responses` are listable (name only - no hash key, unlike captures) but are NOT usable IRs: every name carries a plugin prefix (NG, ME, ML, CW, JP) and none were loadable on the unit, whose IR browser was empty. Testing this needs an owner-imported IR. The block is mapped: models 29001-29008, TWO IR slots per block (params 0-7 and 8-15), each needing an `IR PATH` (2, 10) AND an `IR NAME` (22, 23) string. All four are writable and survive a save. The gap is the path FORMAT. The device stores any string unchanged on write, so no host-side read can tell a working reference from a broken one - but the unit does resolve it at load time and shows a warning icon plus `"<IR NAME> is missing"`, which is how the full-path-with-`.wav` form was ruled out. The library lists IRs by display name only, with no hash or filename, so the correct form is still unknown |
+| Impulse responses: list and load into an IR Loader | yes | `list_irs()` lists the loadable IRs (`FileMessage.type: 1`; `"2_q"` is "My IRs") and `set_ir()` points a loader at one, on either of its TWO slots. `IR PATH` takes the library entry's KEY - `CIR_` plus a content id - NOT a path, with the display name in a separate `IR NAME` parameter. The 588 entries under `/opt/neuraldsp/impulse_responses` are plugin assets with no key that the unit cannot load, and are excluded. Importing an IR from the host is still unsolved - use Cortex Control |
 | Plugin presets | no | candidate `License`, `CloudProduct` |
 | Upload to Cortex Cloud | no | candidates `CloudProduct`, `ProcessDownloadsQueue` |
 

@@ -48,7 +48,7 @@ These are all methods on the object `connect()` returns.
 | **Setlists** | `create_setlist(name)`, `delete_setlist(name)`, `duplicate_setlist(src, dest)`, `list_folders()` |
 | **Copying** | `copy_preset(from_setlist, position, to_setlist)` - recall + save, so it loads each source |
 | **Device list** | `pin_model()`, `unpin_model()`, `pinned_models()`, `master_volume()` |
-| **Neural Captures** | `captures()` to browse the library, `set_capture(row, column, entry)` to place one. Creating a capture is the unit's own wizard - disconnect first, since a connected client suppresses it |
+| **Neural Captures** | `captures()`, `list_irs()` to browse the library, `set_capture(row, column, entry)` to place one. Creating a capture is the unit's own wizard - disconnect first, since a connected client suppresses it |
 | **Discovery** | `list_folders()` - every folder the device knows, including the factory Captures Library and plugin artist presets; `recents()`, `favorites()`, `add_favorite()`, `remove_favorite()` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 

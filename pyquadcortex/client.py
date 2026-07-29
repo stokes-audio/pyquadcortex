@@ -2464,6 +2464,80 @@ Two of those names disagree with the catalog, which is why the map
                               param_index=self.CAPTURE_FILE_NAME_PARAM,
                               text=f"{key}{name}")
 
+    IR_LIBRARY = "local_ir_root"
+    USER_IRS = "2_q"
+    IR_FILE_TYPE = 1
+    IR_PATH_PARAMS = (2, 10)
+    IR_NAME_PARAMS = (22, 23)
+    IR_LOADER_MODELS = range(29001, 29009)
+
+    def list_irs(self, folder: str = None, timeout: float = 20.0) -> list:
+        """Every Impulse Response the unit can load, as listing entries.
+
+        Each has a ``key`` and a ``name``, which are exactly what :meth:`set_ir`
+        needs. ``folder`` defaults to the whole IRs Library; pass
+        :attr:`USER_IRS` (``"2_q"``, shown as "My IRs") for only your own.
+
+        **The 588 entries under ``/opt/neuraldsp/impulse_responses`` are excluded,
+        and deliberately.** They are assets belonging to purchased desktop plugins,
+        they expose a ``name`` and NO ``key``, and the unit cannot load them - its
+        own IR browser does not show them. Listing them here would offer IRs that
+        cannot be used.
+
+        IRs are ``FileMessage.type: 1``. That field is a category selector - 0 is
+        presets, 2 is captures - and a listing request must set it, unlike
+        :meth:`list_presets` which sends a bare READ and filters the flood.
+        """
+        wanted = folder or self.IR_LIBRARY
+        request_id = self._t.next_request_id()
+        message = pa.FileMessage(action=pa.MessageAction.READ,
+                                 type=self.IR_FILE_TYPE, request_id=request_id)
+        listing = self._t.await_broadcast(
+            pa.FileMessage, lambda: self._t.send(message), timeout=timeout,
+            match=lambda m: (m.HasField("request_id")
+                             and m.request_id == request_id
+                             and m.folder.key.rstrip("/") == wanted.rstrip("/")))
+        return [f for f in listing.folder.files if f.HasField("key") and f.key]
+
+    def set_ir(self, row: int, column: int, ir, slot: int = 0,
+               model: int = 29001):
+        """Point an IR Loader block at an IR from the library.
+
+        ``ir`` is an entry from :meth:`list_irs` (anything with ``key`` and
+        ``name``). ``slot`` is 0 or 1: **every IR Loader has TWO IR slots**,
+        whatever its name suggests, and each has its own parameters.
+
+        An IR reference is **two strings, and the first is not a path**::
+
+            IR PATH  (param 2 or 10)  = the library entry's KEY, e.g.
+                                        "CIR_eb6d6d347e75f988010a9746580c31c"
+            IR NAME  (param 22 or 23) = its display name, e.g. "Rex 57 on axis"
+
+        Read off a working block placed on the unit by hand. The `IR PATH` label
+        is misleading: a real filesystem path does not resolve, and neither does a
+        bare name - only the key does. This differs from a Neural Capture block,
+        which holds ONE string concatenating hash and name.
+
+        A bad reference is not reported to the host - the device stores any string
+        unchanged - but the unit shows a warning icon and "<IR NAME> is missing" on
+        screen, so check there if a block goes quiet.
+        """
+        key = getattr(ir, "key", None)
+        name = getattr(ir, "name", None)
+        if not key or not name:
+            raise TypeError(
+                "ir must be an entry from list_irs(), carrying key and name - the "
+                "IR PATH parameter takes the library KEY, not a path or a name"
+            )
+        if slot not in (0, 1):
+            raise ValueError(f"slot must be 0 or 1, not {slot!r}")
+        if model is not None:
+            self.set_block(row=row, column=column, model=model)
+        self.set_param(row=row, column=column,
+                       param_index=self.IR_PATH_PARAMS[slot], text=key)
+        return self.set_param(row=row, column=column,
+                              param_index=self.IR_NAME_PARAMS[slot], text=name)
+
     def show_capture_dialog(self, shown: bool = True):
         """Answer the device's request to open the Neural Capture dialog.
 

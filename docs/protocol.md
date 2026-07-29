@@ -1574,15 +1574,35 @@ first (`MUTE`, `INVERT`, `IR PATH`, `LEVEL`, `HI PASS`, `LOW PASS`, `PAN`, `DELA
 8-15 repeat them for the second. 16-21 are shared (`ROOM MIX`, `PRE DELAY`, `REV HI PASS`,
 `REV LOW PASS`, `SIZE`, `GLOBAL OUTPUT`), and 22 and 23 are an `IR NAME` per slot.
 
-So an IR reference is **two strings, not one**: `IR PATH` (2 or 10) and `IR NAME` (22 or
-23). This differs from a Neural Capture block, which holds a single
-`<hash><name>` string - and the IR library gives you no hash to work with, only a name.
+So an IR reference is **two strings, not one**: `IR PATH` (2 or 10) and `IR NAME` (22 or 23).
 
-All four strings are writable through `set_param(text=...)`, carry one value per scene like
-any other parameter, and survive a save. **But the device does not validate them on write.**
-A bare name, `/opt/neuraldsp/impulse_responses/<name>` and the same with `.wav` all store
-back byte-identical, and so does `"NOT AN IR AT ALL zzz"`. Nothing is normalised and nothing
-is rejected, so no host-side read can tell a working reference from a broken one.
+**`IR PATH` does not take a path. It takes the library entry's `key`.** Read off a block a
+human loaded on the unit:
+
+```
+params[2]  (IR PATH) = "CIR_eb6d6d347e75f988010a9746580c31c"
+params[22] (IR NAME) = "Rex 57 on axis"
+
+library entry       = {key: "CIR_eb6d6d347e75f988010a9746580c31c",
+                       name: "Rex 57 on axis", is_readonly: false,
+                       date_ms_since_epoch: ...}
+```
+
+The key is `CIR_` plus a content id. Both strings come straight from `list_irs()`, and
+`set_ir()` writes them - confirmed by pointing a loader at a DIFFERENT IR from the host and
+reading back the library's own key and name byte for byte, on both slots.
+
+This differs from a Neural Capture block, which holds ONE string concatenating hash and name.
+
+An earlier session lost time guessing path forms here - bare name, full path, path with
+`.wav` - because the parameter is called `IR PATH` and because the only IR listing available
+then, `/opt/neuraldsp/impulse_responses`, reports entries with a `name` and **no key**. Those
+588 are plugin assets the unit cannot load, so the field that mattered was missing from the
+only data on hand. `list_irs()` therefore filters to entries that HAVE a key.
+
+**The device does not validate either string on write.** Any value stores back
+byte-identical, including `"NOT AN IR AT ALL zzz"`, so no host-side read distinguishes a good
+reference from a broken one.
 
 **The unit does report it, on screen.** A block written with
 `IR PATH = /opt/neuraldsp/impulse_responses/CW_212 Cory Wong Cab 1_Condenser 184.wav` and

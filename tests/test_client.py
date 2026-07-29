@@ -1475,6 +1475,65 @@ def test_update_settings_sends_only_the_named_fields():
     assert not msg.HasField("led_brightness")
 
 
+class _IR:
+    def __init__(self, key, name):
+        self.key, self.name = key, name
+
+
+def test_set_ir_writes_the_library_key_as_ir_path_and_the_name_separately():
+    """IR PATH takes the KEY, not a path - read off a working block on hardware."""
+    qc = client.QuadCortex(EchoingTransport())
+    ir = _IR("CIR_eb6d6d347e75f988010a9746580c31c", "Rex 57 on axis")
+    qc.set_ir(row=1, column=0, ir=ir, model=None)
+    strings = {}
+    for msg in qc._t.sent:
+        if isinstance(msg, pa.GridMessage):
+            for chain in msg.preset.chains:
+                for m in chain.models:
+                    for pr in m.params:
+                        for pv in pr.param_values:
+                            if pv.HasField("string_value"):
+                                strings[pr.index] = pv.string_value
+    assert strings[2] == "CIR_eb6d6d347e75f988010a9746580c31c"
+    assert strings[22] == "Rex 57 on axis"
+
+
+def test_set_ir_slot_one_uses_the_second_pair_of_parameters():
+    qc = client.QuadCortex(EchoingTransport())
+    qc.set_ir(row=1, column=0, ir=_IR("CIR_abc", "Second"), slot=1, model=None)
+    indices = {pr.index for msg in qc._t.sent if isinstance(msg, pa.GridMessage)
+               for chain in msg.preset.chains for m in chain.models for pr in m.params}
+    assert indices == {10, 23}
+
+
+def test_set_ir_rejects_anything_without_a_key():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="carrying key and name"):
+        qc.set_ir(row=1, column=0, ir=_IR("", "No key"), model=None)
+    with pytest.raises(ValueError, match="slot must be 0 or 1"):
+        qc.set_ir(row=1, column=0, ir=_IR("CIR_x", "x"), slot=2, model=None)
+
+
+def test_list_irs_asks_with_type_1_and_drops_keyless_plugin_assets():
+    """The 588 plugin IRs expose a name and no key, and the unit cannot load them."""
+    listing = pa.FileMessage(request_id=1)
+    listing.folder.key = "local_ir_root"
+    loadable = listing.folder.files.add()
+    loadable.key, loadable.name = "CIR_abc", "Mine"
+    listing.folder.files.add().name = "Plugin Asset With No Key"
+    qc = client.QuadCortex(StateTransport(listing))
+    got = qc.list_irs()
+    assert [e.name for e in got] == ["Mine"]
+    asked = qc._t.sent[-1]
+    assert asked.type == 1
+    assert asked.action == pa.MessageAction.READ
+    match = qc._t.matches[-1]
+    assert match(listing) is True
+    other = pa.FileMessage(request_id=1)
+    other.folder.key = "/opt/neuraldsp/impulse_responses"
+    assert match(other) is False
+
+
 class _FavEntry:
     def __init__(self, name, folder_key, folder_name, is_factory=False):
         self.name, self.folder_key = name, folder_key
