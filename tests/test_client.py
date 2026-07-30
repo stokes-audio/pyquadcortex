@@ -1101,15 +1101,28 @@ def test_free_rows_counts_an_empty_row_below_a_serial_row_as_free():
     assert client.free_rows(p) == [1, 2, 3]
 
 
-def test_set_bypass_scene_mode_writes_the_colbypass_flag():
-    qc = client.QuadCortex(FakeTransport())
-    qc.set_bypass_scene_mode(row=0, column=2, enabled=True)
-    sent = qc._t.sent[-1]
-    bp = sent.preset.bypass[0]
-    assert bp.row == 0
-    assert bp.colBypass[0].column == 2
-    assert bp.colBypass[0].sceneMode is True
-    assert len(bp.colBypass[0].sceneBypass) == 0    # the flag travels alone
+def test_read_current_preset_uses_recallpreset_read_and_request_id():
+    push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE, request_id=1)
+    push.preset.name = "live state"
+    qc = client.QuadCortex(StateTransport(push))
+    got = qc.read_current_preset()
+    assert got.name == "live state"
+    asked = qc._t.sent[-1]
+    assert isinstance(asked, pa.RecallPresetMessage)
+    assert asked.action == pa.MessageAction.READ
+    match = qc._t.matches[-1]
+    assert match(push) is True
+    assert match(pa.RecallPresetMessage(request_id=999)) is False
+    assert match(pa.RecallPresetMessage()) is False
+
+
+def test_active_scene_reads_and_returns_the_enum():
+    from pyquadcortex.enums import Scene
+    push = pa.SceneMessage(action=pa.MessageAction.UPDATE, request_id=1,
+                           selected_scene=2)
+    qc = client.QuadCortex(StateTransport(push))
+    assert qc.active_scene() is Scene.C
+    assert qc._t.sent[-1].action == pa.MessageAction.READ
 
 
 def test_params_equal_compares_lists_by_selected_option():

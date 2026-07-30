@@ -33,7 +33,7 @@ import uuid
 from typing import NamedTuple
 
 from pyquadcortex import catalog, enums, registry
-from pyquadcortex.enums import (Footswitch, Input, Instrument,  # noqa: F401
+from pyquadcortex.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeRouting, MetronomeSound, MidiOutType,
                                 MidiSource, Output, SceneBypassBehavior, Setlist,
                                 TempoSubdivision, TimeSignature)
@@ -753,29 +753,49 @@ class QuadCortex:
         model_msg.hash = 0
         return self._t.send(msg)
 
-    def set_bypass_scene_mode(self, row: int, column: int, enabled: bool):
-        """Set a block's bypass SCENE MODE - whether bypass follows scenes.
+    def read_current_preset(self, timeout: float = 15.0):
+        """The LIVE grid - the current editing state, unsaved changes included.
 
-        The bypass counterpart of :meth:`set_param_scene_mode`: ``ColBypass``
-        carries a ``sceneMode`` flag beside its ``sceneBypass`` entries, and
-        factory content uses it (28A sets it on its capture blocks).
+        ``RecallPreset{READ}`` answers with the preset as it exists on the device
+        RIGHT NOW: an unsaved ``set_param`` write showed up in the reply, and the
+        read has no side effects - the unsaved edit survived it, and the active
+        scene is untouched. This kills the old inspect cycle of saving to a
+        scratch slot just to see what the device holds, and it distinguishes "my
+        write never applied" from "it applied and was later reset", which
+        :meth:`read_preset` cannot do.
 
-        Shape: ``Grid{UPDATE, preset{bypass{row, colBypass{column, sceneMode}}}}``.
-
-        NOT YET VERIFIED ON HARDWARE as a host write - added on the strength of a
-        field report whose lead is that a Neural Capture block (model 14000)
-        silently ignores a bypass write unless scene mode is set. Until the
-        verification lands, read back after saving rather than trusting it.
-        Note ``sceneMode`` has no field presence, so ``field_present`` cannot see
-        it on a read - check the raw value.
+        Contrast with :meth:`read_preset`, which reads a STORED slot - and which
+        RECALLS that slot as a side effect, discarding unsaved edits and resetting
+        the active scene to the preset's default. Interleaving it with
+        scene-targeted writes silently retargets them; use this method for
+        inspection during editing.
         """
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        bp = msg.preset.bypass.add()
-        bp.row = row
-        cb = bp.colBypass.add()
-        cb.column = column
-        cb.sceneMode = enabled
-        return self._t.send(msg)
+        request_id = self._t.next_request_id()
+        message = pa.RecallPresetMessage(action=pa.MessageAction.READ,
+                                         request_id=request_id)
+        reply = self._t.await_broadcast(
+            pa.RecallPresetMessage, lambda: self._t.send(message), timeout=timeout,
+            match=lambda m: (m.HasField("request_id")
+                             and m.request_id == request_id))
+        return reply.preset
+
+    def active_scene(self, timeout: float = 10.0):
+        """Which scene the unit is on right now, as a :class:`~pyquadcortex.Scene`.
+
+        ``Scene{READ}`` answers with ``selected_scene`` and echoes ``request_id``;
+        confirmed live by switching scenes between reads. Several writes apply to
+        "the active scene" (``set_bypass`` on a scene-mode block, ``set_param``
+        scene values), and a recall changes it out from under you - this makes the
+        assumption checkable instead of tracked by hand.
+        """
+        request_id = self._t.next_request_id()
+        message = pa.SceneMessage(action=pa.MessageAction.READ,
+                                  request_id=request_id)
+        reply = self._t.await_broadcast(
+            pa.SceneMessage, lambda: self._t.send(message), timeout=timeout,
+            match=lambda m: (m.HasField("request_id")
+                             and m.request_id == request_id))
+        return Scene(reply.selected_scene)
 
     def set_bypass(self, row: int, column: int, bypassed: bool, scene=None):
         """Bypass or enable one block on the grid (row/column-keyed sparse update).
@@ -795,8 +815,20 @@ class QuadCortex:
         Ordering over the pipe is enough for that pair; no settle delay is needed.
 
         Blocks only follow scenes when their ``ColBypass.sceneMode`` is set. For a
-        block without it, bypass is a single global state and writing it changes
-        every scene at once, whatever the active scene is.
+        block without it, bypass is one global state: the write lands on ALL EIGHT
+        stored scene slots at once (measured - a fresh block took a single write
+        across every slot). ``sceneMode`` itself is NOT host-writable: sent alone
+        and sent beside a bypass entry, both were ignored. Factory content arrives
+        with it set; the unit's own UI is presumably what sets it.
+
+        **The trap that looks like a refused write:** :meth:`read_preset` RECALLS
+        the slot it reads, which resets the active scene to the preset's default.
+        A read interleaved between :meth:`switch_scene` and this write silently
+        retargets the write at the default scene - which is how a field session
+        concluded capture blocks ignore bypass, and how the first three probes
+        here reproduced that conclusion. Inspect with :meth:`read_current_preset`
+        instead, and check :meth:`active_scene` when a scene-targeted write seems
+        to vanish.
         """
         if scene is not None:
             self.switch_scene(scene)

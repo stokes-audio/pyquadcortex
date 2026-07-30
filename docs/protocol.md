@@ -1446,6 +1446,56 @@ line, so the Hz scale is measured rather than assumed.
 is sent, stays `false`, and `meter` stays `0.0`. So the needle itself is not readable over
 USB, which is the one part of the Tuner the host cannot see.
 
+## Reading the LIVE grid, and the active scene
+
+**`RecallPreset{READ, request_id}` answers with the preset as it exists RIGHT NOW** -
+unsaved edits included, confirmed by writing a parameter without saving and finding the
+value in the reply. The read has no side effects: the unsaved edit survived it and the
+active scene did not move. `read_current_preset()` wraps it.
+
+This kills the old inspection cycle (save to a scratch slot, read the slot back), and it
+separates two failures that used to be indistinguishable: a write that never applied versus
+a write that applied and was later reset.
+
+**`Scene{READ, request_id}` answers with `selected_scene`**, echoing the request id.
+Confirmed live by switching scenes between reads. `active_scene()` wraps it.
+
+**`read_preset()` RECALLS the slot it reads** - that was already documented - and the
+recall **resets the active scene to the preset's default and discards unsaved edits**.
+The consequence bites hard: a `read_preset` interleaved between `switch_scene` and a
+scene-targeted write silently retargets that write at the default scene. This manufactured
+a false protocol finding here (see the bypass section below) and very likely produced a
+field report's "capture blocks silently ignore bypass". Inspect with
+`read_current_preset()` while editing; keep `read_preset()` for stored slots.
+
+## Bypass semantics, measured
+
+A preset stores a full 4x8 bypass table - `bypass[row].colBypass[column]`, POSITIONAL like
+`params[].index` (the stored entries leave `row` and `column` unset). Each cell holds
+`sceneMode` and eight `sceneBypass` slots. What writes do, all measured on d14e:
+
+* **`sceneMode` false: one global state.** A single-entry bypass write lands on ALL EIGHT
+  stored slots at once. (The "unmaintained entries" caveat is too pessimistic - the write
+  keeps them consistent.)
+* **`sceneMode` true: the write lands on the ACTIVE scene's slot.** `sceneBypass[0]` means
+  "the active scene", exactly as documented for `param_values[0]`.
+* **Entries beyond `[0]` are ignored** - a full 8-entry map with one slot flipped changed
+  nothing. There is no direct write to a non-active scene's slot; switch scenes first
+  (which is what `set_bypass(scene=...)` does).
+* **`sceneMode` is NOT host-writable.** Sent alone and sent beside a bypass entry, both
+  ignored, both directions. Factory content arrives with it set on some blocks; the unit's
+  UI presumably sets it. (Note the flag has no field presence, so disabling it could not be
+  expressed on the wire even if the device honoured the write.)
+* **The bypass table persists for EMPTY cells.** A freshly placed block inherits whatever
+  bypass state the preset last stored at that cell - a block placed into a cell whose old
+  occupant was bypassed arrives bypassed. Read the cell after placing, not before.
+
+**Neural Capture blocks bypass exactly like any other block.** A field report had them
+silently ignoring bypass writes; five probe rounds could not reproduce it, and the first
+three of those rounds instead reproduced the REPORT's conclusion by the report's own
+mistake - an interleaved `read_preset` resetting the active scene, plus writes of values
+already in place reading as ignored. Model 14000 needs nothing special.
+
 ## Recents and Favorites
 
 `RecentsFavorites` carries both lists, and **the request's `is_favorites` flag chooses

@@ -25,6 +25,13 @@ staged, pending the unit.
 
 ### Added
 
+- **`read_current_preset()`** - the LIVE grid, unsaved edits included, with no side
+  effects. `RecallPreset{READ}` answers with the device's current editing state, which
+  kills the save-to-a-scratch-slot inspection cycle and separates "my write never applied"
+  from "it applied and was later reset". The single biggest ask in the field report.
+- **`active_scene()`** - which scene the unit is on, read rather than tracked. Several
+  writes target "the active scene" and a recall moves it out from under you; now the
+  assumption is checkable.
 - **`row_status(preset)`** - per-row topology: `occupied`, `free`, or `reserved` (the
   parallel lane of a branch on the row above, spoken for even when empty). This is
   `free_rows()`'s reasoning made visible; an empty row is not necessarily an available
@@ -39,9 +46,23 @@ staged, pending the unit.
   block is added and the option count changes on rows never written to; plain values
   compare within a float32-honest tolerance; NaN equals NaN (factory content stores
   it). `GAIN_REDUCTION_PARAM` names the input-gate live meter that never round-trips.
-- **`set_bypass_scene_mode(row, column, enabled)`** - the bypass counterpart of
-  `set_param_scene_mode`. Not yet hardware-verified; added on the strength of a field
-  report whose lead is that a Neural Capture block ignores bypass without it.
+### Investigated: "capture blocks ignore bypass" (the report's blocker)
+
+Five probe rounds, and the answer is good news: **Neural Capture blocks bypass exactly
+like any other block.** What the report hit is a compound trap, now documented:
+`read_preset()` recalls the slot it reads, which resets the active scene - so a read
+interleaved between switching scenes and writing bypass silently retargets the write.
+Their capture blocks had `sceneMode` set (factory content does), making their writes
+scene-targeted; their other blocks did not, making those writes global (all eight slots
+at once). Same write, different landing, and the difference correlated perfectly with
+"is it a capture" without being caused by it.
+
+Measured along the way: `sceneBypass[0]` means the ACTIVE scene (as documented); entries
+beyond it are ignored, so there is no direct write to another scene's slot; the bypass
+table persists for EMPTY cells, so a freshly placed block inherits the cell's old bypass
+state; and `ColBypass.sceneMode` is NOT host-writable (alone or accompanied, both
+ignored) - a `set_bypass_scene_mode()` drafted for this investigation was removed once it
+proved to do nothing.
 
 ### Changed
 
