@@ -1101,6 +1101,103 @@ def test_free_rows_counts_an_empty_row_below_a_serial_row_as_free():
     assert client.free_rows(p) == [1, 2, 3]
 
 
+def test_set_bypass_scene_mode_writes_the_colbypass_flag():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_bypass_scene_mode(row=0, column=2, enabled=True)
+    sent = qc._t.sent[-1]
+    bp = sent.preset.bypass[0]
+    assert bp.row == 0
+    assert bp.colBypass[0].column == 2
+    assert bp.colBypass[0].sceneMode is True
+    assert len(bp.colBypass[0].sceneBypass) == 0    # the flag travels alone
+
+
+def test_params_equal_compares_lists_by_selected_option():
+    from pyquadcortex import params_equal
+    # same option, same count
+    assert params_equal(1 / 3, 1 / 3, option_count=4)
+    assert not params_equal(1 / 3, 2 / 3, option_count=4)
+    # the rescaling case this exists for: a block was added, count 7 -> 8,
+    # option 2 moves from 2/6 to 2/7 and must still compare equal
+    assert params_equal(2 / 6, 2 / 7, option_count=(7, 8))
+    assert not params_equal(2 / 6, 3 / 7, option_count=(7, 8))
+
+
+def test_params_equal_on_plain_floats_uses_a_tolerance_and_handles_nan():
+    from pyquadcortex import params_equal
+    assert params_equal(0.5, 0.50000001)
+    assert not params_equal(0.5, 0.56)
+    nan = float("nan")
+    assert params_equal(nan, nan)          # factory content stores NaN
+    assert not params_equal(nan, 0.5)
+
+
+def test_params_equal_rejects_a_degenerate_option_count():
+    from pyquadcortex import params_equal
+    with pytest.raises(ValueError, match="at least 2 options"):
+        params_equal(0.0, 0.0, option_count=1)
+
+
+class _Capture:
+    key = "a" * 64
+    name = "Test Cap"
+
+
+def test_set_capture_applies_params_after_the_file_name():
+    """Loading a capture resets the block's knobs, so order is data integrity."""
+    qc = client.QuadCortex(EchoingTransport())
+    qc.set_capture(row=0, column=2, capture=_Capture(), params={4: 0.56})
+    writes = []
+    for msg in qc._t.sent:
+        if isinstance(msg, pa.GridMessage):
+            for chain in msg.preset.chains:
+                for m in chain.models:
+                    for pr in m.params:
+                        for pv in pr.param_values:
+                            if pv.HasField("string_value"):
+                                writes.append(("text", pr.index))
+                            elif pv.HasField("float_value"):
+                                writes.append(("float", pr.index, round(pv.float_value, 3)))
+    assert ("text", 5) in writes
+    assert ("float", 4, 0.56) in writes
+    # the parameter write must come AFTER the capture reference
+    assert writes.index(("float", 4, 0.56)) > writes.index(("text", 5))
+
+
+def test_set_capture_refuses_params_that_would_clobber_the_reference():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="capture reference itself"):
+        qc.set_capture(row=0, column=2, capture=_Capture(), model=None,
+                       params={5: "junk"})
+    assert qc._t.sent == []
+
+
+def test_row_status_marks_an_empty_lane_reserved_not_free():
+    """The 05B shape: a branch on row 0, its lane row 1 empty. Not free."""
+    p = _preset_with_split(row=0, split=2, mix=-1, block_rows=(0,))
+    statuses = client.row_status(p)
+    assert [r.status for r in statuses] == ["occupied", "reserved", "free", "free"]
+    lane = statuses[1]
+    assert lane.reserved_by == 0
+    assert lane.block_count == 0
+    # and it agrees with free_rows, which encodes the same answer without the why
+    assert [r.row for r in statuses if r.status == "free"] == client.free_rows(p)
+
+
+def test_row_status_keeps_the_split_visible_on_an_occupied_lane():
+    p = _preset_with_split(row=0, split=2, mix=4, block_rows=(0, 1))
+    lane = client.row_status(p)[1]
+    assert lane.status == "occupied"
+    assert lane.reserved_by == 0        # occupied AND a lane - both facts shown
+
+
+def test_row_status_on_a_serial_preset_is_plain():
+    p = _preset_with_split(row=0, split=-1, mix=-1, block_rows=(0,))
+    statuses = client.row_status(p)
+    assert [r.status for r in statuses] == ["occupied", "free", "free", "free"]
+    assert all(r.reserved_by is None for r in statuses)
+
+
 def test_splitter_and_mixer_writes_refuse_an_odd_row():
     qc = client.QuadCortex(FakeTransport())
     for row in (1, 3):

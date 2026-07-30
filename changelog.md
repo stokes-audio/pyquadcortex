@@ -18,7 +18,43 @@ correction.
 
 ## Unreleased
 
+Worked from an 11-item field report out of an 18-preset build session (2026-07-30).
+The hardware-dependent items - capture-block bypass, reading the live grid, reading
+the active scene, preset tags, tuner input coverage - are planned and their probes
+staged, pending the unit.
+
 ### Added
+
+- **`row_status(preset)`** - per-row topology: `occupied`, `free`, or `reserved` (the
+  parallel lane of a branch on the row above, spoken for even when empty). This is
+  `free_rows()`'s reasoning made visible; an empty row is not necessarily an available
+  row, and a naive "no blocks means free" check builds inside someone else's branch.
+- **`set_capture(params=...)`** - parameters applied AFTER the capture loads. Loading a
+  capture silently resets the block's other knobs, so anything written beforehand is
+  lost - a VOLUME of 0.56 read back at the default 0.5, and only a non-default value
+  makes the bug visible at all. The docstring now leads with the ordering trap, and
+  `model=None` points an existing block at a new capture without re-placing it.
+- **`params_equal(a, b, option_count=...)`** - compare wire values by MEANING. List
+  parameters compare by selected option, absorbing the rescaling that happens when a
+  block is added and the option count changes on rows never written to; plain values
+  compare within a float32-honest tolerance; NaN equals NaN (factory content stores
+  it). `GAIN_REDUCTION_PARAM` names the input-gate live meter that never round-trips.
+- **`set_bypass_scene_mode(row, column, enabled)`** - the bypass counterpart of
+  `set_param_scene_mode`. Not yet hardware-verified; added on the strength of a field
+  report whose lead is that a Neural Capture block ignores bypass without it.
+
+### Changed
+
+- Tempo settings **index 4 is MUTE and 1.0 means muted** - the naming dispute the docs
+  carried as unresolved is settled by propagation: writing it changes a Looper X
+  parameter the catalog itself names METRONOME MUTE. That propagation is also the first
+  entry in a new "device-mirrored parameters" table in the protocol notes, for diffs
+  that see rows they never touched change.
+- `set_input_port()` and the protocol notes now say plainly that **`input_port_id` is
+  the `Input` enum, not 1/2/3/4** - Return 1 is 4 and Return 2 is 5, because combined
+  ids are interleaved.
+- The protocol notes carry an explicit real-vs-internal split of `out_portid` values
+  (1-15 and 19 reach jacks; 16-18 are row-to-row routing; nothing is validated).
 
 - **`input_level_db()` / `db_to_input_level()`** - convert an input port's wire `level`
   to and from the dB the unit displays. The scale is `dB = -12 + 72 * level` (input gain

@@ -835,6 +835,12 @@ physical outputs, so a lane set to one of those can be muted while the signal st
 leaves the unit through another row. **19 (`MULTIPLE`) is a real destination.** In factory "Brit 2203", row 0 has `out_portid: 16` (into the next row)
 and row 2 has `19` (MULTIPLE, the actual Multi-Out).
 
+For "does this row make sound", the explicit split of `out_portid` values: **real
+destinations** are 1-15 (XLR 1/2, Out 3/4, sends, USB 5-8 and their pairs, per the `Output`
+enum) and **19** (MULTIPLE, the Multi-Out); **internal routing** is 16-18 (`NEXT_ROW_*`,
+audio leaves through another row); **0** is unrouted. The device does not validate the
+field - nonsense ids store fine - so nothing outside those ranges means anything.
+
 **Every row reports all 8 column slots.** Empty ones arrive as `Model` entries
 whose `hash` is absent or zero, so `len(chain.models)` is 8 for every row -
 including entirely empty rows - and is not a block count. `output_control` and
@@ -972,7 +978,7 @@ named order:
 | 1 | - | TYPE. NOT written by any control in the menu |
 | 2 | Tempo LED | LED LIGHT |
 | 3 | Volume | VOLUME |
-| 4 | **Mute** | START - the names disagree |
+| 4 | **Mute** (1.0 = muted) | START - the catalog is wrong; settled by the value propagating into a parameter the catalog itself names METRONOME MUTE |
 | 5 | Pan | PAN |
 | 6 | Time Signature | TIME SIGNATURE |
 | 7 | **Subdivisions** | NOTELENGTH - the names disagree |
@@ -1388,6 +1394,10 @@ settle, or re-read, before deciding a write was refused.
 restoring: input `level`, `ground_lift` and `input_type`; output `level` and
 `ground_lift`; `usb_port.dry_wet`; `midi_port.midi_thru`; and the
 `xlr1_2_linked`/`out3_4_linked` pairing flags.
+
+**`input_port_id` is the `Input` enum, not 1/2/3/4.** Combined ids are interleaved, so
+Return 1 is **4** and Return 2 is **5** - 3 is INPUT_1_2 and 6 is RETURN_1_2. Anything
+addressing input ports by counting jacks writes the wrong entry.
 
 **An input port's `level` is -12..+60 dB: `dB = -12 + 72 * level`.** Solved from four
 owner-set trims read simultaneously on screen and on the wire:
@@ -2212,6 +2222,28 @@ silenced lane. `pyquadcortex.UNITY_LEVEL` holds it.
 Note the ranges that ARE genuine on those same models, and do convert: Input Gate
 `NOISE REDUCTION` is 0..100 "%", `INPUT GAIN` is -24..+24 "dB", TempoControl `VOLUME`
 is -60..+9 "dB", and unitless 0..1 parameters (switches, `PHASE`) are real fractions.
+
+### Two parameters that never round-trip, and one mirror
+
+**`input_control` index 2 (GAIN REDUCTION) is a live meter, not a setting.** The device
+samples it into the preset at save time, so two saves of an identical rig differ there.
+Exclude it from any before/after comparison - `GAIN_REDUCTION_PARAM` names it, and
+`params_equal()`'s docstring carries the same warning.
+
+**Some block parameters MIRROR a preset-level setting.** Writing the per-preset metronome
+mute (tempo settings index 4) also changed a Looper X block's METRONOME MUTE parameter
+(observed at row 3 column 7, param 21, 0.0 -> 1.0, on factory 01C). A diff of "rows I did
+not touch" sees an unexplained change that is neither corruption nor a stray write. Known
+mirrors so far:
+
+| preset-level setting | mirrored block parameter |
+|---|---|
+| tempo settings index 4 (metronome MUTE) | Looper X `METRONOME MUTE` (param 21) |
+
+The list is almost certainly longer; add entries as they are hit. That propagation is also
+what settled index 4's name: the catalog calls it START, the screen calls it MUTE, and the
+parameter it mirrors into is named METRONOME MUTE by the catalog itself - so it is the
+mute, and 1.0 means muted.
 
 ### `param_values` can contain NaN
 

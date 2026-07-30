@@ -753,6 +753,30 @@ class QuadCortex:
         model_msg.hash = 0
         return self._t.send(msg)
 
+    def set_bypass_scene_mode(self, row: int, column: int, enabled: bool):
+        """Set a block's bypass SCENE MODE - whether bypass follows scenes.
+
+        The bypass counterpart of :meth:`set_param_scene_mode`: ``ColBypass``
+        carries a ``sceneMode`` flag beside its ``sceneBypass`` entries, and
+        factory content uses it (28A sets it on its capture blocks).
+
+        Shape: ``Grid{UPDATE, preset{bypass{row, colBypass{column, sceneMode}}}}``.
+
+        NOT YET VERIFIED ON HARDWARE as a host write - added on the strength of a
+        field report whose lead is that a Neural Capture block (model 14000)
+        silently ignores a bypass write unless scene mode is set. Until the
+        verification lands, read back after saving rather than trusting it.
+        Note ``sceneMode`` has no field presence, so ``field_present`` cannot see
+        it on a read - check the raw value.
+        """
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        bp = msg.preset.bypass.add()
+        bp.row = row
+        cb = bp.colBypass.add()
+        cb.column = column
+        cb.sceneMode = enabled
+        return self._t.send(msg)
+
     def set_bypass(self, row: int, column: int, bypassed: bool, scene=None):
         """Bypass or enable one block on the grid (row/column-keyed sparse update).
 
@@ -817,9 +841,11 @@ class QuadCortex:
     #: but two of its names differ from the screen, so this map is what
     #: :meth:`set_tempo_param` resolves a name through first.
     #:
-    #: Note the discrepancies: index 4 is the screen's MUTE while the catalog calls it
-    #: START, and index 7 is the screen's Subdivisions while the catalog calls it
-    #: NOTELENGTH. Indices 8 and 9 are not in the catalog at all.
+    #: Index 4 IS the mute, and 1.0 means muted - the catalog's START name is
+    #: wrong. Settled by propagation: writing 1.0 to index 4 changed a Looper X
+    #: block's parameter that the catalog itself names METRONOME MUTE. Index 7 is
+    #: the screen's Subdivisions while the catalog calls it NOTELENGTH. Indices 8
+    #: and 9 are not in the catalog at all.
     #:
     #: Index 1 - the catalog's TYPE - was NOT written by any control in the Tempo
     #: menu. The menu's MODE (global or per preset) broadcasts nothing at all, so it
@@ -856,9 +882,10 @@ class QuadCortex:
             6 TIME SIGNATURE   7 SUBDIVISIONS   8 SOUND   9 ROUTING
 
 Two of those names disagree with the catalog, which is why the map
-        exists: index 4 is MUTE on screen (the manual calls it PLAYBACK) and START in
-        the catalog, and index 7 is Subdivisions on screen and NOTELENGTH in the
-        catalog.
+        exists: index 4 is MUTE (1.0 = muted; the manual calls it PLAYBACK and the
+        catalog misnames it START - settled by its propagation into a Looper X
+        parameter the catalog names METRONOME MUTE), and index 7 is Subdivisions on
+        screen and NOTELENGTH in the catalog.
 
         The catalog describes 23 parameters here, indices 10 to 22 being
         ``STEPSTATE0`` to ``STEPSTATE12``, while the preset carries 24. For the
@@ -1674,8 +1701,15 @@ Two of those names disagree with the catalog, which is why the map
         confirmed on hardware, where writing one input left the other three
         byte-identical.
 
-        ``level`` (the gain), ``impedance``, ``input_type`` (the manual's
-        Instrument/Mic switch) and ``ground_lift`` are all confirmed writable.
+        **``input_port_id`` takes the** :class:`~pyquadcortex.Input` **enum values,
+        NOT 1/2/3/4.** The combined ids are interleaved, so Return 1 is **4** and
+        Return 2 is **5** (3 is INPUT_1_2, 6 is RETURN_1_2). Passing 3 for
+        "Return 1" writes the combined Input 1/2 entry instead - an easy and
+        expensive mistake, so pass ``Input.RETURN_1`` rather than a number.
+
+        ``level`` (the gain: -12..+60 dB, see :func:`input_level_db`),
+        ``impedance``, ``input_type`` (the manual's Instrument/Mic switch) and
+        ``ground_lift`` are all confirmed writable.
 
         **Each field is sent in its own message**, because the device drops some
         fields that share a port entry with another: `mute` on an output and
@@ -2524,7 +2558,8 @@ Two of those names disagree with the catalog, which is why the map
         """
         return self.list_presets(self.CAPTURES_LIBRARY, timeout=timeout)
 
-    def set_capture(self, row: int, column: int, capture, model: int = 14000):
+    def set_capture(self, row: int, column: int, capture, model: int = 14000,
+                    params: dict = None):
         """Point a Neural Capture block at a capture from the library.
 
         ``capture`` is an entry from :meth:`captures` (or anything with ``key`` and
@@ -2541,6 +2576,23 @@ Two of those names disagree with the catalog, which is why the map
         So the model id identifies "a capture block", not which capture - which is why
         the catalog cannot enumerate what is available and :meth:`captures` is the
         list to browse.
+
+        **Loading a capture RESETS the block's other parameters** to the capture's
+        own defaults, silently. A VOLUME of 0.56 written before the load read back
+        0.5 afterwards; written after, it survived. The natural calling order -
+        walk parameters by index, where ``file_name`` happens to be 5, right after
+        VOLUME at 4 - loses every knob before it with no error, and a rig whose
+        knobs sit at defaults passes every check while being written wrongly.
+
+        So write parameters AFTER this call, or pass them here and they are
+        applied once the capture is in::
+
+            qc.set_capture(row=0, column=2, capture=c,
+                           params={4: 0.56})            # VOLUME, by wire index
+
+        ``params`` maps parameter index to value - floats are written as values,
+        strings as text. Pass ``model=None`` to point an existing block at a new
+        capture without re-placing it.
         """
         key = getattr(capture, "key", None)
         name = getattr(capture, "name", None)
@@ -2548,10 +2600,24 @@ Two of those names disagree with the catalog, which is why the map
             raise TypeError(
                 "capture must be an entry from captures(), carrying key and name"
             )
-        self.set_block(row=row, column=column, model=model)
-        return self.set_param(row=row, column=column,
-                              param_index=self.CAPTURE_FILE_NAME_PARAM,
-                              text=f"{key}{name}")
+        if params and self.CAPTURE_FILE_NAME_PARAM in params:
+            raise ValueError(
+                f"params must not include index {self.CAPTURE_FILE_NAME_PARAM} - "
+                f"that is the capture reference itself, set from `capture`"
+            )
+        if model is not None:
+            self.set_block(row=row, column=column, model=model)
+        result = self.set_param(row=row, column=column,
+                                param_index=self.CAPTURE_FILE_NAME_PARAM,
+                                text=f"{key}{name}")
+        for index, value in (params or {}).items():
+            if isinstance(value, str):
+                result = self.set_param(row=row, column=column,
+                                        param_index=index, text=value)
+            else:
+                result = self.set_param(row=row, column=column,
+                                        param_index=index, value=float(value))
+        return result
 
     IR_LIBRARY = "local_ir_root"
     USER_IRS = "2_q"
@@ -3186,10 +3252,121 @@ def free_rows(p: preset.BinaryPreset) -> list:
     than beside it, and the lane row is frequently empty, so block count alone says
     a row is free when it is not. Factory "Strat Ambience" (05B) branches on row 0
     and holds nothing on row 1; row 1 is not free.
+
+    :func:`row_status` gives the same answer with the reasoning attached - per
+    row, occupied / free / reserved-as-a-lane - worth reading when a row you
+    expected to be free is not.
     """
     used = {b.row for b in blocks(p)}
     lanes = {s.lane_row for s in splits(p)}
     return [row for row in range(len(p.chains)) if row not in used | lanes]
+
+
+class RowStatus(NamedTuple):
+    """One row's topology: what it holds, and whether it is truly available."""
+
+    row: int
+    #: ``"occupied"``, ``"free"``, or ``"reserved"`` (the parallel lane of a
+    #: branch on the row above, spoken for even when empty).
+    status: str
+    #: How many blocks the row holds.
+    block_count: int
+    #: The row a branch reserving this one lives on, else ``None``.
+    reserved_by: int | None
+
+
+def row_status(p: preset.BinaryPreset) -> list:
+    """Every row's topology, as :class:`RowStatus` entries - lowest row first.
+
+    The distinction this exists to make visible: **an empty row is not
+    necessarily an available row.** A branch on row 0 or 2 claims the row below
+    as its parallel lane, and that lane is spoken for whether or not it holds
+    blocks. Factory "Strat Ambience" (05B) branches on row 0 and keeps row 1
+    empty; writing a chain there puts blocks inside 05B's parallel path, not
+    beside it. A naive "no blocks means free" check walks straight into that.
+
+    :func:`free_rows` answers the narrower question "where can I build?"; this
+    answers "why?"::
+
+        for r in row_status(p):
+            print(r.row, r.status,
+                  f"(lane of the branch on row {r.reserved_by})"
+                  if r.status == "reserved" else "")
+
+    An occupied lane row reports ``"occupied"`` with ``reserved_by`` still set,
+    so the split relationship stays visible either way.
+    """
+    used = {}
+    for b in blocks(p):
+        used[b.row] = used.get(b.row, 0) + 1
+    lanes = {s.lane_row: s.row for s in splits(p)}
+    out = []
+    for row in range(len(p.chains)):
+        count = used.get(row, 0)
+        if count:
+            status = "occupied"
+        elif row in lanes:
+            status = "reserved"
+        else:
+            status = "free"
+        out.append(RowStatus(row=row, status=status, block_count=count,
+                             reserved_by=lanes.get(row)))
+    return out
+
+
+#: The input-gate parameter that is a LIVE METER, not a setting: ``input_control``
+#: index 2, the catalog's GAIN REDUCTION. The device samples it into the preset at
+#: save time, so two saves of an identical rig differ there. Anything doing
+#: round-trip verification must exclude it.
+GAIN_REDUCTION_PARAM = 2
+
+
+def params_equal(a: float, b: float, option_count=None,
+                 tolerance: float = 1e-4) -> bool:
+    """Whether two wire parameter values mean the same thing.
+
+    Plain parameters compare as floats within ``tolerance`` (float32 storage
+    makes exact equality a trap).
+
+    For a LIST (comboBox) parameter, pass ``option_count`` and the values compare
+    by the OPTION they select. That absorbs the rescaling this helper exists for:
+    a list value is stored as ``index / (count - 1)``, and adding or removing a
+    block changes the count on block-enumerating lists sitting on rows never
+    written to. The same selected option then reads back as a different float,
+    and a before/after diff reports corruption where nothing changed.
+
+    ``option_count`` is one count (unchanged on both sides) or a ``(before,
+    after)`` pair when the count itself moved::
+
+        params_equal(0.5, 0.5)                          # plain float
+        params_equal(1/3, 1/3, option_count=4)          # option 1 == option 1
+        params_equal(2/6, 2/7, option_count=(7, 8))     # option 2 == option 2
+
+    Counts come from the preset's ``dynamic_steps`` (authoritative for
+    block-enumerating lists) or the catalog's
+    :attr:`~pyquadcortex.catalog.Parameter.option_count`; when neither knows the
+    parameter, compare as floats and expect false mismatches on rescaled lists -
+    there is no honest way around that without the count.
+
+    Two more traps for anyone diffing presets, documented here because this is
+    the function they will reach for: ``input_control`` index 2
+    (:data:`GAIN_REDUCTION_PARAM`) is a live meter sampled at save time and never
+    compares equal across saves, and factory content stores NaN in some
+    ``param_values`` - and ``NaN != NaN``, so exclude or special-case both.
+    """
+    if option_count is not None:
+        try:
+            count_a, count_b = option_count
+        except TypeError:
+            count_a = count_b = int(option_count)
+        if count_a < 2 or count_b < 2:
+            raise ValueError(
+                f"a list parameter has at least 2 options; got {option_count!r}"
+            )
+        return (round(a * (count_a - 1)) == round(b * (count_b - 1)))
+    if a != a or b != b:                      # NaN: equal only to another NaN
+        return a != a and b != b
+    return abs(a - b) <= tolerance
 
 
 def _is_factory_setlist(setlist_path: str) -> bool:
