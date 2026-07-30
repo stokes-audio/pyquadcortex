@@ -16,12 +16,12 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
-## Unreleased
+## 0.34.0 - 2026-07-30
 
 Worked from an 11-item field report out of an 18-preset build session (2026-07-30).
-The hardware-dependent items - capture-block bypass, reading the live grid, reading
-the active scene, preset tags, tuner input coverage - are planned and their probes
-staged, pending the unit.
+Every item is resolved: shipped as API, exonerated with the real trap documented, or
+closed as a measured device limitation. Also carries the input-level dB conversion and
+HOLD TIMING work from earlier in the week.
 
 ### Added
 
