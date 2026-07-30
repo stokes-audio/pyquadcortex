@@ -46,6 +46,13 @@ staged, pending the unit.
   block is added and the option count changes on rows never written to; plain values
   compare within a float32-honest tolerance; NaN equals NaN (factory content stores
   it). `GAIN_REDUCTION_PARAM` names the input-gate live meter that never round-trips.
+### Investigated: tuner input coverage
+
+Swept every `Input` id with settled read-backs. The tuner accepts both inputs, both
+returns, `INPUT_1_2`, and (unconfirmed on screen) `USB_5`/`USB_6`. **`RETURN_1_2` is
+refused by the device** - the write reverts - so combined-returns tuning does not exist
+and nothing covers all four inputs. A rig on four inputs tunes them one at a time.
+
 ### Investigated: "capture blocks ignore bypass" (the report's blocker)
 
 Five probe rounds, and the answer is good news: **Neural Capture blocks bypass exactly

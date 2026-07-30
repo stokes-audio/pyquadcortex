@@ -1442,6 +1442,13 @@ as an **offset in Hz from 440**: 442 on the unit broadcast `frequency: 1.9999980
 445 broadcast `5`, which is why an earlier write of `442.0` did nothing. Two points on a
 line, so the Hz scale is measured rather than assumed.
 
+**Tuner input coverage, swept with settled read-backs:** the device accepts ids 1-5
+(both inputs, both returns, and INPUT_1_2 combined) plus USB_5 and USB_6, and REFUSES
+everything else - notably `RETURN_1_2` (6), so no combined-returns tuning exists and no
+mode covers all four inputs. Rejected writes revert to the previous value rather than
+erroring. The USB acceptances await a screen check (a stored value is not a supported
+one).
+
 `Tuner.mute` is writable (the menu's MUTE, for silent tuning). `enable_meter` is NOT: it
 is sent, stays `false`, and `meter` stays `0.0`. So the needle itself is not readable over
 USB, which is the one part of the Tuner the host cannot see.

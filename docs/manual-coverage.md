@@ -55,7 +55,7 @@ need the physical world: Neural Capture, and loading from the factory Captures L
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | yes | `set_master_volume_assignment()`, which reads and merges - the raw field is a submessage, and writing one flag through `update_settings()` clears the other three |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
-| Tuner: reference pitch, input source, mute | yes | `set_tuner_input()`, `set_tuner_reference()` and `set_tuner_mute()` all confirmed. Reference is an OFFSET in Hz from 440 (442 and 445 both measured) |
+| Tuner: reference pitch, input source, mute | yes | `set_tuner_input()`, `set_tuner_reference()` and `set_tuner_mute()` all confirmed. Reference is an OFFSET in Hz from 440. Input accepts both inputs, both returns, INPUT_1_2 and USB 5/6; `RETURN_1_2` is refused by the DEVICE, so combined-returns tuning does not exist |
 | Tuner: Live Tuner (the needle) | no | UNSUPPORTED by decision. `enable_meter` refuses a host write - it stays false and `meter` stays 0.0 - so the needle never streams. Not worth chasing for an instrument you have to be holding; see `docs/roadmap.md` |
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |

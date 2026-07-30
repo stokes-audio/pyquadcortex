@@ -1861,7 +1861,16 @@ Two of those names disagree with the catalog, which is why the map
                                                 show=shown))
 
     def set_tuner_input(self, input_port_id: int):
-        """Choose which input feeds the Tuner. Confirmed writable (1 -> 2 -> 1)."""
+        """Choose which input feeds the Tuner.
+
+        What the device ACCEPTS, from a full sweep of the :class:`Input` enum with
+        settled read-backs: the four single inputs (``INPUT_1``, ``INPUT_2``,
+        ``RETURN_1``, ``RETURN_2``), the combined ``INPUT_1_2``, and ``USB_5`` /
+        ``USB_6``. Everything else is REFUSED and the setting reverts - including
+        ``RETURN_1_2``, so there is no combined-returns tuning and no mode covering
+        all four inputs; that is a device limit, not a library gap. (The USB pair
+        is accepted on the wire but not yet confirmed on screen.)
+        """
         return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
                                             input_port_id=input_port_id))
 
