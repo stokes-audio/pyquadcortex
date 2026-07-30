@@ -90,7 +90,10 @@ class Scene(IntEnum):
 class Instrument(IntEnum):
     """Instrument category tag for a saved preset (``ProductData.instrument``).
 
-    Values are bit flags; 3 is unused.
+    The unit's "Preferred Instrument" picker, a plain enumeration in its own
+    on-screen order - Guitar, Bass, Synth, Vocal, Other. Every value confirmed by
+    setting it on the unit and reading the listing back (an earlier "bit flags"
+    description was a guess that OTHER = 5 refuted).
     """
 
     # An untagged preset. This is the default a save sends when no instrument
@@ -98,7 +101,9 @@ class Instrument(IntEnum):
     NONE = 0
     GUITAR = 1
     BASS = 2
+    SYNTH = 3
     VOCAL = 4
+    OTHER = 5
 
 
 class Setlist(StrEnum):

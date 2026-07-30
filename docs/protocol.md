@@ -1253,6 +1253,16 @@ Delete and move are **eventually consistent**: the change takes effect on the
 device, but a listing issued a couple of seconds later can still show the
 pre-mutation state. Re-enumerate after a short wait.
 
+**Tags are not preserved by ANY save path, including the unit's own.** Factory presets
+carry tags on the wire (six on "California Dream"), and the unit's own Save As produced a
+copy with NONE - same result as every host-initiated route. So tags exist only in Neural
+DSP's build chain (and presumably Cortex Cloud), every derived preset loses them however it
+is saved, and no library can do better. The unit's UI offers no tag editor, which is
+consistent. The instrument category is separate and does survive: it lives on the LISTING
+entry (`ProductData.instrument`), not the preset body, and the unit's picker maps to the
+`Instrument` enum (Guitar 1, Bass 2, Synth 3, Vocal 4, Other 5 - each confirmed by setting
+it on-screen and reading back).
+
 **A preset's descriptive `tags` cannot be written, and a saved preset has none.**
 `BinaryPreset.tags` (`repeated string`, field 12) carries the descriptors factory
 content ships with - 01C reads `['Guitar', 'Clean', 'Crunch']` - and the same list
@@ -1442,12 +1452,13 @@ as an **offset in Hz from 440**: 442 on the unit broadcast `frequency: 1.9999980
 445 broadcast `5`, which is why an earlier write of `442.0` did nothing. Two points on a
 line, so the Hz scale is measured rather than assumed.
 
-**Tuner input coverage, swept with settled read-backs:** the device accepts ids 1-5
-(both inputs, both returns, and INPUT_1_2 combined) plus USB_5 and USB_6, and REFUSES
-everything else - notably `RETURN_1_2` (6), so no combined-returns tuning exists and no
-mode covers all four inputs. Rejected writes revert to the previous value rather than
-erroring. The USB acceptances await a screen check (a stored value is not a supported
-one).
+**Tuner input coverage, swept AND screen-confirmed:** the device accepts ids 1-5 (both
+inputs, both returns, INPUT_1_2 combined) plus USB_5 and USB_6, and REFUSES everything
+else - notably `RETURN_1_2` (6), so no combined-returns tuning exists and no mode covers
+all four inputs. Rejected writes revert to the previous value rather than erroring. The
+owner read the unit's own picker: its seven options match the accepted set one for one
+(USB_5 displays as "USB input 5"), so for once acceptance and support agree - measured
+rather than assumed, after mode value 9.
 
 `Tuner.mute` is writable (the menu's MUTE, for silent tuning). `enable_meter` is NOT: it
 is sent, stays `false`, and `meter` stays `0.0`. So the needle itself is not readable over

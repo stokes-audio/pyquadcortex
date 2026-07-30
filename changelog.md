@@ -46,12 +46,25 @@ staged, pending the unit.
   block is added and the option count changes on rows never written to; plain values
   compare within a float32-honest tolerance; NaN equals NaN (factory content stores
   it). `GAIN_REDUCTION_PARAM` names the input-gate live meter that never round-trips.
+### Closed: preset tags (a device limitation, not a library gap)
+
+Tags are not preserved by ANY save path. Factory presets carry them on the wire; the
+unit's OWN Save As produced a copy with none, same as every host route, and the unit's UI
+offers no tag editor. They are build-chain/cloud metadata that no library can write - so a
+preset derived from a factory one is less well labelled than its source whatever tool made
+it. The instrument category is separate, survives saves, and is now fully mapped: the
+`Instrument` enum matches the unit's "Preferred Instrument" picker in its on-screen order -
+Guitar 1, Bass 2, **Synth 3** (new), Vocal 4, **Other 5** (new) - each value confirmed by
+setting it on the unit and reading the listing back, which also killed an old "bit flags"
+description that Other = 5 refuted.
+
 ### Investigated: tuner input coverage
 
-Swept every `Input` id with settled read-backs. The tuner accepts both inputs, both
-returns, `INPUT_1_2`, and (unconfirmed on screen) `USB_5`/`USB_6`. **`RETURN_1_2` is
-refused by the device** - the write reverts - so combined-returns tuning does not exist
-and nothing covers all four inputs. A rig on four inputs tunes them one at a time.
+Swept every `Input` id with settled read-backs, then confirmed against the unit's own
+picker: its seven options match the accepted set one for one, including `USB_5`/`USB_6`
+("USB input 5/6" on screen). **`RETURN_1_2` is refused by the device** - the write
+reverts - so combined-returns tuning does not exist and nothing covers all four inputs. A
+rig on four inputs tunes them one at a time.
 
 ### Investigated: "capture blocks ignore bypass" (the report's blocker)
 

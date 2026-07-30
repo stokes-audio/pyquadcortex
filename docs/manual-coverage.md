@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 102 features audited: **62 yes**, **8 partly**, **22 no**, **10 n/a**.
+Of 102 features audited: **62 yes**, **8 partly**, **21 no**, **11 n/a**.
 
 Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
@@ -114,7 +114,7 @@ need the physical world: Neural Capture, and loading from the factory Captures L
 | List a setlist | yes | `list_presets()`; a listing that arrives is complete, but a READ may produce none promptly |
 | Wait for the directory to settle | yes | `wait_for_listing()` |
 | Save a preset ("Save As") | yes | `save_current_preset()` with name, instrument tag and default scene |
-| Preset descriptive tags | no | proven unwritable by three routes; a saved preset carries none at all |
+| Preset descriptive tags | n/a | not preserved by ANY save path - the unit's own Save As strips them too (factory 5D's six tags -> none), so they are build-chain/cloud metadata no library can write. The instrument category is separate, survives, and is fully mapped (`Instrument`: Guitar 1, Bass 2, Synth 3, Vocal 4, Other 5) |
 | Preset description, author, cloud id | no | ignored by a `Grid` update. The device stamps `author_name` from the signed-in cloud account on every save |
 | Preset volume and pan | n/a | ignored by every route tried, and the unit has no control for them - they read 1.0 and 0.5 on every preset. Inert fields, not a gap |
 | Delete a preset | yes | `delete_preset()`, eventually consistent. `delete_setlist()` removes a whole setlist |
