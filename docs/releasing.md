@@ -36,7 +36,7 @@ uploads whatever is sitting there, not whatever your working tree says.
 
 ## 4. Verify the artifact, not the source tree
 
-The long description on the project page comes from `readme.md` **as it was when
+The long description on the project page comes from `README.md` **as it was when
 the artifact was built**. Check the built artifact rather than assuming:
 
 ```bash

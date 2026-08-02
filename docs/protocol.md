@@ -1508,11 +1508,23 @@ A preset stores a full 4x8 bypass table - `bypass[row].colBypass[column]`, POSIT
   bypass state the preset last stored at that cell - a block placed into a cell whose old
   occupant was bypassed arrives bypassed. Read the cell after placing, not before.
 
-**Neural Capture blocks bypass exactly like any other block.** A field report had them
-silently ignoring bypass writes; five probe rounds could not reproduce it, and the first
-three of those rounds instead reproduced the REPORT's conclusion by the report's own
-mistake - an interleaved `read_preset` resetting the active scene, plus writes of values
-already in place reading as ignored. Model 14000 needs nothing special.
+**Neural Capture blocks bypass like any other block ON THE LIVE GRID - but a bypass
+written before the preset's FIRST save does not survive that save.** Two field reports and
+a reproduction here converge on the full picture. On the live grid, model 14000 needs
+nothing special: writes land, read back via the live read, and survive unrelated edits.
+But the save that first MATERIALISES a freshly placed capture drops its bypass back to
+default, while an ordinary block placed in the same row by the same sequence keeps it.
+(Same family as the capture load resetting parameters - though parameters written after
+the load DO survive that save; bypass does not.) The sequence that persists, field-verified
+on 24 presets and reproduced here: save, recall the stored slot, write the bypass again,
+save again - re-saving the same name to the same slot does not trigger `_N` renaming.
+
+The first field report's "captures silently ignore bypass" was still misdiagnosed - the
+interleaved `read_preset` resetting the active scene was real and is documented above -
+but its instinct that something was capture-specific was right, and the 0.34.0 conclusion
+"exactly like any other block" was overbroad: true of the live grid, wrong about the first
+save. Verify bypass against the STORED preset (`bypass_state()` on a `read_preset()`
+result), not only the live grid.
 
 ## Recents and Favorites
 

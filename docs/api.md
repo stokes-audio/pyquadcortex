@@ -1,7 +1,7 @@
 # Everything the library can do
 
 The complete surface, for looking things up. The
-[readme](../readme.md) is the introduction; this is the reference.
+[readme](../README.md) is the introduction; this is the reference.
 
 `QuadCortex` has over a hundred methods, so they are grouped below by what they
 touch. Anything marked as global changes the UNIT rather than a preset - there is
@@ -19,7 +19,9 @@ nothing to save and nothing to recall to undo it.
 
 ## Method groups
 
-These are all methods on the object `connect()` returns.
+Most of these are methods on the object `connect()` returns. Entries written
+`pyquadcortex.name(...)` are MODULE-LEVEL functions - they take a preset you already
+read and need no connection; calling them as methods raises `AttributeError`.
 
 | | |
 |---|---|
@@ -27,24 +29,24 @@ These are all methods on the object `connect()` returns.
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(row, column, param_index, value)`, `set_bypass(row, column, bypassed)` |
 | **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `move_block(...)`, `catalog` |
-| **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `splits(preset)` |
+| **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `pyquadcortex.splits(preset)` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
 | **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
 | **Input gate** | `set_input_gate(row, param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
-| **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `set_split_mute(row)`, `splits(preset)` |
-| **Footswitches** | `set_stomp_assignment(row, column, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `stomp_assignments(preset)` |
+| **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `set_split_mute(row)`, `pyquadcortex.splits(preset)` |
+| **Footswitches** | `set_stomp_assignment(row, column, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `pyquadcortex.stomp_assignments(preset)` |
 | **Expression pedals** | `set_expression(row, column, param, pedal, minimum, maximum)` |
-| **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `midi_out(preset)` |
-| **Per-preset tempo** | `set_tempo_param(name, ...)`, `set_tempo_option(name, n)`, `tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
+| **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `pyquadcortex.midi_out(preset)` |
+| **Per-preset tempo** | `set_tempo_param(name, ...)`, `set_tempo_option(name, n)`, `pyquadcortex.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
 | **Metronome** | `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()` - all taking full enums |
-| **Inspect a preset** | `blocks(preset)`, `splits(preset)`, `free_rows(preset)`, `param_options(preset, row, column, index)`, `input_chain_rows(preset, input)`, `field_present(msg, field)` |
+| **Inspect a preset** (module functions) | `pyquadcortex.blocks(preset)`, `pyquadcortex.splits(preset)`, `pyquadcortex.free_rows(preset)`, `pyquadcortex.row_status(preset)`, `pyquadcortex.bypass_state(preset, row, column)`, `pyquadcortex.param_state(preset, row, column, index)`, `pyquadcortex.param_options(preset, row, column, index)`, `pyquadcortex.input_chain_rows(preset, input)`, `pyquadcortex.params_equal(a, b, option_count=)`, `pyquadcortex.field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `set_global_bypass()`, `set_master_volume_assignment()`, `mode()`, `set_mode()`, `set_mode_cycle()`, `set_gig_view()` |
 | **Global EQ** | `global_eq()`, `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)`, `set_global_eq_bypassed()` |
 | **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
 | **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`, `set_tuner_mute()`, `looper()` (states named by `LooperState`) |
-| **List parameters** | `set_param_option(row, column, param, option, source)`, `param_options(preset, ...)` - includes a block's side-chain SOURCE |
+| **List parameters** | `set_param_option(row, column, param, option, source)`, `pyquadcortex.param_options(preset, ...)` - includes a block's side-chain SOURCE |
 | **Setlists** | `create_setlist(name)`, `delete_setlist(name)`, `duplicate_setlist(src, dest)`, `list_folders()` |
 | **Copying** | `copy_preset(from_setlist, position, to_setlist)` - recall + save, so it loads each source |
 | **Device list** | `pin_model()`, `unpin_model()`, `pinned_models()`, `master_volume()` |
@@ -86,7 +88,7 @@ Things worth knowing before you script against this:
   arbiter: confirm with `wait_for_listing()` rather than a fixed sleep, because
   settling time grows with the number of changes.
 - **Don't count a row's blocks with `len()`.** Every row reports all 8 column
-  slots whether or not they hold anything. Use `blocks(preset)`.
+  slots whether or not they hold anything. Use `pyquadcortex.blocks(preset)`.
 
 ## Blocks and the model catalog
 
@@ -113,7 +115,7 @@ qc.catalog[5005].name                      # 'VCA Comp (M)'
 qc.catalog.by_category("Bass Amplifier")   # browse
 ```
 
-The catalog also knows each block's knobs, so parameters can be set by name, and
+The catalog also knows each block's knobs, on `Model.parameters` (NOT `.params`, which is the wire proto's name), so parameters can be set by name, and
 in their own units rather than as a 0..1 fraction:
 
 ```python
@@ -201,6 +203,25 @@ scene and the library does the rest:
 from pyquadcortex import Scene
 
 qc.read_preset(Setlist.FACTORY, "1A")                 # load it onto the grid
+
+# a different drive level in scene C - naming the scene switches to it,
+# promotes the parameter to follow scenes, and writes, in the right order
+qc.set_param(row=0, column=3, param_index=0, value=0.4, scene=Scene.C)
+
+# per-scene bypass works the same way
+qc.set_bypass(row=0, column=3, bypassed=True, scene=Scene.D)
+```
+
+Read what a preset stores per scene with the module-level readers - no proto
+spelunking needed, and the proto's shape is a trap (its bypass table is addressed
+positionally; the `row`/`column` fields inside it read 0 everywhere):
+
+```python
+from pyquadcortex import bypass_state, param_state
+
+st = bypass_state(preset, row=0, column=3)     # .scene_mode, .scenes (8 bools)
+pv = param_state(preset, row=0, column=3, param_index=0)   # .scene_mode, .values
+```
 
 ## Per-preset tempo and the metronome
 

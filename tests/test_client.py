@@ -1101,6 +1101,84 @@ def test_free_rows_counts_an_empty_row_below_a_serial_row_as_free():
     assert client.free_rows(p) == [1, 2, 3]
 
 
+def _preset_with_bypass_and_param():
+    p = preset.BinaryPreset()
+    for r in range(4):
+        bp = p.bypass.add()
+        for c in range(8):
+            cb = bp.colBypass.add()
+            for s in range(8):
+                cb.sceneBypass.add().bypass = (r == 1 and c == 2 and s in (0, 3))
+            if r == 1 and c == 2:
+                cb.sceneMode = True
+        chain = p.chains.add()
+        for c in range(8):
+            m = chain.models.add()
+            prm = m.params.add()
+            if r == 1 and c == 2:
+                prm.scene_mode = True
+                prm.param_values.add().float_value = 0.25
+                prm.param_values.add().string_value = "named"
+                prm.param_values.add()                       # neither field set
+    return p
+
+
+def test_bypass_state_reads_positionally_not_by_field_values():
+    """Stored entries leave row/column at 0; position IS the address."""
+    p = _preset_with_bypass_and_param()
+    st = client.bypass_state(p, 1, 2)
+    assert st.scene_mode is True
+    assert st.scenes == (True, False, False, True, False, False, False, False)
+    other = client.bypass_state(p, 0, 0)
+    assert other.scene_mode is False
+    assert not any(other.scenes)
+
+
+def test_param_state_returns_floats_strings_and_none_per_slot():
+    p = _preset_with_bypass_and_param()
+    st = client.param_state(p, 1, 2, 0)
+    assert st.scene_mode is True
+    assert st.values == (0.25, "named", None)
+
+
+def test_set_input_port_confirm_polls_until_the_port_agrees():
+    """The first read after a write can be stale even when the write landed."""
+
+    class EventuallyConsistent(FakeTransport):
+        def __init__(self):
+            super().__init__()
+            self.reads = 0
+
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            self.reads += 1
+            io = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+            port = io.settings.in_port.add()
+            port.input_port_id = 1
+            port.level = 0.2 if self.reads == 1 else 0.5   # stale first read
+            return io
+
+    qc = client.QuadCortex(EventuallyConsistent())
+    got = qc.set_input_port(1, level=0.5, confirm=True, timeout=10.0)
+    assert qc._t.reads == 2                    # one stale read absorbed
+    assert abs(got.settings.in_port[0].level - 0.5) < 1e-6
+
+
+def test_set_input_port_confirm_timeout_explains_staleness():
+    class AlwaysStale(FakeTransport):
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            io = pa.IOSettingsMessage(action=pa.MessageAction.UPDATE)
+            port = io.settings.in_port.add()
+            port.input_port_id = 1
+            port.level = 0.2
+            return io
+
+    qc = client.QuadCortex(AlwaysStale())
+    with pytest.raises(TimeoutError, match="eventually consistent"):
+        qc.set_input_port(1, level=0.5, confirm=True, timeout=2.0)
+
+
 def test_read_current_preset_uses_recallpreset_read_and_request_id():
     push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE, request_id=1)
     push.preset.name = "live state"

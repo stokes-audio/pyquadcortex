@@ -821,6 +821,23 @@ class QuadCortex:
         and sent beside a bypass entry, both were ignored. Factory content arrives
         with it set; the unit's own UI is presumably what sets it.
 
+        **A Neural Capture block loses this write at its FIRST save.** A bypass
+        written to a capture block in the same session that first PLACES it reads
+        back correctly from :meth:`read_current_preset`, survives unrelated edits -
+        and is dropped by the save that first materialises the capture, while an
+        ordinary block in the same row keeps it. (Same family as the capture load
+        resetting parameters, though parameters written after the load DO survive
+        the save; bypass does not.) The sequence that persists, field-verified on
+        24 presets and reproduced here::
+
+            qc.save_current_preset(...)            # materialises the capture
+            qc.recall_preset(...)                  # the stored slot
+            qc.set_bypass(row, column, True)       # now it sticks
+            qc.save_current_preset(...)            # same name, same slot: no rename
+
+        Verify with :func:`bypass_state` on the STORED preset, not just the live
+        grid.
+
         **The trap that looks like a refused write:** :meth:`read_preset` RECALLS
         the slot it reads, which resets the active scene to the preset's default.
         A read interleaved between :meth:`switch_scene` and this write silently
@@ -898,7 +915,8 @@ class QuadCortex:
         """Set a per-preset tempo/metronome parameter.
 
         Each preset carries a ``TempoControl`` block (model ``25000``) in
-        ``BinaryPreset.tempoProgramData`` with 24 parameters, among them ``TEMPO``,
+        ``BinaryPreset.tempoProgramData`` - a REPEATED field with one entry, so read
+        it as ``preset.tempoProgramData[0]`` - with 24 parameters, among them ``TEMPO``,
         ``LED LIGHT``, ``VOLUME``, ``TYPE``, ``TIME SIGNATURE`` and ``SOUND``.
         These are per PRESET, unlike ``GlobalTempo``, which is global and only ever
         reported a running clock.
@@ -1726,7 +1744,8 @@ Two of those names disagree with the catalog, which is why the map
 
     def set_input_port(self, input_port_id: int, level: float = None,
                        impedance: float = None, input_type: float = None,
-                       ground_lift: float = None):
+                       ground_lift: float = None, confirm: bool = False,
+                       timeout: float = 20.0):
         """Change one input port's settings, sparsely.
 
         Only the arguments given are sent, and only that port is affected -
@@ -1751,13 +1770,43 @@ Two of those names disagree with the catalog, which is why the map
 
         These are global and survive power cycles, and an input gain is usually
         something a player has set by ear. Read :meth:`io_settings` first if you
-        intend to put it back, and note that a read straight after a write can
-        still report the old value.
+        intend to put it back.
+
+        **A single read-back is not verification.** The first :meth:`io_settings`
+        after a write can return the OLD value even when the write landed -
+        measured in the field: four port writes, one clean read, one stale value,
+        and a build run burned on a "refusal" that never happened. With
+        ``confirm=True`` this polls :meth:`io_settings` until the port reflects
+        every field written (float32-tolerant), raising ``TimeoutError`` -
+        explaining the stale-read behaviour - if it never does.
         """
-        return self._io_port_fields(
-            "in_port", "input_port_id", input_port_id,
-            (("level", level), ("input_zmode", impedance),
-             ("input_type", input_type), ("ground_lift", ground_lift)))
+        given = (("level", level), ("input_zmode", impedance),
+                 ("input_type", input_type), ("ground_lift", ground_lift))
+        result = self._io_port_fields("in_port", "input_port_id", input_port_id,
+                                      given)
+        if not confirm:
+            return result
+        wanted = [(name, value) for name, value in given if value is not None]
+        deadline = time.monotonic() + timeout
+        seen = {}
+        while time.monotonic() < deadline:
+            time.sleep(1.0)
+            io = self.io_settings(timeout=min(10.0, timeout))
+            port = next((x for x in io.settings.in_port
+                         if x.input_port_id == input_port_id), None)
+            if port is None:
+                continue
+            seen = {name: getattr(port, name) for name, _ in wanted}
+            if all(abs(seen[name] - float(value)) <= 1e-4
+                   for name, value in wanted):
+                return io
+        raise TimeoutError(
+            f"input port {input_port_id} still reads {seen} after {timeout}s where "
+            f"{dict(wanted)} was written. Reads here are eventually consistent - "
+            f"the first read after a write can return the old value even when the "
+            f"write landed - so this may be extreme lag rather than a refusal; "
+            f"read io_settings() again before concluding anything."
+        )
 
     def set_output_port(self, output_port_id: int, level: float = None,
                         ground_lift: float = None, mute: bool = None):
@@ -2634,6 +2683,12 @@ Two of those names disagree with the catalog, which is why the map
         ``params`` maps parameter index to value - floats are written as values,
         strings as text. Pass ``model=None`` to point an existing block at a new
         capture without re-placing it.
+
+        Parameters passed here survive the preset's first save. A BYPASS written
+        to this block before that save does not - see :meth:`set_bypass` for the
+        sequence that persists. And like :meth:`set_block`, this raises
+        :class:`BlockRefused` on a DSP-capacity refusal - captures are expensive
+        blocks, so that refusal is one to expect.
         """
         key = getattr(capture, "key", None)
         name = getattr(capture, "name", None)
@@ -3314,6 +3369,69 @@ class RowStatus(NamedTuple):
     block_count: int
     #: The row a branch reserving this one lives on, else ``None``.
     reserved_by: int | None
+
+
+class BypassState(NamedTuple):
+    """One block's stored bypass: the scene-mode flag and the eight scene slots."""
+
+    scene_mode: bool
+    scenes: tuple
+
+
+def bypass_state(p: preset.BinaryPreset, row: int, column: int) -> BypassState:
+    """A preset's stored bypass for one grid cell.
+
+    The read-side counterpart of :meth:`QuadCortex.set_bypass`, because verifying
+    a bypass write should not require walking the proto - and the proto's shape is
+    a trap. The bypass table is addressed **positionally**:
+    ``preset.bypass[row].colBypass[column]``. The ``row`` and ``column`` fields
+    INSIDE those entries read 0 on every stored entry; filtering on them returns
+    cell (0,0) thirty-two times, which is exactly the wrong answer in a
+    plausible-looking shape.
+
+    ``scenes[i]`` is scene *i*'s stored flag. When ``scene_mode`` is false the
+    block has ONE global bypass state and the eight slots are kept consistent -
+    a global write updates all of them (measured).
+
+    Note the table persists for EMPTY cells, so a freshly placed block inherits
+    whatever the cell last held.
+    """
+    cb = p.bypass[row].colBypass[column]
+    return BypassState(scene_mode=bool(cb.sceneMode),
+                       scenes=tuple(bool(sb.bypass) for sb in cb.sceneBypass))
+
+
+class ParamState(NamedTuple):
+    """One parameter's stored state: its scene-mode flag and per-scene values."""
+
+    scene_mode: bool
+    values: tuple
+
+
+def param_state(p: preset.BinaryPreset, row: int, column: int,
+                param_index: int) -> ParamState:
+    """A preset's stored values for one block parameter, all scenes.
+
+    The read-side counterpart of :meth:`QuadCortex.set_param`. ``values`` holds
+    one entry per scene slot - floats for ordinary parameters, strings for
+    string-valued ones (capture ``file_name``, IR references, cab mic), ``None``
+    where a slot carries neither.
+
+    While ``scene_mode`` is false the parameter has ONE effective value; slots
+    beyond the first are not maintained and should not be trusted. Factory
+    content stores NaN in some slots - compare with :func:`params_equal`, which
+    treats NaN as equal to NaN.
+    """
+    prm = p.chains[row].models[column].params[param_index]
+    values = []
+    for pv in prm.param_values:
+        if pv.HasField("string_value"):
+            values.append(pv.string_value)
+        elif pv.HasField("float_value"):
+            values.append(pv.float_value)
+        else:
+            values.append(None)
+    return ParamState(scene_mode=bool(prm.scene_mode), values=tuple(values))
 
 
 def row_status(p: preset.BinaryPreset) -> list:

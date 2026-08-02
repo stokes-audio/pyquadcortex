@@ -16,6 +16,53 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## Unreleased
+
+Everything here comes from a second field report, against 0.34.0 as installed from PyPI -
+36 presets built in one session, consumed strictly through the published docs and
+``help()``, which is exactly the audit this layer needed.
+
+### The capture-bypass conclusion, scoped
+
+0.34.0 said Neural Capture blocks "bypass exactly like any other block". True of the live
+grid; wrong about the first save. **A bypass written to a capture placed in the same
+session is dropped by the save that first materialises it**, while an ordinary block in
+the same row keeps it - reproduced here exactly as the report describes, along with its
+workaround (save, recall, re-write the bypass, save again), which is now in
+`set_bypass()`'s docstring. Same family as the capture load resetting parameters, except
+parameters written after the load DO survive the save and bypass does not.
+
+### Added
+
+- **`bypass_state(preset, row, column)`** and **`param_state(preset, row, column, index)`** -
+  read-side counterparts of `set_bypass()` and `set_param()`, so verifying a write no
+  longer means walking the proto. The proto's shape is a trap this absorbs: the bypass
+  table is positional, and the `row`/`column` fields inside it read 0 on every entry -
+  filtering on them returns cell (0,0) thirty-two times.
+- **`set_input_port(confirm=True)`** - polls `io_settings()` until the port reflects every
+  field written. The docs said "a read straight after a write can report the old value";
+  the field data says ONE clean re-read is still not authoritative - a stale value on the
+  first read after four writes cost a full build run. `confirm=True` absorbs it, and the
+  timeout explains staleness rather than reporting a refusal.
+
+### Fixed (documentation)
+
+- `docs/api.md` had an unclosed code fence that swallowed the per-scene example AND the
+  entire tempo section - the exact material a scene-building session needed. Restored,
+  with per-scene `set_param`/`set_bypass` examples and the new readers, and a test now
+  requires balanced fences in every published doc.
+- The api.md method table presented eleven module-level functions (`blocks`, `splits`,
+  `free_rows`, `row_status`, `params_equal`, `field_present`, ...) as methods of the
+  connection object. They are now written `pyquadcortex.name(...)`, the intro says what
+  that means, and a test checks every table entry exists where the table says it does.
+- `tempoProgramData` is a REPEATED field read as `preset.tempoProgramData[0]`; the
+  docstring read as if it were a message.
+- The catalog's per-block knobs attribute is named in api.md: `Model.parameters`, not
+  `.params` (which is the wire proto's name and the natural wrong guess).
+- `set_capture()` documents that it raises `BlockRefused` on DSP refusal - captures are
+  expensive blocks, so it is the likely place to meet one.
+- The readme is now `README.md`, so the conventional-case raw URL resolves.
+
 ## 0.34.0 - 2026-07-30
 
 Worked from an 11-item field report out of an 18-preset build session (2026-07-30).
@@ -68,8 +115,10 @@ rig on four inputs tunes them one at a time.
 
 ### Investigated: "capture blocks ignore bypass" (the report's blocker)
 
-Five probe rounds, and the answer is good news: **Neural Capture blocks bypass exactly
-like any other block.** What the report hit is a compound trap, now documented:
+Five probe rounds, and the answer is good news for the live grid: **Neural Capture
+blocks bypass like any other block** - though a second field report against 0.34.0 later
+scoped this: a bypass written before the preset's FIRST save is dropped by that save (see
+the next release's entry). The live-grid conclusion stands. What the report hit is a compound trap, now documented:
 `read_preset()` recalls the slot it reads, which resets the active scene - so a read
 interleaved between switching scenes and writing bypass silently retargets the write.
 Their capture blocks had `sceneMode` set (factory content does), making their writes

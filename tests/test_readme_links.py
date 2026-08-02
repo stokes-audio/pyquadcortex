@@ -7,7 +7,7 @@ stay on the page.
 import pathlib
 import re
 
-README = pathlib.Path(__file__).resolve().parent.parent / "readme.md"
+README = pathlib.Path(__file__).resolve().parent.parent / "README.md"
 
 # Matches ](target) for links AND nested-image badge links, which a plain
 # link regex misses - the one relative link that survived the first fix was
