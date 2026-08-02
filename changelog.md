@@ -16,7 +16,7 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
-## Unreleased
+## 0.35.0 - 2026-07-30
 
 Everything here comes from a second field report, against 0.34.0 as installed from PyPI -
 36 presets built in one session, consumed strictly through the published docs and
