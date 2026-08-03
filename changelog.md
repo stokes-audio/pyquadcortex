@@ -16,6 +16,53 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## Unreleased
+
+A third field report - the same 36-preset build, now including a day of debugging with a
+person at the unit - found the failure shape that matters most on a musical instrument:
+writes that are accepted, read back perfectly, and leave the rig silent or clicking.
+Items overlapping the second report shipped in 0.35.0; this entry is what is new.
+
+### The polarity correction: tempo parameter 4 is START, and 1.0 means RUNNING
+
+This library documented it backwards for two releases ("MUTE", 1.0 = muted), and the
+report's evidence is decisive: all 17 factory presets hold 0.0 there with the volume at a
+normal level - under the old reading, every factory preset on every unit would click
+constantly - and writing 1.0 started the metronome on 36 presets. The catalog's START
+name was right all along; the wrong polarity had been inferred from the NAME of the
+Looper X parameter it mirrors into, and a mirror proves linkage, never meaning.
+
+- `set_metronome_running(bool)` is the new front door, and `TEMPO_PARAMS` maps `START`
+  and `PLAYBACK` to index 4.
+- **The name `"MUTE"` is refused with an explanation** rather than kept as an alias: a
+  silent alias preserves the inverted-write footgun for anyone following the old docs.
+- `set_metronome_volume()` no longer claims 0.0 is silent. The range is genuine
+  **-60..+9 dB** (wire 0.0 IS -60 dB, quiet but plainly audible), it now takes `real=` in
+  dB, and true silence means stopping the transport - which exists, contrary to the old
+  "there is no mute flag" claim.
+
+### The tuner engagement hazard, documented (fix needs a capture session)
+
+Any host write to the Tuner - `set_tuner_input()` included - engages an INVISIBLE tuner
+state; combined with the mute preference, the outputs go silent with no on-screen cause.
+It survives ~100 recalls and 60 saves, read-back is blind to it, and only opening and
+closing the tuner on the unit releases it. `show_tuner()` is a measured no-op in both
+directions and its docstring now says so plainly. Both setters carry the warning; the
+disengage message is queued as the next hardware capture session, after which
+`close_tuner()` and automatic disengage will follow.
+
+### Added
+
+- **"Settings only your ears can verify"** - a documented list (api.md, cross-referenced
+  from every affected method and from troubleshooting) of settings whose only symptom is
+  audio: tuner engagement, the metronome transport, the metronome level. Read-back
+  verifying these is a category error - the read confirms the device stored the value,
+  not that the rig sounds right. The report's cross-cutting observation, adopted verbatim
+  as policy.
+- The capture guide gains the report's factory-content polarity check: before believing a
+  toggle's polarity, ask whether the whole factory library would behave absurdly under
+  your reading.
+
 ## 0.35.0 - 2026-07-30
 
 Everything here comes from a second field report, against 0.34.0 as installed from PyPI -

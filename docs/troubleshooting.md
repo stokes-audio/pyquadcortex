@@ -43,3 +43,13 @@ that shipped with it, so a marginal cable is not ruled out. Onset followed rough
 minutes of continuous heavy write traffic, though whether that is connected is
 unknown.
 
+
+
+## The rig is silent (or clicking) and every read-back looks perfect
+
+See **"Settings only your ears can verify"** in [api.md](api.md). The short version: any
+host write to the Tuner subsystem engages an invisible tuner state - combined with the
+tuner's mute preference, the outputs go silent with no on-screen cause, and only opening
+and closing the tuner on the unit releases it. A faint metronome click means the transport
+(tempo parameter 4) is running - 1.0 is RUNNING, and the volume control's floor is -60 dB,
+not silence. None of this is visible to a read: the values read back exactly as written.

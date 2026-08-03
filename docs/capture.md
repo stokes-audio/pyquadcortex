@@ -109,6 +109,17 @@ documentation, along with a method that quietly returned the wrong list. Correla
 `request_id`, which the device does echo, and when a match predicate times out, log what DID
 arrive before concluding nothing did.
 
+## Check a believed polarity against factory content
+
+When you think you know which way a boolean or toggle goes, ask what every factory preset
+holds there and whether the whole factory library would behave absurdly under your reading.
+This library documented the metronome transport as "1.0 = muted" for two releases; all 17
+factory presets hold 0.0 there with the volume at a normal level, and under that reading
+every factory preset on every unit would click constantly. None does. The check takes one
+loop over presets you already have, it needs no capture session, and it would have caught
+the error before it shipped. (The wrong polarity had been inferred from a linked
+parameter's NAME - a mirror proves linkage, never meaning.)
+
 ## Five things that make the difference between a result and a wasted hour
 
 **Record every message type, not the one you expect.** Filtering to `GridMessage`

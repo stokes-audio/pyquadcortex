@@ -2650,12 +2650,32 @@ def test_set_global_eq_output_addresses_the_out_tab_indices():
 
 def test_set_tempo_param_resolves_the_screen_names():
     qc = client.QuadCortex(FakeTransport())
-    for name, index in (("TEMPO", 0), ("LED LIGHT", 2), ("VOLUME", 3), ("MUTE", 4),
-                        ("PAN", 5), ("TIME SIGNATURE", 6), ("SUBDIVISIONS", 7),
-                        ("SOUND", 8), ("ROUTING", 9)):
+    for name, index in (("TEMPO", 0), ("LED LIGHT", 2), ("VOLUME", 3), ("START", 4),
+                        ("PLAYBACK", 4), ("PAN", 5), ("TIME SIGNATURE", 6),
+                        ("SUBDIVISIONS", 7), ("SOUND", 8), ("ROUTING", 9)):
         qc.set_tempo_param(name, value=0.5)
         got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
         assert got.index == index, f"{name} should resolve to {index}"
+
+
+def test_tempo_param_mute_is_refused_with_the_polarity_story():
+    """Two releases documented parameter 4 as a mute, inverted. A silent alias
+    would preserve the footgun; a loud refusal teaches instead."""
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="1.0 means RUNNING"):
+        qc.set_tempo_param("MUTE", value=1.0)
+    assert qc._t.sent == []
+
+
+def test_set_metronome_running_writes_the_transport_polarity():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_metronome_running(True)
+    got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
+    assert got.index == 4
+    assert got.param_values[0].float_value == 1.0     # 1.0 = RUNNING
+    qc.set_metronome_running(False)
+    got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
+    assert got.param_values[0].float_value == 0.0
 
 
 def test_tempo_param_names_are_case_and_space_tolerant():

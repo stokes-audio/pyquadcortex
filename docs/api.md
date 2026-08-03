@@ -259,6 +259,30 @@ qc.set_capture(row=1, column=0, capture=mine[0])
 **Creating** a capture is the unit's own wizard, and a connected client SUPPRESSES
 it - the unit hands its capture flow to the host and waits. Disconnect to capture.
 
+## Settings only your ears can verify
+
+Three known settings share the worst failure shape this device offers: **the write is
+accepted, the read-back agrees exactly with what was written, and the instrument is
+silent or making a noise it should not.** A build that verifies every write by reading it
+back - this library's own advice - reports complete success while leaving the rig
+unusable. A field session did precisely that: 36 presets, every check green, and the
+owner plugged into a silent unit with a faint metronome running.
+
+If your automation touches any of these, hand the final check to a human with ears:
+
+| setting | what read-back cannot see |
+|---|---|
+| **Any tuner write** (`set_tuner_input`, `set_tuner_mute`) | engages an INVISIBLE tuner state; with the mute preference true, the outputs are silent with no on-screen cause. Survives recalls, saves and scene switches; only opening and closing the tuner ON THE UNIT releases it. `show_tuner()` does not - it is a measured no-op |
+| **Metronome transport** (tempo parameter 4, `set_metronome_running`) | 1.0 is RUNNING. Whether a click is actually sounding is not represented anywhere a read reaches |
+| **Metronome level** (`set_metronome_volume`) | wire 0.0 is -60 dB, quiet but audible - not silence. The value reads back perfectly while the click ticks on |
+
+Honourable mention, already documented elsewhere: a lane routed to `out_portid` 16-18
+(internal row-to-row routing) can be "muted" without silencing anything a jack carries.
+
+This list is expected to grow. If a setting's only symptom is audio, read-back verifying
+it is a category error - the read confirms the device STORED your value, not that the
+rig sounds right.
+
 ## Reading global settings safely
 
 Three behaviours to know before trusting a read-back, all of which have caused

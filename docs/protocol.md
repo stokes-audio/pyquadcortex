@@ -978,7 +978,7 @@ named order:
 | 1 | - | TYPE. NOT written by any control in the menu |
 | 2 | Tempo LED | LED LIGHT |
 | 3 | Volume | VOLUME |
-| 4 | **Mute** (1.0 = muted) | START - the catalog is wrong; settled by the value propagating into a parameter the catalog itself names METRONOME MUTE |
+| 4 | **Playback** (the transport; **1.0 = RUNNING**) | START - and the catalog was RIGHT. This table said the opposite for two releases, having inferred polarity from the Looper X mirror parameter's name (METRONOME MUTE). Field evidence settled it: all 17 factory presets hold 0.0 here with normal volume and none clicks, and writing 1.0 starts the click |
 | 5 | Pan | PAN |
 | 6 | Time Signature | TIME SIGNATURE |
 | 7 | **Subdivisions** | NOTELENGTH - the names disagree |
@@ -1460,7 +1460,18 @@ owner read the unit's own picker: its seven options match the accepted set one f
 (USB_5 displays as "USB input 5"), so for once acceptance and support agree - measured
 rather than assumed, after mode value 9.
 
-`Tuner.mute` is writable (the menu's MUTE, for silent tuning). `enable_meter` is NOT: it
+**Any host write to the Tuner engages an INVISIBLE tuner state.** Field-measured with a
+person at the unit: after `Tuner{UPDATE}` carrying either `input_port_id` or `mute`, the
+unit behaves as if the tuner is open - nothing on screen says so - and if the stored mute
+preference is true, THE OUTPUTS ARE SILENT with no visible cause. The state survived ~100
+recalls, 60 saves and every scene switch of a 33-minute build. `ShowTuner{show}` does NOT
+create or release it in either direction (a measured no-op on d14e), and no read exposes
+it - `Tuner{READ}` reports every field faithfully while the rig is silent. The only known
+release is a person opening and closing the tuner on the unit. The message that physical
+close sends is the missing piece; capturing it is queued as a hardware session.
+
+`Tuner.mute` is writable (the menu's MUTE preference, for silent tuning; it mutes nothing
+by itself). `enable_meter` is NOT: it
 is sent, stays `false`, and `meter` stays `0.0`. So the needle itself is not readable over
 USB, which is the one part of the Tuner the host cannot see.
 
@@ -2318,12 +2329,12 @@ mirrors so far:
 
 | preset-level setting | mirrored block parameter |
 |---|---|
-| tempo settings index 4 (metronome MUTE) | Looper X `METRONOME MUTE` (param 21) |
+| tempo settings index 4 (the metronome transport, 1.0 = running) | Looper X `METRONOME MUTE` (param 21) - whose NAME is misleading: it follows the transport, so 1.0 there also means running |
 
-The list is almost certainly longer; add entries as they are hit. That propagation is also
-what settled index 4's name: the catalog calls it START, the screen calls it MUTE, and the
-parameter it mirrors into is named METRONOME MUTE by the catalog itself - so it is the
-mute, and 1.0 means muted.
+The list is almost certainly longer; add entries as they are hit. A caution this table
+earned the hard way: a mirror proves two parameters are LINKED and nothing more. Index 4's
+polarity was once inferred from the mirror target's NAME (METRONOME MUTE) - and the name
+was the misleading part. 1.0 means running, on both ends.
 
 ### `param_values` can contain NaN
 

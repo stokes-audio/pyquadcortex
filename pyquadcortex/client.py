@@ -890,11 +890,17 @@ class QuadCortex:
     #: but two of its names differ from the screen, so this map is what
     #: :meth:`set_tempo_param` resolves a name through first.
     #:
-    #: Index 4 IS the mute, and 1.0 means muted - the catalog's START name is
-    #: wrong. Settled by propagation: writing 1.0 to index 4 changed a Looper X
-    #: block's parameter that the catalog itself names METRONOME MUTE. Index 7 is
-    #: the screen's Subdivisions while the catalog calls it NOTELENGTH. Indices 8
-    #: and 9 are not in the catalog at all.
+    #: Index 4 is the metronome TRANSPORT and **1.0 means RUNNING** - the
+    #: catalog's START name was right all along. This library said the opposite
+    #: for two releases: propagation into a Looper X parameter named METRONOME
+    #: MUTE proved the two are LINKED, and the polarity was then inferred from
+    #: that name - which is the unreliable part. Field evidence settled it: all
+    #: 17 factory presets hold index 4 = 0.0 with VOLUME at a normal level, and
+    #: no factory preset clicks; writing 1.0 started the metronome on 36 presets.
+    #: The name "MUTE" is refused by :meth:`set_tempo_param` for exactly this
+    #: reason - anyone writing MUTE=1.0 expecting silence gets a running click.
+    #: Index 7 is the screen's Subdivisions while the catalog calls it
+    #: NOTELENGTH. Indices 8 and 9 are not in the catalog at all.
     #:
     #: Index 1 - the catalog's TYPE - was NOT written by any control in the Tempo
     #: menu. The menu's MODE (global or per preset) broadcasts nothing at all, so it
@@ -903,7 +909,7 @@ class QuadCortex:
         "TEMPO": 0,
         "LED LIGHT": 2, "LED": 2,
         "VOLUME": 3,
-        "MUTE": 4,
+        "START": 4, "PLAYBACK": 4,
         "PAN": 5,
         "TIME SIGNATURE": 6,
         "NOTELENGTH": 7, "SUBDIVISIONS": 7,
@@ -928,14 +934,14 @@ class QuadCortex:
         ``param`` may be an index or a NAME from :attr:`TEMPO_PARAMS`, which was
         built by using each control in the unit's Tempo menu in a named order::
 
-            0 TEMPO   2 LED LIGHT   3 VOLUME   4 MUTE   5 PAN
+            0 TEMPO   2 LED LIGHT   3 VOLUME   4 START   5 PAN
             6 TIME SIGNATURE   7 SUBDIVISIONS   8 SOUND   9 ROUTING
 
 Two of those names disagree with the catalog, which is why the map
-        exists: index 4 is MUTE (1.0 = muted; the manual calls it PLAYBACK and the
-        catalog misnames it START - settled by its propagation into a Looper X
-        parameter the catalog names METRONOME MUTE), and index 7 is Subdivisions on
-        screen and NOTELENGTH in the catalog.
+        exists: index 4 is the metronome TRANSPORT - the manual's PLAYBACK, the
+        catalog's START - and **1.0 means running**. (Two releases documented it as
+        a mute with the polarity inverted; see :attr:`TEMPO_PARAMS` for how that
+        happened.) Index 7 is Subdivisions on screen and NOTELENGTH in the catalog.
 
         The catalog describes 23 parameters here, indices 10 to 22 being
         ``STEPSTATE0`` to ``STEPSTATE12``, while the preset carries 24. For the
@@ -952,6 +958,14 @@ Two of those names disagree with the catalog, which is why the map
         index = param
         if isinstance(param, str):
             key = param.strip().upper()
+            if key == "MUTE":
+                raise ValueError(
+                    "tempo parameter 4 is the metronome TRANSPORT, not a mute, and "
+                    "1.0 means RUNNING - this library documented it backwards for "
+                    "two releases, so the name 'MUTE' is refused rather than "
+                    "silently inverted. Use set_metronome_running(False) to stop "
+                    "the click, or the name 'START' if you mean the raw parameter."
+                )
             if key in self.TEMPO_PARAMS:
                 index = self.TEMPO_PARAMS[key]
             else:
@@ -1032,14 +1046,34 @@ Two of those names disagree with the catalog, which is why the map
         """Turn this preset's TEMPO LED on or off."""
         return self.set_tempo_param("LED LIGHT", value=1.0 if on else 0.0)
 
-    def set_metronome_volume(self, value: float):
-        """Set this preset's metronome level, 0.0 being silent.
+    def set_metronome_running(self, running: bool):
+        """Start or stop this preset's metronome.
 
-        There is no mute flag anywhere in the schema - ``MetronomeStatusUpdate``
-        carries only ``is_enabled`` and ``preroll_enabled`` - so muting means
-        setting this to zero.
+        Tempo parameter 4 - the manual's PLAYBACK, the catalog's START - where
+        **1.0 is running and 0.0 is stopped**. This is the control to reach for
+        when the click must be OFF: :meth:`set_metronome_volume` cannot silence
+        it (its floor is -60 dB, still audible), and two releases of this library
+        documented parameter 4 as a mute with the polarity inverted, which parked
+        36 field-built presets at "running, quietly". An audible effect - see
+        "Settings only your ears can verify" in the API guide.
         """
-        return self.set_tempo_param("VOLUME", value=value)
+        return self.set_tempo_param("START", value=1.0 if running else 0.0)
+
+    def set_metronome_volume(self, value: float = None, real: float = None):
+        """Set this preset's metronome level. **Wire 0.0 is -60 dB, not silence.**
+
+        The catalog's range for this control is genuine: **-60 to +9 dB**, linear
+        in the wire value (``dB = -60 + 69 * value``), and unlike the
+        similarly-named lane VOLUME - whose 0..1 "dB" range is a placeholder where
+        0.0 really is silence - the metronome's quietest setting is still plainly
+        audible on headphones. True silence is not reachable with this control;
+        stop the transport instead with :meth:`set_metronome_running`.
+
+        Pass ``value=`` for the wire 0..1 or ``real=`` for dB::
+
+            qc.set_metronome_volume(real=-20.0)      # -20 dB
+        """
+        return self.set_tempo_param("VOLUME", value=value, real=real)
 
     def set_chain_output(self, row: int, out_portid: int):
         """Point one grid ``row``'s output at ``out_portid`` (row-keyed update).
@@ -1892,6 +1926,10 @@ Two of those names disagree with the catalog, which is why the map
         pitch: it reads 0 with a standard reference and moving FREQ to 442 on the
         unit broadcasts 1.99999809. Write it with :meth:`set_tuner_reference`.
 
+        **This read is blind to the engaged-tuner state** that host writes create
+        (see :meth:`set_tuner_mute`): every field reads back normally while the
+        rig is silenced by it.
+
         ``enable_meter`` and ``meter`` are the needle feed, and ``enable_meter``
         refuses a write from here - it stays false and ``meter`` stays 0.0 - so the
         live needle is not readable over USB. ``mute`` and ``input_port_id`` both
@@ -1901,10 +1939,16 @@ Two of those names disagree with the catalog, which is why the map
                                 lambda m: m.HasField("input_port_id"), timeout)
 
     def show_tuner(self, shown: bool = True):
-        """Open or close the Tuner on the unit.
+        """Send ``ShowTuner{show}``. **Measured to do NOTHING on firmware d14e.**
 
-        ``ShowTuner{show}``, the counterpart of :meth:`set_gig_view`. Sent and
-        accepted; that it opens the Tuner on screen has not been eyeballed.
+        A field session with a person at the unit checked both directions:
+        ``show_tuner(True)`` displayed nothing on screen and engaged nothing, and
+        ``show_tuner(False)`` did NOT release the invisible engaged-tuner state
+        that :meth:`set_tuner_input`/:meth:`set_tuner_mute` create - it is not the
+        escape hatch it looks like, and believing it was cost that session a
+        debugging round. Kept only until the real open/close message is found (a
+        capture of the unit's own broadcast is the planned route); do not build
+        on it.
         """
         return self._t.send(pa.ShowTunerMessage(action=pa.MessageAction.UPDATE,
                                                 show=shown))
@@ -1917,16 +1961,34 @@ Two of those names disagree with the catalog, which is why the map
         ``RETURN_1``, ``RETURN_2``), the combined ``INPUT_1_2``, and ``USB_5`` /
         ``USB_6``. Everything else is REFUSED and the setting reverts - including
         ``RETURN_1_2``, so there is no combined-returns tuning and no mode covering
-        all four inputs; that is a device limit, not a library gap. (The USB pair
-        is accepted on the wire but not yet confirmed on screen.)
+        all four inputs; that is a device limit, not a library gap. The whole
+        accepted set matches the unit's own picker one for one, USB included.
+
+        **WARNING - writing this ENGAGES the tuner, invisibly**, even with the mute
+        preference untouched; if that preference is already true, THE OUTPUTS GO
+        SILENT. Only a person opening and closing the tuner on the unit releases
+        the state. Full description on :meth:`set_tuner_mute`; list entry under
+        "Settings only your ears can verify" in the API guide.
         """
         return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
                                             input_port_id=input_port_id))
 
     def set_tuner_mute(self, muted: bool):
-        """Mute or unmute the outputs while the Tuner is open. Confirmed writable.
+        """Set the Tuner's mute-while-tuning preference. Confirmed writable.
 
         The manual's MUTE control in the Tuner menu, so silent tuning on stage.
+        The flag itself is a persistent preference and mutes nothing on its own.
+
+        **WARNING - writing this ENGAGES the tuner, invisibly.** Any host write to
+        the Tuner subsystem puts the unit into an engaged-tuner state that never
+        appears on screen; engaged plus ``muted=True`` means THE OUTPUTS GO SILENT
+        with no visible cause. Field-measured: the state survived ~100 recalls, 60
+        saves and every scene switch of a 33-minute build, read-back is blind to
+        it (this flag reads back exactly as written while the rig is silent), and
+        the ONLY known release is a person opening and closing the tuner on the
+        unit - :meth:`show_tuner` does not do it. Until the disengage message is
+        found, treat any tuner write as "the rig needs a human touch afterwards".
+        See "Settings only your ears can verify" in the API guide.
         """
         return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
                                             mute=muted))
