@@ -61,7 +61,7 @@ The library is stateless between calls: every read is a live exchange, and the u
 - **Runtime dependencies are exactly `hid` and `protobuf`.** The wheel installs with no compiler, no protoc, no build step.
 - **The protobuf runtime pin is coupled to the committed gencode.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001).
 - **Python >= 3.11.**
-- **The test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002).
+- **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - is decided but not yet built (see ADR-0005).
 - **Wire baseline: CorOS / Cortex Control 4.0.1, firmware d14e.** The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
 - **Exclusive device access.** Cortex Control holds the HID interface exclusively, so the library and Cortex Control cannot be connected at the same time.
 
@@ -75,6 +75,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0002 | Fully offline test suite behind a single lazy `hid` import |
 | ADR-0003 | USB HID is the only transport |
 | ADR-0004 | The domain model lands additively on top of the unchanged protocol layer |
+| ADR-0005 | A hardware-in-the-loop integration suite, state-neutral on success |
 
 ## 8. Open Questions
 
@@ -109,3 +110,24 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 | Decision rationale             | [`ADR.md`](ADR.md)                    |
 | Per-Epic plan                  | the Epic's implementation plan        |
 | Architecture / current state   | here, or [`architecture.md`](architecture.md) for code-level depth |
+
+---
+
+## Change Log
+
+### 2026-08-04 - ADR-0005: hardware-in-the-loop integration suite
+
+**What changed:**
+- ADR.md: added ADR-0005 (an online integration suite that drives a real unit; state-neutral on success, best-effort restore on failure, never in CI)
+- STEERING.md: section 6 constraint reworded from "the test suite" to "the default test suite" and now points at ADR-0005; section 7 table gained the ADR-0005 row
+
+**Why:**
+- Owner decision: hardware verification is manual today and should become repeatable, but any automated suite edits the only unit that exists, so the restore contract is the safety condition
+
+**Scope of impact:**
+- **Updated:** STEERING.md, ADR.md
+- **Not updated (intentionally):** CLAUDE.md - the suite does not exist yet, so there are no commands or rules to state; ADR-0002 - unchanged, the offline guarantee still holds for the default suite
+
+**Downstream to consider:**
+- ADR-0005's open questions (invocation mechanism, restorable-state inventory, scratch slots) need answers before the suite is built
+- The domain-model Epics (M1+) are natural first consumers - their hardware verification could land as online tests instead of one-off scripts

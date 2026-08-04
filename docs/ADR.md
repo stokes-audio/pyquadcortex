@@ -53,3 +53,13 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
 - **Open Questions:** None.
 - **Rationale:** Existing code keeps working; the protocol layer remains available for gaps; the layering already supports a stateful model above `client.py` with no new wire knowledge.
 - **Consequences:** Two public surfaces to document, with the model becoming the front door once it covers enough. The model wraps only behavior verified on hardware; anything less stays at the protocol layer rather than shipping a guessed abstraction.
+
+## ADR-0005: A hardware-in-the-loop integration suite, state-neutral on success
+
+- **Status:** Decided (2026-08-04)
+- **Decision:** Alongside the offline suite (ADR-0002), the project maintains an online integration suite that drives a real unit over USB. A successful run is state-neutral: everything the suite changed on the unit is put back. A failed run restores as best it can and reports what it could not restore.
+- **Context:** The offline suite proves the library builds the messages it intends; only hardware proves those messages are right. Today hardware verification is manual (`examples/` scripts plus the coverage table in `protocol.md`), so it is not repeatable and regressions can hide until someone happens to re-check. But an automated suite edits a real player's unit - presets, scenes, and settings someone gigs with - so it has to leave the unit as it found it.
+- **Options:** (a) Manual-only verification (status quo) - not repeatable, no regression protection. (b) A destructive suite that assumes a dedicated test unit or sacrificial slots - simpler restore story, but demands hardware most contributors (and the maintainer) do not have to spare. (c) A state-neutral suite with a restore contract - chosen.
+- **Open Questions:** Where it lives and how it is invoked (a pytest marker vs a separate runner). Which device state is genuinely restorable, and what the suite does about actions with no undo. Whether it reserves scratch user slots for create/delete coverage.
+- **Rationale:** Repeatable hardware verification without demanding a second unit. The restore contract is what makes it safe to run on the only unit that exists.
+- **Consequences:** Tests snapshot what they touch before changing it and restore in teardown, success or failure. The suite never runs in CI and stays fully separate from the offline suite, whose guarantee (ADR-0002) is unchanged. Failures name whatever they could not restore, so the owner knows what to fix by hand.
