@@ -76,6 +76,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0003 | USB HID is the only transport |
 | ADR-0004 | The domain model lands additively on top of the unchanged protocol layer |
 | ADR-0005 | A hardware-in-the-loop integration suite, state-neutral on success |
+| ADR-0006 | The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol` |
 
 ## 8. Open Questions
 
@@ -84,7 +85,7 @@ None yet. Protocol unknowns (the splitter write path, the IR import payload form
 ## 9. Pointers
 
 - Repo: <https://github.com/stokes-audio/pyquadcortex> · PyPI: <https://pypi.org/project/pyquadcortex/>
-- Deep references: [`architecture.md`](architecture.md) (code), [`protocol.md`](protocol.md) (wire), [`capture.md`](capture.md) (observing device traffic)
+- Deep references: [`architecture.md`](architecture.md) (code), [`protocol.md`](protocol.md) (wire), [`capture.md`](capture.md) (observing device traffic), [`domain-model.md`](domain-model.md) (the object model design)
 - Status: [`manual-coverage.md`](manual-coverage.md) (feature audit), [`roadmap.md`](roadmap.md) (direction), [`../changelog.md`](../changelog.md)
 - Operations: [`releasing.md`](releasing.md), [`troubleshooting.md`](troubleshooting.md), [`api.md`](api.md)
 - Device reference: the [Quad Cortex manual](https://neuraldsp.com/manual/quad-cortex)
@@ -114,6 +115,24 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-05 - Domain model structural design + ADR-0006 (namespace flip at M1)
+
+**What changed:**
+- New `docs/domain-model.md`: the M0 structural design of the object model (hierarchy, typing, full manual-feature appendix); its behavioral half lands from the companion design story
+- ADR.md: ADR-0006 - at M1 the model takes the top-level namespace and the protocol layer moves to `pyquadcortex.protocol`, refining ADR-0004
+- STEERING.md: section 7 table gained the ADR-0006 row; section 9 points at the design doc
+
+**Why:**
+- M0 Epic (stokes-audio/pyquadcortex#2), Story #3: the full object model is designed before M1 implementation starts; the namespace flip was an owner decision during design review
+
+**Scope of impact:**
+- **Updated:** domain-model.md (new), ADR.md, STEERING.md
+- **Not updated (intentionally):** CLAUDE.md - no code exists yet, so no new imperatives; architecture.md - the layer map changes only when M1 lands
+
+**Downstream to consider:**
+- The Intent Brief's "Additive, not breaking" requirement and Customer FAQ need the ADR-0006 amendment (planning repo)
+- Part II (state/save behavior, Story #4) merges into domain-model.md and must resolve the rows marked *Part II* / *unaudited* in its appendix
 
 ### 2026-08-04 - ADR-0005: hardware-in-the-loop integration suite
 
