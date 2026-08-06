@@ -2701,9 +2701,10 @@ def test_set_global_eq_output_addresses_the_out_tab_indices():
 
 # -- tempo parameter names -----------------------------------------------------
 # Mapped by using each control in the unit's Tempo menu in a named order. Two names
-# disagree with the catalog (index 4 is MUTE on screen, START in the catalog; index 7
-# is Subdivisions on screen, NOTELENGTH in the catalog) and 8 and 9 are absent from
-# the catalog entirely.
+# disagree with the catalog: index 4 is MUTE on screen and START in the catalog,
+# index 7 is Subdivisions on screen and NOTELENGTH in the catalog. Only the NAMES
+# ever disagreed - two releases claimed 8 and 9 were absent from the catalog, and
+# SOUND and ROUTING are described there at exactly those indices.
 
 
 def test_set_tempo_param_resolves_the_screen_names():
@@ -2763,26 +2764,117 @@ def test_tempo_param_names_are_case_and_space_tolerant():
 
 
 def test_real_units_refused_for_a_tempo_param_the_catalog_does_not_describe():
-    # The real unit's catalog describes 0-22; a parameter beyond whatever it
-    # describes cannot be converted, so real= must refuse rather than guess.
+    # The catalog describes 0-22 while the preset carries 24, so index 23 cannot be
+    # converted to real units - refuse rather than guess. It is the one tempo
+    # parameter still unattributed, and notably NOT a 14th beat: the beats stop at 22.
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    assert len(qc._catalog[25000].parameters) == 23
     with pytest.raises(ValueError, match="does not describe tempo parameter"):
-        qc.set_tempo_param("ROUTING", real=3)
+        qc.set_tempo_param(23, real=3)
     assert qc._t.sent == []
 
 
 def test_set_tempo_option_range_checks_against_the_catalogs_step_count():
-    # The catalog's `steps` is the option count: ROUTING has 5, so 5 is out of range
-    # and 3 maps to 0.75 - which is what the unit stored for OUT 3/4.
+    # The catalog's `steps` is the option count: ROUTING has 5, so 3 maps to 0.75 -
+    # which is what the unit stored for OUT 3/4.
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    routing = qc._catalog[25000].parameters[9] if len(qc._catalog[25000].parameters) > 9 else None
-    if routing is None:
-        pytest.skip("the sample catalog does not go that far")
     qc.set_tempo_option("ROUTING", 3)
     assert qc._t.sent[-1].preset.tempoProgramData[0].params[0] \
         .param_values[0].float_value == pytest.approx(0.75)
+    with pytest.raises(ValueError, match="5 options"):
+        qc.set_tempo_option("ROUTING", 5)
+
+
+# -- per-beat metronome states (STEPSTATE) -------------------------------------
+# Traced on hardware: from a 4/4 preset reading ENNN, one touch on beat 3 wrote
+# index 12 = 0.3333, three touches on beat 4 walked index 13 through 0.3333,
+# 0.6667, 1.0, and four touches on beat 1 walked index 10 from 0.6667 through 1.0,
+# 0.0, 0.3333 and back to 0.6667. That wraparound is what proves the count is
+# exactly four and fixes the cycle order.
+
+
+def test_beats_map_to_the_stepstate_indices():
+    assert client.QuadCortex.TEMPO_BEATS[1] == 10     # STEPSTATE0
+    assert client.QuadCortex.TEMPO_BEATS[13] == 22    # STEPSTATE12
+    assert len(client.QuadCortex.TEMPO_BEATS) == 13
+
+
+def test_set_beat_writes_the_traced_wire_values():
+    from pyquadcortex.enums import MetronomeBeat
+
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    # exactly the four values the unit wrote, and the indices it wrote them to
+    for beat, state, index, value in (
+            (3, MetronomeBeat.OFF, 12, 1 / 3),
+            (4, MetronomeBeat.QUIET, 13, 1.0),
+            (1, MetronomeBeat.ACCENT, 10, 2 / 3),
+            (2, MetronomeBeat.NORMAL, 11, 0.0)):
+        qc.set_beat(beat, state)
+        got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
+        assert got.index == index
+        assert got.param_values[0].float_value == pytest.approx(value)
+
+
+def test_set_beat_rejects_a_beat_the_unit_cannot_store():
+    from pyquadcortex.enums import MetronomeBeat
+
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    for bad in (0, 14, -1):
+        with pytest.raises(ValueError, match="beat must be 1 to 13"):
+            qc.set_beat(bad, MetronomeBeat.ACCENT)
+    with pytest.raises(ValueError):
+        qc.set_beat(1, 4)          # not one of the four states
+    assert qc._t.sent == []
+
+
+def test_set_beats_writes_consecutive_beats_and_leaves_the_rest():
+    from pyquadcortex.enums import MetronomeBeat as B
+
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    qc.set_beats([B.ACCENT, B.NORMAL, B.OFF, B.QUIET])
+    assert len(qc._t.sent) == 4
+    indices = [m.preset.tempoProgramData[0].params[0].index for m in qc._t.sent]
+    assert indices == [10, 11, 12, 13]        # only the four given; 14-22 untouched
+    with pytest.raises(ValueError, match="stores only 13"):
+        qc.set_beats([B.NORMAL] * 14)
+
+
+def test_beats_reads_the_states_back_as_the_enum():
+    """The end state of the traced session: ENFD on beats 1-4."""
+    from pyquadcortex.enums import MetronomeBeat as B
+
+    p = preset.BinaryPreset()
+    tp = p.tempoProgramData.add()
+    tp.hash = 25000
+    values = [0.33, 0.0, 0.0, 0.6956, 0.0, 0.5, 0.1, 0.0, 0.0, 0.0]   # 0-9
+    values += [0.666666687, 0.0, 0.333333343, 1.0]                    # beats 1-4
+    values += [0.0] * 10                                              # beats 5-13, +23
+    for value in values:
+        tp.params.add().param_values.add().float_value = value
+    got = client.beats(p)
+    assert got[1] == B.ACCENT
+    assert got[2] == B.NORMAL
+    assert got[3] == B.OFF
+    assert got[4] == B.QUIET
+    # all 13 are always present whatever the signature - stored, simply not sounded
+    assert len(got) == 13
+    assert all(got[b] == B.NORMAL for b in range(5, 14))
+
+
+def test_beats_returns_a_raw_float_it_cannot_place_rather_than_rounding():
+    # Nothing has been seen to write an off-grid value; snapping one into an enum
+    # would hide the day something does.
+    p = preset.BinaryPreset()
+    tp = p.tempoProgramData.add()
+    tp.hash = 25000
+    for index in range(24):
+        tp.params.add().param_values.add().float_value = 0.5 if index == 10 else 0.0
+    assert client.beats(p)[1] == pytest.approx(0.5)
 
 
 def test_a_raw_index_still_works():
@@ -2858,8 +2950,11 @@ def test_typed_metronome_setters_send_the_right_index_and_value():
                                     TempoSubdivision, TimeSignature)
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    if len(qc._catalog[25000].parameters) <= 9:
-        pytest.skip("the sample catalog stops before the metronome lists")
+    # No skip guard here on purpose. This test silently skipped for several releases
+    # because the fixture's TempoControl stopped at index 3, so the four typed
+    # setters below were never actually exercised. The fixture now carries all 23
+    # parameters; if it ever regresses, this should FAIL rather than vanish.
+    assert len(qc._catalog[25000].parameters) == 23
     for call, index, value in (
             (lambda: qc.set_tempo_subdivision(TempoSubdivision.EIGHTH), 7, 1 / 3),
             (lambda: qc.set_metronome_sound(MetronomeSound.BLOCK), 8, 0.2),

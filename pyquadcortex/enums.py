@@ -364,6 +364,29 @@ class GlobalEQFilter(IntEnum):
     LOW_SHELF = 4
 
 
+class MetronomeBeat(IntEnum):
+    """How ONE beat of the metronome sounds - the per-beat cells on the Tempo page.
+
+    Each beat of the bar can be set independently, and these are the four states a
+    cell cycles through. Traced on hardware: touching a cell walks the wire value
+    UP by 1/3 and wraps, so the numbering here IS the on-screen cycle order. Four
+    touches return a cell to where it started, which is how the count of exactly
+    four was established rather than assumed.
+
+    The unit does not label these in words - it draws them - so the names are the
+    owner's, matched to what he heard and saw. :attr:`ACCENT` is corroborated
+    independently: a factory-default 4/4 carries it on beat 1 and nothing else.
+
+    Which beat is which lives in :attr:`QuadCortex.TEMPO_BEATS`, indices 10 to 22
+    (the catalog's ``STEPSTATE0`` to ``STEPSTATE12``) for beats 1 to 13.
+    """
+
+    NORMAL = 0        #: The ordinary unaccented click. The 4/4 default for beats 2-4.
+    OFF = 1           #: Silent. The beat is skipped.
+    ACCENT = 2        #: Emphasized - louder. The 4/4 default for beat 1.
+    QUIET = 3         #: De-emphasized - softer than NORMAL, but still audible.
+
+
 class TempoSubdivision(IntEnum):
     """Metronome SUBDIVISIONS - the rhythmic pulses per beat.
 

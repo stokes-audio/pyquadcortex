@@ -79,8 +79,16 @@ class Parameter:
         blocks** - a Doubler's TRIGGER publishes ``steps=45`` while the real list is
         19 to 25 entries depending on the preset. For those, read the list from the
         preset with :func:`pyquadcortex.param_options`, which is authoritative.
+
+        ``empty`` counts too, and only because the catalog is small enough to check
+        exhaustively: 16 parameters carry that type, the 13 ``STEPSTATE`` per-beat
+        metronome cells with ``steps=4`` and three ``DUMMY`` entries with no steps
+        at all. So requiring ``steps`` admits exactly the beats and nothing else.
+        Without this, the per-beat cells were unreachable through
+        :meth:`QuadCortex.set_tempo_option` despite the count sitting right there
+        in the catalog.
         """
-        if self.type in ("comboBox", "switch", "rotarySwitch") and self.steps:
+        if self.type in ("comboBox", "switch", "rotarySwitch", "empty") and self.steps:
             return self.steps
         return None
 

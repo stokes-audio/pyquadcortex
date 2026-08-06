@@ -982,12 +982,19 @@ named order:
 | 5 | Pan | PAN |
 | 6 | Time Signature | TIME SIGNATURE |
 | 7 | **Subdivisions** | NOTELENGTH - the names disagree |
-| 8 | Sound | *absent from the catalog* |
-| 9 | Routing | *absent from the catalog* |
+| 8 | Sound | SOUND |
+| 9 | Routing | ROUTING |
+| 10-22 | the per-beat cells, beat 1 first | `STEPSTATE0` to `STEPSTATE12` |
+| 23 | - | *absent from the catalog, and unattributed* |
 
-The catalog DOES describe these - 23 parameters for model `25000`, with 10 to 22 being
-`STEPSTATE0` to `STEPSTATE12` - while the stored preset carries 24. What it gets wrong is
-two of the NAMES, hence `QuadCortex.TEMPO_PARAMS`.
+The catalog DOES describe these - 23 parameters for model `25000` - while the stored
+preset carries 24. What it gets wrong is two of the NAMES, hence
+`QuadCortex.TEMPO_PARAMS`.
+
+**Correcting this table:** two releases listed indices 8 and 9 as absent from the
+catalog. They are not. `SOUND` (steps=6) and `ROUTING` (steps=5) are described at
+exactly those indices, and every other index is described too. Only NAMES ever
+disagreed, never the coverage. Index 23 is the single genuinely undescribed one.
 
 **For the list-valued ones the catalog's `steps` IS the option count**, and the wire value
 of option N is `N / (count - 1)`. TIME SIGNATURE has 21 options, SUBDIVISIONS 4, SOUND 6,
@@ -1018,9 +1025,46 @@ One correction: an earlier note had ROUTING option 0 as the headphones. It is `M
 the wrong reading came from assuming an operator's starting point matched the factory
 default.
 
-**Changing the time signature also rewrites STEPSTATE parameters.** Selecting the last
-signature wrote indices 6, 12 and 14 together - `STEPSTATE2` and `STEPSTATE4` - so those
-hold the per-beat accent pattern the manual describes as "how accents are distributed".
+**The per-beat states: indices 10 to 22 are beats 1 to 13.** Each beat of the bar can be
+set independently - the cells on the Tempo page - and each is a four-option list at
+`option / 3`:
+
+| wire | option | state |
+|---|---|---|
+| 0.0 | 0 | normal, the ordinary click |
+| 0.333 | 1 | off, the beat is skipped |
+| 0.667 | 2 | accented, louder |
+| 1.0 | 3 | de-emphasized, softer but audible |
+
+Traced by touching cells on a 4/4 preset in a known order, from a baseline of
+accent-normal-normal-normal. One touch on beat 3 wrote index 12 = 0.333. Three touches
+on beat 4 walked index 13 through 0.333, 0.667, 1.0. Four touches on beat 1 walked
+index 10 from 0.667 through 1.0, 0.0, 0.333 and **back to 0.667**.
+
+That wraparound is the whole experiment. A cell cycles UP by 1/3 and wraps, so
+returning to its starting value in four touches proves the count is exactly four
+rather than assuming it from `steps`, and it fixes the cycle order at the same time.
+Worth copying as a method: to establish a list's size from the outside, walk it until
+it repeats.
+
+The option ORDER is not a loudness order, so do not infer meaning from it. Which state
+is louder came from the operator's ear, corroborated by the 4/4 default carrying 0.667
+on beat 1 and nothing else.
+
+**Changing the time signature rewrites these**, because the device re-lays the accent
+pattern out for the new bar. Selecting 7/8 (2+2+3) wrote indices 6, 12 and 14 together -
+beats 3 and 5, which are exactly the group starts of 2+2+3 once beat 1 is discounted as
+already accented. That capture was taken before any of this was understood and read only
+as "some STEPSTATEs get rewritten"; it is now an independent confirmation of the mapping
+from a direction nobody was looking. **Set the signature before the beats.**
+
+All 13 exist whatever the signature is, which matches 13/4 being the largest beat count
+the unit offers. Beats past the current signature are stored and not sounded. How many a
+COMPOUND signature sounds - whether 6/8 draws six cells or two - has not been measured.
+
+The catalog types these `empty` while still publishing `steps=4`, which is why they were
+long treated as placeholders. Only 16 parameters in the whole catalog are typed `empty`:
+these 13, and three `DUMMY` entries carrying no steps at all.
 
 **In the stored preset these params are POSITIONAL.** All 24 arrive with `index` absent,
 so position is the index - the same convention as `models[]`. A host WRITE does set

@@ -11,7 +11,7 @@ See the readme for a tour, and ``docs/`` for the protocol and internals.
 
 import logging
 
-__version__ = "0.37.0"
+__version__ = "0.38.0"
 
 # A library must not write to the application's console. Without a handler,
 # Python's handler of last resort prints WARNING and above to stderr, so a
@@ -29,14 +29,15 @@ from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL,
                                  bypass_state, BypassState, param_state, ParamState, input_chain_rows, midi_out, option_at,
                                  option_value,
                                  param_options, position_to_slot,
-                                 tempo_params,
+                                 beats, tempo_params,
                                  preset_load_midi_out, slot_to_position, splits,
                                  stomp_assignments)  # noqa: E402
 from pyquadcortex.enums import (BROKEN_MODE_VALUE, Footswitch, FootswitchMode,
                                 HYBRID_MODES, Input, Instrument, MidiOutType,
                                 describe_mode, hybrid_mode, PowerOption, RecallReason,
                                 ExpressionBypassMode, GlobalEQFilter, LooperState,
-                                MetronomeRouting, MetronomeSound, MidiSource,
+                                MetronomeBeat, MetronomeRouting,
+                                MetronomeSound, MidiSource,
                                 Output, Scene,
                                 SceneBypassBehavior, Setlist, TempoSubdivision,
                                 TimeSignature)
@@ -79,6 +80,7 @@ __all__ = [
     "GlobalEQFilter",
     "TempoSubdivision",
     "MetronomeSound",
+    "MetronomeBeat",
     "MetronomeRouting",
     "TimeSignature",
     "USER_SETLIST_ROOT",
@@ -92,6 +94,7 @@ __all__ = [
     "stomp_assignments",
     "param_options",
     "tempo_params",
+    "beats",
     "BlockRefused",
     "UNITY_LEVEL",
     "DeviceLostError",

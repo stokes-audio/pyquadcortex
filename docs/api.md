@@ -39,6 +39,7 @@ read and need no connection; calling them as methods raises `AttributeError`.
 | **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `pyquadcortex.midi_out(preset)` |
 | **Per-preset tempo** | `set_tempo_param(name, ...)`, `set_tempo_option(name, n)`, `pyquadcortex.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
 | **Metronome** | `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()` - all taking full enums |
+| **Per-beat accents** | `set_beat(n, MetronomeBeat.ACCENT)`, `set_beats([...])`, `pyquadcortex.beats(preset)` |
 | **Inspect a preset** (module functions) | `pyquadcortex.blocks(preset)`, `pyquadcortex.splits(preset)`, `pyquadcortex.free_rows(preset)`, `pyquadcortex.row_status(preset)`, `pyquadcortex.bypass_state(preset, row, column)`, `pyquadcortex.param_state(preset, row, column, index)`, `pyquadcortex.param_options(preset, row, column, index)`, `pyquadcortex.input_chain_rows(preset, input)`, `pyquadcortex.params_equal(a, b, option_count=)`, `pyquadcortex.field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
@@ -229,9 +230,12 @@ Each preset carries its own tempo block, separate from the global tempo:
 
 ```python
 qc.set_tempo_led(False)              # this preset's TEMPO LED off
-qc.set_metronome_volume(0.0)         # silence its metronome (there is no mute flag)
+qc.set_metronome_muted(True)         # silence the click - the unit's own MUTE
 qc.set_tempo_param("TIME SIGNATURE", value=0.1)
 ```
+
+Use `set_metronome_muted` and not the volume to silence a click:
+`set_metronome_volume(0.0)` is **-60 dB, quiet but still audible**, not silence.
 
 The metronome's list controls have named enums, so nothing needs a magic number:
 
@@ -244,6 +248,33 @@ qc.set_tempo_subdivision(TempoSubdivision.EIGHTH_TRIPLET)
 qc.set_metronome_sound(MetronomeSound.COWBELL)
 qc.set_metronome_routing(MetronomeRouting.OUT_3_4)
 ```
+
+### Accenting individual beats
+
+Every beat of the bar carries its own state, the cells on the unit's Tempo page.
+There are four, and `MetronomeBeat` names them in the order a cell cycles when you
+touch it:
+
+```python
+from pyquadcortex import MetronomeBeat, beats
+
+qc.set_time_signature(TimeSignature.FOUR_FOUR)   # FIRST - see the warning below
+qc.set_beat(1, MetronomeBeat.ACCENT)             # emphasize the downbeat
+qc.set_beat(3, MetronomeBeat.OFF)                # skip beat 3 entirely
+qc.set_beats([MetronomeBeat.ACCENT, MetronomeBeat.NORMAL,
+              MetronomeBeat.OFF, MetronomeBeat.QUIET])   # a whole bar at once
+
+beats(qc.read_current_preset())    # {1: ACCENT, 2: NORMAL, 3: OFF, 4: QUIET, ...}
+```
+
+**Set the time signature first.** Changing it rewrites these, because the device
+re-lays the accent pattern out for the new bar - so beats written beforehand are
+lost.
+
+The unit stores 13 of them whatever the signature is, enough for its largest, 13/4.
+`beats()` reports all 13 rather than trimming to the current signature: beats past
+the end are stored, simply not sounded, and how many a *compound* signature sounds
+(whether 6/8 has six beats or two) has not been measured.
 
 ## Neural Captures
 

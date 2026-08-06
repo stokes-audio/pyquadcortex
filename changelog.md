@@ -16,6 +16,81 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## 0.38.0 - 2026-08-06
+
+Every beat of the metronome's bar is separately controllable, and now reachable.
+
+### Per-beat accents
+
+The Tempo page lets you set each beat of the bar independently. Those cells are tempo
+parameters 10 to 22 - the catalogue's `STEPSTATE0` to `STEPSTATE12`, beats 1 to 13 - and
+each is a four-option list:
+
+```python
+from pyquadcortex import MetronomeBeat, beats
+
+qc.set_time_signature(TimeSignature.FOUR_FOUR)   # FIRST - this rewrites the beats
+qc.set_beat(1, MetronomeBeat.ACCENT)             # emphasize the downbeat
+qc.set_beat(3, MetronomeBeat.OFF)                # skip beat 3
+qc.set_beats([MetronomeBeat.ACCENT, MetronomeBeat.NORMAL,
+              MetronomeBeat.OFF, MetronomeBeat.QUIET])
+
+beats(qc.read_current_preset())    # {1: ACCENT, 2: NORMAL, 3: OFF, 4: QUIET, ...}
+```
+
+`MetronomeBeat` is `NORMAL`, `OFF`, `ACCENT`, `QUIET`, numbered in the order a cell cycles
+when touched - which is NOT a loudness order, so do not read meaning into the sequence.
+Wire values are `option / 3`.
+
+**Set the time signature before the beats.** Changing it rewrites them, because the device
+re-lays the accent pattern out for the new bar.
+
+`beats()` always reports 13 entries whatever the signature, because the unit always stores
+13. Beats past the end of the bar are kept and simply not sounded.
+
+### Two fixes this uncovered
+
+`Parameter.option_count` now counts `empty`-typed parameters that publish a step count.
+The per-beat cells are typed `empty` with `steps=4`, so they were unreachable through
+`set_tempo_option` despite the count sitting in the catalogue. Safe to widen because the
+catalogue is small enough to check exhaustively: 16 parameters are typed `empty` - these 13
+and three `DUMMY` entries with no steps - so requiring steps admits exactly the beats.
+
+**Two tests had been silently skipping for several releases.** The test fixture's
+`TempoControl` stopped at parameter 3, and two tests guarded themselves with
+`pytest.skip` when the fixture "did not go that far" - including the one asserting that
+all four typed metronome setters send the right index and value. The fixture now carries
+all 23 parameters and those guards are assertions instead, so a regression fails rather
+than disappears.
+
+### Corrections
+
+- Two releases claimed tempo indices 8 and 9 were **absent from the device catalogue**.
+  They are not: `SOUND` (steps=6) and `ROUTING` (steps=5) are described at exactly those
+  indices. Only NAMES ever disagreed with the catalogue, never coverage. Index 23 is the
+  one genuinely undescribed parameter, and it is **not** a 14th beat.
+- `docs/api.md` showed `set_metronome_volume(0.0)` commented as "silence its metronome
+  (there is no mute flag)". Both halves were wrong: `0.0` is -60 dB and still audible, and
+  the mute is parameter 4. It now shows `set_metronome_muted(True)`.
+
+### Verification, plainly
+
+**Traced on the wire, with a person touching the unit:** the beat-to-index mapping, all
+four wire values, the cycle order, and that a cell wraps after four touches. The captured
+sequence is one touch on beat 3, three on beat 4, four on beat 1, from a 4/4 baseline.
+
+**From the device's own catalogue:** `steps=4`, the `STEPSTATE0`-`STEPSTATE12` names, the
+`empty` type, and that 16 parameters carry that type across the whole catalogue.
+
+**From the operator's eyes and ears:** which state is louder. Corroborated by a
+factory-default 4/4 carrying `ACCENT` on beat 1 and nothing else, but the naming of
+`ACCENT` versus `QUIET` rests on a human report, not a measurement.
+
+**Reasoned, not measured:** that 13 cells exist because 13/4 is the largest signature. The
+13 cells are real and catalogued; tying the count to that signature is inference. How many
+beats a COMPOUND signature sounds - whether 6/8 draws six cells or two - is untested, which
+is why `set_beat` range-checks against 13 rather than the current signature.
+
 ## 0.37.0 - 2026-07-31
 
 The metronome mute, traced on hardware rather than inferred - which closed the question

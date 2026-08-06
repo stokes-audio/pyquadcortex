@@ -44,6 +44,7 @@ SAMPLE_XML = """<?xml version="1.0" ?><Models>
   <Model blob="mmm" id="11000" name="Mixer" internal="true">
     <Parameter defaultValue="0.769" max="1" min="0" name="MIXER LEVEL" type="float" units="dB"/>
     <Parameter defaultValue="5" max="10" min="0" name="PAN A" type="float" units=""/>
+    <Parameter defaultValue="0" max="1" min="0" name="DUMMY" type="empty"/>
   </Model>
 </Category>
 <Category id="25" name="Tempo">
@@ -52,6 +53,25 @@ SAMPLE_XML = """<?xml version="1.0" ?><Models>
     <Parameter defaultValue="0" max="1" min="0" name="TYPE" type="switch"/>
     <Parameter defaultValue="1" max="1" min="0" name="LED LIGHT" type="switch"/>
     <Parameter defaultValue="0.6" max="9" min="-60" name="VOLUME" type="float" units="dB"/>
+    <Parameter defaultValue="0" max="1" min="0" name="START" steps="2" type="toggleButton"/>
+    <Parameter defaultValue="5" max="10" min="0" name="PAN" type="float"/>
+    <Parameter defaultValue="0.1" max="1" min="0" name="TIME SIGNATURE" steps="21" type="comboBox"/>
+    <Parameter defaultValue="0" max="1" min="0" name="NOTELENGTH" steps="4" type="comboBox"/>
+    <Parameter defaultValue="0" max="1" min="0" name="SOUND" steps="6" type="comboBox"/>
+    <Parameter defaultValue="0" max="1" min="0" name="ROUTING" steps="5" type="comboBox"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE0" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE1" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE2" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE3" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE4" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE5" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE6" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE7" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE8" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE9" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE10" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE11" steps="4" type="empty"/>
+    <Parameter defaultValue="0" max="1" min="0" name="STEPSTATE12" steps="4" type="empty"/>
   </Model>
 </Category>
 <Category id="22" name="Internal Routing">
@@ -281,6 +301,25 @@ def test_option_count_comes_from_steps_for_a_list_parameter(cat):
                                 default=0.0, type="comboBox", steps=5)
     assert routing.option_to_value(3) == pytest.approx(0.75)
     assert routing.value_to_option(0.75) == 3
+
+
+def test_empty_typed_params_count_as_lists_only_when_they_carry_steps(cat):
+    """The per-beat metronome cells are typed ``empty`` yet publish ``steps=4``.
+
+    Counting them was safe to add because the catalog is small enough to check
+    exhaustively: 16 parameters are typed ``empty`` - the 13 STEPSTATE cells with
+    steps=4, and three DUMMY entries with no steps. Requiring steps therefore
+    admits exactly the beats.
+    """
+    beat = cat[25000].parameters[10]
+    assert beat.name == "STEPSTATE0"
+    assert beat.type == "empty"
+    assert beat.option_count == 4
+    assert beat.option_to_value(2) == pytest.approx(2 / 3)
+    assert beat.value_to_option(0.666666687) == 2
+    dummy = cat[11000].parameter("DUMMY")
+    assert dummy.type == "empty" and dummy.steps is None
+    assert dummy.option_count is None
 
 
 def test_option_helpers_reject_a_non_list_parameter_and_a_bad_option(cat):

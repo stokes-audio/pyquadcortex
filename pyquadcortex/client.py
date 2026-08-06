@@ -35,7 +35,8 @@ from typing import NamedTuple
 
 from pyquadcortex import catalog, enums, registry
 from pyquadcortex.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
-                                MetronomeRouting, MetronomeSound, MidiOutType,
+                                MetronomeBeat, MetronomeRouting,
+                                MetronomeSound, MidiOutType,
                                 MidiSource, Output, SceneBypassBehavior, Setlist,
                                 TempoSubdivision, TimeSignature)
 from pyquadcortex.proto import ProductionAutomation_pb2 as pa
@@ -945,9 +946,15 @@ class QuadCortex:
     #: mute-on writing 0.0.
     #:
     #: Index 7 is the screen's Subdivisions while the catalog calls it NOTELENGTH.
-    #: Indices 8 and 9 are not in the catalog at all, and the preset carries a
-    #: 24th parameter (index 23) the catalog does not describe - untouched by any
-    #: Tempo-page control traced so far, so still unattributed.
+    #: Two earlier releases said indices 8 and 9 were absent from the catalog. They
+    #: are not: ``SOUND`` (steps=6) and ``ROUTING`` (steps=5) are described there,
+    #: at exactly those indices. Only NAMES ever disagreed.
+    #:
+    #: Indices 10 to 22 are the per-beat cells - see :attr:`TEMPO_BEATS`. The
+    #: preset carries a 24th parameter (index 23) the catalog does not describe,
+    #: untouched by any Tempo-page control traced so far, so still unattributed.
+    #: It is NOT a 14th beat: the beats stop at 22, which matches 13/4 being the
+    #: largest beat count the unit offers.
     #:
     #: Index 1 - the catalog's TYPE - was NOT written by any control in the Tempo
     #: menu. The menu's MODE (global or per preset) broadcasts nothing at all, so it
@@ -963,6 +970,23 @@ class QuadCortex:
         "SOUND": 8,
         "ROUTING": 9,
     }
+
+    #: The tempo parameter index carrying each BEAT of the bar, 1-based: beat 1 is
+    #: index 10, beat 13 is index 22. These are the catalog's ``STEPSTATE0`` to
+    #: ``STEPSTATE12``, one per beat, and each is a four-option list whose values
+    #: are the :class:`~pyquadcortex.enums.MetronomeBeat` states.
+    #:
+    #: Traced on hardware by touching cells on the Tempo page in a known order.
+    #: An older capture corroborates the mapping from a direction nobody was
+    #: looking: selecting 7/8 (2+2+3) wrote indices 12 and 14 together, which are
+    #: beats 3 and 5 - the group starts of 2+2+3 are beats 1, 3 and 5, and beat 1
+    #: was already accented.
+    #:
+    #: How many beats are LIVE follows the time signature. That the count for the
+    #: compound signatures matches their numerator (whether 6/8 draws six cells or
+    #: two) has not been measured, so writing a beat above the current signature's
+    #: count is allowed here rather than guessed at.
+    TEMPO_BEATS = {beat: 9 + beat for beat in range(1, 14)}
 
     def set_tempo_param(self, param, value: float = None, real=None):
         """Set a per-preset tempo/metronome parameter.
@@ -991,7 +1015,8 @@ Two of those names disagree with the catalog, which is why the map
         happened.) Index 7 is Subdivisions on screen and NOTELENGTH in the catalog.
 
         The catalog describes 23 parameters here, indices 10 to 22 being
-        ``STEPSTATE0`` to ``STEPSTATE12``, while the preset carries 24. For the
+        ``STEPSTATE0`` to ``STEPSTATE12`` - the per-beat cells, reachable by beat
+        number through :meth:`set_beat` - while the preset carries 24. For the
         list-valued ones prefer :meth:`set_tempo_option`, which range-checks an option
         number instead of taking a raw float.
 
@@ -1086,10 +1111,59 @@ Two of those names disagree with the catalog, which is why the map
         """Set the metronome's time signature. Takes a
         :class:`~pyquadcortex.enums.TimeSignature`.
 
-        Note the device also rewrites some ``STEPSTATE`` parameters when this
-        changes - they hold the per-beat accents.
+        **This rewrites per-beat states**, because the accent pattern is stored per
+        beat and the device re-lays it out for the new signature. Selecting 7/8
+        (2+2+3) accents beats 3 and 5 to join the beat 1 that was already accented.
+        So set the signature FIRST and the beats after - the other order loses
+        them. Read them back with :meth:`beats`.
         """
         return self.set_tempo_option("TIME SIGNATURE", int(TimeSignature(signature)))
+
+    def set_beat(self, beat: int, state: "MetronomeBeat"):
+        """Set how ONE beat of the bar sounds.
+
+        ``beat`` is 1-based, up to 13. ``state`` is a
+        :class:`~pyquadcortex.enums.MetronomeBeat` - ``NORMAL``, ``OFF``,
+        ``ACCENT`` or ``QUIET``. A plain int is accepted and range-checked::
+
+            qc.set_beat(1, MetronomeBeat.ACCENT)   # the downbeat
+            qc.set_beat(3, MetronomeBeat.OFF)      # skip beat 3
+
+        These are the cells on the Tempo page, catalog ``STEPSTATE0`` upwards, and
+        the mapping was traced by touching them on the unit. Note the enum's order
+        IS the order a cell cycles when touched, which is not a loudness ordering.
+
+        Beats beyond the current time signature's count are storable but inaudible,
+        and :meth:`set_time_signature` rewrites these, so set the signature first.
+        """
+        if beat not in self.TEMPO_BEATS:
+            raise ValueError(
+                f"beat must be 1 to 13, not {beat!r} - the unit stores 13 per-beat "
+                f"cells (the catalog's STEPSTATE0 to STEPSTATE12), enough for its "
+                f"largest signature, 13/4"
+            )
+        return self.set_tempo_option(self.TEMPO_BEATS[beat],
+                                     int(MetronomeBeat(state)))
+
+    def set_beats(self, states) -> list:
+        """Set consecutive beats from the START of the bar, in one call.
+
+        Takes an iterable of :class:`~pyquadcortex.enums.MetronomeBeat`, beat 1
+        first::
+
+            qc.set_beats([ACCENT, NORMAL, OFF, QUIET])   # a 4/4 bar
+
+        Writes only the beats given - a shorter sequence leaves the rest alone,
+        which matters because the unit keeps 13 cells regardless of signature.
+        Returns what each :meth:`set_beat` returned.
+        """
+        states = list(states)
+        if len(states) > len(self.TEMPO_BEATS):
+            raise ValueError(
+                f"got {len(states)} beats but the unit stores only "
+                f"{len(self.TEMPO_BEATS)}"
+            )
+        return [self.set_beat(i, s) for i, s in enumerate(states, start=1)]
 
     def set_tempo_led(self, on: bool):
         """Turn this preset's TEMPO LED on or off."""
@@ -3496,6 +3570,36 @@ def tempo_params(p: preset.BinaryPreset) -> dict:
                   if field_present(x, "float_value")]
         if values:
             out[index] = values[0]
+    return out
+
+
+def beats(p: preset.BinaryPreset) -> dict:
+    """A preset's per-beat metronome states, keyed by 1-based BEAT number.
+
+    Reads tempo parameters 10 to 22 - the catalog's ``STEPSTATE0`` to
+    ``STEPSTATE12`` - and returns them as
+    :class:`~pyquadcortex.enums.MetronomeBeat` values.
+
+    All 13 are always present, whatever the time signature, so a 4/4 preset still
+    reports beats 5 to 13. They are stored, simply not sounded. This does not
+    filter them, because how many a signature actually sounds has not been measured
+    for the compound ones.
+
+    A value that is not one of the four quantized states is returned as the raw
+    float rather than being rounded into an enum - nothing has been seen to write
+    one, and silently snapping it would hide the day something does.
+    """
+    tp = tempo_params(p)
+    out = {}
+    for beat, index in QuadCortex.TEMPO_BEATS.items():
+        if index not in tp:
+            continue
+        option = tp[index] * 3.0
+        nearest = round(option)
+        if abs(option - nearest) < 0.01 and 0 <= nearest <= 3:
+            out[beat] = MetronomeBeat(nearest)
+        else:
+            out[beat] = tp[index]
     return out
 
 

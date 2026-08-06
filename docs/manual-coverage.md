@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 102 features audited: **62 yes**, **8 partly**, **21 no**, **11 n/a**.
+Of 103 features audited: **63 yes**, **8 partly**, **21 no**, **11 n/a**.
 
 Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
@@ -34,7 +34,7 @@ the I/O ports and folder discovery, and the settings submessages. The sessions a
 settled what no host-side probing could: the side-chain SOURCE, output mute, the tuner's
 reference pitch, creating a setlist, the expression-bypass numbering, the Looper's states,
 the master volume scale, how pinning is written, the Global EQ's whole 28-index layout,
-and every option of the metronome's four lists.
+every option of the metronome's four lists, and the per-beat accent cells.
 
 What is left is of two kinds. A few writes are **confirmed no-ops** with no route found:
 preset tags, and duplicating a setlist as a device operation (the library does it by
@@ -60,6 +60,7 @@ need the physical world: Neural Capture, and loading from the factory Captures L
 | Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
 | Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
 | Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is not on the wire at all |
+| Per-beat accents (customizing each beat of the bar) | yes | `set_beat(n, MetronomeBeat.ACCENT)` and `set_beats([...])`; `pyquadcortex.beats(preset)` reads them back. Tempo parameters 10-22 - the catalog's `STEPSTATE0` to `STEPSTATE12` - are beats 1 to 13, each a four-option list at `option / 3`: normal, off, accented, de-emphasized. Traced by touching cells on the unit; a cell cycles UP by 1/3 and wraps, so four touches return it to where it started. Set the time signature FIRST - changing it rewrites these |
 | Per-scene tempo | n/a | `scene_tempo` is ignored and reads back empty, and the unit has no per-scene tempo - its Tempo MODE is global or per preset, nothing finer |
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`, plus `mode_cycle()` to read the cycle - `mode()` accepts partial pushes and can report an empty one. `FootswitchMode` names the three base modes and `describe_mode()` names any value |
 | Modes: reorder, merge into HYBRID, remove | yes | `set_mode_cycle([...])`. All six HYBRID pairings are mapped and built with `hybrid_mode(top, bottom)`: a hybrid gives footswitches A-D one mode and E-H another, so 3-8 are the six ORDERED pairs (4 and 7 being the same pair swapped). A cycle holds at most one hybrid and a hybrid cannot be the only slot; value 9 is ACCEPTED by the device but leaves the footswitches dead, so it is refused here |
