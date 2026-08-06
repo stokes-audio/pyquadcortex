@@ -1602,7 +1602,11 @@ a write that applied and was later reset.
 Confirmed live by switching scenes between reads. `active_scene()` wraps it.
 
 **`read_preset()` RECALLS the slot it reads** - that was already documented - and the
-recall **resets the active scene to the preset's default and discards unsaved edits**.
+recall **resets the active scene to the preset's default, discards unsaved edits, and
+briefly interrupts the audio** (about a second, verified by ear: a recall reloads the
+engine, the same gap a footswitch preset change makes). A second recall moments later did
+NOT produce an audible gap, which fits the interruption scaling with how much chain the
+engine has to rebuild - that part is a hypothesis, not a measurement.
 The consequence bites hard: a `read_preset` interleaved between `switch_scene` and a
 scene-targeted write silently retargets that write at the default scene. This manufactured
 a false protocol finding here (see the bypass section below) and very likely produced a

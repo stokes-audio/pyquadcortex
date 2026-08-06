@@ -16,6 +16,28 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## Unreleased
+
+### Documented: a preset recall briefly interrupts the audio
+
+Chased with a person playing through the rig, after an unexplained one-second dropout in an
+earlier session. Seven candidate causes were eliminated by ear - block parameter writes,
+tempo parameter writes, bypass toggles, the metronome transport on and off, a session
+disconnect, a reconnect with its full handshake and state flood, and a plain
+`read_current_preset()`. **None of them touches the audio.** What does is a preset RECALL:
+about a second, because loading a preset reloads the engine - the same gap a footswitch
+preset change makes, so expected device behaviour rather than a fault.
+
+The consequence worth shipping: **`read_preset()` recalls, so it stutters a rig somebody is
+playing** - already known to reset the active scene and discard unsaved edits, and now known
+to interrupt sound too. It is the wrong call to use in a loop against a live rig;
+`read_current_preset()` reads the live grid with no side effects at all. Recorded in
+`set_bypass`-adjacent docs, `read_preset`'s docstring, the protocol notes, and the
+"Settings only your ears can verify" table.
+
+(A second recall moments later produced no audible gap, which fits the interruption scaling
+with how much chain the engine must rebuild - stated as a hypothesis, not a measurement.)
+
 ## 0.36.0 - 2026-07-31
 
 Three field reports and a hardware session. The theme is settings whose only symptom is

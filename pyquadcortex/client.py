@@ -322,6 +322,14 @@ class QuadCortex:
         side-effect-free read); the device services the push lazily (10-25s
         observed), hence the generous timeout.
 
+        **The recall briefly interrupts the audio** - about a second, verified by
+        ear, because loading a preset reloads the engine. It is the same gap a
+        player hears changing presets by footswitch, so it is expected device
+        behaviour rather than a fault, but it makes this the wrong call to use in
+        a loop against a rig somebody is playing. It also resets the active scene
+        and discards unsaved edits. Use :meth:`read_current_preset` for
+        inspection: it reads the live grid with no side effects at all.
+
         Correlation, confirmed on hardware: the RecallPreset push a host
         recall triggers echoes that recall's ``request_id``, while the
         unsolicited seed push (hello's subscription grid state) carries none.
@@ -790,8 +798,9 @@ class QuadCortex:
         RecallPreset pushes can use it to tell a save's echo from a real recall.
 
         Contrast with :meth:`read_preset`, which reads a STORED slot - and which
-        RECALLS that slot as a side effect, discarding unsaved edits and resetting
-        the active scene to the preset's default. Interleaving it with
+        RECALLS that slot as a side effect, discarding unsaved edits, resetting
+        the active scene to the preset's default, and **briefly interrupting the
+        audio** (a recall reloads the engine; verified by ear, about a second). Interleaving it with
         scene-targeted writes silently retargets them; use this method for
         inspection during editing.
         """
