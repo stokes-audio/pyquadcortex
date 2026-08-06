@@ -1192,6 +1192,13 @@ def test_preset_dirty_reads_and_treats_absent_as_false():
     assert qc2.preset_dirty() is False
 
 
+def test_power_option_enum_matches_the_schema():
+    from pyquadcortex import PowerOption
+    wire = {v.name: v.number for v in
+            pa.PowerOptions.DESCRIPTOR.enum_types_by_name["Enum"].values}
+    assert {m.name: m.value for m in PowerOption} == wire
+
+
 def test_recall_reason_enum_matches_the_schema():
     from pyquadcortex import RecallReason
     wire = {v.name: v.number for v in

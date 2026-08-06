@@ -27,14 +27,45 @@ Items overlapping the second report shipped in 0.35.0; this entry is what is new
 
 Unplugging the USB cable used to leave the RX thread spinning silently against a dead
 handle, with callers finding out only through eventual timeouts. Now: a read failure is
-retried once (a lone blip is transient - measured, the first error after an unplug
-carries the same text as the benign write STALL, and only the second says "Device is
-disconnected"); two failures in a row confirm loss. Every transport call then raises
-**`DeviceLostError`** carrying the honest second message, blocked requests are woken to
+retried once (a lone blip is transient); two failures in a row confirm loss. Every
+transport call then raises **`DeviceLostError`**, blocked requests are woken to
 fail fast instead of waiting out their timeouts, and the RX and keepalive threads wait
-quietly. The asymmetry is documented where it matters: a READ raising means the device is
-gone, a WRITE raising means nothing at all, and the text is identical either way - which
-call raised is the only signal.
+quietly - which also ends the old loop's hot-spin on a dead handle (three log lines in
+9 ms, measured against 0.34.0). The asymmetry is documented where it matters: a READ
+raising means the device is gone, a WRITE raising means nothing at all - and **the error
+TEXT is unreliable in both directions**. A follow-up session measured four loss
+transitions: the retry produced the honest "Device is disconnected" twice and the stale
+0xE0005000 stall-lookalike twice, so nothing branches on the message; the retry exists
+for blip immunity, and "a read raised" is the whole signal.
+
+### Connect rides through the openable-but-silent window
+
+There is a real window - ~9 s after a reboot, ~11.7 s after a cold boot, measured - where
+the device is enumerated and openable but the control protocol does not answer, so a
+successful open proves nothing about readiness. `connect()` now retries the full
+handshake (each attempt starts a fresh session id) for up to `handshake_patience`
+seconds, 15 by default; the give-up error names the window and points at
+troubleshooting when the silence outlasts it.
+
+### Added (for state tracking, second batch)
+
+- **`PowerOption`** (SHUTDOWN, REBOOT, STANDBY, WAKE_UP) - and the fact that matters
+  more than the enum: **standby does not disconnect.** The USB session stays healthy and
+  the unit announces sleep/wake with partial pushes carrying only `power_option`, while
+  reboot and shutdown send NOTHING before the reads start raising. One field
+  distinguishes "asleep" from "gone".
+- The **Grid edit echo is a sparse KEYED delta** - 23 bytes for one parameter write,
+  with `row` and `column` explicitly set - the exact opposite of a recalled preset's
+  keyless chains. Echo latencies measured: 113-116 ms (parameter), 290-420 ms (block).
+  A cached preset can merge echoes directly; this asymmetry is now documented as the
+  load-bearing fact it is.
+- Two open questions CLOSED in the protocol notes: `FileMessage.type` is the
+  presets/IRs/captures category selector (the connect burst enumerates 0 -> 2 -> 1),
+  and preset tags are confirmed unwritable by every route including the unit's own save.
+- Documented: state pushes are often PARTIAL (merge only present fields);
+  `GlobalTempo`'s pair-wise arrival is two alternating shapes; lock mode locks the
+  touchscreen and volume knob only - host writes land while it is engaged; reboot ~55 s
+  and cold boot recovery timings in troubleshooting.
 
 ### Added (for state tracking)
 

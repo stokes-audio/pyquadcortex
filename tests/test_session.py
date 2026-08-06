@@ -210,3 +210,66 @@ def test_disconnect_is_public_for_callers_owning_their_own_transport():
     assert isinstance(sent[0], pa.ConnectionMessage)
     assert sent[0].connected is False
     qc.close()                                  # still a no-op for a borrowed transport
+
+
+def test_connect_retries_the_handshake_within_its_patience(monkeypatch):
+    """The device can be openable but silent for ~9-12s after a (re)boot, so a
+    successful open proves nothing about readiness - retry the HANDSHAKE."""
+    from pyquadcortex import session
+
+    class QuietDevice:
+        def close(self):
+            pass
+
+    class FakeTransport:
+        def __init__(self, device):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self, join_timeout=1.0):
+            pass
+
+    attempts = {"n": 0}
+
+    def flaky_hello(self, timeout=5.0, settle=2.0):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise TimeoutError("no response for request_id=1")
+
+    monkeypatch.setattr(session, "open_device", lambda: QuietDevice())
+    monkeypatch.setattr(session, "Transport", FakeTransport)
+    monkeypatch.setattr(session.QuadCortex, "_hello", flaky_hello)
+    monkeypatch.setattr(session.QuadCortex, "disconnect", lambda self: None,
+                        raising=False)
+    qc = session.connect(timeout=0.01, settle=0, handshake_patience=30.0)
+    assert attempts["n"] == 3, "two silent windows were retried through"
+    qc.close()
+
+
+def test_connect_gives_up_after_its_patience_with_the_silent_window_explained(monkeypatch):
+    from pyquadcortex import session
+
+    class QuietDevice:
+        def close(self):
+            pass
+
+    class FakeTransport:
+        def __init__(self, device):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self, join_timeout=1.0):
+            pass
+
+    def never_answers(self, timeout=5.0, settle=2.0):
+        raise TimeoutError("no response for request_id=1")
+
+    monkeypatch.setattr(session, "open_device", lambda: QuietDevice())
+    monkeypatch.setattr(session, "Transport", FakeTransport)
+    monkeypatch.setattr(session.QuadCortex, "_hello", never_answers)
+    with pytest.raises(TimeoutError, match="openable-but-silent"):
+        session.connect(timeout=0.01, settle=0, handshake_patience=0.05)

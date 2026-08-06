@@ -1675,7 +1675,11 @@ Two of those names disagree with the catalog, which is why the map
         ``global_bypass_cab``/``_ir``, ``stomp_mode_auto_assign``,
         ``swap_tempo_tuner_access``, ``enable_dynamic_delay_compensation``,
         ``hold_timing``, ``lock_screen_and_volume_knob`` (the unit's lock mode -
-        present and readable; writing it is untested), MIDI channel and clock
+        note it locks the TOUCHSCREEN AND VOLUME KNOB only: a host parameter
+        write landed, read back exactly and restored cleanly while it was
+        engaged, so host control is unaffected despite what "locked" invites you
+        to assume; engaging it on the unit is observable as a partial push
+        carrying only that field), MIDI channel and clock
         settings, ``power_option``,
         ``master_volume_assignment`` (the per-output checkboxes) and the
         ``available_disk_space``/``total_disk_space`` pair, among others.

@@ -72,11 +72,13 @@ class DeviceLostError(ConnectionError):
     """The USB device is gone: two consecutive HID reads failed.
 
     Raised by every transport entry point once loss is confirmed, carrying the
-    SECOND read error's message. The second, because the first is a liar: the
-    first read exception after an unplug carried "IOHIDDeviceSetReport failed:
-    (0xE0005000)" - byte-identical to the benign write STALL - while the very
-    next read said "Device is disconnected". Measured on macOS by unplugging
-    mid-session.
+    second read error's message. **Do not branch on that text.** It is often the
+    stale write-STALL lookalike ("IOHIDDeviceSetReport failed: (0xE0005000)")
+    rather than anything honest - measured across four loss transitions: after
+    one reboot both attempts carried the misleading text, after another both
+    were honest, and a shutdown gave one of each. The retry exists for blip
+    immunity, not better messages; the reliable signal is that a read raised
+    AT ALL.
 
     The asymmetry worth remembering: **a READ raising means the device is gone;
     a WRITE raising means nothing at all.** Every write to a healthy QC "fails"
@@ -353,11 +355,12 @@ class Transport:
                 # A READ raising is the device-loss signal (writes raise on every
                 # healthy message - the QC's status-stage STALL - so a write error
                 # means nothing; measured: 91 write errors, 0 read errors, in one
-                # healthy 145 s session). But the FIRST read error after an unplug
-                # is a liar: it carried the same 0xE0005000 text as the benign
-                # write stall, while the NEXT read said "Device is disconnected".
-                # So retry once - a success means a transient blip; a second
-                # failure confirms loss and its message is the honest one.
+                # healthy 145 s session). Retry once: a success means a transient
+                # blip; a second failure confirms loss. The retry does NOT
+                # reliably improve the error text - across four measured loss
+                # transitions the second message was honest twice and the stale
+                # 0xE0005000 stall-lookalike twice - so nothing anywhere may
+                # branch on the message; "a read raised" is the whole signal.
                 try:
                     report = self._dev.read(_READ_SIZE, _READ_TIMEOUT_MS)
                 except Exception as second:

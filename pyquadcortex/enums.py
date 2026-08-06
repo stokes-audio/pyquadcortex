@@ -189,6 +189,32 @@ def describe_mode(value: int) -> str:
         return f"unknown mode value {value}"
 
 
+class PowerOption(IntEnum):
+    """The power button's states (``GeneralSettings.power_option``), for READING.
+
+    Writing this field is refused by ``update_settings()`` - it is a command that
+    can shut the unit down. Reading it matters more than it looks, because the
+    three ways a unit goes away behave completely differently (all measured):
+
+    * **STANDBY ("Be Right Back") does not disconnect at all.** The USB session
+      stays fully alive - probes kept answering in 2 ms throughout - and the unit
+      announces it with a PARTIAL GeneralSettings push carrying only
+      ``power_option: 2``, then ``power_option: 3`` (WAKE_UP) on waking. A script
+      can be talking to a sleeping unit over a perfectly healthy connection.
+      Whether writes are HONOURED during standby is not established.
+    * **REBOOT and SHUTDOWN send nothing.** Healthy 3 ms probes right up to the
+      last moment, then reads start raising (``DeviceLostError``). No goodbye.
+
+    So ``power_option`` distinguishes "asleep" from "gone" precisely, from one
+    field: a sleeping unit told you; a gone unit did not.
+    """
+
+    SHUTDOWN = 0
+    REBOOT = 1
+    STANDBY = 2
+    WAKE_UP = 3
+
+
 class RecallReason(IntEnum):
     """Why a ``RecallPreset`` push happened (``RecallPresetMessage.reason``).
 

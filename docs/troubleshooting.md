@@ -53,3 +53,11 @@ tuner's mute preference, the outputs go silent with no on-screen cause, and only
 and closing the tuner on the unit releases it. A faint metronome click means the transport
 (tempo parameter 4) is running - 1.0 is RUNNING, and the volume control's floor is -60 dB,
 not silence. None of this is visible to a read: the values read back exactly as written.
+
+
+## How long a reboot or cold boot actually takes
+
+Measured on d14e: a reboot is ~39 s not enumerated, then ~9 s enumerated-but-silent, then
+a ~2 s handshake - about 55 s total, and `connect()` rides through the silent window on
+its own (`handshake_patience`). A cold boot showed ~11.7 s of silent-but-openable. If a
+unit is unreachable for MINUTES, that is not a boot - see the USB-link-death section.

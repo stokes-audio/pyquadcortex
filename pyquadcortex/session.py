@@ -16,6 +16,8 @@ see :class:`pyquadcortex.transport.Transport` and
 :class:`pyquadcortex.client.QuadCortex`.
 """
 
+import time
+
 from pyquadcortex import hid_ids
 from pyquadcortex.client import QuadCortex
 from pyquadcortex.transport import Transport
@@ -75,7 +77,8 @@ def open_device():
         ) from exc
 
 
-def connect(*, timeout: float = 5.0, settle: float = 2.0) -> QuadCortex:
+def connect(*, timeout: float = 5.0, settle: float = 2.0,
+            handshake_patience: float = 15.0) -> QuadCortex:
     """Open a Quad Cortex and return a connected, ready-to-use client.
 
     Finds and opens the device, starts the transport, and performs the connect
@@ -90,10 +93,17 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0) -> QuadCortex:
     Otherwise call :meth:`~pyquadcortex.client.QuadCortex.close` when done.
 
     Args:
-        timeout: seconds to wait for the handshake reply.
+        timeout: seconds to wait for each handshake reply.
         settle: seconds to wait after the handshake before returning. The device
             needs a moment before it treats the client as connected; lowering
             this makes the first command less reliable.
+        handshake_patience: total seconds to keep re-attempting the handshake
+            when the device is OPENABLE BUT SILENT. That window is real: after a
+            reboot the control protocol did not answer for ~9 seconds past
+            enumeration, and ~11.7 seconds after a cold boot - a successful open
+            proves nothing about readiness. Each attempt restarts the full
+            handshake (safe: it begins with a fresh session id). Set to 0 for
+            the old single-attempt behaviour.
 
     Returns:
         A connected :class:`~pyquadcortex.client.QuadCortex`.
@@ -108,7 +118,23 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0) -> QuadCortex:
     try:
         transport.start()
         qc = QuadCortex(transport, _owned_resources=owned)
-        qc._hello(timeout=timeout, settle=settle)
+        deadline = time.monotonic() + handshake_patience
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                qc._hello(timeout=timeout, settle=settle)
+                break
+            except TimeoutError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"the device is enumerated and open but the control "
+                        f"protocol did not answer in {attempt} handshake "
+                        f"attempt(s) over {handshake_patience:.0f}s. This "
+                        f"openable-but-silent window lasts ~9-12s after a "
+                        f"reboot or cold boot; if it persists longer, see the "
+                        f"USB-link-death section of troubleshooting.md."
+                    ) from None
         # Say goodbye BEFORE the transport and handle go away, since the send needs
         # a live transport. close() pops this list, so appending last runs it first.
         owned.append(qc.disconnect)

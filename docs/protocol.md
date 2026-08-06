@@ -1500,6 +1500,54 @@ transport entry point then raises `DeviceLostError`, blocked waiters are woken t
 fast instead of timing out, and the RX and keepalive threads wait quietly rather than
 spinning on a dead handle.
 
+## Standby, reboot, shutdown - and which of them says goodbye
+
+`PowerOptions.Enum` is SHUTDOWN=0, REBOOT=1, STANDBY=2, WAKE_UP=3, carried as
+`GeneralSettings.power_option`. The three departures behave completely differently
+(measured):
+
+* **STANDBY ("Be Right Back") does not disconnect.** The USB session stays fully alive -
+  2 ms probe answers throughout - and the unit announces it with a partial
+  GeneralSettings push carrying ONLY `power_option: 2`, then `power_option: 3` on waking.
+  Connecting fresh while it sleeps works normally. A script can be talking to a sleeping
+  unit over a perfectly healthy connection; whether writes are honoured there is
+  untested.
+* **REBOOT and SHUTDOWN send nothing.** Healthy 3 ms probes to the last moment, then
+  reads raise. No announcement.
+
+So one field distinguishes "asleep" (it told you) from "gone" (it did not).
+
+**Recovery is two-phase and self-healing.** After a reboot: ~39 s not enumerated, ~9 s
+openable-but-silent, then a ~2 s handshake - about 55 s unattended. After a cold boot:
+~11.7 s openable-but-silent once enumerated. The openable-but-silent window is why
+`connect()` retries the handshake (`handshake_patience`): a successful open proves
+nothing about readiness. This is all much faster than the ~2.5 minutes
+troubleshooting.md warns about - that warning concerns the USB-link-death fault, a
+different failure.
+
+**State pushes are often PARTIAL - one field set, everything else absent.** Long known
+for mode pushes, and confirmed most cleanly by the standby announcements above, which
+carry a single field. A reader treating an absent field as "changed to default" corrupts
+its cache; merge only what is present. (This is the documented reason `settings()` and
+`mode_cycle()` insist on pushes carrying the fields they need.)
+
+**`GlobalTempo` arrives in pairs because it alternates two shapes** - one push carrying
+`metronome_status`, one carrying the 25 params. Anyone counting messages or diffing
+consecutive pushes should expect the alternation.
+
+## The Grid echo is a sparse KEYED delta - the opposite of a recall
+
+The long discussion above explains that chains from a RECALL carry no explicit `row`,
+which is why wholesale write-back does nothing. The device's EDIT ECHO is the opposite,
+and the asymmetry is load-bearing for anyone maintaining a cached preset:
+
+* Writing one parameter produced a Grid push of **23 bytes total**: one chain with `row`
+  SET, one model with `column` SET, one param. Fully keyed, no positional guessing - an
+  echo can be merged straight into a cached preset.
+* Echo latency, measured: **113-116 ms** for a parameter write; **290-420 ms** for a
+  block placement (the basis of `set_block(verify=True)`'s window). Other write types'
+  echoes are uncharacterised.
+
 ## Connect burst, measured
 
 About 3 s of quiet, then the ModelRepo payload as one huge message, then ~400 File
@@ -2481,8 +2529,10 @@ Stated explicitly so nobody builds on a guess:
 - **The "raw payload" trailer flag** at offset `n+2` is an inference from the
   observation that non-protobuf device payloads carry a nonzero byte there. The
   exact field layout and semantics are unconfirmed.
-- **`FileMessage.type`** was always `0` in every observation. What other values
-  select is unknown.
+- ~~**`FileMessage.type`** was always `0`~~ - ANSWERED: it is a category selector,
+  `0` presets / `1` IRs / `2` captures, established with request_id-attributed sweeps
+  (see the IR section) and independently corroborated by a state-tracking session that
+  watched the connect burst enumerate `0 -> 2 -> 1`.
 - **`delete_from_library`** (on `FileMessage`) exists in the schema but was never
   sent. Its effect is unknown.
 - **Most output port ids** are schema-derived rather than hardware-confirmed
@@ -2495,8 +2545,14 @@ Stated explicitly so nobody builds on a guess:
   the endpoints are not.
 - **Whether a capture id denotes different content on a different unit** is untested
   here, needing a second unit.
-- **Whether a preset's descriptive `tags` can be set at all**, by any route or from
-  the unit itself, is unresolved: three host routes are confirmed no-ops.
+- ~~**Whether a preset's descriptive `tags` can be set at all**~~ - ANSWERED: no. The
+  unit's own Save As strips them too (factory 5D's six tags -> none on the on-unit
+  copy), so tags are build-chain/cloud metadata that no save path preserves.
+- **Whether host writes are honoured during STANDBY** is untested. (Writes ARE
+  honoured during lock mode, but that is a different state.)
+- **Echo behaviour for write types beyond parameter writes and block placement**
+  (bypass, routing, scene label/colour, global settings) has no measured latency or
+  shape; only those two are characterised.
 - **Cross-setlist moves**, downloads/plugin folders
   (`SetlistPosition.is_downloads`, `is_plugin`), IR payloads
   (`FileMessage.ir_payload`), and bulk operations
