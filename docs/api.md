@@ -273,7 +273,7 @@ If your automation touches any of these, hand the final check to a human with ea
 | setting | what read-back cannot see |
 |---|---|
 | **Any tuner write** (`set_tuner_input`, `set_tuner_mute`) | engages an INVISIBLE tuner state; with the mute preference true, the outputs are silent with no on-screen cause. Survives recalls, saves and scene switches. **Call `restore_audio()` afterwards** - it clears the preference, which is the only host-side release (the physical close broadcasts nothing, so there is no message to send). Both setters now warn when a write will leave the rig silent |
-| **Metronome transport** (tempo parameter 4, `set_metronome_running`) | 1.0 is RUNNING. Whether a click is actually sounding is not represented anywhere a read reaches |
+| **The metronome's MUTE** (tempo parameter 4; `set_metronome_muted` / `set_metronome_running`) | 1.0 is AUDIBLE, 0.0 is muted - inverted against the label the unit shows, and the opposite polarity to the identically-named lane `MUTE`. Whether a click is actually sounding is not represented anywhere a read reaches, and a lane mute does not silence it |
 | **Metronome level** (`set_metronome_volume`) | wire 0.0 is -60 dB, quiet but audible - not silence. The value reads back perfectly while the click ticks on |
 
 | **Any preset recall** (`recall_preset`, and `read_preset` which recalls) | interrupts the audio EVERY time - including a redundant recall of the preset already loaded (measured across four consecutive recalls; only the duration varies, a real change being longer). Loading a preset reloads the engine, so it is expected behaviour - but a verify-by-re-reading loop on `read_preset` stutters a rig on every iteration. `read_current_preset()` has no side effects |

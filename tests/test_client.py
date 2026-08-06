@@ -2716,13 +2716,31 @@ def test_set_tempo_param_resolves_the_screen_names():
         assert got.index == index, f"{name} should resolve to {index}"
 
 
-def test_tempo_param_mute_is_refused_with_the_polarity_story():
-    """Two releases documented parameter 4 as a mute, inverted. A silent alias
-    would preserve the footgun; a loud refusal teaches instead."""
+def test_tempo_param_mute_is_refused_because_it_is_inverted():
+    """The unit DOES label parameter 4 MUTE - inverted, so 1.0 unmutes. Accepting
+    the name would silently do the opposite of what the caller asked."""
     qc = client.QuadCortex(FakeTransport())
-    with pytest.raises(ValueError, match="1.0 means RUNNING"):
+    with pytest.raises(ValueError, match="INVERTED"):
         qc.set_tempo_param("MUTE", value=1.0)
     assert qc._t.sent == []
+
+
+def test_set_metronome_muted_is_the_inverse_of_running():
+    """Traced from the unit's MUTE button: mute-on writes 0.0, mute-off 1.0."""
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_metronome_muted(True)
+    got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
+    assert got.index == 4
+    assert got.param_values[0].float_value == 0.0      # muted == silent == 0.0
+    qc.set_metronome_muted(False)
+    assert qc._t.sent[-1].preset.tempoProgramData[0].params[0] \
+        .param_values[0].float_value == 1.0
+    # the two APIs are the same parameter and cannot disagree
+    qc.set_metronome_running(True)
+    a = qc._t.sent[-1].preset.tempoProgramData[0].params[0].param_values[0].float_value
+    qc.set_metronome_muted(False)
+    b = qc._t.sent[-1].preset.tempoProgramData[0].params[0].param_values[0].float_value
+    assert a == b == 1.0
 
 
 def test_set_metronome_running_writes_the_transport_polarity():

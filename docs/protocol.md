@@ -978,7 +978,7 @@ named order:
 | 1 | - | TYPE. NOT written by any control in the menu |
 | 2 | Tempo LED | LED LIGHT |
 | 3 | Volume | VOLUME |
-| 4 | **Playback** (the transport; **1.0 = RUNNING**) | START - and the catalog was RIGHT. This table said the opposite for two releases, having inferred polarity from the Looper X mirror parameter's name (METRONOME MUTE). Field evidence settled it: all 17 factory presets hold 0.0 here with normal volume and none clicks, and writing 1.0 starts the click |
+| 4 | **The unit's MUTE** (`1.0` = AUDIBLE, `0.0` = muted) | START in the catalog, PLAYBACK in the manual, MUTE on the unit's own Tempo page - one control, three names. TRACED: pressing the unit's MUTE button writes `0.0`, pressing it again writes `1.0`. Note it is INVERTED against the label a player sees. This table said the opposite for two releases, having inferred polarity from the Looper X mirror's NAME (METRONOME MUTE) - and that mirror is inverted too |
 | 5 | Pan | PAN |
 | 6 | Time Signature | TIME SIGNATURE |
 | 7 | **Subdivisions** | NOTELENGTH - the names disagree |
@@ -1559,6 +1559,27 @@ its cache; merge only what is present. (This is the documented reason `settings(
 **`GlobalTempo` arrives in pairs because it alternates two shapes** - one push carrying
 `metronome_status`, one carrying the 25 params. Anyone counting messages or diffing
 consecutive pushes should expect the alternation.
+
+## Two parameters called MUTE, with opposite polarities
+
+The single most expensive naming trap found in this project. Both measured on hardware:
+
+| control | wire | `1.0` means |
+|---|---|---|
+| Lane Output `MUTE` | `output_control` param 2 | **muted** (silences that row) |
+| The unit's Tempo-page MUTE | `tempoProgramData` param 4 | **audible** (the click plays) |
+
+The tempo one is inverted against its own on-screen label, and it is the one this library
+published backwards for two releases - which left a 36-preset field build with a faint
+click running on every preset. `set_metronome_muted()` and `set_metronome_running()` both
+exist so callers never have to remember which way the raw value goes; the raw name `"MUTE"`
+is refused by `set_tempo_param()` precisely because honouring it would do the opposite of
+what a caller means.
+
+Two further facts from the same trace: **the unit's Tempo page has no start/stop control at
+all** - the transport always runs, and MUTE is how a player silences it - and **muting a
+lane does not silence the metronome**, which has its own `ROUTING` (param 9) and bypasses
+lane outputs. Lane `SOLO` (param 3) remains unmeasured in either direction.
 
 ## The Grid echo is a sparse KEYED delta - the opposite of a recall
 
@@ -2455,7 +2476,7 @@ mirrors so far:
 
 | preset-level setting | mirrored block parameter |
 |---|---|
-| tempo settings index 4 (the metronome transport, 1.0 = running) | Looper X `METRONOME MUTE` (param 21) - whose NAME is misleading: it follows the transport, so 1.0 there also means running |
+| tempo settings index 4 (the unit's MUTE; 1.0 = audible) | Looper X `METRONOME MUTE` (param 21) - whose NAME is misleading: it tracks param 4 exactly, so 1.0 there also means AUDIBLE. **One press of the unit's MUTE button writes BOTH**, same value, in the same burst - captured |
 
 The list is almost certainly longer; add entries as they are hit. A caution this table
 earned the hard way: a mirror proves two parameters are LINKED and nothing more. Index 4's

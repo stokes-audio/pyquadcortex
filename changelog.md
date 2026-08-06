@@ -16,6 +16,56 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## 0.37.0 - 2026-07-31
+
+The metronome mute, traced on hardware rather than inferred - which closed the question
+0.36.0 answered only half of.
+
+### The unit's MUTE and tempo parameter 4 are the same control
+
+0.36.0 corrected parameter 4's polarity and renamed it `START`/`PLAYBACK`, but left a
+question open: the unit's Tempo page has a MUTE control and nothing in the library mapped to
+it, so a real mute was presumed missing. **It was not missing - it is parameter 4.** Captured
+with a person pressing the unit's own MUTE button:
+
+```
+MUTE on   ->  tempoProgramData{params{index: 4, value: 0}}   + Looper X param 21 -> 0
+MUTE off  ->  tempoProgramData{params{index: 4, value: 1}}   + Looper X param 21 -> 1
+```
+
+One control, three names: **MUTE** on the unit, `START` in the device catalogue, PLAYBACK in
+the manual - and it is INVERTED against the label a player sees, `1.0` being audible. The
+unit has no start/stop control at all; the transport always runs and muting is how a player
+silences it.
+
+### Added
+
+- **`set_metronome_muted(bool)`** - speaks in the label the unit shows, so
+  `set_metronome_muted(True)` silences the click. The exact inverse of
+  `set_metronome_running()`; they are the same parameter and cannot disagree.
+
+### Changed
+
+- `set_tempo_param("MUTE")`'s refusal message was itself wrong: it claimed parameter 4 is
+  "not a mute", which the hardware disproves. It now says what is true - the unit does call
+  it MUTE, it is inverted, so honouring the name would unmute what you asked to mute.
+- **Lane Output `MUTE` polarity measured**: `1.0` = muted, the intuitive direction, by ear.
+  Which makes explicit the worst naming trap here - **two parameters called MUTE with
+  OPPOSITE polarities**, the lane's and the tempo block's. Documented as such in
+  `set_lane_output`, the protocol notes and the ears-only table. Lane `SOLO` remains
+  unmeasured and is now labelled as such rather than left to look verified.
+- Recorded: a lane mute does NOT silence the metronome, which has its own `ROUTING`
+  (parameter 9) and bypasses lane outputs. And the preset's 24th tempo parameter (index 23,
+  absent from the catalogue) stayed untouched through every Tempo-page control traced, so it
+  is not the mute - what it is remains unknown.
+
+### Verification, plainly
+
+Wire-traced this session: the mute's polarity in both directions, the Looper X mirror moving
+in lockstep in the same burst, and the absence of any start/stop control. Measured by ear:
+lane `MUTE` = 1.0 mutes, and the metronome surviving a lane mute. Reasoned from the
+catalogue only: that index 23 exists and is undescribed.
+
 ## 0.36.1 - 2026-07-31
 
 Documentation only, from a listening session at the unit. No code changes.

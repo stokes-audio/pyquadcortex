@@ -927,17 +927,27 @@ class QuadCortex:
     #: but two of its names differ from the screen, so this map is what
     #: :meth:`set_tempo_param` resolves a name through first.
     #:
-    #: Index 4 is the metronome TRANSPORT and **1.0 means RUNNING** - the
-    #: catalog's START name was right all along. This library said the opposite
-    #: for two releases: propagation into a Looper X parameter named METRONOME
-    #: MUTE proved the two are LINKED, and the polarity was then inferred from
-    #: that name - which is the unreliable part. Field evidence settled it: all
-    #: 17 factory presets hold index 4 = 0.0 with VOLUME at a normal level, and
-    #: no factory preset clicks; writing 1.0 started the metronome on 36 presets.
-    #: The name "MUTE" is refused by :meth:`set_tempo_param` for exactly this
-    #: reason - anyone writing MUTE=1.0 expecting silence gets a running click.
-    #: Index 7 is the screen's Subdivisions while the catalog calls it
-    #: NOTELENGTH. Indices 8 and 9 are not in the catalog at all.
+    #: Index 4 is ONE control with THREE names: the unit's Tempo page labels it
+    #: **MUTE**, the device catalog calls it ``START`` (a toggleButton), and the
+    #: manual calls it PLAYBACK. **1.0 is audible, 0.0 is muted** - traced from
+    #: the unit's own MUTE button, which writes 0.0 to mute and 1.0 to unmute, so
+    #: the parameter is INVERTED against the label a player sees. There is no
+    #: separate mute parameter: the unit's Tempo page has no start/stop control at
+    #: all, and the transport is always running.
+    #:
+    #: This library published the polarity backwards for two releases. The
+    #: mistake: propagation into a Looper X parameter named METRONOME MUTE proved
+    #: the two are LINKED, and the polarity was then inferred from that name -
+    #: which is the unreliable part, and the mirror turns out to be inverted too.
+    #: Corrected by three independent measurements: all 17 factory presets hold
+    #: 0.0 here at a normal volume and none clicks; writing 1.0 started the click
+    #: on 36 field-built presets; and a capture of the unit's MUTE button shows
+    #: mute-on writing 0.0.
+    #:
+    #: Index 7 is the screen's Subdivisions while the catalog calls it NOTELENGTH.
+    #: Indices 8 and 9 are not in the catalog at all, and the preset carries a
+    #: 24th parameter (index 23) the catalog does not describe - untouched by any
+    #: Tempo-page control traced so far, so still unattributed.
     #:
     #: Index 1 - the catalog's TYPE - was NOT written by any control in the Tempo
     #: menu. The menu's MODE (global or per preset) broadcasts nothing at all, so it
@@ -997,11 +1007,13 @@ Two of those names disagree with the catalog, which is why the map
             key = param.strip().upper()
             if key == "MUTE":
                 raise ValueError(
-                    "tempo parameter 4 is the metronome TRANSPORT, not a mute, and "
-                    "1.0 means RUNNING - this library documented it backwards for "
-                    "two releases, so the name 'MUTE' is refused rather than "
-                    "silently inverted. Use set_metronome_running(False) to stop "
-                    "the click, or the name 'START' if you mean the raw parameter."
+                    "tempo parameter 4 IS the control the unit labels MUTE - but it "
+                    "is INVERTED against that name: 1.0 is audible and 0.0 is "
+                    "muted (traced from the unit's own MUTE button). So "
+                    "set_tempo_param('MUTE', 1.0) would UNMUTE, which is why the "
+                    "name is refused here rather than silently honoured. Use "
+                    "set_metronome_muted(True) to mute, set_metronome_running(True) "
+                    "to make it audible, or the raw name 'START'/'PLAYBACK'."
                 )
             if key in self.TEMPO_PARAMS:
                 index = self.TEMPO_PARAMS[key]
@@ -1086,8 +1098,12 @@ Two of those names disagree with the catalog, which is why the map
     def set_metronome_running(self, running: bool):
         """Start or stop this preset's metronome.
 
-        Tempo parameter 4 - the manual's PLAYBACK, the catalog's START - where
-        **1.0 is running and 0.0 is stopped**. This is the control to reach for
+        Tempo parameter 4 - the unit's MUTE, the catalog's START, the manual's
+        PLAYBACK, all one control - where **1.0 is audible and 0.0 is silent**.
+        The unit offers no start/stop button; its transport always runs and MUTE
+        is how a player silences it, so :meth:`set_metronome_muted` speaks in the
+        label they see. These two cannot disagree: ``running=True`` is
+        ``muted=False``. This is the control to reach for
         when the click must be OFF: :meth:`set_metronome_volume` cannot silence
         it (its floor is -60 dB, still audible), and two releases of this library
         documented parameter 4 as a mute with the polarity inverted, which parked
@@ -1097,6 +1113,24 @@ Two of those names disagree with the catalog, which is why the map
         "Settings only your ears can verify" in the API guide.
         """
         return self.set_tempo_param("START", value=1.0 if running else 0.0)
+
+    def set_metronome_muted(self, muted: bool):
+        """Mute or unmute this preset's metronome - the unit's own MUTE control.
+
+        The Tempo page on the unit offers exactly one control here, labelled
+        **MUTE**, and it writes tempo parameter 4 INVERTED: mute-on sends 0.0,
+        mute-off sends 1.0 (traced from the hardware). This method speaks in the
+        label a player sees, so ``set_metronome_muted(True)`` silences the click.
+
+        :meth:`set_metronome_running` is the same parameter in wire terms
+        (``running=True`` is ``muted=False``). Use whichever reads better where
+        you are; they cannot disagree.
+
+        Note the unit has no start/stop control - the transport always runs, and
+        muting is how a player silences it. An audible effect: see "Settings only
+        your ears can verify" in the API guide.
+        """
+        return self.set_metronome_running(not muted)
 
     def set_metronome_volume(self, value: float = None, real: float = None):
         """Set this preset's metronome level. **Wire 0.0 is -60 dB, not silence.**
@@ -1303,6 +1337,18 @@ Two of those names disagree with the catalog, which is why the map
         ``VOLUME`` publishes a placeholder catalog range, so ``real=`` raises for it
         rather than converting: :data:`UNITY_LEVEL` is the value it holds when
         nothing is attenuated, and 0.0 is silence.
+
+        **``MUTE`` is 1.0 = MUTED** - the intuitive direction, measured by ear on
+        hardware (a row at 0.0 was audible; 1.0 silenced that path). Worth stating
+        because **the library carries two parameters called MUTE with OPPOSITE
+        polarities**: this one, and the tempo block's parameter 4 (the control the
+        unit's Tempo page labels MUTE) where 1.0 is AUDIBLE. Confusing those cost a
+        36-preset build a running metronome on every preset. ``SOLO`` (index 3) has
+        never been measured either way.
+
+        Muting a lane does NOT silence the metronome: the metronome has its own
+        output routing (tempo parameter 9, ``ROUTING``) and bypasses lane outputs -
+        observed with a lane muted and the click still running.
 
         A keyed parameter write into ``output_control`` persists the same way as
         one into ``models`` (confirmed on hardware). Note the wire carries FIVE
