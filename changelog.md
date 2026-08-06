@@ -38,6 +38,28 @@ transitions: the retry produced the honest "Device is disconnected" twice and th
 0xE0005000 stall-lookalike twice, so nothing branches on the message; the retry exists
 for blip immunity, and "a read raised" is the whole signal.
 
+### The tuner hunt, resolved as far as the firmware allows
+
+A capture session with a person at the unit went looking for the message a physical tuner
+close sends, so a host could send it and undo the invisible engagement. **It sends
+nothing.** Opening emits `Tuner{frequency: 0}` (one per open, two cycles gave two);
+closing emits nothing at all; and the unit's own MUTE control is byte-identical to
+`set_tuner_mute()`, so nothing was being withheld. Replaying the open, `Tuner{DELETE}` and
+`ShowTuner{DELETE}` all left the rig silent. The lossless release genuinely requires a
+human, and no protocol work will change that on d14e.
+
+- **`restore_audio()`** is the host-side escape hatch that DOES work: it clears the mute
+  preference, leaving the unit engaged but audible (engagement alone is harmless, verified
+  by ear). It returns whether it had to act, and it costs the player's silent-tuning
+  preference - the honest tradeoff, documented as one.
+- **`set_tuner_input()` and `set_tuner_mute(True)` now warn** when the write will leave the
+  outputs silent, so the failure that cost a field session a morning announces itself.
+- `show_tuner()`'s docstring stops saying "until the real message is found" and says there
+  is no such message.
+
+Also confirmed by ear this session: the metronome transport polarity (`True` clicked,
+`False` stopped), which had rested on factory-content inference plus a field report.
+
 ### Connect rides through the openable-but-silent window
 
 There is a real window - ~9 s after a reboot, ~11.7 s after a cold boot, measured - where

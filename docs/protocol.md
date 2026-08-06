@@ -1466,9 +1466,33 @@ unit behaves as if the tuner is open - nothing on screen says so - and if the st
 preference is true, THE OUTPUTS ARE SILENT with no visible cause. The state survived ~100
 recalls, 60 saves and every scene switch of a 33-minute build. `ShowTuner{show}` does NOT
 create or release it in either direction (a measured no-op on d14e), and no read exposes
-it - `Tuner{READ}` reports every field faithfully while the rig is silent. The only known
-release is a person opening and closing the tuner on the unit. The message that physical
-close sends is the missing piece; capturing it is queued as a hardware session.
+it - `Tuner{READ}` reports every field faithfully while the rig is silent.
+
+### The disengage message does not exist
+
+A dedicated capture session went looking for what a physical tuner close broadcasts, so a
+host could send it. **It broadcasts nothing at all.** Two captures with a person at the
+unit:
+
+* Opening the tuner emits `Tuner{UPDATE, frequency: 0}` - one per OPEN (two open/close
+  cycles produced exactly two).
+* **Closing it emits nothing.** A capture covering an open, two on-screen MUTE toggles and
+  a close contains only three messages: the open announcement and the two toggles.
+* The unit's own MUTE control sends `Tuner{UPDATE, mute: <bool>}` - byte-identical to what
+  `set_tuner_mute()` sends. There is no hidden field, so the engagement is not caused by
+  anything in the message content; the device simply treats any tuner write as "the tuner
+  is open".
+
+Replaying the open announcement does not release the state, and neither does
+`Tuner{DELETE}` nor `ShowTuner{DELETE}` (both tried, both left the rig silent). So the
+lossless release genuinely requires a human, and no amount of protocol work will change
+that on this firmware.
+
+**What DOES work from the host: clear the mute preference.** Engagement alone is harmless -
+engaged-but-unmuted is fully audible, verified by ear. `restore_audio()` does this, at the
+cost of discarding the player's silent-tuning preference. That tradeoff is the honest
+state of the art here: a host can guarantee the rig makes sound, or preserve the
+preference, but not both.
 
 `Tuner.mute` is writable (the menu's MUTE preference, for silent tuning; it mutes nothing
 by itself). `enable_meter` is NOT: it

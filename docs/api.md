@@ -272,7 +272,7 @@ If your automation touches any of these, hand the final check to a human with ea
 
 | setting | what read-back cannot see |
 |---|---|
-| **Any tuner write** (`set_tuner_input`, `set_tuner_mute`) | engages an INVISIBLE tuner state; with the mute preference true, the outputs are silent with no on-screen cause. Survives recalls, saves and scene switches; only opening and closing the tuner ON THE UNIT releases it. `show_tuner()` does not - it is a measured no-op |
+| **Any tuner write** (`set_tuner_input`, `set_tuner_mute`) | engages an INVISIBLE tuner state; with the mute preference true, the outputs are silent with no on-screen cause. Survives recalls, saves and scene switches. **Call `restore_audio()` afterwards** - it clears the preference, which is the only host-side release (the physical close broadcasts nothing, so there is no message to send). Both setters now warn when a write will leave the rig silent |
 | **Metronome transport** (tempo parameter 4, `set_metronome_running`) | 1.0 is RUNNING. Whether a click is actually sounding is not represented anywhere a read reaches |
 | **Metronome level** (`set_metronome_volume`) | wire 0.0 is -60 dB, quiet but audible - not silence. The value reads back perfectly while the click ticks on |
 

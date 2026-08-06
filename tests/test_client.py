@@ -1192,6 +1192,36 @@ def test_preset_dirty_reads_and_treats_absent_as_false():
     assert qc2.preset_dirty() is False
 
 
+def test_restore_audio_clears_the_mute_preference_only_when_set():
+    """The only host-side release from the invisible tuner engagement."""
+    muted = pa.TunerMessage(action=pa.MessageAction.UPDATE, input_port_id=1,
+                            mute=True)
+    qc = client.QuadCortex(StateTransport(muted))
+    import warnings as _w
+    with _w.catch_warnings():
+        _w.simplefilter("error")           # the remedy must not warn
+        assert qc.restore_audio() is True
+    assert qc._t.sent[-1].mute is False
+
+    clean = pa.TunerMessage(action=pa.MessageAction.UPDATE, input_port_id=1)
+    qc2 = client.QuadCortex(StateTransport(clean))
+    assert qc2.restore_audio() is False
+    assert not any(isinstance(m, pa.TunerMessage)
+                   and m.action == pa.MessageAction.UPDATE and m.HasField("mute")
+                   for m in qc2._t.sent), "nothing written when already audible"
+
+
+def test_tuner_writes_warn_when_they_will_silence_the_rig():
+    muted = pa.TunerMessage(action=pa.MessageAction.UPDATE, input_port_id=1,
+                            mute=True)
+    qc = client.QuadCortex(StateTransport(muted))
+    with pytest.warns(UserWarning, match="go silent"):
+        qc.set_tuner_input(2)
+    qc2 = client.QuadCortex(FakeTransport())
+    with pytest.warns(UserWarning, match="SILENCES"):
+        qc2.set_tuner_mute(True)
+
+
 def test_power_option_enum_matches_the_schema():
     from pyquadcortex import PowerOption
     wire = {v.name: v.number for v in

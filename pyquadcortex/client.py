@@ -30,6 +30,7 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 
 import time
 import uuid
+import warnings
 from typing import NamedTuple
 
 from pyquadcortex import catalog, enums, registry
@@ -1078,7 +1079,9 @@ Two of those names disagree with the catalog, which is why the map
         when the click must be OFF: :meth:`set_metronome_volume` cannot silence
         it (its floor is -60 dB, still audible), and two releases of this library
         documented parameter 4 as a mute with the polarity inverted, which parked
-        36 field-built presets at "running, quietly". An audible effect - see
+        36 field-built presets at "running, quietly". **Confirmed by ear**, not
+        only by the factory-content argument: ``True`` produced an audible click
+        and ``False`` stopped it, with a person listening at the unit. An audible effect - see
         "Settings only your ears can verify" in the API guide.
         """
         return self.set_tempo_param("START", value=1.0 if running else 0.0)
@@ -1976,9 +1979,14 @@ Two of those names disagree with the catalog, which is why the map
         ``show_tuner(False)`` did NOT release the invisible engaged-tuner state
         that :meth:`set_tuner_input`/:meth:`set_tuner_mute` create - it is not the
         escape hatch it looks like, and believing it was cost that session a
-        debugging round. Kept only until the real open/close message is found (a
-        capture of the unit's own broadcast is the planned route); do not build
-        on it.
+        debugging round.
+
+        And there is nothing better to find: a capture session established that a
+        physical tuner close broadcasts NOTHING, so no host message opens or
+        closes the tuner on this firmware. `Tuner{DELETE}` and
+        `ShowTuner{DELETE}` were tried too, and left the rig silent. Use
+        :meth:`restore_audio` to get sound back. This method is kept only so the
+        no-op is documented rather than rediscovered; do not build on it.
         """
         return self._t.send(pa.ShowTunerMessage(action=pa.MessageAction.UPDATE,
                                                 show=shown))
@@ -2000,6 +2008,7 @@ Two of those names disagree with the catalog, which is why the map
         the state. Full description on :meth:`set_tuner_mute`; list entry under
         "Settings only your ears can verify" in the API guide.
         """
+        self._warn_if_tuner_write_silences()
         return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
                                             input_port_id=input_port_id))
 
@@ -2015,13 +2024,65 @@ Two of those names disagree with the catalog, which is why the map
         with no visible cause. Field-measured: the state survived ~100 recalls, 60
         saves and every scene switch of a 33-minute build, read-back is blind to
         it (this flag reads back exactly as written while the rig is silent), and
-        the ONLY known release is a person opening and closing the tuner on the
-        unit - :meth:`show_tuner` does not do it. Until the disengage message is
-        found, treat any tuner write as "the rig needs a human touch afterwards".
-        See "Settings only your ears can verify" in the API guide.
+        the lossless release is a person opening and closing the tuner on the
+        unit - :meth:`show_tuner` does not do it, and **no disengage message
+        exists**: a capture session established that the physical close
+        broadcasts nothing at all, so a host cannot send it.
+
+        From the host, :meth:`restore_audio` is the escape hatch - it clears this
+        preference, leaving the unit engaged but AUDIBLE (engagement alone is
+        harmless, verified by ear). The cost is the preference itself. Call it at
+        the end of anything that touches the tuner. See "Settings only your ears
+        can verify" in the API guide.
         """
+        if muted:
+            warnings.warn(
+                "set_tuner_mute(True) engages the tuner invisibly and SILENCES "
+                "the outputs, with nothing on screen to explain it. Call "
+                "restore_audio() when done, or have someone close the tuner on "
+                "the unit (the only release that keeps the preference).",
+                stacklevel=2,
+            )
         return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
                                             mute=muted))
+
+    def _warn_if_tuner_write_silences(self):
+        """Warn when a tuner write is about to leave the outputs muted."""
+        try:
+            muted = self.tuner(timeout=3.0).mute
+        except Exception:
+            return          # never let the courtesy check break the write
+        if muted:
+            warnings.warn(
+                "this tuner write engages the tuner invisibly, and the mute "
+                "preference is currently SET, so the outputs will go silent with "
+                "nothing on screen to explain it. Call restore_audio() when done.",
+                stacklevel=3,
+            )
+
+    def restore_audio(self, timeout: float = 10.0) -> bool:
+        """Undo the silence a host tuner write causes. Returns True if it acted.
+
+        Any host write to the Tuner engages an invisible tuner state, and while
+        the mute PREFERENCE is set that state silences the outputs with nothing
+        on screen to explain it (see :meth:`set_tuner_mute`). This is the only
+        host-side release: it clears the preference, which leaves the unit
+        engaged-but-audible - measured, engagement alone is harmless.
+
+        **The cost is real:** it discards the player's silent-tuning preference,
+        so the next time they open the tuner it will not mute. The lossless
+        release is a person closing the tuner on the unit, which restores audio
+        AND keeps the preference. There is no message for that close - it
+        broadcasts nothing at all (captured twice), so a host cannot send it.
+
+        Call this at the end of anything that touched the tuner, or leave the
+        preference off for the whole run. An automated build has no business
+        leaving an instrument silent.
+        """
+        if not self.tuner(timeout=timeout).mute:
+            return False
+        self.set_tuner_mute(False)
+        return True
 
     def looper(self, timeout: float = 10.0):
         """The Looper X block's state, if one is on the grid.
