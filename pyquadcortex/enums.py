@@ -189,6 +189,19 @@ def describe_mode(value: int) -> str:
         return f"unknown mode value {value}"
 
 
+class RecallReason(IntEnum):
+    """Why a ``RecallPreset`` push happened (``RecallPresetMessage.reason``).
+
+    Populated on real pushes, including the connect seed. Measured on hardware:
+    a host recall and a READ reply carry OTHER; the push a save emits carries
+    SAVE; UNDO is defined in the schema but has not been observed yet.
+    """
+
+    OTHER = 0
+    UNDO = 1
+    SAVE = 2
+
+
 class Footswitch(IntEnum):
     """The eight footswitches, as ``stomp_index`` numbers them.
 

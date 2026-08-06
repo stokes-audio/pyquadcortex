@@ -753,6 +753,24 @@ class QuadCortex:
         model_msg.hash = 0
         return self._t.send(msg)
 
+    def preset_dirty(self, timeout: float = 5.0) -> bool:
+        """Whether the live grid has unsaved changes. Fast and cheap to poll.
+
+        ``PresetDirty{READ}`` answers as an UPDATE echoing ``request_id``, in
+        2-11 ms across every measured poll (two independent hardware sessions).
+        Reads true after an edit and false after a clean save - confirmed by
+        watching it flip across a save. Also pushed unsolicited in the connect
+        burst and on edits, so state trackers can subscribe rather than poll.
+
+        ``is_dirty`` has no field presence, so absent simply IS false - do not
+        try to distinguish them. And like most reads here, the FIRST request
+        after connecting is sometimes dropped; this raises ``TimeoutError`` in
+        that case, and asking again is the fix.
+        """
+        reply = self._t.request(
+            pa.PresetDirtyMessage(action=pa.MessageAction.READ), timeout=timeout)
+        return bool(reply.is_dirty)
+
     def read_current_preset(self, timeout: float = 15.0):
         """The LIVE grid - the current editing state, unsaved changes included.
 
@@ -763,6 +781,12 @@ class QuadCortex:
         scratch slot just to see what the device holds, and it distinguishes "my
         write never applied" from "it applied and was later reset", which
         :meth:`read_preset` cannot do.
+
+        The reply also carries ``reason`` (:class:`~pyquadcortex.RecallReason`):
+        why the preset last changed. Measured: a host recall and a plain READ
+        both report ``OTHER``; the push emitted by a save reports ``SAVE``;
+        ``UNDO`` is defined but not yet observed. State trackers watching
+        RecallPreset pushes can use it to tell a save's echo from a real recall.
 
         Contrast with :meth:`read_preset`, which reads a STORED slot - and which
         RECALLS that slot as a side effect, discarding unsaved edits and resetting
@@ -1650,7 +1674,9 @@ Two of those names disagree with the catalog, which is why the map
         ``screen_brightness``, ``led_brightness``, ``scene_block_bypass``,
         ``global_bypass_cab``/``_ir``, ``stomp_mode_auto_assign``,
         ``swap_tempo_tuner_access``, ``enable_dynamic_delay_compensation``,
-        ``hold_timing``, MIDI channel and clock settings, ``power_option``,
+        ``hold_timing``, ``lock_screen_and_volume_knob`` (the unit's lock mode -
+        present and readable; writing it is untested), MIDI channel and clock
+        settings, ``power_option``,
         ``master_volume_assignment`` (the per-output checkboxes) and the
         ``available_disk_space``/``total_disk_space`` pair, among others.
 

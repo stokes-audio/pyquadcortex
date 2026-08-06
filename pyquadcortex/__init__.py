@@ -19,6 +19,7 @@ __version__ = "0.35.0"
 # Applications that want our logs can configure the "pyquadcortex" logger.
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
+from pyquadcortex.transport import DeviceLostError
 from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL,
                                  db_to_input_level, input_level_db,
                                  USER_SETLIST_ROOT, Block,
@@ -33,7 +34,7 @@ from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL,
                                  stomp_assignments)  # noqa: E402
 from pyquadcortex.enums import (BROKEN_MODE_VALUE, Footswitch, FootswitchMode,
                                 HYBRID_MODES, Input, Instrument, MidiOutType,
-                                describe_mode, hybrid_mode,
+                                describe_mode, hybrid_mode, RecallReason,
                                 ExpressionBypassMode, GlobalEQFilter, LooperState,
                                 MetronomeRouting, MetronomeSound, MidiSource,
                                 Output, Scene,
@@ -67,6 +68,7 @@ __all__ = [
     "HYBRID_MODES",
     "hybrid_mode",
     "describe_mode",
+    "RecallReason",
     "BROKEN_MODE_VALUE",
     "MidiSource",
     "MidiOutType",
@@ -91,6 +93,7 @@ __all__ = [
     "tempo_params",
     "BlockRefused",
     "UNITY_LEVEL",
+    "DeviceLostError",
     "input_level_db",
     "db_to_input_level",
     "SCENE_UNLABELLED",

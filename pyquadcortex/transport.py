@@ -68,6 +68,24 @@ _MAX_MESSAGE_BODY = 1 << 20  # bytes of reassembled body tolerated per message
 _MAX_REPORTS_PER_MESSAGE = math.ceil(_MAX_MESSAGE_BODY / framing.CHUNK_SIZE)
 
 
+class DeviceLostError(ConnectionError):
+    """The USB device is gone: two consecutive HID reads failed.
+
+    Raised by every transport entry point once loss is confirmed, carrying the
+    SECOND read error's message. The second, because the first is a liar: the
+    first read exception after an unplug carried "IOHIDDeviceSetReport failed:
+    (0xE0005000)" - byte-identical to the benign write STALL - while the very
+    next read said "Device is disconnected". Measured on macOS by unplugging
+    mid-session.
+
+    The asymmetry worth remembering: **a READ raising means the device is gone;
+    a WRITE raising means nothing at all.** Every write to a healthy QC "fails"
+    (the status-stage STALL; 91 write errors and 0 read errors over one measured
+    145-second healthy session), and the two can carry identical text - the
+    distinguishing fact is which call raised, never the message.
+    """
+
+
 class Transport:
     """Correlated request/response transport over an hidapi-like device."""
 
@@ -90,6 +108,9 @@ class Transport:
         self._write_lock = threading.Lock()
         self._running = False
         self._stop_event = threading.Event()
+        # Set to the confirming exception once the device is lost. Written only
+        # by the RX thread; read everywhere. See device_lost / _confirm_lost.
+        self._device_lost = None
         self._rx_buffer = []  # reports accumulated for the in-progress message
         self._rx = threading.Thread(
             target=self._read_loop, name="qcctl-rx", daemon=True
@@ -123,6 +144,34 @@ class Transport:
                 if thread.is_alive() and thread is not threading.current_thread():
                     thread.join(timeout=join_timeout)
 
+    # -- device loss -----------------------------------------------------------
+
+    @property
+    def device_lost(self):
+        """The exception that confirmed device loss, or ``None`` while healthy."""
+        return self._device_lost
+
+    def _check_lost(self):
+        if self._device_lost is not None:
+            raise DeviceLostError(
+                f"the USB device is gone ({self._device_lost}); reconnect and "
+                f"build a new Transport"
+            ) from self._device_lost
+
+    def _confirm_lost(self, error):
+        """Record loss and fail every blocked waiter fast (RX thread only)."""
+        self._device_lost = error
+        log.warning("device lost: %s", error)
+        with self._lock:
+            pending, self._pending = self._pending, {}
+            waiters, self._type_waiters = self._type_waiters, []
+        # Slots stay None; the woken callers see device_lost set and raise
+        # DeviceLostError instead of returning None or waiting out a timeout.
+        for ev, _slot, _cls in pending.values():
+            ev.set()
+        for _cls, _match, ev, _slot in waiters:
+            ev.set()
+
     # -- outbound ------------------------------------------------------------
 
     def send(self, message):
@@ -134,6 +183,7 @@ class Transport:
         would corrupt both, since continuation reports carry no header. Encoding
         happens outside the lock to keep the critical section to device I/O only.
         """
+        self._check_lost()
         msg_type = registry.type_for(type(message))
         reports = framing.encode_message(msg_type, message.SerializeToString())
         with self._write_lock:
@@ -150,8 +200,10 @@ class Transport:
         on). Host HID stacks surface that stall as a write error (hidapi
         returns -1 on Windows; IOKit raises 0xE0005000 on macOS), so a "failed"
         write here is EXPECTED and means the report was delivered. Errors are
-        logged at debug and swallowed; a genuinely dead device shows up as
-        request() timeouts, not write errors.
+        logged at debug and swallowed. A genuinely dead device is detected by the
+        RX loop (a READ raising twice) and surfaces as :class:`DeviceLostError`
+        on the next transport call - never by write errors, whose text can be
+        byte-identical to loss.
         """
         try:
             self._dev.write(report)
@@ -185,6 +237,7 @@ class Transport:
         the first inbound message whose TYPE matches the request's, and whose
         request_id - if present on both sides - matches too.
         """
+        self._check_lost()
         ev = threading.Event()
         slot = [None]
         with self._lock:
@@ -210,7 +263,10 @@ class Transport:
                 ev.wait(_DELIVERY_GRACE)
             if slot[0] is not None:
                 return slot[0]
+            self._check_lost()
             raise TimeoutError(f"no response for request_id={rid}")
+        if slot[0] is None:
+            self._check_lost()   # woken by _confirm_lost, not by a reply
         return slot[0]
 
     def collect(self, expected_class, trigger, seconds, match=None):
@@ -224,6 +280,7 @@ class Transport:
         Returns the messages in arrival order. Unlike a waiter, a collector does
         not consume messages - they still reach any waiter or other collector.
         """
+        self._check_lost()
         got = []
         entry = (expected_class, match, got)
         with self._lock:
@@ -232,6 +289,8 @@ class Transport:
             trigger()
             deadline = time.monotonic() + seconds
             while time.monotonic() < deadline:
+                if self._device_lost is not None:
+                    break        # nothing more is coming; return what arrived
                 time.sleep(0.1)
         finally:
             with self._lock:
@@ -257,6 +316,7 @@ class Transport:
         observed), hence the generous default timeout. Raises ``TimeoutError``
         on no matching broadcast.
         """
+        self._check_lost()
         ev = threading.Event()
         slot = [None]
         entry = (expected_class, match, ev, slot)
@@ -275,9 +335,12 @@ class Transport:
                     self._type_waiters.remove(entry)
             if slot[0] is not None:
                 return slot[0]  # landed in the timeout/removal race window
+            self._check_lost()
             raise TimeoutError(
                 f"no {expected_class.__name__} broadcast within {timeout}s"
             )
+        if slot[0] is None:
+            self._check_lost()   # woken by _confirm_lost, not by a broadcast
         return slot[0]
 
     # -- inbound -------------------------------------------------------------
@@ -286,12 +349,27 @@ class Transport:
         while self._running:
             try:
                 report = self._dev.read(_READ_SIZE, _READ_TIMEOUT_MS)
-            except Exception:
-                # A device read failure must not kill the RX thread; log, drop
-                # any partial buffer, and try again.
-                log.exception("HID read failed; resetting reassembly buffer")
+            except Exception as first:
+                # A READ raising is the device-loss signal (writes raise on every
+                # healthy message - the QC's status-stage STALL - so a write error
+                # means nothing; measured: 91 write errors, 0 read errors, in one
+                # healthy 145 s session). But the FIRST read error after an unplug
+                # is a liar: it carried the same 0xE0005000 text as the benign
+                # write stall, while the NEXT read said "Device is disconnected".
+                # So retry once - a success means a transient blip; a second
+                # failure confirms loss and its message is the honest one.
+                try:
+                    report = self._dev.read(_READ_SIZE, _READ_TIMEOUT_MS)
+                except Exception as second:
+                    self._confirm_lost(second)
+                    # The RX thread never dies - but there is nothing left to
+                    # read, so wait quietly instead of spinning on a dead handle.
+                    self._stop_event.wait()
+                    return
+                log.debug("HID read failed once, then recovered; treating as a "
+                          "transient blip and resetting the reassembly buffer "
+                          "(first error: %s)", first)
                 self._rx_buffer = []
-                continue
 
             if not report:
                 continue
@@ -438,8 +516,16 @@ class Transport:
                 return
             if not self._running:
                 return
+            if self._device_lost is not None:
+                # Nothing to keep alive; wait for stop() rather than raising a
+                # DeviceLostError into the log every interval.
+                self._stop_event.wait()
+                return
             try:
                 self.send(pa.KeepAliveMessage(action=pa.MessageAction.UPDATE))
+            except DeviceLostError:
+                self._stop_event.wait()
+                return
             except Exception:
                 # A keepalive failure must not kill the keepalive thread.
                 log.exception("keepalive send failed")
