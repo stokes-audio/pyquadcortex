@@ -16,7 +16,11 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
-## Unreleased
+## 0.36.0 - 2026-07-31
+
+Three field reports and a hardware session. The theme is settings whose only symptom is
+audio, and the corrections are to this library's own earlier claims as often as to the
+device's behaviour.
 
 A third field report - the same 36-preset build, now including a day of debugging with a
 person at the unit - found the failure shape that matters most on a musical instrument:
