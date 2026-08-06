@@ -697,9 +697,11 @@ get a preset, change it, and call `save()`.
 **Two ways to save.**
 
 - `save()` writes back to the same slot under the same name. Confirmed safe: re-saving
-  the same name to the same slot does not make the unit append a `_2` suffix.
-- `save_as(name)` writes to a new slot or name. The unit renames on collision, so this
-  returns the name the unit actually stored, not the one you asked for.
+  the same name to the same slot is *not* treated as a collision, so the unit does not
+  append a `_2` suffix.
+- `save_as(name)` writes to a new slot or name, and that *can* collide - the unit renames
+  rather than refusing. So the returned `UserPresetEntry` is the authority on what was
+  actually stored: read `entry.name`, not the name you passed in.
 
 **Factory presets.** You can edit a factory preset on the grid and hear the change; you
 just cannot save it in place. Part I already handles this by type - `FactoryPreset` has
