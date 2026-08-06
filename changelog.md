@@ -28,15 +28,17 @@ disconnect, a reconnect with its full handshake and state flood, and a plain
 about a second, because loading a preset reloads the engine - the same gap a footswitch
 preset change makes, so expected device behaviour rather than a fault.
 
-The consequence worth shipping: **`read_preset()` recalls, so it stutters a rig somebody is
-playing** - already known to reset the active scene and discard unsaved edits, and now known
-to interrupt sound too. It is the wrong call to use in a loop against a live rig;
-`read_current_preset()` reads the live grid with no side effects at all. Recorded in
-`set_bypass`-adjacent docs, `read_preset`'s docstring, the protocol notes, and the
-"Settings only your ears can verify" table.
+**And it happens on every recall, including a redundant one.** A follow-up test - four
+consecutive recalls, three of them the same already-loaded preset - cut the audio all four
+times; only the duration varied, the genuine preset change being longer. An earlier guess
+that a redundant recall was free came from not listening for it, and is retracted.
 
-(A second recall moments later produced no audible gap, which fits the interruption scaling
-with how much chain the engine must rebuild - stated as a hypothesis, not a measurement.)
+The consequence worth shipping: **`read_preset()` recalls, so a verify-by-re-reading loop
+stutters a rig on EVERY iteration**, even when it reads the same slot and nothing changes -
+on top of resetting the active scene and discarding unsaved edits, both already known.
+`read_current_preset()` reads the live grid with no side effects at all. Recorded in
+`read_preset`'s docstring, the protocol notes, and the "Settings only your ears can verify"
+table.
 
 ## 0.36.0 - 2026-07-31
 

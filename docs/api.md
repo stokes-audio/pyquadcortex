@@ -276,7 +276,7 @@ If your automation touches any of these, hand the final check to a human with ea
 | **Metronome transport** (tempo parameter 4, `set_metronome_running`) | 1.0 is RUNNING. Whether a click is actually sounding is not represented anywhere a read reaches |
 | **Metronome level** (`set_metronome_volume`) | wire 0.0 is -60 dB, quiet but audible - not silence. The value reads back perfectly while the click ticks on |
 
-| **Any preset recall** (`recall_preset`, and `read_preset` which recalls) | briefly interrupts the audio - about a second, because loading a preset reloads the engine. Expected device behaviour, the same gap a footswitch preset change makes, but it means `read_preset` in a loop stutters a rig somebody is playing. `read_current_preset()` has no side effects |
+| **Any preset recall** (`recall_preset`, and `read_preset` which recalls) | interrupts the audio EVERY time - including a redundant recall of the preset already loaded (measured across four consecutive recalls; only the duration varies, a real change being longer). Loading a preset reloads the engine, so it is expected behaviour - but a verify-by-re-reading loop on `read_preset` stutters a rig on every iteration. `read_current_preset()` has no side effects |
 
 Honourable mention, already documented elsewhere: a lane routed to `out_portid` 16-18
 (internal row-to-row routing) can be "muted" without silencing anything a jack carries.

@@ -1603,10 +1603,19 @@ Confirmed live by switching scenes between reads. `active_scene()` wraps it.
 
 **`read_preset()` RECALLS the slot it reads** - that was already documented - and the
 recall **resets the active scene to the preset's default, discards unsaved edits, and
-briefly interrupts the audio** (about a second, verified by ear: a recall reloads the
-engine, the same gap a footswitch preset change makes). A second recall moments later did
-NOT produce an audible gap, which fits the interruption scaling with how much chain the
-engine has to rebuild - that part is a hypothesis, not a measurement.
+interrupts the audio**.
+
+**Every recall interrupts audio, including a redundant recall of the preset already
+loaded.** Measured by ear across four consecutive recalls with a player at the rig: three
+of the same factory preset and one genuine change, and all four cut the sound. Only the
+DURATION varies - the genuine preset change was noticeably longer than the redundant
+recalls, which still cut out audibly. (An earlier session guessed a redundant recall was
+free; deliberate listening says otherwise. It was an observation made while not listening
+for it.)
+
+The consequence for anything automating a rig somebody is playing: a verify-by-re-reading
+loop built on `read_preset()` stutters the audio on EVERY iteration, even when it reads the
+same slot and nothing changes. `read_current_preset()` is the side-effect-free read.
 The consequence bites hard: a `read_preset` interleaved between `switch_scene` and a
 scene-targeted write silently retargets that write at the default scene. This manufactured
 a false protocol finding here (see the bypass section below) and very likely produced a

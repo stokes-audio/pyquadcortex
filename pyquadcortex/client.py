@@ -322,13 +322,16 @@ class QuadCortex:
         side-effect-free read); the device services the push lazily (10-25s
         observed), hence the generous timeout.
 
-        **The recall briefly interrupts the audio** - about a second, verified by
-        ear, because loading a preset reloads the engine. It is the same gap a
-        player hears changing presets by footswitch, so it is expected device
-        behaviour rather than a fault, but it makes this the wrong call to use in
-        a loop against a rig somebody is playing. It also resets the active scene
-        and discards unsaved edits. Use :meth:`read_current_preset` for
-        inspection: it reads the live grid with no side effects at all.
+        **The recall INTERRUPTS THE AUDIO - every time, including when it recalls
+        the preset already loaded.** Measured by ear across four consecutive
+        recalls: three redundant ones of the same preset and one genuine change,
+        and all four cut the sound; only the duration differed (the real change
+        was longer). Loading a preset reloads the engine, so this is expected
+        device behaviour rather than a fault - but it means a verify-by-re-reading
+        loop built on this method stutters a rig on EVERY iteration, even when
+        nothing changes. It also resets the active scene and discards unsaved
+        edits. Use :meth:`read_current_preset` for inspection: it reads the live
+        grid with no side effects at all.
 
         Correlation, confirmed on hardware: the RecallPreset push a host
         recall triggers echoes that recall's ``request_id``, while the
@@ -799,8 +802,8 @@ class QuadCortex:
 
         Contrast with :meth:`read_preset`, which reads a STORED slot - and which
         RECALLS that slot as a side effect, discarding unsaved edits, resetting
-        the active scene to the preset's default, and **briefly interrupting the
-        audio** (a recall reloads the engine; verified by ear, about a second). Interleaving it with
+        the active scene to the preset's default, and **interrupting the audio
+        every time** - even when it recalls the preset already loaded. Interleaving it with
         scene-targeted writes silently retargets them; use this method for
         inspection during editing.
         """
