@@ -614,11 +614,12 @@ hand back a value with a "might be stale" caveat.
    that the RX thread can never block or die.
 6. **Reconnecting discards everything**, firmware and serial included - see
    [§12](#12-disconnect-standby-and-reconnect).
-7. **The tempo stream is not a change signal.** With the metronome transport running -
-   which is its normal state, at a volume floor of -60 dB rather than silence -
-   `GlobalTempo` arrives in pairs, one pair per beat (measured 1.5 s apart at 40 bpm).
-   Treating every inbound message as "something changed, go re-read" would have had the
-   model re-reading constantly for no reason. Applying pushes as data does not care.
+7. **The tempo stream is not a change signal.** The metronome transport always runs - the
+   unit has no start/stop control at all, and what silences it is a separate MUTE - so
+   `GlobalTempo` arrives in pairs, one pair per beat (measured 1.5 s apart at 40 bpm), on
+   every connection. Treating every inbound message as "something changed, go re-read"
+   would have had the model re-reading constantly for no reason. Applying pushes as data
+   does not care.
 
 ## 10. Writing, and knowing a write landed
 
