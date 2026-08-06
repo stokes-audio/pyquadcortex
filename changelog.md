@@ -16,9 +16,11 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
-## Unreleased
+## 0.36.1 - 2026-07-31
 
-### Documented: a preset recall briefly interrupts the audio
+Documentation only, from a listening session at the unit. No code changes.
+
+### A preset recall interrupts the audio - every recall, including a redundant one
 
 Chased with a person playing through the rig, after an unexplained one-second dropout in an
 earlier session. Seven candidate causes were eliminated by ear - block parameter writes,
