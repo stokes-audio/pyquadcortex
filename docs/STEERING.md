@@ -116,6 +116,24 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-08-06 - Domain model Part II: state tracking and save behavior
+
+**What changed:**
+- `docs/domain-model.md`: Part II replaces its stub - how the model keeps its cached facts current (§9), write verification via the unit's own echo (§10), the save lifecycle (§11), and disconnect/standby/reconnect (§12), with the breadth the hardware session did not reach named explicitly in §13
+- Part I forward references resolved in the same pass: `DeviceLostError` replaces the placeholder `NotConnectedError` in §8, writes to an inactive scene are refused, and the appendix's *Part II* rows now point at §13 or the section that answers them
+
+**Why:**
+- M0 Epic (stokes-audio/pyquadcortex#2), Story #4. Both of the Epic's empirical questions were answered on hardware (`d14e` / CorOS 4.0.1) rather than carried as M1 risks: unsaved-change detection is readable and pushed, and device loss is detectable for free because a HID read raising means the device is gone while a write raising means nothing
+
+**Scope of impact:**
+- **Updated:** domain-model.md, STEERING.md
+- **Not updated (intentionally):** ADR.md - the behavioral decisions (optimistic writes confirmed by echo, abandon-on-switch matching the unit, transparent reconnect) are design choices recorded in the doc, not reversals of a prior decision; CLAUDE.md - still no model code, so no new imperatives; protocol.md and the coverage table - the session's protocol-layer findings were handed to the protocol work and shipped there, not duplicated here
+
+**Downstream to consider:**
+- §13's open items are the natural first jobs for ADR-0005's hardware suite rather than more one-off scripts; the write-echo check that produced §10's latencies already snapshots, writes, verifies, and restores
+- The design assumes the protocol layer's `DeviceLostError`, `preset_dirty()`, `RecallReason` and `handshake_patience`, so M1 depends on those staying public
+- Whether host writes are honoured during standby is untested, and a script can talk to a sleeping unit over a healthy connection - worth closing before M1 exposes `power_state`
+
 ### 2026-08-05 - Domain model structural design + ADR-0006 (namespace flip at M1)
 
 **What changed:**
