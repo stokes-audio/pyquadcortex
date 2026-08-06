@@ -78,7 +78,7 @@ def open_device():
 
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
-            handshake_patience: float = 15.0) -> QuadCortex:
+            handshake_patience: float = 30.0) -> QuadCortex:
     """Open a Quad Cortex and return a connected, ready-to-use client.
 
     Finds and opens the device, starts the transport, and performs the connect
@@ -98,12 +98,13 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
             needs a moment before it treats the client as connected; lowering
             this makes the first command less reliable.
         handshake_patience: total seconds to keep re-attempting the handshake
-            when the device is OPENABLE BUT SILENT. That window is real: after a
-            reboot the control protocol did not answer for ~9 seconds past
-            enumeration, and ~11.7 seconds after a cold boot - a successful open
-            proves nothing about readiness. Each attempt restarts the full
-            handshake (safe: it begins with a fresh session id). Set to 0 for
-            the old single-attempt behaviour.
+            when the device is OPENABLE BUT SILENT. That window is real and
+            varies: ~9-12 s post-enumeration in one session's measurements, and
+            ~17 s in a live host-triggered reboot here - a successful open
+            proves nothing about readiness, and a 15 s budget was measured
+            failing, which is why the default is 30. Each attempt restarts the
+            full handshake (safe: it begins with a fresh session id). Set to 0
+            for the old single-attempt behaviour.
 
     Returns:
         A connected :class:`~pyquadcortex.client.QuadCortex`.
@@ -131,9 +132,9 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
                         f"the device is enumerated and open but the control "
                         f"protocol did not answer in {attempt} handshake "
                         f"attempt(s) over {handshake_patience:.0f}s. This "
-                        f"openable-but-silent window lasts ~9-12s after a "
-                        f"reboot or cold boot; if it persists longer, see the "
-                        f"USB-link-death section of troubleshooting.md."
+                        f"openable-but-silent window has measured 9-17s after a "
+                        f"reboot or cold boot; if it persists far longer, see "
+                        f"the USB-link-death section of troubleshooting.md."
                     ) from None
         # Say goodbye BEFORE the transport and handle go away, since the send needs
         # a live transport. close() pops this list, so appending last runs it first.

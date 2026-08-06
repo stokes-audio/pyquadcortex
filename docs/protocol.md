@@ -1519,9 +1519,10 @@ So one field distinguishes "asleep" (it told you) from "gone" (it did not).
 
 **Recovery is two-phase and self-healing.** After a reboot: ~39 s not enumerated, ~9 s
 openable-but-silent, then a ~2 s handshake - about 55 s unattended. After a cold boot:
-~11.7 s openable-but-silent once enumerated. The openable-but-silent window is why
-`connect()` retries the handshake (`handshake_patience`): a successful open proves
-nothing about readiness. This is all much faster than the ~2.5 minutes
+~11.7 s openable-but-silent once enumerated - and a live host-triggered reboot here
+measured **~17 s**, so the window varies by a factor of two across sessions. It is why
+`connect()` retries the handshake (`handshake_patience`, default 30 s - a 15 s budget was
+measured failing): a successful open proves nothing about readiness. This is all much faster than the ~2.5 minutes
 troubleshooting.md warns about - that warning concerns the USB-link-death fault, a
 different failure.
 

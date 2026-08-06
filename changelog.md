@@ -44,8 +44,14 @@ There is a real window - ~9 s after a reboot, ~11.7 s after a cold boot, measure
 the device is enumerated and openable but the control protocol does not answer, so a
 successful open proves nothing about readiness. `connect()` now retries the full
 handshake (each attempt starts a fresh session id) for up to `handshake_patience`
-seconds, 15 by default; the give-up error names the window and points at
-troubleshooting when the silence outlasts it.
+seconds, 30 by default; the give-up error names the window and points at
+troubleshooting when the silence outlasts it. The default was 15 for about an hour -
+then an end-to-end verification (host-triggered reboot, unattended reconnect) measured
+this unit's window at ~17 s and the 15 s budget failing, so the report's ~12 s estimate
+and the first default were both too optimistic. The whole loss-and-recovery path is now
+verified live: `DeviceLostError` fired on a real reboot carrying exactly the misleading
+stall-lookalike text the correction predicted, and `connect()` rode the window
+unattended.
 
 ### Added (for state tracking, second batch)
 
