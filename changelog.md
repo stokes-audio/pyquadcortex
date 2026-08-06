@@ -23,6 +23,33 @@ person at the unit - found the failure shape that matters most on a musical inst
 writes that are accepted, read back perfectly, and leave the rig silent or clicking.
 Items overlapping the second report shipped in 0.35.0; this entry is what is new.
 
+### Transport: device loss is now reported, not swallowed
+
+Unplugging the USB cable used to leave the RX thread spinning silently against a dead
+handle, with callers finding out only through eventual timeouts. Now: a read failure is
+retried once (a lone blip is transient - measured, the first error after an unplug
+carries the same text as the benign write STALL, and only the second says "Device is
+disconnected"); two failures in a row confirm loss. Every transport call then raises
+**`DeviceLostError`** carrying the honest second message, blocked requests are woken to
+fail fast instead of waiting out their timeouts, and the RX and keepalive threads wait
+quietly. The asymmetry is documented where it matters: a READ raising means the device is
+gone, a WRITE raising means nothing at all, and the text is identical either way - which
+call raised is the only signal.
+
+### Added (for state tracking)
+
+- **`preset_dirty()`** - whether the live grid has unsaved changes. Answers in 2-11 ms,
+  flips false across a save (verified live), and is also pushed unsolicited, so trackers
+  can subscribe instead of polling. `is_dirty` has no field presence: absent IS false.
+- **`RecallReason`** (OTHER, UNDO, SAVE) - `RecallPreset.reason` says WHY the preset
+  changed. Measured: host recalls and READ replies carry OTHER, a save's push carries
+  SAVE (verified live this session); UNDO is defined but unobserved. Lets a tracker tell
+  a save's echo from a genuine preset change.
+- Protocol notes: connect-burst timing measured (~9 s to the seed push, consistent,
+  against the older 10-25 s worst case); `GlobalTempo` streams one message pair per BEAT
+  so its rate follows the tempo; a single touchscreen knob turn broadcasts ~40 `Grid`
+  messages; `lock_screen_and_volume_knob` noted in the settings docs.
+
 ### The polarity correction: tempo parameter 4 is START, and 1.0 means RUNNING
 
 This library documented it backwards for two releases ("MUTE", 1.0 = muted), and the

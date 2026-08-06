@@ -1475,6 +1475,45 @@ by itself). `enable_meter` is NOT: it
 is sent, stays `false`, and `meter` stays `0.0`. So the needle itself is not readable over
 USB, which is the one part of the Tuner the host cannot see.
 
+## Why the preset changed: `RecallPreset.reason`
+
+`RecallPresetMessage` carries a fourth field, `reason` (`RecallPresetReason.Enum`:
+OTHER=0, UNDO=1, SAVE=2), populated on real pushes including the connect seed. Measured:
+a host recall and a plain READ reply carry **OTHER**; the push a save emits carries
+**SAVE**; UNDO is defined but not yet observed (presumably the unit's undo). A state
+tracker watching RecallPreset pushes can use it to tell a save's echo from a genuine
+preset change. Which value accompanies a USER recall (a footswitch press) is not yet
+characterised. `RecallReason` names the values.
+
+## Device loss, and the read/write asymmetry
+
+**A READ raising means the device is gone; a WRITE raising means nothing at all.**
+Measured over a 145-second healthy session: 0 read exceptions, 91 write exceptions -
+every write "fails" with the QC's status-stage STALL. The two can carry byte-identical
+text (the first read error after an unplug said `0xE0005000`, exactly like the benign
+stall; only the SECOND read said "Device is disconnected"), so the distinguishing fact is
+which call raised, never the message.
+
+The transport turns this into behaviour: a read failure is retried once (a lone blip is
+transient); two in a row confirm loss, storing the second - honest - error. Every
+transport entry point then raises `DeviceLostError`, blocked waiters are woken to fail
+fast instead of timing out, and the RX and keepalive threads wait quietly rather than
+spinning on a dead handle.
+
+## Connect burst, measured
+
+About 3 s of quiet, then the ModelRepo payload as one huge message, then ~400 File
+messages streaming at ~1490 reports/s for ~5 s, then every other subscribed state type at
+once - including the seed RecallPreset - at about **9 s after connect**, consistent across
+several sessions on d14e. (Earlier sessions recorded 10-25 s for lazily-serviced pushes;
+keep timeouts generous, but 9 s is the typical seed arrival.)
+
+Two ambient-traffic facts for anyone instrumenting the link: `GlobalTempo` streams one
+pair of messages per BEAT - 1.5 s apart at 40 bpm - so its rate follows the tempo and it
+is a poor heartbeat but a decent liveness hint; and a single knob turn on the touchscreen
+broadcasts a burst of `Grid` messages (~40 observed for one edit), so edit-time traffic is
+far heavier than steady state.
+
 ## Reading the LIVE grid, and the active scene
 
 **`RecallPreset{READ, request_id}` answers with the preset as it exists RIGHT NOW** -
@@ -2196,6 +2235,7 @@ visually on the device's own screen.
 | `io_settings` / `set_input_level` / `set_output_level` | `IOSettings{READ}` / `{UPDATE, settings{in_port` or `out_port{port_id, level}}}` | read-back | sparse and port-keyed; also reports impedance, type, ground lift and `plugged` |
 | `global_eq` / `set_global_eq_bypassed` | `GlobalEQ{READ}` / `{UPDATE, bypassed}` | read-back | five bands reported as 28 parameters |
 | `mode` / `set_mode` | `Mode{READ}` / `{UPDATE, mode}` | read-back | a slot index; `available_modes` lists the configured slots |
+| `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as UPDATE in 2-11 ms (two hardware sessions); `is_dirty` has no presence, absent IS false; flips false across a save; also pushed unsolicited |
 | `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
 | `set_input_gate` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |
 | `free_rows` | reads `models[]` + `Chain.split_control_points` | read-back | rows available for an independent chain: excludes the lane row of a branch, which is spoken for even when empty |

@@ -420,6 +420,7 @@ def test_collect_gathers_every_matching_push_without_consuming_them():
     t._pending = {}
     t._type_waiters = []
     t._collectors = []
+    t._device_lost = None
 
     def trigger():
         for i in range(3):
@@ -433,3 +434,114 @@ def test_collect_gathers_every_matching_push_without_consuming_them():
                     match=lambda m: m.folder.key != "k1")
     assert [m.folder.key for m in got] == ["k0", "k2"]
     assert t._collectors == [], "the collector is removed when done"
+
+
+# -- device loss ---------------------------------------------------------------
+# The unplug sequence as measured on macOS: the FIRST read exception carries the
+# same text as the benign write stall; the SECOND says "Device is disconnected".
+# A single blip must not be treated as loss; two in a row must.
+
+
+class UnpluggableDevice(FakeHid):
+    """A FakeHid whose reads start raising after unplug()."""
+
+    def __init__(self, errors=None):
+        super().__init__()
+        self._errors = list(errors or [])
+        self._unplugged = False
+
+    def unplug(self, errors):
+        self._errors = list(errors)
+        self._unplugged = True
+
+    def read(self, size, timeout=0):
+        if self._unplugged:
+            if self._errors:
+                raise OSError(self._errors.pop(0))
+            raise OSError("Device is disconnected")
+        return super().read(size, timeout)
+
+
+def _started(dev):
+    t = transport.Transport(dev, keepalive_interval=999)
+    t.start()
+    return t
+
+
+def test_one_read_blip_is_transient_and_the_transport_stays_healthy():
+    dev = UnpluggableDevice()
+    t = _started(dev)
+    try:
+        # one failing read, then healthy again
+        blip = ["IOHIDDeviceSetReport failed: (0xE0005000) unknown error code"]
+        original = dev.read
+        calls = {"n": 0}
+
+        def flaky(size, timeout=0):
+            if calls["n"] == 0:
+                calls["n"] += 1
+                raise OSError(blip[0])
+            return original(size, timeout)
+
+        dev.read = flaky
+        deadline = time.monotonic() + 2.0
+        while calls["n"] == 0 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.05)
+        assert t.device_lost is None
+        assert t.request(pa.VersionMessage(action=pa.MessageAction.READ),
+                         timeout=2.0) is not None
+    finally:
+        t.stop()
+
+
+def test_two_consecutive_read_failures_confirm_loss_with_the_second_message():
+    dev = UnpluggableDevice()
+    t = _started(dev)
+    try:
+        dev.unplug(["IOHIDDeviceSetReport failed: (0xE0005000) unknown error code",
+                    "Device is disconnected"])
+        deadline = time.monotonic() + 2.0
+        while t.device_lost is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert t.device_lost is not None
+        # the honest SECOND message, not the stall-lookalike first
+        assert "Device is disconnected" in str(t.device_lost)
+        with pytest.raises(transport.DeviceLostError, match="Device is disconnected"):
+            t.send(pa.KeepAliveMessage(action=pa.MessageAction.UPDATE))
+        with pytest.raises(transport.DeviceLostError):
+            t.request(pa.VersionMessage(action=pa.MessageAction.READ), timeout=1.0)
+        with pytest.raises(transport.DeviceLostError):
+            t.await_broadcast(pa.SceneMessage, lambda: None, timeout=1.0)
+        # the RX thread is still alive, waiting quietly - "never dies" holds
+        assert t._rx.is_alive()
+    finally:
+        t.stop()
+
+
+def test_loss_wakes_a_blocked_request_fast_with_the_real_error():
+    dev = UnpluggableDevice()
+    t = _started(dev)
+    try:
+        result = {}
+
+        def blocked():
+            try:
+                # ModelRepo gets no reply from the fake, so this would wait the
+                # full timeout if loss did not wake it
+                t.request(pa.ModelRepoMessage(action=pa.MessageAction.READ),
+                          timeout=30.0)
+            except Exception as e:
+                result["error"] = e
+
+        worker = threading.Thread(target=blocked)
+        worker.start()
+        time.sleep(0.1)
+        started = time.monotonic()
+        dev.unplug(["first lie", "Device is disconnected"])
+        worker.join(timeout=5.0)
+        assert not worker.is_alive(), "the blocked request never woke"
+        assert time.monotonic() - started < 5.0, "woke by timeout, not by loss"
+        assert isinstance(result["error"], transport.DeviceLostError)
+    finally:
+        t.stop()

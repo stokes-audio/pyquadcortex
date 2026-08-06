@@ -1179,6 +1179,27 @@ def test_set_input_port_confirm_timeout_explains_staleness():
         qc.set_input_port(1, level=0.5, confirm=True, timeout=2.0)
 
 
+def test_preset_dirty_reads_and_treats_absent_as_false():
+    """is_dirty has no field presence: absent IS false, not unknown."""
+    qc = client.QuadCortex(FakeTransport(
+        canned={"PresetDirtyMessage": pa.PresetDirtyMessage(
+            action=pa.MessageAction.UPDATE, is_dirty=True)}))
+    assert qc.preset_dirty() is True
+    assert qc._t.sent[-1].action == pa.MessageAction.READ
+    qc2 = client.QuadCortex(FakeTransport(
+        canned={"PresetDirtyMessage": pa.PresetDirtyMessage(
+            action=pa.MessageAction.UPDATE)}))       # flag absent on the wire
+    assert qc2.preset_dirty() is False
+
+
+def test_recall_reason_enum_matches_the_schema():
+    from pyquadcortex import RecallReason
+    wire = {v.name: v.number for v in
+            pa.RecallPresetReason.DESCRIPTOR.enum_types_by_name["Enum"].values}
+    assert wire == {"OTHER": 0, "UNDO": 1, "SAVE": 2}
+    assert {m.name: m.value for m in RecallReason} == wire
+
+
 def test_read_current_preset_uses_recallpreset_read_and_request_id():
     push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE, request_id=1)
     push.preset.name = "live state"
