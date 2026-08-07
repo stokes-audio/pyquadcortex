@@ -16,6 +16,29 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## Unreleased
+
+### Stomp momentary: the rule nobody knew about
+
+`set_stomp_momentary()` already existed and its wire shape was right, but its
+documentation was thin enough to mislead. Two corrections, both from hardware:
+
+- The map is keyed by **footswitch index, not column**. Every earlier sample had
+  the two equal, so this had been assumed rather than shown. A block at column 3
+  assigned to footswitch E settles it: the key is `4`.
+- **The write only lands on a footswitch driving exactly one block.** Aim it at a
+  switch with two or more and the device accepts it, echoes nothing, and reads
+  back unchanged. The unit greys out its own Latching/Momentary toggle in the same
+  case, so this is a device rule rather than a transport wart. Check with
+  `stomp_assignments()` first; there is no error to catch.
+
+No API change. If you were writing momentary to a multi-block footswitch it was
+never taking effect, and now the docs say why.
+
+Whether the control exists at all had been in doubt: manual 4.0.0 mentions
+"momentary" only for the expression toe switch and Looper X. The touchscreen's
+**Assign footswitch** modal carries the toggle, so the manual is simply behind.
+
 ## 0.38.0 - 2026-08-06
 
 Every beat of the metronome's bar is separately controllable, and now reachable.

@@ -1135,7 +1135,25 @@ Grid{UPDATE, preset{stomp_mode_assignments{row, column, stomp_index}}}
 The UPDATE alone leaves the previous assignment in place. Three map fields travel with
 it and are writable the same way: `stomp_labels`, `single_stomp_labels` (both
 `map<uint32, string>`) and `stomp_is_momentary` (`map<uint32, bool>`), all keyed by
-footswitch index. The unit clears the label maps when an assignment is removed.
+footswitch index. The unit clears all three when an assignment is removed, sending one
+`Grid{UPDATE}` per map.
+
+**Momentary is real, and the manual does not mention it.** Manual 4.0.0 describes
+"momentary" only for the expression toe switch and Looper X, never for a stomp - but the
+touchscreen's **Assign footswitch** modal carries a Latching/Momentary toggle, and using
+it broadcasts `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}`. The key is the
+footswitch index rather than the column, confirmed on a case where the two differ: a
+block at column 3 assigned to footswitch E produced `key: 4`. Factory content leaves the
+map empty, so a missing entry means latching.
+
+**A momentary write only lands on a footswitch driving exactly ONE block.** The device
+enforces this on the wire, and silently - a write aimed at a multi-block switch is
+accepted, echoes nothing, and reads back unchanged. The unit greys out its own toggle in
+the same case, so this is a device rule rather than a transport wart. Measured within one
+preset: two single-block switches took the write and read back `true`, one of them
+verified on the unit's screen having never been touched by hand, while a two-block switch
+stayed `false` across repeated attempts. There is no error to catch, so check the
+assignment count before writing.
 
 **Expression pedal assignment** is a row/column-keyed parameter write like any other,
 using three fields on `Param`:
@@ -2373,6 +2391,8 @@ visually on the device's own screen.
 | `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root, not children of My Presets |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | the single splitter/mixer MUTE; reported back in `mixBypass`, and one write sets all eight scenes |
 | `set_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence; an UPDATE alone leaves the old assignment |
+| `set_stomp_momentary` | `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}` | read-back + on-unit | keyed by footswitch, not column. **Only lands on a switch driving exactly one block** - the device refuses multi-block switches silently, as its own toggle does |
+| `set_stomp_label` | `Grid{UPDATE, preset{stomp_labels` or `single_stomp_labels{key, value}}}` | read-back + on-unit | `single_stomp_labels` is the one the unit writes when the switch drives a single block; it clears both on unassign |
 | `set_expression` | `Grid{UPDATE, preset{chains{row, models{column, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit | pedal 1 or 2 with a normalized sweep range |
 | `set_midi_out` / `set_preset_load_midi_out` | `MIDISettings{UPDATE, general_midi_messages` or `preset_load_messages{messages{source, msg}}}` | read-back | per-preset MIDI Out. A `Grid` update carrying the preset's own midi fields does nothing |
 | `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |

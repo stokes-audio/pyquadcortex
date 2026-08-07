@@ -99,7 +99,7 @@ need the physical world: Neural Capture, and loading from the factory Captures L
 | Mixer parameters | yes | `set_mixer_param()` |
 | Splitter / Mixer MUTE | yes | `set_split_mute()`. It is ONE control, not two; the write goes to `splitBypass` and the device reports it in `mixBypass` |
 | Side-chaining: set a block's SOURCE/TRIGGER | yes | `set_param_option(row, column, param="SOURCE", option=...)`. It is an ordinary comboBox parameter; `sidechain_source_flag` is bookkeeping and ignores writes |
-| Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()` |
+| Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()`. Momentary is keyed by footswitch, not column, and only lands on a switch driving ONE block - the device refuses multi-block switches silently, as its own toggle does. The manual never mentions stomp momentary; the touchscreen's Assign footswitch modal has it |
 | Expression pedal assignment to a parameter | yes | `set_expression(row, column, param, pedal, minimum, maximum)` |
 | Expression bypass (heel-toe / switch / stop) | yes | `set_expression_bypass()` with `ExpressionBypassMode`. All three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2 - not the manual's listed order |
 | Expression pedal calibration | no | candidate `IOSettings`. Manual calls it a global setting |

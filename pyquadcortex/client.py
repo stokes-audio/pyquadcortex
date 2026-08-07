@@ -1567,8 +1567,28 @@ Two of those names disagree with the catalog, which is why the map
     def set_stomp_momentary(self, footswitch, momentary: bool = True):
         """Make a footswitch momentary rather than latching, for this preset.
 
-        ``BinaryPreset.stomp_is_momentary`` is a map keyed by footswitch index.
-        Confirmed writable by a ``Grid`` update carrying the map entry alone.
+        ``BinaryPreset.stomp_is_momentary`` is a map keyed by **footswitch index**,
+        not by column. Confirmed on hardware with a case where the two differ: a
+        block at column 3 assigned to footswitch E broadcast
+        ``stomp_is_momentary{key: 4}``. The map is sparse and factory content
+        leaves it empty, so a missing entry means latching.
+
+        The control is real on the unit despite the manual's silence. Manual 4.0.0
+        documents "momentary" only for the expression toe switch and Looper X, but
+        the touchscreen's **Assign footswitch** modal carries a Latching/Momentary
+        toggle, and using it broadcasts exactly this map entry.
+
+        **A momentary write only lands on a footswitch driving exactly ONE block.**
+        The device enforces that rule on the wire, and enforces it SILENTLY: a write
+        aimed at a switch with two or more blocks is accepted, echoes nothing, and
+        reads back unchanged. The unit greys its own toggle out in the same case, so
+        this is a device rule rather than a transport wart. Verified three ways
+        within one preset - two single-block switches took the write and read back
+        ``True``, one of them confirmed by eye on the unit having never been touched
+        by hand, while a two-block switch stayed ``False`` across repeated attempts.
+
+        Check the target with :meth:`stomp_assignments` first if it matters. There
+        is no error to catch.
         """
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         msg.preset.stomp_is_momentary[int(footswitch)] = momentary
