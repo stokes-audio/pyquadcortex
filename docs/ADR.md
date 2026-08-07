@@ -63,3 +63,13 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
 - **Open Questions:** Where it lives and how it is invoked (a pytest marker vs a separate runner). Which device state is genuinely restorable, and what the suite does about actions with no undo. Whether it reserves scratch user slots for create/delete coverage.
 - **Rationale:** Repeatable hardware verification without demanding a second unit. The restore contract is what makes it safe to run on the only unit that exists.
 - **Consequences:** Tests snapshot what they touch before changing it and restore in teardown, success or failure. The suite never runs in CI and stays fully separate from the offline suite, whose guarantee (ADR-0002) is unchanged. Failures name whatever they could not restore, so the owner knows what to fix by hand.
+
+## ADR-0006: The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol`
+
+- **Status:** Decided (2026-08-05)
+- **Decision:** When the domain model first ships (M1), `pyquadcortex.connect()` returns the model's `Device`, and today's protocol layer moves - unchanged except for the import path - to `pyquadcortex.protocol`. One package, two namespaces.
+- **Context:** ADR-0004 placed the model in a new namespace above an untouched top level. But once a full domain model exists, protocol-level calls are not what a new user should land on: the model is the library's reason to exist, and `import pyquadcortex` should hand them the front door. The library is deliberately 0.x with ~no users, so the import-path break is as cheap now as it will ever be.
+- **Options:** (a) Model at top level, protocol at `pyquadcortex.protocol` - chosen. (b) ADR-0004's original shape (protocol keeps the top level, model in a sub-namespace) - permanently taxes every future user to spare a handful of current ones. (c) Two separate PyPI packages - coupled releases and shared internals across a distribution boundary, for no benefit. (d) `pyquadcortex.usb` - names the transport, not the layer.
+- **Open Questions:** None.
+- **Rationale:** The model becomes the documented front door the moment it exists, with no release where `connect()` is ambiguous. The protocol layer loses nothing: same API, same support, one import deeper.
+- **Consequences:** Refines ADR-0004's "additive namespace" consequence: the model is still additive code-wise and the protocol API is still public and unchanged, but import paths flip at M1 - existing 0.x scripts update one import line. The flip and its changelog/readme messaging land in the M1 Epic. The Intent Brief's "Additive, not breaking" requirement is amended to match (owner decision, 2026-08-05).

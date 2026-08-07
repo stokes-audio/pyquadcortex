@@ -76,6 +76,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0003 | USB HID is the only transport |
 | ADR-0004 | The domain model lands additively on top of the unchanged protocol layer |
 | ADR-0005 | A hardware-in-the-loop integration suite, state-neutral on success |
+| ADR-0006 | The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol` |
 
 ## 8. Open Questions
 
@@ -84,7 +85,7 @@ None yet. Protocol unknowns (the splitter write path, the IR import payload form
 ## 9. Pointers
 
 - Repo: <https://github.com/stokes-audio/pyquadcortex> · PyPI: <https://pypi.org/project/pyquadcortex/>
-- Deep references: [`architecture.md`](architecture.md) (code), [`protocol.md`](protocol.md) (wire), [`capture.md`](capture.md) (observing device traffic)
+- Deep references: [`architecture.md`](architecture.md) (code), [`protocol.md`](protocol.md) (wire), [`capture.md`](capture.md) (observing device traffic), [`domain-model.md`](domain-model.md) (the object model design)
 - Status: [`manual-coverage.md`](manual-coverage.md) (feature audit), [`roadmap.md`](roadmap.md) (direction), [`../changelog.md`](../changelog.md)
 - Operations: [`releasing.md`](releasing.md), [`troubleshooting.md`](troubleshooting.md), [`api.md`](api.md)
 - Device reference: the [Quad Cortex manual](https://neuraldsp.com/manual/quad-cortex)
@@ -114,6 +115,42 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-06 - Domain model Part II: state tracking and save behavior
+
+**What changed:**
+- `docs/domain-model.md`: Part II replaces its stub - how the model keeps its cached facts current (§9), write verification via the unit's own echo (§10), the save lifecycle (§11), and disconnect/standby/reconnect (§12), with the breadth the hardware session did not reach named explicitly in §13
+- Part I forward references resolved in the same pass: `DeviceLostError` replaces the placeholder `NotConnectedError` in §8, writes to an inactive scene are refused, and the appendix's *Part II* rows now point at §13 or the section that answers them
+
+**Why:**
+- M0 Epic (stokes-audio/pyquadcortex#2), Story #4. Both of the Epic's empirical questions were answered on hardware (`d14e` / CorOS 4.0.1) rather than carried as M1 risks: unsaved-change detection is readable and pushed, and device loss is detectable for free because a HID read raising means the device is gone while a write raising means nothing
+
+**Scope of impact:**
+- **Updated:** domain-model.md, STEERING.md
+- **Not updated (intentionally):** ADR.md - the behavioral decisions (optimistic writes confirmed by echo, abandon-on-switch matching the unit, transparent reconnect) are design choices recorded in the doc, not reversals of a prior decision; CLAUDE.md - still no model code, so no new imperatives; protocol.md and the coverage table - the session's protocol-layer findings were handed to the protocol work and shipped there, not duplicated here
+
+**Downstream to consider:**
+- §13's open items are the natural first jobs for ADR-0005's hardware suite rather than more one-off scripts; the write-echo check that produced §10's latencies already snapshots, writes, verifies, and restores
+- The design assumes the protocol layer's `DeviceLostError`, `preset_dirty()`, `RecallReason` and `handshake_patience`, so M1 depends on those staying public
+- Whether host writes are honoured during standby is untested, and a script can talk to a sleeping unit over a healthy connection - worth closing before M1 exposes `power_state`
+
+### 2026-08-05 - Domain model structural design + ADR-0006 (namespace flip at M1)
+
+**What changed:**
+- New `docs/domain-model.md`: the M0 structural design of the object model (hierarchy, typing, full manual-feature appendix); its behavioral half lands from the companion design story
+- ADR.md: ADR-0006 - at M1 the model takes the top-level namespace and the protocol layer moves to `pyquadcortex.protocol`, refining ADR-0004
+- STEERING.md: section 7 table gained the ADR-0006 row; section 9 points at the design doc
+
+**Why:**
+- M0 Epic (stokes-audio/pyquadcortex#2), Story #3: the full object model is designed before M1 implementation starts; the namespace flip was an owner decision during design review
+
+**Scope of impact:**
+- **Updated:** domain-model.md (new), ADR.md, STEERING.md
+- **Not updated (intentionally):** CLAUDE.md - no code exists yet, so no new imperatives; architecture.md - the layer map changes only when M1 lands
+
+**Downstream to consider:**
+- The Intent Brief's "Additive, not breaking" requirement and Customer FAQ need the ADR-0006 amendment (planning repo)
+- Part II (state/save behavior, Story #4) merges into domain-model.md and must resolve the rows marked *Part II* / *unaudited* in its appendix
 
 ### 2026-08-04 - ADR-0005: hardware-in-the-loop integration suite
 
