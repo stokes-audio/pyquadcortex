@@ -1447,6 +1447,25 @@ before concluding a bypass write failed. Its three values are the manual's three
 choices: `ALWAYS_OVERWRITE` (the default), `NONSTOMP_OVERWRITE` (footswitch presses in
 STOMP mode are not saved) and `NEVER_OVERWRITE` (nothing is saved).
 
+**Which routes each mode actually saves**, driven on the unit and measured on the wire.
+A HOST write behaves like a touchscreen edit, not like a footswitch press - the manual
+names only the two physical routes, so this was not inferable from it:
+
+| mode | touchscreen | footswitch | host `set_bypass` |
+|---|---|---|---|
+| `ALWAYS_OVERWRITE` | persists | persists | persists |
+| `NONSTOMP_OVERWRITE` | persists | discarded | persists |
+| `NEVER_OVERWRITE` | discarded | discarded | discarded |
+
+"Discarded" means the write applies and is then dropped on the next scene change, which
+is indistinguishable from a failed write unless you know the setting.
+
+> **`ColBypass.column` has no presence and reads 0 on every entry** - the list is
+> POSITIONAL, `preset.bypass[row].colBypass[column]`, exactly like `Chain.row`. Filtering
+> by `column` matches nothing and silently yields the first entry or none at all. That
+> produced three confident "the write was discarded" results in a row before the constant
+> was noticed.
+
 **Do not confuse settings with commands.** `GeneralSettings.power_option` takes
 `SHUTDOWN`, `REBOOT`, `STANDBY` or `WAKE_UP`, and `reset_wifi_networks` discards saved
 networks. `QuadCortex.update_settings()` refuses both rather than risk an accident.

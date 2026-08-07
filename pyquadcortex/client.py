@@ -1942,9 +1942,28 @@ Two of those names disagree with the catalog, which is why the map
         """Set whether block bypass changes are saved per scene.
 
         A :class:`~pyquadcortex.enums.SceneBypassBehavior`. This is global, and it
-        decides what :meth:`set_bypass` persists: under ``NEVER_OVERWRITE`` a
-        bypass write is applied but not kept, which looks exactly like a failed
-        write. Confirmed writable and restorable on hardware.
+        decides what :meth:`set_bypass` persists.
+
+        **A host write counts as a touchscreen edit, not a footswitch press.**
+        Measured across all three modes, each write verified as landed before the
+        scene was changed:
+
+        =====================  ===========  ==========  =============
+        mode                   touchscreen  footswitch  host write
+        =====================  ===========  ==========  =============
+        ``ALWAYS_OVERWRITE``   persists     persists    **persists**
+        ``NONSTOMP_OVERWRITE`` persists     discarded   **persists**
+        ``NEVER_OVERWRITE``    discarded    discarded   **discarded**
+        =====================  ===========  ==========  =============
+
+        The touchscreen and footswitch columns were driven by hand on the unit;
+        the host column is this method plus :meth:`set_bypass`. The manual names
+        only the two physical routes, so where a host write falls was not
+        inferable from it.
+
+        The consequence for a caller: under ``NEVER_OVERWRITE`` a bypass write is
+        applied and then dropped on the next scene change, which looks exactly
+        like a failed write and is not one. Confirmed writable and restorable.
         """
         return self.update_settings(scene_block_bypass=int(behavior))
 
