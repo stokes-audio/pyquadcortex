@@ -1907,6 +1907,19 @@ Two of those names disagree with the catalog, which is why the map
 
     HOLD_TIMING_MS = (500, 600, 700, 800, 900, 1000)
 
+    #: What a footswitch HOLD actually does, settled on hardware.
+    #:
+    #: ``hold_timing`` is a GESTURE THRESHOLD, not the duration of an assignable
+    #: per-footswitch action. Holding a stomp footswitch produces exactly one
+    #: ordinary bypass toggle and nothing on screen; holding in SCENE mode selects
+    #: a scene and in PRESET mode recalls a preset - each indistinguishable on the
+    #: wire from a press. What the threshold governs is the unit's fixed hold
+    #: GESTURES: hold TEMPO for the Tuner, BANK DOWN + TEMPO for Gig View, and the
+    #: touchscreen tap-and-holds. Shortening it to 500 ms makes the Tuner open
+    #: sooner, which is how it was pinned.
+    #:
+    #: So the manual's "its assigned HOLD action" is loose wording: nothing binds a
+    #: hold to a footswitch on this firmware, and there is no hold event to observe.
     def set_hold_timing(self, milliseconds: int):
         """How long a footswitch must be held to fire its HOLD action.
 

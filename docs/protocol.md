@@ -1460,6 +1460,21 @@ names only the two physical routes, so this was not inferable from it:
 "Discarded" means the write applies and is then dropped on the next scene change, which
 is indistinguishable from a failed write unless you know the setting.
 
+**The unit's own wording**, which differs from the manual's shorthand and is what an owner
+actually reads. Body text: *"This feature controls whether changes to the bypass state of a
+block in Scene Mode are automatically saved to the active Scene"*. The three options, in
+order:
+
+1. *Always overwrite bypass state (default)*
+2. *Do not overwrite bypass state when changing bypass state via footswitches in Stomp Mode
+   (including Hybrid Stomp Mode) **or MIDI**. Changes made with the touchscreen will be saved.*
+3. *Do not overwrite bypass state when changing bypass state by any method.*
+
+Option 2 groups **MIDI with footswitches**, which the manual's summary omits entirely. That
+is consistent with what was measured - a USB HID write behaves like the touchscreen, and USB
+HID is not MIDI - but the MIDI half is UNTESTED here, since this library has no MIDI path.
+Anyone adding one should not assume it inherits the host write's behaviour.
+
 > **`ColBypass.column` has no presence and reads 0 on every entry** - the list is
 > POSITIONAL, `preset.bypass[row].colBypass[column]`, exactly like `Chain.row`. Filtering
 > by `column` matches nothing and silently yields the first entry or none at all. That
