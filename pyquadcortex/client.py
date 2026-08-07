@@ -2742,16 +2742,48 @@ Two of those names disagree with the catalog, which is why the map
     def master_volume(self, timeout: float = 10.0):
         """The Master Volume state.
 
-        ``volume`` is normalized 0..1 and maps linearly to the 0-100 the unit
-        displays: the knob left at 47 on screen reported 0.471074373.
+        ``volume`` is normalized 0..1 and the unit displays ``round(volume * 100)``
+        - 0.566115677 shows as 57, not 56. The knob quantizes in steps of 1/121.
 
-        Read-only. A ``MasterVolume`` UPDATE carrying a new level is accepted and
-        changes nothing - the knob appears to be the only way to move it, which
-        also fits the device's own pushes carrying ``calibrate`` rather than a
-        setpoint. There is deliberately no setter here.
+        Writable through :meth:`set_master_volume`. This docstring said "read-only"
+        for several releases on the strength of a measurement that was really a
+        stale read; see that method.
         """
         return self._read_state(pa.MasterVolumeMessage,
                                 lambda m: m.HasField("volume"), timeout)
+
+    def set_master_volume(self, volume: float):
+        """Set the Master Volume, normalized 0..1.
+
+        The whole write is ``MasterVolume{UPDATE, volume}``. It lands on its own
+        with no companion field, and it is a real level change: a host write of
+        0.30 took the unit's overlay to 30 and audibly dropped the output.
+
+        **This corrects a recorded finding.** Earlier work measured the write as
+        accepted-and-ignored. That was a stale read rather than a refusal -
+        :meth:`master_volume` called straight after a write returns the PREVIOUS
+        value, so write-then-read reports every result one step late. Reconnect,
+        or wait, before believing a read-back.
+
+        After a host write the physical knob **soft-takes-over**: it does nothing
+        until turned past the value that was set, then resumes control. That is
+        exactly what the manual describes Cortex Control doing when it "adjusts
+        output level and temporarily deactivates the hardware wheel", so Cortex
+        Control is writing this field rather than using some other route.
+
+        Master volume is a gain stage of its own, applied downstream of the stored
+        port levels - writing it changes no ``IOSettings`` level. Use
+        :meth:`set_master_volume_assignment` to choose which outputs it governs.
+
+        .. warning::
+           Never send ``calibrate`` alongside a level. It is an ACTION, not a
+           flag: it opens the full-screen Master Volume Calibration dialog and
+           waits for the owner to sweep the knob and tap SAVE. This method never
+           sends it.
+        """
+        msg = pa.MasterVolumeMessage(action=pa.MessageAction.UPDATE)
+        msg.volume = float(volume)
+        return self._t.send(msg)
 
     def pinned_models(self, timeout: float = 8.0):
         """Which models are pinned to the top of their category, as ids."""

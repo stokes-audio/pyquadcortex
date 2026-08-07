@@ -2058,10 +2058,30 @@ threshold, and the other controls stay inert until it does. And **REVERSE and HA
 do not change `state`** - they set `in_reverse` and `half_speed` while playback
 continues.
 
-**Master volume is READ-ONLY.** `MasterVolume.volume` is normalized 0..1 and maps
-linearly to the 0-100 on screen (the knob at 47 reported 0.471074373). A `MasterVolume`
-UPDATE carrying a new level is accepted and changes nothing, which fits the device's own
-pushes carrying `calibrate` rather than a setpoint.
+**Master volume IS writable.** `Grid`-style sparseness does not apply here; the whole
+write is `MasterVolume{UPDATE, volume}` with a normalized 0..1, and it lands on its own
+with no companion field. Confirmed by eye and by ear: a host write of `0.30` took the
+overlay to 30 and audibly dropped the level.
+
+This corrects a recorded finding. Earlier work measured the write as "accepted and
+changes nothing", and that measurement was a **stale read**, not a device refusal -
+`master_volume()` called immediately after the write returns the PREVIOUS value, so a
+sequence of write-then-read reports each result one step late. Reconnect, or wait, before
+believing a read. The same trap has now produced two wrong conclusions in this project.
+
+`volume` maps to the 0-100 on screen as `round(volume * 100)`: the wire value
+0.566115677 displayed 57, not 56. The knob quantizes in steps of exactly 1/121.
+
+**After a host write the physical knob soft-takes-over.** It does nothing until it is
+turned past the value the host set, and only then resumes control. That is precisely the
+behaviour the manual describes for Cortex Control - "adjusts output level and temporarily
+deactivates the hardware wheel" - so Cortex Control is not using some undiscovered route.
+It is writing this field.
+
+> **`calibrate: true` is not a flag, it is an action.** Sending it opens the full-screen
+> Master Volume Calibration dialog on the unit and waits for the owner to sweep the knob
+> min-to-max and tap SAVE. Do not include it to "be safe" alongside a level write; it
+> takes over the screen and forces a recalibration. Found the hard way.
 
 **And it is a gain stage of its own, not a rewrite of the port levels.** Across 114
 `MasterVolume` pushes while the knob was turned, no `IOSettings` port level changed at
@@ -2398,6 +2418,7 @@ visually on the device's own screen.
 | `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
 | `param_options` | reads `Param.dynamic_steps` | read-back | the option names of a list parameter, which the catalog does not carry |
 | `set_master_volume_assignment` | `GeneralSettings{UPDATE, master_volume_assignment{...}}` | read-back | which outputs the knob governs. Read-merge-write, because a submessage is replaced wholesale |
+| `set_master_volume` | `MasterVolume{UPDATE, volume}` | read-back + on-unit + by ear | normalized 0..1, displayed as `round(v * 100)`. Travels alone. The earlier "accepted and ignored" was a stale read. Never add `calibrate` - it opens the calibration dialog |
 | `set_global_bypass` | `GeneralSettings{UPDATE, global_bypass_cab` / `_ir{row1..row4}}` | read-back | global Cab / IR bypass per row |
 | `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index; which index is which band control is unestablished |
 | `set_mode_cycle` | `Mode{UPDATE, available_modes{modes}}` | read-back | the mode cycle order; the whole list is replaced |

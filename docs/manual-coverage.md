@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 103 features audited: **63 yes**, **8 partly**, **21 no**, **11 n/a**.
+Of 103 features audited: **64 yes**, **7 partly**, **21 no**, **11 n/a**.
 
 Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
 are partly covered - which here means the state is readable and at least one field of it
@@ -51,7 +51,7 @@ need the physical world: Neural Capture, and loading from the factory Captures L
 | Recall a preset | yes | `recall_preset()`, `read_preset()` |
 | Switch scene | yes | `switch_scene()` |
 | Bank navigation | yes | any slot is addressable by name (`"28C"`) or index |
-| Master Volume level | partly | `master_volume()` reads it (0..1 mapping to the 0-100 on screen). READ-ONLY, and it is a separate gain stage - turning the knob changes no port level. The nearest equivalent is setting the individual output levels |
+| Master Volume level | yes | `master_volume()` reads it and `set_master_volume()` writes it, normalized 0..1 with the unit displaying `round(v * 100)`. The recorded "read-only" was a STALE READ, not a refusal - a read straight after a write returns the previous value. It is a separate gain stage applied downstream of the port levels, and after a host write the physical knob soft-takes-over, which is what the manual describes Cortex Control doing. Never send `calibrate` alongside a level: it opens the calibration dialog on the unit |
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | yes | `set_master_volume_assignment()`, which reads and merges - the raw field is a submessage, and writing one flag through `update_settings()` clears the other three |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
