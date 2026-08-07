@@ -1569,6 +1569,30 @@ def test_set_stomp_momentary_writes_the_map_entry():
     assert dict(qc._t.sent[-1].preset.stomp_is_momentary) == {7: True}
 
 
+def test_set_stomp_momentary_is_keyed_by_footswitch_not_column():
+    """The map key is the footswitch index, which is NOT the block's column.
+
+    Hardware said so in the one case that can tell them apart: a block at column
+    3 assigned to footswitch E broadcast ``stomp_is_momentary{key: 4}``. Every
+    earlier sample had index equal to column and so proved nothing.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_stomp_momentary(Footswitch.E, True)
+    assert dict(qc._t.sent[-1].preset.stomp_is_momentary) == {4: True}
+
+
+def test_set_stomp_momentary_can_clear_back_to_latching():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_stomp_momentary(Footswitch.B, False)
+    sent = qc._t.sent[-1]
+    assert sent.action == pa.MessageAction.UPDATE
+    assert dict(sent.preset.stomp_is_momentary) == {1: False}
+    # The entry must travel alone: the device applies preset-level maps only from
+    # a sparse update, and a False is a real value here rather than an absence.
+    assert not sent.preset.stomp_mode_assignments
+    assert not sent.preset.stomp_labels
+
+
 # -- expression pedal assignment ----------------------------------------------
 
 
