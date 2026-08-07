@@ -14,21 +14,25 @@
 
 ## Design principles
 
-1. **Screen-faithful.** Objects, properties, names, and units match what the unit shows.
-   Rows are 1-4 and columns 1-8 as on the touchscreen, scenes are letters, knobs read in
-   dB/Hz/ms where the screen shows dB/Hz/ms. A user who knows the unit recognizes the API
-   without a mapping table.
+1. **Screen-faithful, and the manual's own words.** Objects, properties, names, and units
+   match what the unit shows. Rows are 1-4 and **slots** 1-8, which is the manual's word
+   for the eight cells in a row ("four rows, each containing eight device block slots");
+   scenes are letters; knobs read in dB/Hz/ms where the screen shows dB/Hz/ms. Where the
+   manual has a word, the model uses it rather than the wire's - `slot` not `column`,
+   *virtual device* not *model*, *item* not *entry*. A user who knows the unit recognizes
+   the API without a mapping table.
 2. **Strongly typed, deliberately polymorphic.** Every value has a real type: enums where
    the unit's option set is fixed, domain value types where it is structured, generics to
    carry value types through parameters. Capability differences are type differences - a
-   factory preset *has no* `save()` rather than raising when you call it.
+   factory preset *has no* `save()` rather than raising when you call it, and a row that
+   cannot start a split *has no* `splitter`.
 3. **Omission over caveat.** If a feature cannot be represented faithfully yet - the wire
    path is unknown, a display mapping is unverified - the model omits it and the appendix
    says why. It stays reachable through the protocol layer. No model API ships with a
    "this might be stale/wrong" caveat.
 4. **Nothing audible is a side effect.** Recalling a preset and activating a scene change
    what comes out of the unit's outputs. In the model these are always explicit method
-   calls (`entry.recall()`, `scene.activate()`), never a consequence of reading a
+   calls (`item.recall()`, `scene.activate()`), never a consequence of reading a
    property.
 5. **One translation boundary.** The model speaks touchscreen coordinates and display
    units everywhere. Conversion to protocol values (0-based indexes, raw scales) happens
@@ -65,9 +69,9 @@ release ever has `connect()` meaning two different things. This amends ADR-0004'
 classDiagram
     Device --> "1" Setlists : setlists
     Setlists --> "*" Setlist
-    Setlist --> "*" PresetEntry : entries
-    PresetEntry --> "0..1" Preset : recall()
-    Device --> "0..1" Preset : preset (active)
+    Setlist --> "*" PresetItem : items
+    PresetItem --> "0..1" Preset : recall()
+    Device --> "1" Preset : preset (active)
 ```
 
 ```python
@@ -76,102 +80,122 @@ class Device:
     firmware: str                       # e.g. "d14e"
     serial: str
 
-    # the recalled preset (None only before the first recall ever)
-    preset: Preset | None
-    def recall(self, target: PresetEntry | Slot | str) -> Preset: ...   # "28C" works
+    # the preset on The Grid right now - never None on a connected device,
+    # because the unit always has one loaded (see section 9)
+    preset: Preset
+    def recall(self, target: PresetItem | PresetAddress | str) -> Preset: ...  # "28C" works
 
     # the Directory
-    setlists: Setlists                  # setlists["My Presets"], .factory, .user
-    favorites: Sequence[PresetEntry]
-    recents: Sequence[PresetEntry]
-    captures: Library[CaptureEntry]
-    irs: Library[IREntry]
+    setlists: Setlists                  # setlists["My Presets"], .factory, .my_presets
+    favorites: Sequence[PresetItem | PluginPresetItem]
+    recents: Sequence[PresetItem]
+    captures: Library[CaptureItem]
+    irs: Library[IRItem]
+    plugin_presets: Library[PluginPresetItem]
 
-    # the Virtual Device List
-    catalog: Catalog
+    virtual_devices: VirtualDeviceList  # the VIRTUAL DEVICE LIST (section 5)
 
     # device-level features (section 6)
-    io: IO
-    global_eq: GlobalEQ
+    io: IO                              # includes io.global_eq
     tuner: Tuner
     tempo: Tempo
     modes: Modes
-    settings: Settings
+    settings: Settings                  # Device Settings
+    system: System                      # System Settings
     master_volume: MasterVolume
     gig_view: bool                      # open/close Gig View
     power_state: PowerOption            # read-only: awake vs standby (section 12)
 ```
 
 `Setlists` covers every preset container the Directory shows: `Factory Presets` and
-`My Presets` (non-deletable, exposed as `.factory` and `.user`), plus user setlists,
-which are created and deleted through the model (`setlists.create(name)`,
+`My Presets` - both non-deletable, exposed as `.factory` and `.my_presets` - plus the
+user setlists, which are created and deleted through the model (`setlists.create(name)`,
 `setlist.delete()`, `setlist.rename(name)` - M3 lifecycle). The manual's limits (10 user
 setlists, 256 presets each, 3072 total) are the device's to enforce; the model reports
 the device's refusal rather than pre-checking.
 
+> **`.my_presets`, not `.user`.** The manual uses "MY PRESETS" for one specific
+> non-deletable setlist and "user setlist" for the ten a player creates, so `.user` read
+> as "the user setlists" to anyone who had read chapter 5. Named for the screen instead.
+
 ```python
 class Setlist:
     name: str
-    def __getitem__(self, slot: Slot | str) -> PresetEntry: ...   # setlist["28C"]
-    def __iter__(self) -> Iterator[PresetEntry]: ...
-    def find(self, name: str) -> PresetEntry | None: ...
+    def __getitem__(self, where: PresetAddress | str) -> PresetItem: ...  # setlist["28C"]
+    def __iter__(self) -> Iterator[PresetItem]: ...
+    def find(self, name: str) -> PresetItem | None: ...
 
-class Slot:
-    """A preset's address as the Directory shows it: bank number + position letter."""
+class PresetAddress:
+    """Where a preset lives, as the Directory shows it: a bank and a position in it."""
     bank: int
-    position: str                       # "A".."H"
-    # str() gives "28C"; parsing accepts the same form
+    position: str                       # "A".."H" under chapter 3's reading; see below
+    # str() gives "28C"; parsing accepts the same form and rejects malformed input
 ```
 
-> The manual is internally inconsistent about bank size: chapter 3 says banks of eight,
-> chapter 5 says four (two in a PRESET-containing HYBRID mode). `Slot` therefore models
-> the *address* ("28C") and takes no position on how many presets share a bank; the
-> Directory's own addressing is what the protocol layer confirmed. Still unresolved -
-> Part II's hardware session did not reach it, see [§13](#13-still-open).
+> **The manual contradicts itself on bank size, by exactly a factor of two.** Chapter 3
+> says banks of eight ("either A-D or E-H" in a PRESET-containing HYBRID mode, so eight
+> otherwise); chapter 5 says four by default and two in HYBRID. The two accounts are each
+> internally consistent, so this is not one stray sentence. `PresetAddress` models the
+> *address* and takes no position on how many presets share a bank - but note `position`
+> spanning "A".."H" is only reachable under chapter 3's reading. Unresolved on hardware,
+> see [§13](#13-still-open).
 
-### Directory entries are a type family
+### Directory items are a type family
 
-Everything a Directory list can hold shares an `Entry` base; what you can *do* to an
-entry is expressed by its type. This is how read-only-ness works throughout the model:
-factory content lacks mutating methods entirely, so misuse is a type error, not a
+Everything a Directory list can hold shares an `Item` base - the Directory's own word,
+used throughout chapter 5 ("Items can be sorted, favorited, uploaded"). What you can *do*
+to an item is expressed by its type. This is how read-only-ness works throughout the
+model: factory content lacks mutating methods entirely, so misuse is a type error, not a
 runtime surprise.
 
 ```mermaid
 classDiagram
-    Entry <|-- PresetEntry
-    Entry <|-- CaptureEntry
-    Entry <|-- IREntry
-    Entry <|-- PluginPresetEntry
+    Item <|-- PresetItem
+    Item <|-- CaptureItem
+    Item <|-- IRItem
+    Item <|-- PluginPresetItem
+    PresetItem <|-- UserPresetItem
+    PresetItem <|-- FactoryPresetItem
 ```
 
 ```python
-class Entry:
+class Item:
     name: str
+    favorite: bool                      # settable - the manual favorites "items",
+                                        # including Plugin Presets
 
-class PresetEntry(Entry):               # what the Directory's preset rows show
-    slot: Slot
+class PresetItem(Item):                 # what the Directory's preset rows show
+    address: PresetAddress
     setlist: Setlist
     instrument: Instrument              # Guitar / Bass / Synth / Vocal / Other
-    favorite: bool                      # settable; only presets can be favorited
     def recall(self) -> Preset: ...     # audible - loads the preset on the unit
 
-class UserPresetEntry(PresetEntry):
+class UserPresetItem(PresetItem):
     def rename(self, name: str) -> None: ...
-    def move_to(self, slot: Slot) -> None: ...          # same-setlist confirmed so far
-    def copy_to(self, setlist: Setlist, slot: Slot | None = None) -> UserPresetEntry: ...
+    def move_to(self, where: PresetAddress) -> None: ...   # same-setlist confirmed so far
+    def copy_to(self, setlist: Setlist,
+                where: PresetAddress | None = None) -> UserPresetItem: ...
     def delete(self) -> None: ...
 
-class FactoryPresetEntry(PresetEntry):
+class FactoryPresetItem(PresetItem):
     ...                                 # no mutating methods AT ALL
 
-class CaptureEntry(Entry): ...          # place with row.place(col, capture)
-class IREntry(Entry): ...               # assign to an IR Loader slot
-class PluginPresetEntry(Entry): ...     # listing only; see appendix
+class CaptureItem(Item): ...            # place with row.place(slot, capture)
+class IRItem(Item): ...                 # assign to an IR Loader slot
+class PluginPresetItem(Item): ...       # listing and favoriting; see appendix
 ```
 
-`Library[E]` is the read side of the Captures and IR libraries: iteration, `find()`,
-and typed entries. Library *management* (folders, rename, delete) has no known wire
-path and is omitted for now - see the appendix. `recall()` returns a `UserPreset` or
+> **`instrument` is on the preset because the unit puts it there.** The manual mentions
+> "Preferred Instrument" only for Neural Captures and as a Plugin Preset sort key, never
+> on a preset - but all five values were confirmed by setting them on the unit's own
+> picker and reading them back (`protocol.md`, "Tags are not preserved by ANY save path").
+> The touchscreen wins over the manual by this document's own precedence rule, so the
+> manual is simply behind here. The capture's own Capture Type and Preferred Instrument
+> are not modelled yet; see [§13](#13-still-open).
+
+`Library[I]` is the read side of the Captures, IR and Plugin Preset libraries: iteration,
+`find()`, and typed items. Library *management* (folders, rename, delete) has no known
+wire path and is omitted for now - see the appendix. `recall()` returns a `UserPreset` or
 `FactoryPreset` matching the entry's type, so the capability split carries through.
 
 ## 2. Preset and Scenes
@@ -188,17 +212,20 @@ classDiagram
 ```python
 class Preset:
     name: str
-    slot: Slot
+    address: PresetAddress
     instrument: Instrument
     has_unsaved_changes: bool           # the italic name on screen (mechanics: section 11)
+    is_current: bool                    # still the loaded preset? (section 12)
 
     scenes: Scenes                      # scenes["B"], scenes.active, iteration
     rows: Rows                          # rows[1] .. rows[4]
-    blocks: BlockGrid                   # blocks[1, 3] - bound to the ACTIVE scene
+    blocks: BlockGrid                   # blocks[1, 3] - row, slot; ACTIVE scene
+    stomps: Stomps                      # section 7
+    midi_out: PresetMidiOut             # section 7
 
     def save_as(self, name: str, *, setlist: Setlist | None = None,
                 instrument: Instrument | None = None,
-                default_scene: SceneLetter | None = None) -> UserPresetEntry: ...
+                default_scene: SceneLetter | None = None) -> UserPresetItem: ...
 
 class UserPreset(Preset):
     def save(self) -> None: ...         # persist in place
@@ -239,10 +266,13 @@ are omitted - see the appendix.
 
 ```mermaid
 classDiagram
+    Row <|-- SplittableRow
     Row --> "1" InputBlock : input
     Row --> "1" OutputBlock : output
     Row --> "0..8" Block : slots 1-8
-    Row --> "0..1" Split : split
+    SplittableRow --> "0..1" SplitterBlock : splitter
+    SplittableRow --> "0..1" MixerBlock : mixer
+    SplittableRow --> "1" Row : path_b
 ```
 
 ```python
@@ -250,12 +280,44 @@ class Row:
     number: int                          # 1..4, as on screen
     input: InputBlock
     output: OutputBlock
-    def __getitem__(self, column: int) -> Block | None: ...   # row[3], 1..8
-    def place(self, column: int, model: CatalogModel | CaptureEntry) -> DeviceBlock: ...
-    split: Split | None
-    def create_split(self, at: int, rejoin_at: int) -> Split: ...
-    def clear_split(self) -> None: ...
+    slots: Slots                         # row.slots[3], 1..8 - the manual's word
+    def place(self, slot: int,
+              device: VirtualDevice | CaptureItem) -> DeviceBlock: ...
+
+class SplittableRow(Row):
+    """Rows 1 and 3 only: a branch can start here, with its parallel path below."""
+    splitter: SplitterBlock | None        # at most one
+    mixer: MixerBlock | None              # None = Path B goes to its own output
+    path_b: Row                           # row 2 for row 1, row 4 for row 3
+    def create_split(self, at: int) -> SplitterBlock: ...
+    def rejoin(self, at: int) -> MixerBlock: ...      # adds the mixer
+    def clear_split(self) -> None: ...                # removes both
+
+class Rows:
+    @overload
+    def __getitem__(self, row: Literal[1, 3]) -> SplittableRow: ...
+    @overload
+    def __getitem__(self, row: Literal[2, 4]) -> Row: ...
 ```
+
+**A split belongs to a pair of rows, and only the upper row can start one.** The manual
+is explicit - "insert a Splitter or Mixer for the corresponding pair of Rows", and "Route
+audio from Rows 1 or 3 (**Path A**) to Rows 2 or 4 (**Path B**)". So rows 1 and 3 are
+`SplittableRow` and rows 2 and 4 are plain `Row`, which makes `rows[2].create_split()`
+something your editor rejects rather than something that raises at runtime. Principle 2,
+applied to the grid.
+
+That also gives Path A and Path B a home: a `SplittableRow` *is* Path A, and its `path_b`
+*is* Path B. No separate pair object is needed, and no row is reachable by two names.
+
+> **The static catch needs a literal index.** `preset.rows[2]` is checked before you run
+> it. A computed index resolves to `Row | SplittableRow`, so narrow it or accept a runtime
+> error. Better than no check, and not absolute - stated rather than overclaimed.
+
+**A split need not rejoin.** The manual allows Path B to reach "different output blocks"
+*or* merge back, and the (S) and (M) tokens are placed independently. So `mixer` is
+optional: `create_split()` alone leaves Path B with its own output, and `rejoin()` adds
+the mixer later.
 
 The block family mirrors what the grid can show:
 
@@ -271,27 +333,26 @@ classDiagram
 classDiagram
     Block <|-- SplitterBlock
     Block <|-- MixerBlock
-    Split --> "1" SplitterBlock
-    Split --> "1" MixerBlock
 ```
 
 ```python
 class Block:
     row: int
-    column: int                          # 1..8; input/output blocks sit outside 1-8
+    slot: int                            # 1..8; input/output blocks sit outside 1-8
 
 class DeviceBlock(Block):                # a placed virtual device
-    model: CatalogModel
+    device: VirtualDevice                # what the parameter editor calls
+                                         # VIRTUAL DEVICE NAME
     bypassed: bool                       # per scene, via the binding
-    params: Params                       # params["GAIN"] -> Parameter (section 5)
+    params: Params                       # params["GAIN"] -> Parameter (section 4)
     stomp: StompAssignment | None        # section 7
     expression_bypass: ExpressionBypass | None
     def remove(self) -> None: ...
-    def move_to(self, row: int, column: int) -> None: ...   # cross-row = branch
-    def replace(self, model: CatalogModel) -> DeviceBlock: ...
+    def move_to(self, row: int, slot: int) -> None: ...   # cross-row = branch
+    def replace(self, device: VirtualDevice) -> DeviceBlock: ...
 
 class IRLoaderBlock(DeviceBlock):
-    slots: tuple[IRSlot, IRSlot]         # slot.ir = an IREntry, by library key
+    ir_slots: tuple[IRSlot, IRSlot]      # ir_slot.ir = an IRItem, by library key
 
 class LooperBlock(DeviceBlock):
     state: LooperState                   # read-only: five states incl. OVERDUBBING
@@ -304,26 +365,65 @@ class InputBlock(Block):
 
 class OutputBlock(Block):
     destination: OutputDestination       # physical out, send, USB, another row, Multi-Out
-    lane: LaneOutput | None              # VOLUME/PAN/MUTE/SOLO, per scene;
-                                         # None when routed to another row (as on screen)
+    lane: LaneOutput | None              # the manual's LANE OUTPUT CONTROL:
+                                         # VOLUME/PAN/MUTE/SOLO, per scene. None when
+                                         # routed to another row (as on screen)
 
 class SplitterBlock(Block):
-    params: Params                       # TYPE, STEREO, BALANCE, LEVEL TO A/B, FREQUENCY, MODE
+    params: Params        # TYPE, STEREO, BALANCE, LEVEL TO A/B, FREQUENCY, MODE, MUTE
+    muted: bool           # the same control as the mixer's MUTE - see below
 
 class MixerBlock(Block):
-    params: Params                       # LEVEL A/B, PAN A/B, PHASE, MIXER LEVEL
-
-class Split:
-    """A row pair's parallel path: the (S) and (M) tokens and the lane between them."""
-    splitter: SplitterBlock
-    mixer: MixerBlock
-    muted: bool          # ONE control on the unit; the wire confirms it is shared
+    params: Params        # LEVEL A/B, PAN A/B, PHASE, MIXER LEVEL, MUTE
+    muted: bool           # the same control as the splitter's MUTE - see below
 ```
+
+> **The splitter's MUTE and the mixer's MUTE are one control.** The manual lists a MUTE
+> row under SPLITTER PARAMETERS and another under MIXER PARAMETERS, so it reads as two.
+> On the unit they are linked: muting the splitter shows the mixer's MUTE already engaged,
+> and it is not a catalogue parameter of either device (`protocol.md`, "Splitter and mixer
+> MUTE is ONE control"). Both screen paths are kept, because both exist on screen, and
+> `muted` on either object is the same state. Setting one changes the other.
 
 Placement rules are the device's: a refused placement (DSP capacity) raises
 `CapacityError` - *detected*, not predicted, because the wire offers no headroom read.
 A cross-row `move_to` creates a branch, exactly as dragging does on the touchscreen.
 Side-chain SOURCE/TRIGGER is an ordinary `ChoiceParam` on the blocks that have it.
+
+### The collections, spelled out
+
+Named here so every access path in this document leads to a declared type.
+
+```python
+class Setlists:                          # device.setlists
+    factory: Setlist                     # Factory Presets
+    my_presets: Setlist                  # My Presets
+    def __getitem__(self, name: str) -> Setlist: ...
+    def __iter__(self) -> Iterator[Setlist]: ...
+    def create(self, name: str) -> Setlist: ...        # M3
+
+class Library(Generic[I]):                # captures, IRs, plugin presets
+    def __getitem__(self, name: str) -> I: ...
+    def __iter__(self) -> Iterator[I]: ...
+    def find(self, name: str) -> I | None: ...
+
+class Scenes:                            # preset.scenes
+    active: Scene
+    def __getitem__(self, letter: str) -> Scene: ...   # scenes["B"]
+    def __iter__(self) -> Iterator[Scene]: ...
+
+class Slots:                             # row.slots - the eight cells in a row
+    def __getitem__(self, slot: int) -> Block | None: ...   # 1..8
+    def __iter__(self) -> Iterator[Block | None]: ...
+
+class BlockGrid:                         # preset.blocks / scene.blocks
+    def __getitem__(self, where: tuple[int, int]) -> Block | None: ...  # [row, slot]
+    def __iter__(self) -> Iterator[DeviceBlock]: ...   # occupied cells only
+
+class Params:                            # block.params
+    def __getitem__(self, name: str) -> Parameter: ...  # params["GAIN"]
+    def __iter__(self) -> Iterator[Parameter]: ...
+```
 
 ## 4. Parameters
 
@@ -346,13 +446,21 @@ class KnobParam(Parameter[float]):
     unit: str                            # "dB", "Hz", "ms", "%", ""
     range: Range                         # min/max as displayed
 
-class SwitchParam(Parameter[bool]): ...
+class SwitchParam(Parameter[bool]): ...  # two states only; see the note below
 
-class TextParam(Parameter[str]): ...     # e.g. a Cab's microphone name field
+class TextParam(Parameter[str]): ...     # a free-text field, where one exists
 
-class ChoiceParam(Parameter[C]):         # dropdowns
+class ChoiceParam(Parameter[C]):         # dropdowns, and switches of three or more
     options: Sequence[C]
 ```
+
+> **Switches are not always boolean.** The manual describes SWITCHES as toggling "between
+> **two or more** discrete states". `SwitchParam` covers the two-state case; a switch with
+> three or more is a `ChoiceParam` over its own option list, even though the screen calls
+> it a switch. `TextParam`'s only candidate so far - a cab's microphone - is described by
+> the manual as *selectable*, not typed, so no confirmed `TextParam` exists yet; it stays
+> in the design because the parameter-kind taxonomy needs it, not because a user can reach
+> one today.
 
 **Values are what the screen shows.** A knob that displays -6.0 dB reads and writes
 `-6.0`. The raw wire scale (0..1 with unity at 0.769, and friends) is the translation
@@ -367,25 +475,30 @@ dynamic but *structured* - routing sources whose membership grows with the prese
 type. Only genuinely free-form lists fall back to `str`. Option names always come from
 the preset's own `dynamic_steps`, so they match the screen exactly.
 
-## 5. The catalog
+## 5. The Virtual Device List
 
 ```python
-class Catalog:
-    categories: Sequence[Category]       # AMP, CAB, DELAY ... as the Virtual Device List
-    def find(self, name: str) -> CatalogModel | None: ...
-    pinned: Sequence[CatalogModel]
-    def pin(self, model: CatalogModel) / unpin(...): ...
+class VirtualDeviceList:                 # the VIRTUAL DEVICE LIST, as on screen
+    categories: Sequence[Category]       # AMP, CAB, DELAY ...
+    def find(self, name: str) -> VirtualDevice | None: ...
+    pinned: Sequence[VirtualDevice]
+    def pin(self, device: VirtualDevice) / unpin(...): ...
 
-class CatalogModel:
-    name: str
+class VirtualDevice:
+    name: str                            # the parameter editor's VIRTUAL DEVICE NAME
     category: Category
     stereo: bool
     sidechain: bool                      # the (S/C) marker
 ```
 
-The catalog is the device's own model repository, so it reflects purchased and captured
+The list is the device's own model repository, so it reflects purchased and captured
 content. Plugin-locked devices appear with their plugin marker, matching the list on
 screen.
+
+> **Named for the screen, not the wire.** The protocol calls this the model repository and
+> its entries models, and the model layer used to as well. But *model* is also this
+> document's word for the domain model, and the unit's own words are VIRTUAL DEVICE LIST
+> and VIRTUAL DEVICE NAME. The screen wins.
 
 ## 6. Device-level features
 
@@ -396,12 +509,16 @@ class IO:                                # the I/O Settings menu (swipe down)
     inputs: Mapping[str, InputPort]      # "INPUT 1", "INPUT 2"
     returns: Mapping[str, ReturnPort]
     outputs: Mapping[str, OutputPort]    # "OUT 1/L" .. "OUT 4/R", sends
+    output_pairs: Mapping[str, OutputPair]   # OUTPUT PAIRING, per pair
+    expression: Mapping[str, ExpressionPort] # "EXP 1", "EXP 2" - tappable here
     usb: USBPorts
+    global_eq: GlobalEQ                  # tapped at the TOP of I/O Settings
 
 class InputPort:
     level_db: float
     impedance: Impedance                 # enum; disabled in Mic type, as on screen
-    input_type: InputType                # Instrument / Mic
+    input_type: InputType | None         # Instrument / Mic. None on ESS-codec units,
+                                         # which show no TYPE switch at all
     # PHANTOM 48V: omitted - no field exists in the schema (appendix)
 
 class OutputPort:
@@ -411,12 +528,17 @@ class OutputPort:
 class OutputPair:
     linked: bool                         # OUTPUT PAIRING; paired outs share values
 
+class ExpressionPort:
+    position: float                      # read-only: the POSITION indicator
+    # RECALIBRATE: omitted - no known wire path (appendix)
+
 class USBPorts:
     level: float
     hp_source: HPSource                  # enum
     dry_wet: DryWet                      # enum: DI vs processed on outs 1/2, 3/4
+    midi_thru: bool                      # listed on this screen AND under Device MIDI
 
-class GlobalEQ:
+class GlobalEQ:                          # a sub-screen of I/O Settings, per the manual
     bypassed: bool
     bands: Sequence[EQBand]              # 5 bands
     outputs: EQOutputAssignment          # out 1/2, out 3/4
@@ -426,7 +548,7 @@ class EQBand:
     gain_db: float                       # -12..+12
     frequency_hz: float                  # 20..20k
     q: float
-    enabled: bool
+    bypassed: bool                       # the screen says EQ BAND BYPASS
     # the OUT tab's overall LEVEL: omitted - dB mapping unverified (appendix)
 
 class Tuner:
@@ -437,12 +559,14 @@ class Tuner:
     # LIVE TUNER (the streaming needle): omitted by decision (appendix)
 
 class Tempo:                             # the Tempo & Metronome menu
-    bpm: float
+    bpm: float                           # the tempo IN EFFECT - see the note below
     led: bool
     metronome: Metronome
     # MODE (Global vs Preset): omitted - not on the wire at all (appendix)
 class Metronome:
-    playing: bool
+    muted: bool                          # MUTE on the unit, PLAYBACK in the manual:
+                                         # one control. It mutes; it does not stop the
+                                         # clock (section 9)
     volume: float
     pan: float
     time_signature: TimeSignature
@@ -461,23 +585,32 @@ class Modes:
 # the device's own rules, enforced by the device; the model surfaces its refusal.
 
 class MasterVolume:
-    level: float                         # 0-100 as displayed; READ-ONLY (the wire cannot
-                                         # write it - it is a separate gain stage)
+    level: float                         # READ-ONLY: a MasterVolume write is ignored,
+                                         # measured. See section 13 - Cortex Control does
+                                         # move it, by a route we have not found
     outputs: set[OutputAssignment]       # the overlay's checkboxes
-    per_output: bool                     # knob function: global vs output-specific
 
-class Settings:                          # the Device Settings menu, eponymous rows
+class Settings:                          # the DEVICE SETTINGS section of chapter 10
     global_bypass: GlobalBypass          # Cab / IR Loader, four rows each
     scene_bypass_behavior: SceneBypassBehavior   # enum, three modes
-    stomp_mode_auto_assign: bool
+    stomp_mode_bypass: bool              # the screen's own label
     hold_timing_ms: int                  # 500-1000 in 100 ms steps, as on screen
     swap_tempo_and_tuner: bool
     gig_view_access: bool
     latency_compensation: bool
     midi: MidiSettings                   # channel, thru, over USB, ignore dup PC, clock in/out
-    brightness: Brightness               # screen, LED, dimmed LED (quantized by the unit)
+
+class System:                            # the SYSTEM SETTINGS section of chapter 10
+    brightness: Brightness               # screen and LED brightness
     storage: Storage                     # read-only: presets/captures/IRs disk usage
+    master_volume_knob: MasterVolumeKnob # enum: global vs output-specific
 ```
+
+> **Two sections, not one.** Chapter 10 has four named subsections - Account, System,
+> Device, Support. Brightness, device storage and the master-volume knob function live
+> under **System**, the other eight rows under **Device**, so `settings` and `system` are
+> separate objects rather than one flattened bag. Account and Support are omitted: cloud
+> surfaces are out of scope, and Support is diagnostics.
 
 ## 7. Assignments and Preset MIDI Out
 
@@ -486,11 +619,13 @@ class StompAssignment:                   # footswitches A-H in Stomp mode, per p
     footswitch: FootswitchLetter         # "A".."H"
     targets: Sequence[DeviceBlock]       # one switch can toggle several blocks
     label: str                           # EDIT STOMP's custom name
-    momentary: bool
+    # momentary: omitted. The manual documents momentary only for the expression toe
+    # switch and Looper X, never for a stomp assignment, and no hardware check confirms
+    # one. Principle 3: omit rather than ship an unverified control (section 13).
 
 class Stomps:                            # preset.stomps
     def __getitem__(self, footswitch: str) -> StompAssignment | None: ...
-    def assign(self, footswitch: str, block: DeviceBlock, *, momentary: bool = False,
+    def assign(self, footswitch: str, block: DeviceBlock,
                label: str | None = None) -> StompAssignment: ...
     def clear(self, footswitch: str) -> None: ...
 
@@ -505,11 +640,18 @@ class ExpressionBypass:
     # until verified (appendix)
 
 class PresetMidiOut:                     # preset.midi_out - the Preset MIDI Out menu
-    on_load: Sequence[MidiMessage]
-    footswitches: Mapping[FootswitchLetter, Sequence[MidiMessage]]
-    expression: Mapping[ExpressionPedal, Sequence[MidiMessage]]
-# MidiMessage is a small typed union: ControlChange / ControlChangeToggle / ProgramChange
+    on_load: Sequence[OnLoadMessage]
+    footswitches: Mapping[FootswitchLetter, Sequence[FootswitchMessage]]
+    expression: Mapping[ExpressionPedal, Sequence[FootswitchMessage]]
+# FootswitchMessage = ControlChange | ControlChangeToggle | ProgramChange
+# OnLoadMessage     = ControlChange | ProgramChange
 ```
+
+> **On-load messages cannot be CC Toggle.** The manual gives footswitch and expression
+> messages three types (CC, CC Toggle, PC) and on-load messages only two (CC or PC), and
+> reinforces it - MIN/MAX VALUE, the CC-Toggle-only field, appears only in the footswitch
+> block. Two unions rather than one, so the narrower screen is the narrower type. Principle
+> 2 again.
 
 Expression-assigned parameters are excluded from scene data (the unit's rule); the model
 reflects that: assigning an expression pedal to a parameter fixes `follows_scenes` off,
@@ -523,7 +665,7 @@ matching the screen's behavior.
   [§12](#12-disconnect-standby-and-reconnect); the protocol layer raises this type, so
   the model does not invent its own.
 - Static prevention beats runtime errors everywhere types can carry the rule: factory
-  types lack mutating methods, enums bound choice values, `Slot` rejects malformed
+  types lack mutating methods, enums bound choice values, `PresetAddress` rejects malformed
   addresses at parse time.
 
 The device accepts-and-ignores writes it does not understand, so the model's contract
@@ -552,7 +694,7 @@ nothing. Confirmed: one on-unit edit produced 40 `Grid` pushes.
 
 **2. If a message mentions something we do not model, we stop trusting our copy.**
 Suppose someone edits a splitter. The model cannot represent a splitter at all (no host
-write path, no readable column - see the appendix), so the push names something we have
+write path, and the wire carries no position for it - see the appendix), so the push names something we have
 no code for. Then we discard our copy of that preset and read a fresh one. Slower, but
 right. A message of a type we know nothing about is ignored outright, which is what the
 RX thread already does.
@@ -580,12 +722,12 @@ happens when an echo does disagree.
 | Which scene is active | `preset.scenes.active` | `Scene{READ}` | `Scene` |
 | Scene names and colors | `scene.name` | comes with the preset | `SceneLabel`, `SceneColor` |
 | Unsaved edits | `preset.has_unsaved_changes` | `PresetDirty{READ}` | `PresetDirty` |
-| Which slot is loaded | `preset.slot` | `SetlistPosition{READ}` | `SetlistPosition` |
+| Which preset is loaded | `preset.address` | `SetlistPosition{READ}` | `SetlistPosition` |
 | What is in a setlist | `setlist` iteration | `File{READ}` | `File` |
 | Recents and favorites | `device.recents`, `.favorites` | `RecentsFavorites{READ}` | `RecentsFavorites` |
 | I/O, settings, EQ, volume, mode | `device.io` and friends | one READ each | one push each |
 | Power state (awake / standby) | `device.power_state` | in general settings | `GeneralSettings` |
-| Model list, firmware, serial | `device.catalog`, `.firmware` | `ModelRepo`, `Version` | nothing; these do not change |
+| Device list, firmware, serial | `device.virtual_devices`, `.firmware` | `ModelRepo`, `Version` | nothing; these do not change |
 
 The third column is the safety net. Wherever the fourth turns out to be unreliable, we
 ask instead of remembering, which is what lets the model honour principle 3 and never
@@ -614,12 +756,17 @@ hand back a value with a "might be stale" caveat.
    that the RX thread can never block or die.
 6. **Reconnecting discards everything**, firmware and serial included - see
    [§12](#12-disconnect-standby-and-reconnect).
-7. **The tempo stream is not a change signal.** The metronome transport always runs - the
-   unit has no start/stop control at all, and what silences it is a separate MUTE - so
+7. **The tempo stream is not a change signal.** The metronome clock always runs, so
    `GlobalTempo` arrives in pairs, one pair per beat (measured 1.5 s apart at 40 bpm), on
    every connection. Treating every inbound message as "something changed, go re-read"
    would have had the model re-reading constantly for no reason. Applying pushes as data
    does not care.
+
+   The control that looks like a start/stop is not one. It is **one control with three
+   names** - MUTE on the unit, START in the catalogue, PLAYBACK in the manual - traced to
+   tempo parameter 4 by pressing the unit's own MUTE button. It silences the metronome
+   rather than stopping the clock, which is why the stream never pauses. The model calls it
+   `metronome.muted`, after the label a player actually sees.
 
 ## 10. Writing, and knowing a write landed
 
@@ -627,8 +774,8 @@ The unit accepts writes it does not understand and silently does nothing, so "no
 proves nothing. What we have instead is the echo.
 
 **The echo is a sparse, keyed delta.** Writing one parameter produced a `Grid` push of
-**23 bytes**: one chain with `row` set, one model with `column` set, one parameter, and
-nothing else. That is worth stating plainly because it is the opposite of a recalled
+**23 bytes**: one chain with `row` set, one entry with `column` set (the wire's word for
+what the screen calls a slot), one parameter, and nothing else. That is worth stating plainly because it is the opposite of a recalled
 preset, whose chains carry *no* explicit row - the reason writing a whole preset back
 does nothing. Echoes are unambiguous where recalls are positional, so an echo merges
 into our copy with no guessing.
@@ -701,7 +848,7 @@ get a preset, change it, and call `save()`.
   the same name to the same slot is *not* treated as a collision, so the unit does not
   append a `_2` suffix.
 - `save_as(name)` writes to a new slot or name, and that *can* collide - the unit renames
-  rather than refusing. So the returned `UserPresetEntry` is the authority on what was
+  rather than refusing. So the returned `UserPresetItem` is the authority on what was
   actually stored: read `entry.name`, not the name you passed in.
 
 **Factory presets.** You can edit a factory preset on the grid and hear the change; you
@@ -830,7 +977,37 @@ Named so nothing here is mistaken for verified.
   schema and has never been observed.
 - **Which `FileMessage.type` value means captures versus IRs.** Values 0, 1 and 2 were
   all observed during directory enumeration, which answered a standing protocol question,
-  but the mapping was not pinned down.
+  but the mapping was not pinned down. This is what `device.plugin_presets`, the capture
+  library and the IR library will need to enumerate properly.
+
+### Raised by an independent review of this design against the manual
+
+- **Per-preset tempo is read through a device-global object.** The manual's PRESET tempo
+  mode stores tempo and all seven metronome settings *in each preset*, but MODE is not on
+  the wire, so the model cannot see which mode the unit is in. `device.tempo` therefore
+  reports the tempo **in effect**, which is always correct - but in PRESET mode writing to
+  it edits the loaded preset and marks it dirty, and the model cannot currently say so.
+  That is the situation principle 3 exists to prevent. Either MODE becomes readable, or
+  tempo needs a per-preset surface.
+- **Master volume, and what Cortex Control does.** A `MasterVolume` write is ignored -
+  measured. But the manual says Cortex Control's own master volume knob adjusts output
+  level and temporarily deactivates the hardware wheel, so a host-side path exists by some
+  route we have not found. The displayed `0-100` range is also not stated in the manual.
+- **`stomp.momentary`.** Dropped from the model. The manual documents momentary only for
+  the expression toe switch and Looper X, never for a stomp assignment, and no hardware
+  check confirms one. If the touchscreen does offer it, it comes back.
+- **Scene copy and swap, and scene colour.** Gig View operations with no audited wire path.
+  `SceneCopy` is documented in `protocol.md` and `SceneColor` is a registered type, so this
+  is an audit gap rather than a protocol gap.
+- **The footswitch HOLD action.** `settings.hold_timing_ms` sets how long a hold takes;
+  what a hold actually triggers is neither modelled nor audited.
+- **Assign Looper X Actions.** A distinct named menu operation for the footswitch layout,
+  separate from `preset.stomps`. Unaudited.
+- **I/O device variants.** First-generation units show input TYPE switches and ESS-codec
+  units do not. `InputPort.input_type` is `None` on the latter, but nothing readable tells
+  the model which unit it is talking to, so that `None` cannot yet be produced correctly.
+- **The capture's own metadata.** Capture Type and Preferred Instrument are the two fields
+  the manual *does* attach to a Neural Capture, and `CaptureItem` models neither.
 
 The natural home for closing these is ADR-0005's hardware suite rather than more one-off
 scripts: the write-echo check that produced §10's numbers already snapshots, writes,
@@ -858,10 +1035,10 @@ the n/a rows below where they intersect the API at all.
 | Power on/off, reboot, Be Right Back, lock | - | n/a | physical power button; the wire refuses `power_option` as a command |
 | Master Volume level | `device.master_volume.level` (read-only) | partly | the wire cannot write it; nearest writable equivalent is output levels |
 | Master Volume output assignment | `device.master_volume.outputs` | yes | |
-| Master Volume knob function | `device.master_volume.per_output` | yes | |
+| Master Volume knob function | `system.master_volume_knob` | yes | the manual documents this row under ch. 10 System Settings, not ch. 3 |
 | Footswitch presses, touch gestures, encoders | - | n/a | physical controls |
-| Recall a preset | `entry.recall()`, `device.recall("28C")` | yes | |
-| Bank navigation / Blinking Mode | `Slot` addressing covers the destination | yes | Blinking Mode itself is a footswitch UI flow, n/a |
+| Recall a preset | `item.recall()`, `device.recall("28C")` | yes | |
+| Bank navigation / Blinking Mode | `PresetAddress` addressing covers the destination | yes | Blinking Mode itself is a footswitch UI flow, n/a |
 | Tuner menu open/close | `device.tuner.visible` | partly | accepted on the wire; on-screen effect not yet eyeballed |
 | Tuner reference pitch | `device.tuner.reference_hz` | yes | displayed Hz; wire stores offset from 440 |
 | Tuner input source | `device.tuner.source` | yes | `RETURN_1_2` refused by the device itself |
@@ -875,7 +1052,7 @@ the n/a rows below where they intersect the API at all.
 | Per-scene tempo (Cortex Control's bottom bar claims it) | **omitted** | n/a | the unit has no per-scene tempo; `scene_tempo` is inert on the wire. On-unit presentation wins |
 | Modes: read/set active | `device.modes.active` | yes | |
 | Modes: reorder / merge to HYBRID / remove | `device.modes.set_cycle()` | yes | all six ordered hybrid pairings modeled; device enforces its own cycle rules |
-| PRESET / SCENE / STOMP mode semantics | covered by `Slot`, `Scene`, `Stomps` | yes | the modes are footswitch behavior; their objects are modeled where state lives |
+| PRESET / SCENE / STOMP mode semantics | covered by `PresetAddress`, `Scene`, `Stomps` | yes | the modes are footswitch behavior; their objects are modeled where state lives |
 | Scene recall | `scene.activate()` | yes | |
 | Scene assignment of a parameter (tap-and-hold) | `param.follows_scenes` | yes | flag must travel alone on the wire - absorbed |
 | Default scene on save | `default_scene=` on save methods | yes | set by saving in that scene, as on the unit |
@@ -886,11 +1063,13 @@ the n/a rows below where they intersect the API at all.
 | Gig View SWAP SCENE / COPY SCENE | **omitted** | unaudited | no audited wire path; still open, see [§13](#13-still-open) |
 | Gig View EDIT STOMP | `stomp.label`, `stomp.targets` | yes | |
 | I/O: input LEVEL / IMPEDANCE / TYPE | `io.inputs[...]` | yes | fields travel one per message - absorbed |
+| I/O: no TYPE switch on ESS-codec units | `InputPort.input_type` is `None` there | unaudited | the manual notes first-generation units show TYPE and ESS-codec ones do not; the variant is not readable yet, see [§13](#13-still-open) |
 | I/O: PHANTOM 48V | **omitted** | no | no field exists in the recovered schema |
 | I/O: output LEVEL / GROUND LIFT / MUTE | `io.outputs[...]` | yes | mute travels alone - absorbed |
-| I/O: output pairing | `OutputPair.linked` | yes | |
-| I/O: USB LEVEL / HP SOURCE / DRY-WET | `io.usb` | yes | headphone output's own level is not writable anywhere |
-| Global EQ: bypass, 5 bands, output assignment | `device.global_eq` | yes | whole 28-index layout mapped |
+| I/O: output pairing | `io.output_pairs[...].linked` | yes | |
+| I/O: USB LEVEL / HP SOURCE / DRY-WET / MIDI THRU | `io.usb` | yes | headphone output's own level is not writable anywhere. MIDI THRU is listed on this screen and under Device MIDI; one field, both paths |
+| I/O: EXP 1 / EXP 2 ports | `io.expression[...]` | unaudited | a tappable port class on this screen; POSITION is readable, RECALIBRATE has no known wire path |
+| Global EQ: bypass, 5 bands, output assignment | `io.global_eq` | yes | whole 28-index layout mapped. The manual reaches it by tapping GLOBAL EQ at the top of I/O Settings, so it nests under `io` |
 | Global EQ: OUT tab overall level | **omitted** | partly | control reachable but its dB mapping is unverified - omission over caveat |
 
 ## Chapter 4 - The Grid
@@ -898,9 +1077,9 @@ the n/a rows below where they intersect the API at all.
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
 | Grid layout: 4 rows x 8 slots | `preset.rows`, `preset.blocks[r, c]` | yes | 1-based, as on screen |
-| Virtual Device List: browse by category | `device.catalog` | yes | the device's own repository |
-| Virtual Device List: search | client-side over `catalog` | n/a | iteration makes it a Python expression |
-| Pin/unpin a device | `catalog.pin()/unpin()`, `catalog.pinned` | yes | append-not-replace quirk absorbed |
+| Virtual Device List: browse by category | `device.virtual_devices` | yes | the device's own repository |
+| Virtual Device List: search | client-side over `device.virtual_devices` | n/a | iteration makes it a Python expression |
+| Pin/unpin a device | `virtual_devices.pin()/unpin()`, `.pinned` | yes | append-not-replace quirk absorbed |
 | Place / replace a block | `row.place()`, `block.replace()` | yes | acceptance verified by the model |
 | Remove a block | `block.remove()` | yes | |
 | Move a block (drag) | `block.move_to()` | yes | cross-row move creates a branch, as on screen |
@@ -913,7 +1092,7 @@ the n/a rows below where they intersect the API at all.
 | Lane Output Control | `row.output.lane` | yes | absent when routed to another row, as on screen |
 | Block bypass | `block.bypassed` | yes | per scene via the binding |
 | Parameter knobs / dropdowns / switches | `KnobParam` / `ChoiceParam` / `SwitchParam` | yes | display units; options from the preset's own lists |
-| Special parameters (Cabs, Looper X full-screen editors) | same `Params` surface | yes | text-valued ones are `TextParam` |
+| Special parameters (Cabs, Looper X full-screen editors) | same `Params` surface | yes | no confirmed `TextParam` yet - the manual calls a cab's microphone *selectable*, not typed |
 | Side-chain SOURCE/TRIGGER | a `ChoiceParam[Source]` on (S/C) blocks | yes | ordinary parameter on the wire too |
 | Splitter & Mixer: create / activate | `row.create_split()` | yes | |
 | Splitter parameters (TYPE/STEREO/BALANCE/LEVELS/FREQ/MODE) | `split.splitter.params` | yes | |
@@ -921,15 +1100,17 @@ the n/a rows below where they intersect the API at all.
 | Splitter/Mixer MUTE | `split.muted` | yes | one shared control - the wire confirms it |
 | Where a row branches and rejoins | `row.split`, branch topology on `Row` | yes | |
 | Footswitch (Stomp) assignment | `preset.stomps` | yes | multiple blocks per switch modeled |
-| Stomp momentary + label | `stomp.momentary`, `stomp.label` | yes | |
+| Stomp label | `stomp.label` | yes | |
+| Stomp momentary | **omitted** | unaudited | the manual documents momentary only for the expression toe switch and Looper X, never for a stomp; unverified, see [§13](#13-still-open) |
 | Expression pedal assignment (MIN/MAX, reverse) | `param.expression` | yes | reversal by min>max, as documented |
 | Expression bypass: three modes | `block.expression_bypass.mode` | yes | wire order differs from the manual's listing - absorbed |
 | Expression bypass: INVERT RANGE / SWITCH DELAY / LATCH EMULATION | **omitted** | unaudited | not in the coverage audit; still open, see [§13](#13-still-open) |
 | Expression pedal calibration | **omitted** | no | global setting; candidate `IOSettings`, unexplored |
 | Set Parameters as Defaults | **omitted** | no | `DefaultParameters` decoded, never written |
-| Looper X: place the block | `row.place()` - ordinary catalog model | yes | |
+| Looper X: place the block | `row.place()` - an ordinary virtual device | yes | |
 | Looper X: parameters | `LooperBlock.params` | yes | |
 | Looper X: transport actions | **omitted**; `LooperBlock.state` is readable | partly | transport is not drivable over USB; MIDI CC#48-61 is the documented route |
+| Assign Looper X Actions (footswitch layout) | **omitted** | unaudited | a distinct named menu operation, not the same as `preset.stomps`; unaudited, see [§13](#13-still-open) |
 | Undo / redo | **omitted** | no | `UndoRedo` arrives as an acceptance signal only; never driven |
 
 ## Chapter 5 - The Directory
@@ -937,23 +1118,25 @@ the n/a rows below where they intersect the API at all.
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
 | Directory navigation, categories | `device.setlists` / `.captures` / `.irs` | yes | |
-| Favorites | `device.favorites`, `entry.favorite` | yes | presets only, as on the unit |
+| Favorites | `device.favorites`, `item.favorite` | yes | the manual favorites *items*, including Plugin Presets - so not presets only |
 | Recents | `device.recents` | yes | |
-| Factory / My Presets setlists | `setlists.factory` / `.user` | yes | non-deletable, so no `delete()` on them |
+| Factory / My Presets setlists | `setlists.factory` / `.my_presets` | yes | non-deletable, so no `delete()` on them |
 | User setlists: create / rename / delete | `setlists.create()`, `setlist.rename()/.delete()` | yes | |
-| Banks | `Slot` | yes | manual self-contradicts on bank size (8 vs 4); still open, see [§13](#13-still-open) |
+| Banks | `PresetAddress` | yes | manual self-contradicts on bank size (8 vs 4); still open, see [§13](#13-still-open) |
 | Downloads / Cloud Presets categories | listing only, if discoverable | no | cloud surfaces are out of scope without owner permission |
 | Save (in place) | `UserPreset.save()` | yes | |
 | Save As | `preset.save_as()` | yes | works from factory presets, as on the unit |
 | Unsaved-changes indicator (italic name) | `preset.has_unsaved_changes` | partly | display rule is clear; detection mechanics in [§11](#11-the-save-lifecycle) |
-| Preset descriptive tags | **omitted** | n/a | no save path preserves them - the unit's own Save As strips them |
+| Preset descriptive tags | **omitted** | n/a | not a manual feature at all ("tag" appears nowhere); listed because factory presets carry them on the wire and no save path preserves them - the unit's own Save As strips them |
 | Preset description / author / cloud id | **omitted** | no | writes ignored; author stamped by the device from the signed-in account |
 | Preset volume and pan fields | **omitted** | n/a | inert fields; the unit has no control for them |
-| Move a preset | `entry.move_to()` | yes | same-setlist observed so far |
-| Copy / duplicate a preset | `entry.copy_to()` | partly | recall-and-save under the hood, seconds per preset; the model says so in its docs |
-| Delete a preset | `entry.delete()` | yes | eventually consistent on the wire - absorbed |
-| Bulk actions (multi-select) | Python iteration over entries | partly | no host-drivable bulk op; per-item calls; `duplicate_setlist()` composes |
+| Move a preset | `item.move_to()` | yes | same-setlist observed so far |
+| Copy / duplicate a preset | `item.copy_to()` | partly | recall-and-save under the hood, seconds per preset; the model says so in its docs |
+| Rename a preset | `item.rename()` | yes | the manual lists store / edit / rename / move together |
+| Delete a preset | `item.delete()` | yes | eventually consistent on the wire - absorbed |
+| Bulk actions (multi-select) | Python iteration over items | partly | no host-drivable bulk op; per-item calls; `duplicate_setlist()` composes |
 | Sorting | client-side | n/a | |
+| Bank View / List View | **omitted** | n/a | two named Directory views; a display mode with no state a host can read or set |
 | Search (incl. recent searches) | client-side over listings | no | on-wire search unexplored (`RecentSearches`) |
 | Filtering captures by category | client-side over `captures` | n/a | |
 | Neural Captures: list | `device.captures` | yes | Factory V1/V2 and My Captures |
@@ -962,7 +1145,7 @@ the n/a rows below where they intersect the API at all.
 | Capture/IR folders, subfolders, saving destination | **omitted** (flat listing) | no | folder management unexplored |
 | IRs: list | `device.irs` | yes | plugin-asset IRs excluded - the unit cannot load them |
 | IRs: load into an IR Loader | `IRLoaderBlock.slots[n].ir` | yes | two slots; keyed by library id, name travels separately - absorbed |
-| Plugin Presets folders | `PluginPresetEntry` listing only | no | candidates `License`/`CloudProduct` |
+| Plugin Presets folders | `PluginPresetItem` listing only | no | candidates `License`/`CloudProduct` |
 | Upload to Cortex Cloud | **omitted** | no | cloud surface; owner permission required |
 
 ## Chapter 6 - Neural Capture
@@ -982,22 +1165,23 @@ the n/a rows below where they intersect the API at all.
 | MIDI settings: channel / Thru / over USB / ignore dup PC / clock | `device.settings.midi` | partly | all confirmed writable except `internal_midi_clock_enabled`, which refuses writes - that one field is omitted |
 | Preset MIDI Out: footswitch / expression / on-load | `preset.midi_out` | yes | CC, CC Toggle, and PC message types modeled |
 
-## Chapter 10 - Device Settings menu
+## Chapter 10 - Device Settings menu (System and Device sections)
 
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
 | Account settings, cloud backups | **omitted** | no | cloud surface; owner permission required |
 | Wi-Fi / connectivity | **omitted** | no | unexplored |
 | CorOS updates | **omitted** - permanently | no | the `Updater` surface is out of scope for good (see STEERING) |
-| Screen / LED / dimmed-LED brightness | `settings.brightness` | yes | unit quantizes; dimmed stays below LED - device rules, reported as read back |
+| BRIGHTNESS (screen and LED) | `system.brightness` | yes | System Settings. Unit quantizes; dimmed stays below LED - device rules, reported as read back. The third *dimmed-LED* field is wire-derived, not a manual row |
 | Power button sensitivity | **omitted** | no | refused as a command by the wire |
-| Master Volume knob function | `master_volume.per_output` | yes | also in ch. 3 |
-| Device storage info | `settings.storage` | yes | read-only |
+| MASTER VOLUME KNOB (global vs output-specific) | `system.master_volume_knob` | yes | System Settings |
+| DEVICE STORAGE | `system.storage` | yes | System Settings; read-only |
 | Factory reset | **omitted** - permanently | n/a | destructive; not a host operation |
 | GLOBAL BYPASS (Cab / IR per row) | `settings.global_bypass` | yes | |
 | SCENE BYPASS BEHAVIOR (3 modes) | `settings.scene_bypass_behavior` | yes | changes what bypass writes persist - interaction still open, see [§13](#13-still-open) |
-| STOMP MODE BYPASS (auto-assign) | `settings.stomp_mode_auto_assign` | yes | |
+| STOMP MODE BYPASS | `settings.stomp_mode_bypass` | yes | |
 | HOLD TIMING | `settings.hold_timing_ms` | yes | milliseconds in the API; the wire stores an index - absorbed |
+| The footswitch HOLD action being timed | **omitted** | unaudited | HOLD TIMING sets the threshold; what a hold triggers is not modelled or audited, see [§13](#13-still-open) |
 | SWAP TEMPO AND TUNER | `settings.swap_tempo_and_tuner` | yes | |
 | GIG VIEW ACCESS | `settings.gig_view_access` | yes | |
 | LATENCY COMPENSATION | `settings.latency_compensation` | yes | |
