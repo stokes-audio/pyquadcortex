@@ -136,9 +136,11 @@ class PresetAddress:
 > says banks of eight ("either A-D or E-H" in a PRESET-containing HYBRID mode, so eight
 > otherwise); chapter 5 says four by default and two in HYBRID. The two accounts are each
 > internally consistent, so this is not one stray sentence. `PresetAddress` models the
-> *address* and takes no position on how many presets share a bank - but note `position`
-> spanning "A".."H" is only reachable under chapter 3's reading. Unresolved on hardware,
-> see [§13](#13-still-open).
+> *address* and takes no position on how many presets share a bank. Settled on hardware:
+> chapter 3 is right at **8**, and a PRESET-containing HYBRID halves it to **4**, so
+> `position` spans "A".."H" normally and "A".."D" there. The sting is that slot NAMES move
+> with the mode - linear position 5 reads "1F" normally and "2B" under the hybrid - so an
+> address is only unambiguous alongside the mode it was read in.
 
 ### Directory items are a type family
 
@@ -190,8 +192,9 @@ class PluginPresetItem(Item): ...       # listing and favoriting; see appendix
 > on a preset - but all five values were confirmed by setting them on the unit's own
 > picker and reading them back (`protocol.md`, "Tags are not preserved by ANY save path").
 > The touchscreen wins over the manual by this document's own precedence rule, so the
-> manual is simply behind here. The capture's own Capture Type and Preferred Instrument
-> are not modelled yet; see [§13](#13-still-open).
+> manual is simply behind here. Capture Type and Preferred Instrument ARE on the wire, as
+> `ProductData.device` and `.instrument`, so `CaptureItem` can carry both - see
+> [§13](#13-still-open) for the one Capture Type value the unit's filter does not name.
 
 `Library[I]` is the read side of the Captures, IR and Plugin Preset libraries: iteration,
 `find()`, and typed items. Library *management* (folders, rename, delete) has no known
@@ -619,9 +622,11 @@ class StompAssignment:                   # footswitches A-H in Stomp mode, per p
     footswitch: FootswitchLetter         # "A".."H"
     targets: Sequence[DeviceBlock]       # one switch can toggle several blocks
     label: str                           # EDIT STOMP's custom name
-    # momentary: omitted. The manual documents momentary only for the expression toe
-    # switch and Looper X, never for a stomp assignment, and no hardware check confirms
-    # one. Principle 3: omit rather than ship an unverified control (section 13).
+    momentary: bool                      # RESTORED: the unit's Assign footswitch modal
+    #   has a Latching/Momentary toggle that the manual never mentions. Settable ONLY
+    #   when len(targets) == 1 - the device silently refuses a multi-block switch and
+    #   greys its own toggle out in the same case, so the model refuses it honestly
+    #   rather than passing a write through that will not land.
 
 class Stomps:                            # preset.stomps
     def __getitem__(self, footswitch: str) -> StompAssignment | None: ...
@@ -636,8 +641,11 @@ class ExpressionAssignment:              # assigned FROM the parameter, as on sc
 
 class ExpressionBypass:
     mode: ExpressionBypassMode           # HEEL_TOE / SWITCH / STOP
-    # INVERT RANGE, SWITCH DELAY, LATCH EMULATION: unaudited wire path - omitted
-    # until verified (appendix)
+    invert: bool                         # INVERT RANGE
+    switch_delay_ms: int                 # SWITCH DELAY, real ms; greyed out in SWITCH mode
+    latch_emulation: bool                # LATCH EMULATION
+    # All three verified on hardware as ExpressionBypassInfo{invert, delay_ms,
+    # latch_emulation}; a false always travels as an absent field.
 
 class PresetMidiOut:                     # preset.midi_out - the Preset MIDI Out menu
     on_load: Sequence[OnLoadMessage]
@@ -956,63 +964,67 @@ current one.
 
 ## 13. Still open
 
-Named so nothing here is mistaken for verified.
+Named so nothing here is mistaken for verified. Everything this list used to hold was
+closed on hardware on 2026-08-07; what survives is below, and each entry says what was
+tried rather than just what is unknown.
 
-- **The device-wide broadcast sweep.** Confirmed so far: a knob turn broadcasts `Grid`;
-  standby and wake broadcast `GeneralSettings`; edits broadcast `PresetDirty`. Every other
-  touchscreen action - directory operations, block moves, routing, modes, footswitches,
-  expression, global EQ, looper - is unaudited. This is breadth, and it changes no
-  decision above, because the read-path column covers anything the push column misses.
-- **Echo behaviour for write types other than parameters and placement.** Only those two
-  have measured latencies. Bypass, routing, scene names and colors, and global settings
-  are unmeasured, so the watcher's timeout is set from the two known cases.
-- **Whether writes are honoured during standby.** Untested. Lock mode does honour writes,
-  but it is a different state.
-- **Part I's appendix rows marked *Part II*** are mostly still open: bank size (the manual
-  contradicts itself, 8 versus 4), scene name and color writes, scene copy and swap, the
-  three expression-bypass fields, and how `SCENE BYPASS BEHAVIOR` changes which bypass
-  writes persist.
-- **`RecallPreset.reason` is characterised but not exhaustively.** A host recall and a
-  READ reply carry `OTHER`; the push a save emits carries `SAVE`; `UNDO` exists in the
-  schema and has never been observed.
-- **Which `FileMessage.type` value means captures versus IRs.** Values 0, 1 and 2 were
-  all observed during directory enumeration, which answered a standing protocol question,
-  but the mapping was not pinned down. This is what `device.plugin_presets`, the capture
-  library and the IR library will need to enumerate properly.
+### Genuinely open
 
-### Raised by an independent review of this design against the manual
+- **`RecallPreset.reason` UNDO.** The value exists in the schema and has never been
+  observed. It may be unreachable on this firmware: there is **no grid-level undo on the
+  unit** - the only UNDO is Looper X's, which is a Looper action and not a preset recall -
+  so nothing found so far can cause a recall whose reason is UNDO. `UndoRedo` messages do
+  arrive after accepted edits and carry a per-slot frame count, so the undo machinery is
+  real; what is missing is any way for a human or a host to trigger it.
+- **Bypass persistence over MIDI.** The unit's own SCENE BYPASS BEHAVIOR wording groups
+  **MIDI with footswitches**, not with the touchscreen - a distinction the manual's summary
+  omits. A USB HID write was measured and behaves like the touchscreen, but the MIDI half
+  is untested because this library has no MIDI path. Do not assume a future MIDI route
+  inherits the host write's behaviour.
+- **The first-generation I/O variant.** `Version.is_ess` IS the discriminator the model
+  needed, and reads `True` here. But only an ESS unit has ever been available, so the
+  first-generation value is inferred from the field's name rather than observed, and the
+  correlation with `InputPort.input_type` presence rests on one machine.
+- **Capture Type value 8.** `ProductData.device` is the manual's Capture Type, keyed
+  zero-based against the unit's own filter list: Default, Amp, Combo Amp, Amp + Cab, Cab,
+  Overdrive, Fuzz, Compressor. A ninth value, `8`, is in use by 102 factory V2 captures -
+  all of them drive and distortion pedals - and the filter offers no category for it. Those
+  captures list normally with no filter applied, so enumeration by folder is safe and
+  enumeration by filter would silently drop them. The name of value 8 is unknown.
 
-- **Per-preset tempo is read through a device-global object.** The manual's PRESET tempo
-  mode stores tempo and all seven metronome settings *in each preset*, but MODE is not on
-  the wire, so the model cannot see which mode the unit is in. `device.tempo` therefore
-  reports the tempo **in effect**, which is always correct - but in PRESET mode writing to
-  it edits the loaded preset and marks it dirty, and the model cannot currently say so.
-  That is the situation principle 3 exists to prevent. Either MODE becomes readable, or
-  tempo needs a per-preset surface.
-- **Master volume, and what Cortex Control does.** A `MasterVolume` write is ignored -
-  measured. But the manual says Cortex Control's own master volume knob adjusts output
-  level and temporarily deactivates the hardware wheel, so a host-side path exists by some
-  route we have not found. The displayed `0-100` range is also not stated in the manual.
-- **`stomp.momentary`.** Dropped from the model. The manual documents momentary only for
-  the expression toe switch and Looper X, never for a stomp assignment, and no hardware
-  check confirms one. If the touchscreen does offer it, it comes back.
-- **Scene copy and swap, and scene colour.** Gig View operations with no audited wire path.
-  `SceneCopy` is documented in `protocol.md` and `SceneColor` is a registered type, so this
-  is an audit gap rather than a protocol gap.
-- **The footswitch HOLD action.** `settings.hold_timing_ms` sets how long a hold takes;
-  what a hold actually triggers is neither modelled nor audited.
-- **Assign Looper X Actions.** A distinct named menu operation for the footswitch layout,
-  separate from `preset.stomps`. Unaudited.
-- **I/O device variants.** First-generation units show input TYPE switches and ESS-codec
-  units do not. `InputPort.input_type` is `None` on the latter, but nothing readable tells
-  the model which unit it is talking to, so that `None` cannot yet be produced correctly.
-- **The capture's own metadata.** Capture Type and Preferred Instrument are the two fields
-  the manual *does* attach to a Neural Capture, and `CaptureItem` models neither.
+### Closed, with where the answer lives
 
-The natural home for closing these is ADR-0005's hardware suite rather than more one-off
-scripts: the write-echo check that produced §10's numbers already snapshots, writes,
-verifies, and restores, which is exactly that suite's contract.
+| was open | outcome |
+|---|---|
+| Device-wide broadcast sweep | swept; all eight action categories captured |
+| Echo latencies for the unmeasured write types | `tests/hardware/test_write_echo.py`; the two previously measured types are the two slowest |
+| Writes during standby | honoured, and they survive the wake |
+| Bank size, 8 versus 4 | 8, and 4 under a PRESET hybrid - and slot NAMES are mode-dependent, so `slot_to_position` speaks the non-hybrid naming |
+| Scene name and colour writes | `SceneLabel` / `SceneColor`, all eight sent per change |
+| Scene copy and swap | `SceneCopy{from_index, to_index, is_swap}` |
+| The three ExpressionBypass fields | `invert`, `delay_ms` in real milliseconds, `latch_emulation` |
+| `SCENE BYPASS BEHAVIOR` persistence | a host write counts as a touchscreen edit; see `protocol.md` |
+| `FileMessage.type` | 0 presets, 1 IRs, 2 captures |
+| `stomp.momentary` | real, host-writable, and only on a footswitch driving ONE block |
+| The footswitch HOLD action | not an assignable action - `hold_timing` is a threshold for the unit's fixed hold gestures |
+| Assign Looper X Actions | `GeneralSettings.looper_stomp_assignments`, global, indexed by footswitch |
+| I/O device variant | `Version.is_ess`, subject to the caveat above |
+| Capture metadata | `ProductData.instrument` and `.device`, subject to the caveat above |
+| Master volume | writable; the recorded refusal was a stale read |
+| Per-preset tempo MODE | confirmed NOT on the wire on a third independent test - this is now an M1 design decision, not an open question |
 
+### Two method notes this round earned
+
+**A read straight after a write returns the previous value.** It produced the master-volume
+"refusal" that stood as a measured fact for releases, and it produced two wrong conclusions
+in the session that overturned it. Reconnect, or wait, before believing a read-back.
+
+**A flawlessly repeatable negative is the instrument.** The fourth instance: a host bypass
+write read as "discarded" in all three behaviour modes, including the one where a
+touchscreen edit demonstrably persists. The cause was `ColBypass.column` having no presence
+and reading 0 on every entry, so a filter on it matched nothing and the reader returned a
+constant. Any measurement worth recording deserves a control - `test_write_echo.py` now
+carries one permanently.
 ---
 
 # Appendix - manual feature audit
@@ -1059,8 +1071,8 @@ the n/a rows below where they intersect the API at all.
 | Scenes dropdown | `preset.scenes` | yes | |
 | Stomp assignment (see ch. 4) | `preset.stomps` | yes | |
 | Gig View open/close | `device.gig_view` | yes | |
-| Gig View EDIT SCENE (name, color) | `scene.name`; color **omitted** | unaudited | scene name/color writes not in the coverage audit; still open, see [§13](#13-still-open) |
-| Gig View SWAP SCENE / COPY SCENE | **omitted** | unaudited | no audited wire path; still open, see [§13](#13-still-open) |
+| Gig View EDIT SCENE (name, color) | `scene.name`, `scene.color` | yes | both write as `SceneLabel` / `SceneColor`; the unit sends all eight scenes on every change |
+| Gig View SWAP SCENE / COPY SCENE | `scene.copy_from()` / `scene.swap_with()` | yes | one message: `SceneCopy{from_index, to_index, is_swap}`. Copying selects the destination scene, which is where the label side effect comes from |
 | Gig View EDIT STOMP | `stomp.label`, `stomp.targets` | yes | |
 | I/O: input LEVEL / IMPEDANCE / TYPE | `io.inputs[...]` | yes | fields travel one per message - absorbed |
 | I/O: no TYPE switch on ESS-codec units | `InputPort.input_type` is `None` there | unaudited | the manual notes first-generation units show TYPE and ESS-codec ones do not; the variant is not readable yet, see [§13](#13-still-open) |
@@ -1068,7 +1080,7 @@ the n/a rows below where they intersect the API at all.
 | I/O: output LEVEL / GROUND LIFT / MUTE | `io.outputs[...]` | yes | mute travels alone - absorbed |
 | I/O: output pairing | `io.output_pairs[...].linked` | yes | |
 | I/O: USB LEVEL / HP SOURCE / DRY-WET / MIDI THRU | `io.usb` | yes | headphone output's own level is not writable anywhere. MIDI THRU is listed on this screen and under Device MIDI; one field, both paths |
-| I/O: EXP 1 / EXP 2 ports | `io.expression[...]` | unaudited | a tappable port class on this screen; POSITION is readable, RECALIBRATE has no known wire path |
+| I/O: EXP 1 / EXP 2 ports | `io.expression[...]` | partly | POSITION streams as `exp_port.level`. RECALIBRATE is observable - the flow broadcasts `exp_port{exp_port_id, calibrating: true}` then `false` - but has never been driven from a host |
 | Global EQ: bypass, 5 bands, output assignment | `io.global_eq` | yes | whole 28-index layout mapped. The manual reaches it by tapping GLOBAL EQ at the top of I/O Settings, so it nests under `io` |
 | Global EQ: OUT tab overall level | **omitted** | partly | control reachable but its dB mapping is unverified - omission over caveat |
 
@@ -1101,16 +1113,16 @@ the n/a rows below where they intersect the API at all.
 | Where a row branches and rejoins | `row.split`, branch topology on `Row` | yes | |
 | Footswitch (Stomp) assignment | `preset.stomps` | yes | multiple blocks per switch modeled |
 | Stomp label | `stomp.label` | yes | |
-| Stomp momentary | **omitted** | unaudited | the manual documents momentary only for the expression toe switch and Looper X, never for a stomp; unverified, see [§13](#13-still-open) |
+| Stomp momentary | `stomp.momentary` | yes | RESTORED to the model. The manual never mentions it, but the unit's Assign footswitch modal has a Latching/Momentary toggle. Settable only when the switch drives ONE block - the device refuses multi-block switches silently, and the model should refuse them honestly |
 | Expression pedal assignment (MIN/MAX, reverse) | `param.expression` | yes | reversal by min>max, as documented |
 | Expression bypass: three modes | `block.expression_bypass.mode` | yes | wire order differs from the manual's listing - absorbed |
-| Expression bypass: INVERT RANGE / SWITCH DELAY / LATCH EMULATION | **omitted** | unaudited | not in the coverage audit; still open, see [§13](#13-still-open) |
+| Expression bypass: INVERT RANGE / SWITCH DELAY / LATCH EMULATION | `bypass.invert`, `bypass.switch_delay_ms`, `bypass.latch_emulation` | yes | `ExpressionBypassInfo{invert, delay_ms, latch_emulation}`; `delay_ms` is real milliseconds. SWITCH DELAY is greyed out in Switch mode, so it applies to Heel-Toe and Stop only |
 | Expression pedal calibration | **omitted** | no | global setting; candidate `IOSettings`, unexplored |
 | Set Parameters as Defaults | **omitted** | no | `DefaultParameters` decoded, never written |
 | Looper X: place the block | `row.place()` - an ordinary virtual device | yes | |
 | Looper X: parameters | `LooperBlock.params` | yes | |
 | Looper X: transport actions | **omitted**; `LooperBlock.state` is readable | partly | transport is not drivable over USB; MIDI CC#48-61 is the documented route |
-| Assign Looper X Actions (footswitch layout) | **omitted** | unaudited | a distinct named menu operation, not the same as `preset.stomps`; unaudited, see [§13](#13-still-open) |
+| Assign Looper X Actions (footswitch layout) | `device.settings.looper_actions` | yes | `GeneralSettings.looper_stomp_assignments` - GLOBAL, not per preset. Eight entries indexed by footswitch, each the Looper X parameter index. The MIDI CC follows the action, not the switch |
 | Undo / redo | **omitted** | no | `UndoRedo` arrives as an acceptance signal only; never driven |
 
 ## Chapter 5 - The Directory
@@ -1122,7 +1134,7 @@ the n/a rows below where they intersect the API at all.
 | Recents | `device.recents` | yes | |
 | Factory / My Presets setlists | `setlists.factory` / `.my_presets` | yes | non-deletable, so no `delete()` on them |
 | User setlists: create / rename / delete | `setlists.create()`, `setlist.rename()/.delete()` | yes | |
-| Banks | `PresetAddress` | yes | manual self-contradicts on bank size (8 vs 4); still open, see [§13](#13-still-open) |
+| Banks | `PresetAddress` | yes | 8 per bank, 4 under a PRESET-containing HYBRID - chapter 3 is right, chapter 5 is halved. Slot NAMES are therefore mode-dependent: linear position 5 is "1F" normally and "2B" under the hybrid, so an address is only unambiguous alongside the mode |
 | Downloads / Cloud Presets categories | listing only, if discoverable | no | cloud surfaces are out of scope without owner permission |
 | Save (in place) | `UserPreset.save()` | yes | |
 | Save As | `preset.save_as()` | yes | works from factory presets, as on the unit |
@@ -1178,10 +1190,10 @@ the n/a rows below where they intersect the API at all.
 | DEVICE STORAGE | `system.storage` | yes | System Settings; read-only |
 | Factory reset | **omitted** - permanently | n/a | destructive; not a host operation |
 | GLOBAL BYPASS (Cab / IR per row) | `settings.global_bypass` | yes | |
-| SCENE BYPASS BEHAVIOR (3 modes) | `settings.scene_bypass_behavior` | yes | changes what bypass writes persist - interaction still open, see [§13](#13-still-open) |
+| SCENE BYPASS BEHAVIOR (3 modes) | `settings.scene_bypass_behavior` | yes | a HOST write counts as a touchscreen edit: it survives *footswitch presses not saved* and dies under *no changes are saved*. The unit's own wording groups MIDI with footswitches |
 | STOMP MODE BYPASS | `settings.stomp_mode_bypass` | yes | |
 | HOLD TIMING | `settings.hold_timing_ms` | yes | milliseconds in the API; the wire stores an index - absorbed |
-| The footswitch HOLD action being timed | **omitted** | unaudited | HOLD TIMING sets the threshold; what a hold triggers is not modelled or audited, see [§13](#13-still-open) |
+| The footswitch HOLD action being timed | **omitted** - correctly | n/a | there is no assignable hold action. HOLD TIMING is the threshold for the unit's FIXED hold gestures (TEMPO to Tuner, BANK DOWN + TEMPO to Gig View, touchscreen tap-and-holds); a held stomp emits an ordinary press |
 | SWAP TEMPO AND TUNER | `settings.swap_tempo_and_tuner` | yes | |
 | GIG VIEW ACCESS | `settings.gig_view_access` | yes | |
 | LATENCY COMPENSATION | `settings.latency_compensation` | yes | |

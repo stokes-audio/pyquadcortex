@@ -1442,6 +1442,29 @@ hardware by writing a value, reading it back, and restoring it.
 headphones}`, `looper_stomp_assignments`, `cloud_endpoint` and the
 `available_disk_space`/`total_disk_space` pair.
 
+**`looper_stomp_assignments` is the "Reassign Looper X Actions" menu**, and it is GLOBAL
+rather than per-preset. Eight entries, **indexed by footswitch A-H**, each value being the
+Looper X block's own catalog parameter index - the same 0-7 transport switches
+`set_param` drives:
+
+| value | action | value | action |
+|---|---|---|---|
+| 0 | RECORD OVERDUB | 4 | ONE SHOT |
+| 1 | PLAY STOP | 5 | HALF SPEED |
+| 2 | UNDO | 6 | PUNCH |
+| 3 | DUPLICATE | 7 | REVERSE |
+
+The factory layout is `[3, 4, 5, 6, 0, 1, 7, 2]`, i.e. A DUPLICATE, B ONE SHOT, C HALF
+SPEED, D PUNCH IN, E RECORD, F PLAY, G REVERSE, H UNDO. Writable with
+`update_settings(looper_stomp_assignments=[...])`: a host swap of the A and H entries was
+verified on the unit's own Looper Actions screen. The on-screen menu SWAPS rather than
+duplicates, since all eight actions are always assigned to all eight switches.
+
+**The MIDI CC follows the ACTION, not the footswitch.** With A reassigned to UNDO its tile
+read CC56, while H holding DUPLICATE read CC49. So the manual's Looper X block of CCs binds
+in a fixed order regardless of layout: CC49 DUPLICATE, CC50 ONE SHOT, CC51 HALF SPEED,
+CC52 PUNCH IN, CC53 RECORD, CC54 PLAY, CC55 REVERSE, CC56 UNDO.
+
 **`scene_block_bypass` changes what `set_bypass` persists**, so it is worth reading
 before concluding a bypass write failed. Its three values are the manual's three
 choices: `ALWAYS_OVERWRITE` (the default), `NONSTOMP_OVERWRITE` (footswitch presses in
