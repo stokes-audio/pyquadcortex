@@ -1567,8 +1567,37 @@ Two of those names disagree with the catalog, which is why the map
     def set_stomp_momentary(self, footswitch, momentary: bool = True):
         """Make a footswitch momentary rather than latching, for this preset.
 
-        ``BinaryPreset.stomp_is_momentary`` is a map keyed by footswitch index.
-        Confirmed writable by a ``Grid`` update carrying the map entry alone.
+        ``BinaryPreset.stomp_is_momentary`` is a map keyed by **footswitch index**,
+        not by column. Confirmed on hardware with a case where the two differ: a
+        block at column 3 assigned to footswitch E broadcast
+        ``stomp_is_momentary{key: 4}``. The map is sparse and factory content
+        leaves it empty, so a missing entry means latching.
+
+        The control is real on the unit despite the manual's silence. Manual 4.0.0
+        documents "momentary" only for the expression toe switch and Looper X, but
+        the touchscreen's **Assign footswitch** modal carries a Latching/Momentary
+        toggle, and using it broadcasts exactly this map entry.
+
+        **A momentary write only lands on a footswitch driving exactly ONE block.**
+        The device enforces that rule on the wire, and enforces it SILENTLY: a write
+        aimed at a switch with two or more blocks is accepted, echoes nothing, and
+        reads back unchanged. The unit greys its own toggle out in the same case, so
+        this is a device rule rather than a transport wart. Verified three ways
+        within one preset - two single-block switches took the write and read back
+        ``True``, one of them confirmed by eye on the unit having never been touched
+        by hand, while a two-block switch stayed ``False`` across repeated attempts.
+
+        Check the target with :meth:`stomp_assignments` first if it matters. There
+        is no error to catch.
+
+        **Why this method does not check for you.** It could - the rule is
+        readable, and :meth:`set_master_volume_assignment` shows a setter here may
+        read before it writes. The choice is deliberate: enforcement lands at the
+        model layer at M1, where ``StompAssignment.targets`` already knows the
+        count, so the refusal costs no extra round trip and can name the switch.
+        Adding a read here would buy the same guarantee at the price of a device
+        read on every call, in a layer whose job is to say exactly what goes on
+        the wire.
         """
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         msg.preset.stomp_is_momentary[int(footswitch)] = momentary
@@ -1888,12 +1917,25 @@ Two of those names disagree with the catalog, which is why the map
     HOLD_TIMING_MS = (500, 600, 700, 800, 900, 1000)
 
     def set_hold_timing(self, milliseconds: int):
-        """How long a footswitch must be held to fire its HOLD action.
+        """How long a press must last before it counts as a HOLD gesture.
 
         Takes MILLISECONDS - one of 500, 600, 700, 800, 900 or 1000, the six values
         the unit offers - and writes the index the device actually stores.
         ``GeneralSettings.hold_timing`` is that index, confirmed by reading 3 while
         the screen showed 800 ms, so ``ms = 500 + 100 * index``.
+
+        **This is a gesture threshold, not the duration of an assignable
+        per-footswitch action**, settled on hardware. Holding a stomp footswitch
+        produces exactly one ordinary bypass toggle and nothing on screen; holding
+        in SCENE mode selects a scene and in PRESET mode recalls a preset - each
+        indistinguishable on the wire from a press. What the threshold governs is
+        the unit's FIXED hold gestures: hold TEMPO for the Tuner, BANK DOWN +
+        TEMPO for Gig View, and the touchscreen tap-and-holds. Shortening it to
+        500 ms makes the Tuner open sooner, which is how it was pinned.
+
+        So the manual's "its assigned HOLD action" is loose wording: nothing binds
+        a hold to a footswitch on this firmware, and there is no hold event to
+        observe.
 
         The device accepts any integer in that field without validation, storing 0
         and 5000 as happily as a real index, so this rejects anything outside the
@@ -1922,9 +1964,28 @@ Two of those names disagree with the catalog, which is why the map
         """Set whether block bypass changes are saved per scene.
 
         A :class:`~pyquadcortex.enums.SceneBypassBehavior`. This is global, and it
-        decides what :meth:`set_bypass` persists: under ``NEVER_OVERWRITE`` a
-        bypass write is applied but not kept, which looks exactly like a failed
-        write. Confirmed writable and restorable on hardware.
+        decides what :meth:`set_bypass` persists.
+
+        **A host write counts as a touchscreen edit, not a footswitch press.**
+        Measured across all three modes, each write verified as landed before the
+        scene was changed:
+
+        =====================  ===========  ==========  =============
+        mode                   touchscreen  footswitch  host write
+        =====================  ===========  ==========  =============
+        ``ALWAYS_OVERWRITE``   persists     persists    **persists**
+        ``NONSTOMP_OVERWRITE`` persists     discarded   **persists**
+        ``NEVER_OVERWRITE``    discarded    discarded   **discarded**
+        =====================  ===========  ==========  =============
+
+        The touchscreen and footswitch columns were driven by hand on the unit;
+        the host column is this method plus :meth:`set_bypass`. The manual names
+        only the two physical routes, so where a host write falls was not
+        inferable from it.
+
+        The consequence for a caller: under ``NEVER_OVERWRITE`` a bypass write is
+        applied and then dropped on the next scene change, which looks exactly
+        like a failed write and is not one. Confirmed writable and restorable.
         """
         return self.update_settings(scene_block_bypass=int(behavior))
 
@@ -2722,16 +2783,63 @@ Two of those names disagree with the catalog, which is why the map
     def master_volume(self, timeout: float = 10.0):
         """The Master Volume state.
 
-        ``volume`` is normalized 0..1 and maps linearly to the 0-100 the unit
-        displays: the knob left at 47 on screen reported 0.471074373.
+        ``volume`` is normalized 0..1 and the unit displays ``round(volume * 100)``
+        - 0.566115677 shows as 57, not 56. The knob quantizes in steps of 1/121.
 
-        Read-only. A ``MasterVolume`` UPDATE carrying a new level is accepted and
-        changes nothing - the knob appears to be the only way to move it, which
-        also fits the device's own pushes carrying ``calibrate`` rather than a
-        setpoint. There is deliberately no setter here.
+        Writable through :meth:`set_master_volume`. This docstring said "read-only"
+        for several releases on the strength of a measurement that was really a
+        stale read; see that method.
         """
         return self._read_state(pa.MasterVolumeMessage,
                                 lambda m: m.HasField("volume"), timeout)
+
+    def set_master_volume(self, volume: float):
+        """Set the Master Volume, normalized 0..1.
+
+        The whole write is ``MasterVolume{UPDATE, volume}``. It lands on its own
+        with no companion field, and it is a real level change: a host write of
+        0.30 took the unit's overlay to 30 and audibly dropped the output.
+
+        **This corrects a recorded finding.** Earlier work measured the write as
+        accepted-and-ignored. That was a stale read rather than a refusal -
+        :meth:`master_volume` called straight after a write returns the PREVIOUS
+        value, so write-then-read reports every result one step late. Reconnect,
+        or wait, before believing a read-back.
+
+        After a host write the physical knob **soft-takes-over**: it does nothing
+        until turned past the value that was set, then resumes control. That is
+        exactly what the manual describes Cortex Control doing when it "adjusts
+        output level and temporarily deactivates the hardware wheel", so Cortex
+        Control is writing this field rather than using some other route.
+
+        Master volume is a gain stage of its own, applied downstream of the stored
+        port levels - writing it changes no ``IOSettings`` level. Use
+        :meth:`set_master_volume_assignment` to choose which outputs it governs.
+
+        Out-of-range values are REJECTED rather than sent. The wire is 0..1 while
+        the unit displays 0-100, so ``set_master_volume(30)`` meaning "30 on
+        screen" is the obvious mistake, and what the device does with 30.0 is
+        unknown on a control that feeds an amplifier. Same reasoning as
+        :meth:`set_hold_timing`: a field the device does not range-check itself is
+        one this library range-checks for it.
+
+        .. warning::
+           Never send ``calibrate`` alongside a level. It is an ACTION, not a
+           flag: it opens the full-screen Master Volume Calibration dialog and
+           waits for the owner to sweep the knob and tap SAVE. This method never
+           sends it.
+        """
+        level = float(volume)
+        if not 0.0 <= level <= 1.0:
+            hint = ""
+            if 1.0 < level <= 100.0:
+                hint = (f" The unit displays round(volume * 100), so pass "
+                        f"{level / 100:.2f} for {level:.0f} on screen.")
+            raise ValueError(
+                f"master volume is normalized 0..1, not {volume!r}.{hint}")
+        msg = pa.MasterVolumeMessage(action=pa.MessageAction.UPDATE)
+        msg.volume = level
+        return self._t.send(msg)
 
     def pinned_models(self, timeout: float = 8.0):
         """Which models are pinned to the top of their category, as ids."""

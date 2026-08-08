@@ -1569,6 +1569,30 @@ def test_set_stomp_momentary_writes_the_map_entry():
     assert dict(qc._t.sent[-1].preset.stomp_is_momentary) == {7: True}
 
 
+def test_set_stomp_momentary_is_keyed_by_footswitch_not_column():
+    """The map key is the footswitch index, which is NOT the block's column.
+
+    Hardware said so in the one case that can tell them apart: a block at column
+    3 assigned to footswitch E broadcast ``stomp_is_momentary{key: 4}``. Every
+    earlier sample had index equal to column and so proved nothing.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_stomp_momentary(Footswitch.E, True)
+    assert dict(qc._t.sent[-1].preset.stomp_is_momentary) == {4: True}
+
+
+def test_set_stomp_momentary_can_clear_back_to_latching():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_stomp_momentary(Footswitch.B, False)
+    sent = qc._t.sent[-1]
+    assert sent.action == pa.MessageAction.UPDATE
+    assert dict(sent.preset.stomp_is_momentary) == {1: False}
+    # The entry must travel alone: the device applies preset-level maps only from
+    # a sparse update, and a False is a real value here rather than an absence.
+    assert not sent.preset.stomp_mode_assignments
+    assert not sent.preset.stomp_labels
+
+
 # -- expression pedal assignment ----------------------------------------------
 
 
@@ -2480,14 +2504,19 @@ def test_create_setlist_uses_a_sibling_path_under_the_presets_root():
 # -- master volume, pinning, setlist deletion ----------------------------------
 
 
-def test_master_volume_is_readable_and_has_no_setter():
-    # The wire is 0..1 mapping to the 0-100 on screen: 47 read back 0.471074373.
-    # A write is accepted and changes nothing, so no setter is offered.
+def test_master_volume_reads_as_the_displayed_number():
+    """0..1 on the wire, ``round(v * 100)`` on screen.
+
+    This test also used to assert ``not hasattr(qc, "set_master_volume")``, on
+    the strength of a hardware measurement that a write was accepted and ignored.
+    That measurement was a stale read - ``master_volume()`` called straight after
+    a write returns the PREVIOUS value - and the write had been landing all
+    along. A test can lock in a wrong fact just as firmly as a docstring can.
+    """
     push = pa.MasterVolumeMessage(action=pa.MessageAction.UPDATE, volume=0.471074373)
     qc = client.QuadCortex(StateTransport(push))
     assert round(qc.master_volume().volume * 100) == 47
     assert qc._t.matches[-1](pa.MasterVolumeMessage()) is False
-    assert not hasattr(qc, "set_master_volume")
 
 
 def test_pin_model_sends_no_action_because_update_does_nothing():
@@ -3033,3 +3062,51 @@ def test_captures_browses_the_library_not_the_catalog():
     got = qc.captures()
     assert [e.name for e in got] == ["Kyle Pb 1", "Darkglass VMT 1"]
     assert got[0].key == "aa" * 32
+
+
+# -- master volume -------------------------------------------------------------
+
+def test_set_master_volume_sends_only_the_level():
+    """No companion field, and above all no ``calibrate``.
+
+    ``calibrate`` is an action rather than a flag: it opens the unit's
+    full-screen Master Volume Calibration dialog and waits for a human to sweep
+    the knob. It got sent once, by accident, while probing which companion field
+    a level write needed - the answer being none.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_master_volume(0.30)
+    sent = qc._t.sent[-1]
+    assert sent.action == pa.MessageAction.UPDATE
+    assert abs(sent.volume - 0.30) < 1e-6
+    assert not sent.HasField("calibrate")
+    assert not sent.HasField("engaged")
+
+
+def test_set_master_volume_rejects_the_screen_scale():
+    """0..1 on the wire, 0-100 on screen, so 30 is the mistake to expect.
+
+    Nothing is sent - the value never reaches the device. Same policy as
+    ``set_hold_timing``: a field the device does not range-check is one this
+    library range-checks, and this one feeds an amplifier.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError) as caught:
+        qc.set_master_volume(30)
+    assert "0.30" in str(caught.value)
+    assert qc._t.sent == []
+
+
+@pytest.mark.parametrize("bad", [-0.1, 1.01, 100.0, 1e9])
+def test_set_master_volume_rejects_anything_outside_zero_to_one(bad):
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError):
+        qc.set_master_volume(bad)
+    assert qc._t.sent == []
+
+
+@pytest.mark.parametrize("edge", [0.0, 1.0])
+def test_set_master_volume_accepts_both_ends(edge):
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_master_volume(edge)
+    assert qc._t.sent[-1].volume == edge
