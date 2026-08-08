@@ -22,10 +22,13 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 Of 103 features audited: **64 yes**, **8 partly**, **20 no**, **11 n/a**.
 
-Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
-are partly covered - which here means the state is readable and at least one field of it
-is confirmed writable, with the neighbours the same shape but not individually
-exercised. Only 14 remain untouched.
+Of the 92 features a host could plausibly drive - everything above except the 11 marked
+n/a - **64 are fully covered** and 8 more are partly covered, which here means the state
+is readable and at least one field of it is confirmed writable, with the neighbours the
+same shape but not individually exercised. Only 20 remain untouched.
+
+Both paragraphs now count the same table. They had drifted apart: this one still read
+91/65/13/14 from an earlier revision, which no longer matched a row-by-row count.
 
 Four solo rounds and several sessions with the owner at the unit got it there. The solo
 rounds closed the per-preset non-audio gap (footswitch assignments, expression

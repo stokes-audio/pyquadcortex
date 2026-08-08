@@ -18,6 +18,48 @@ correction.
 
 ## Unreleased
 
+### Master Volume is writable after all
+
+**New: `set_master_volume(volume)`**, normalized 0..1. This reverses a claim that
+shipped for several releases: `master_volume()` was documented read-only, and
+`set_master_volume` deliberately did not exist, on the strength of a hardware
+measurement that a write was accepted and ignored.
+
+That measurement was wrong, and wrong in a way worth knowing about: **a read
+straight after a write returns the PREVIOUS value.** Write-then-read therefore
+reports every result one step late, and a write that lands looks exactly like a
+write that was refused. Reconnect, or wait, before believing a read-back of
+anything.
+
+The write is a real level change, not a display change - a host write of 0.30 took
+the unit's overlay to 30 and audibly dropped the output. Afterwards the physical
+knob soft-takes-over: it does nothing until turned past the value that was set,
+then resumes control, which is exactly what the manual describes Cortex Control
+doing to the hardware wheel. Master Volume is its own gain stage downstream of the
+stored port levels, so writing it changes no `IOSettings` level.
+
+Values outside 0..1 raise `ValueError` and are never sent. The wire is 0..1 while
+the unit shows 0-100, so `set_master_volume(30)` is the mistake to expect, and
+this is a control that feeds an amplifier.
+
+Never send `calibrate` alongside a level. It is an action, not a flag: it opens
+the full-screen Master Volume Calibration dialog and waits for a human to sweep
+the knob. `set_master_volume()` never sends it, and a test enforces that.
+
+### A hardware-in-the-loop test suite
+
+`pytest tests/hardware --hardware` runs against a connected unit. Without the flag
+nothing in `tests/hardware/` is collected at all - not skipped, not collected - so
+the offline suite stays honest with no unit attached.
+
+A successful run leaves the unit exactly as it found it, and a failed run restores
+what it can and names what it could not. Quit Cortex Control first; it holds the
+USB interface exclusively. See `tests/hardware/readme.md`, and ADR-0005.
+
+The first thing it measures is a quantity that was already known, as a control. An
+earlier version of the same file reported 2-11 ms for five write types, which
+looked like a discovery and was really a predicate matching the wrong message.
+
 ### Stomp momentary: the rule nobody knew about
 
 `set_stomp_momentary()` already existed and its wire shape was right, but its
@@ -32,8 +74,8 @@ documentation was thin enough to mislead. Two corrections, both from hardware:
   case, so this is a device rule rather than a transport wart. Check with
   `stomp_assignments()` first; there is no error to catch.
 
-No API change. If you were writing momentary to a multi-block footswitch it was
-never taking effect, and now the docs say why.
+No API change to this method. If you were writing momentary to a multi-block
+footswitch it was never taking effect, and now the docs say why.
 
 Whether the control exists at all had been in doubt: manual 4.0.0 mentions
 "momentary" only for the expression toe switch and Looper X. The touchscreen's

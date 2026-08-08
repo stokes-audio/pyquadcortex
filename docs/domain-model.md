@@ -633,7 +633,26 @@ class Stomps:                            # preset.stomps
     def assign(self, footswitch: str, block: DeviceBlock,
                label: str | None = None) -> StompAssignment: ...
     def clear(self, footswitch: str) -> None: ...
+```
 
+> **The footswitch letter is a type, not a convention.** `stomp_is_momentary` is keyed by
+> footswitch index, and that stayed hidden for months because every sample happened to
+> have the footswitch index equal to the block's column - an assumption that looked like a
+> fact until a block at column 3 was assigned to footswitch E and the key came back 4.
+> Documenting the difference is not enough. `FootswitchLetter` is the model's only public
+> key for a footswitch, and the zero-based index stays inside the protocol layer where the
+> `Footswitch` enum already lives. Where a bare `int` can reach a model API, someone
+> eventually passes a column to it and gets a write that silently does nothing, which is
+> precisely the bug that cost a hardware session to find.
+>
+> **A device-level footswitch object is deferred, deliberately.** There are now two
+> footswitch-keyed collections at different scopes - `preset.stomps` per preset and
+> `settings.looper_actions` global - plus the mode that decides which is live, so nothing
+> answers "what does switch E do right now". A `device.footswitches[...]` would have to
+> reach across the Device/Preset boundary this model otherwise keeps clean, and at M1
+> nothing needs it. Revisit at M2, when editing makes that question common.
+
+```python
 class ExpressionAssignment:              # assigned FROM the parameter, as on screen
     pedal: ExpressionPedal               # EXP 1 / EXP 2
     minimum: float                       # MIN RANGE, in the parameter's own units
@@ -1045,7 +1064,7 @@ the n/a rows below where they intersect the API at all.
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
 | Power on/off, reboot, Be Right Back, lock | - | n/a | physical power button; the wire refuses `power_option` as a command |
-| Master Volume level | `device.master_volume.level` (read-only) | partly | the wire cannot write it; nearest writable equivalent is output levels |
+| Master Volume level | `device.master_volume.level` | yes | writable, contrary to what this row said for several releases - the "accepted and ignored" measurement was a stale read. A separate gain stage downstream of the port levels, so writing it changes no `IOSettings` level. The model should reject anything outside 0..1, as the library now does |
 | Master Volume output assignment | `device.master_volume.outputs` | yes | |
 | Master Volume knob function | `system.master_volume_knob` | yes | the manual documents this row under ch. 10 System Settings, not ch. 3 |
 | Footswitch presses, touch gestures, encoders | - | n/a | physical controls |

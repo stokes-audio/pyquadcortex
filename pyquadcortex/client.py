@@ -1589,6 +1589,15 @@ Two of those names disagree with the catalog, which is why the map
 
         Check the target with :meth:`stomp_assignments` first if it matters. There
         is no error to catch.
+
+        **Why this method does not check for you.** It could - the rule is
+        readable, and :meth:`set_master_volume_assignment` shows a setter here may
+        read before it writes. The choice is deliberate: enforcement lands at the
+        model layer at M1, where ``StompAssignment.targets`` already knows the
+        count, so the refusal costs no extra round trip and can name the switch.
+        Adding a read here would buy the same guarantee at the price of a device
+        read on every call, in a layer whose job is to say exactly what goes on
+        the wire.
         """
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         msg.preset.stomp_is_momentary[int(footswitch)] = momentary
@@ -1907,26 +1916,26 @@ Two of those names disagree with the catalog, which is why the map
 
     HOLD_TIMING_MS = (500, 600, 700, 800, 900, 1000)
 
-    #: What a footswitch HOLD actually does, settled on hardware.
-    #:
-    #: ``hold_timing`` is a GESTURE THRESHOLD, not the duration of an assignable
-    #: per-footswitch action. Holding a stomp footswitch produces exactly one
-    #: ordinary bypass toggle and nothing on screen; holding in SCENE mode selects
-    #: a scene and in PRESET mode recalls a preset - each indistinguishable on the
-    #: wire from a press. What the threshold governs is the unit's fixed hold
-    #: GESTURES: hold TEMPO for the Tuner, BANK DOWN + TEMPO for Gig View, and the
-    #: touchscreen tap-and-holds. Shortening it to 500 ms makes the Tuner open
-    #: sooner, which is how it was pinned.
-    #:
-    #: So the manual's "its assigned HOLD action" is loose wording: nothing binds a
-    #: hold to a footswitch on this firmware, and there is no hold event to observe.
     def set_hold_timing(self, milliseconds: int):
-        """How long a footswitch must be held to fire its HOLD action.
+        """How long a press must last before it counts as a HOLD gesture.
 
         Takes MILLISECONDS - one of 500, 600, 700, 800, 900 or 1000, the six values
         the unit offers - and writes the index the device actually stores.
         ``GeneralSettings.hold_timing`` is that index, confirmed by reading 3 while
         the screen showed 800 ms, so ``ms = 500 + 100 * index``.
+
+        **This is a gesture threshold, not the duration of an assignable
+        per-footswitch action**, settled on hardware. Holding a stomp footswitch
+        produces exactly one ordinary bypass toggle and nothing on screen; holding
+        in SCENE mode selects a scene and in PRESET mode recalls a preset - each
+        indistinguishable on the wire from a press. What the threshold governs is
+        the unit's FIXED hold gestures: hold TEMPO for the Tuner, BANK DOWN +
+        TEMPO for Gig View, and the touchscreen tap-and-holds. Shortening it to
+        500 ms makes the Tuner open sooner, which is how it was pinned.
+
+        So the manual's "its assigned HOLD action" is loose wording: nothing binds
+        a hold to a footswitch on this firmware, and there is no hold event to
+        observe.
 
         The device accepts any integer in that field without validation, storing 0
         and 5000 as happily as a real index, so this rejects anything outside the
@@ -2807,14 +2816,29 @@ Two of those names disagree with the catalog, which is why the map
         port levels - writing it changes no ``IOSettings`` level. Use
         :meth:`set_master_volume_assignment` to choose which outputs it governs.
 
+        Out-of-range values are REJECTED rather than sent. The wire is 0..1 while
+        the unit displays 0-100, so ``set_master_volume(30)`` meaning "30 on
+        screen" is the obvious mistake, and what the device does with 30.0 is
+        unknown on a control that feeds an amplifier. Same reasoning as
+        :meth:`set_hold_timing`: a field the device does not range-check itself is
+        one this library range-checks for it.
+
         .. warning::
            Never send ``calibrate`` alongside a level. It is an ACTION, not a
            flag: it opens the full-screen Master Volume Calibration dialog and
            waits for the owner to sweep the knob and tap SAVE. This method never
            sends it.
         """
+        level = float(volume)
+        if not 0.0 <= level <= 1.0:
+            hint = ""
+            if 1.0 < level <= 100.0:
+                hint = (f" The unit displays round(volume * 100), so pass "
+                        f"{level / 100:.2f} for {level:.0f} on screen.")
+            raise ValueError(
+                f"master volume is normalized 0..1, not {volume!r}.{hint}")
         msg = pa.MasterVolumeMessage(action=pa.MessageAction.UPDATE)
-        msg.volume = float(volume)
+        msg.volume = level
         return self._t.send(msg)
 
     def pinned_models(self, timeout: float = 8.0):

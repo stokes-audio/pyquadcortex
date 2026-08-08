@@ -32,6 +32,17 @@ survive a preset recall.
 already known from earlier work (113-116 ms) using the same harness as everything
 else, and asserts the answer. The first version of this file reported 2-11 ms for
 all five unmeasured write types, which looked like a discovery and was very nearly
-recorded as one; the control is what would have caught it had the predicates
-actually been wrong. Any harness that measures something should measure a known
+recorded as one. Any harness that measures something should measure a known
 quantity alongside it.
+
+The control only proves the harness matches the right message **for the write type
+it measures**, so it is not a blanket guarantee for the others. That is why every
+predicate in this file matches on CONTENT - the value written, at the index written
+- rather than on message type alone. A type-only match is what produced the 2-11 ms
+band, and the three fastest write types are the ones where it is most tempting,
+because their echoes are single messages that look unambiguous.
+
+Each measurement also asserts an upper bound derived from `set_block`'s timeout,
+which is the one echo watcher the library ships. These numbers exist to justify
+that timeout, so a latency creeping toward it has to fail here rather than leave
+the suite green and the documented figure stale.

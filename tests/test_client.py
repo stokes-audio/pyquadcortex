@@ -3081,3 +3081,32 @@ def test_set_master_volume_sends_only_the_level():
     assert abs(sent.volume - 0.30) < 1e-6
     assert not sent.HasField("calibrate")
     assert not sent.HasField("engaged")
+
+
+def test_set_master_volume_rejects_the_screen_scale():
+    """0..1 on the wire, 0-100 on screen, so 30 is the mistake to expect.
+
+    Nothing is sent - the value never reaches the device. Same policy as
+    ``set_hold_timing``: a field the device does not range-check is one this
+    library range-checks, and this one feeds an amplifier.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError) as caught:
+        qc.set_master_volume(30)
+    assert "0.30" in str(caught.value)
+    assert qc._t.sent == []
+
+
+@pytest.mark.parametrize("bad", [-0.1, 1.01, 100.0, 1e9])
+def test_set_master_volume_rejects_anything_outside_zero_to_one(bad):
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError):
+        qc.set_master_volume(bad)
+    assert qc._t.sent == []
+
+
+@pytest.mark.parametrize("edge", [0.0, 1.0])
+def test_set_master_volume_accepts_both_ends(edge):
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_master_volume(edge)
+    assert qc._t.sent[-1].volume == edge

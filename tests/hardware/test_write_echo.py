@@ -8,17 +8,32 @@ same envelope. This measures the rest so the assumption stops being one.
 Each test snapshots what it touches and registers a restore before writing, so
 the run is state-neutral whether it passes or fails (ADR-0005).
 """
+import inspect
 import threading
 import time
 
 import pytest
 
+from pyquadcortex.client import QuadCortex, field_present
 from pyquadcortex.enums import Input
 
 #: Generous by design. The point is to MEASURE the echo, so a test that waits
 #: three seconds and reports 400 ms is useful, while one that times out at the
 #: value under test would only confirm its own assumption.
 ECHO_TIMEOUT = 3.0
+
+#: The library ships exactly one echo watcher - ``set_block``'s - and its timeout
+#: is the thing these measurements exist to justify. Read from the signature
+#: rather than copied, so lowering the default fails this suite instead of
+#: quietly invalidating it.
+WATCHER_TIMEOUT_MS = (
+    inspect.signature(QuadCortex.set_block).parameters["timeout"].default * 1000.0)
+
+#: How much of the watcher's budget an echo may use before this suite complains.
+#: The slowest write type known - block placement at 290-420 ms - sits under a
+#: tenth of the budget, so a fifth leaves room for firmware drift while still
+#: failing long before a real write would start timing out.
+WATCHER_BUDGET = WATCHER_TIMEOUT_MS * 0.2
 
 
 class EchoProbe:
@@ -76,6 +91,22 @@ def _named(message, name):
     return type(message).__name__ == name
 
 
+def _landed(ms, what):
+    """Every measurement asserts the same two things, so say them once.
+
+    Arrival alone is not the whole claim. These numbers are what the write
+    watcher's timeout rests on, so a latency that has crept up toward that
+    timeout has to fail here - otherwise the suite stays green while the figure
+    it was written to defend quietly stops being true.
+    """
+    assert ms is not None, f"{what} write produced no echo at all"
+    assert ms < WATCHER_BUDGET, (
+        f"{what} echo took {ms:.1f} ms, past the {WATCHER_BUDGET:.0f} ms this "
+        f"suite allows out of the watcher's {WATCHER_TIMEOUT_MS:.0f} ms. Either "
+        f"the firmware got slower or the watcher's timeout got shorter; both "
+        f"mean the documented latencies need remeasuring.")
+
+
 def test_parameter_echo_latency_is_the_control(qc, probe, restores, record_property):
     """A known quantity, measured with the same harness as everything else.
 
@@ -99,18 +130,41 @@ def test_parameter_echo_latency_is_the_control(qc, probe, restores, record_prope
             for ch in m.preset.chains for mo in ch.models),
     )
     record_property("parameter_echo_ms", ms)
-    assert ms is not None, "parameter write produced no echo - harness is broken"
+    _landed(ms, "parameter")
+    # The reference is the earlier session's 113-116 ms, taken by hand with a
+    # different instrument; this harness reads the same write at 120-125 ms. The
+    # few ms between them are the harness itself - the clock starts before the
+    # USB write rather than after it - so the earlier figure stays the reference
+    # and this one is expected to sit just above it.
+    #
+    # The floor is the load-bearing half. Everything this file measures lands
+    # between 2 and 12 ms when the predicate matches the wrong message, so a
+    # control that dropped into that band would be reporting the sidechain burst
+    # and not the echo, and every other number here would be worthless.
     assert 50.0 < ms < 400.0, (
-        f"parameter echo measured {ms:.1f} ms, but the documented figure is "
-        f"113-116 ms. The harness is matching the wrong message, so every other "
-        f"latency in this file is suspect.")
+        f"parameter echo measured {ms:.1f} ms against a documented 113-116 ms "
+        f"(120-125 ms through this harness). The harness is matching the wrong "
+        f"message, so every other latency in this file is suspect.")
 
 
 def test_bypass_echo_latency(qc, probe, restores, record_property):
     preset = qc.read_current_preset()
     row, column = 0, next(c for c, m in enumerate(preset.chains[0].models) if m.hash)
     was = qc.read_current_preset().bypass[row].colBypass
-    original = next((cb.sceneBypass[0].bypass for cb in was if cb.column == column), False)
+    entry = next((cb for cb in was if cb.column == column), None)
+
+    # Only touch a block whose bypass state is already stored. The map is sparse,
+    # so "no entry" and "entry set to false" read the same to a player and differ
+    # on the wire; restoring an absent entry by writing the explicit default would
+    # leave the preset holding a value it never held, and a state-neutral run
+    # that is not quite neutral is worse than one that says it skipped.
+    if entry is None:
+        pytest.skip(
+            f"row {row + 1} column {column + 1} has no stored bypass entry, so "
+            f"this test cannot restore it exactly - load a preset whose first "
+            f"block has been bypassed at least once")
+
+    original = entry.sceneBypass[0].bypass
     restores("block bypass", lambda: qc.set_bypass(row, column, original))
 
     # Content-matched, not just "a GridMessage arrived": every structural edit
@@ -124,7 +178,7 @@ def test_bypass_echo_latency(qc, probe, restores, record_property):
             for b in m.preset.bypass for cb in b.colBypass),
     )
     record_property("bypass_echo_ms", ms)
-    assert ms is not None, "bypass write produced no echo at all"
+    _landed(ms, "bypass")
 
 
 def test_routing_echo_latency(qc, probe, restores, record_property):
@@ -139,7 +193,7 @@ def test_routing_echo_latency(qc, probe, restores, record_property):
             ch.in_portid == int(target) for ch in m.preset.chains),
     )
     record_property("routing_echo_ms", ms)
-    assert ms is not None, "routing write produced no echo at all"
+    _landed(ms, "routing")
 
 
 def test_scene_label_echo_latency(qc, probe, restores, record_property):
@@ -147,12 +201,17 @@ def test_scene_label_echo_latency(qc, probe, restores, record_property):
     original = preset.scene_labels[1] if len(preset.scene_labels) > 1 else ""
     restores("scene 2 label", lambda: qc.set_scene_label(1, original))
 
+    # Content-matched like the two above. The unit answers a label change by
+    # sending all eight scenes, so "a SceneLabelMessage arrived" would time the
+    # first of a burst that is only partly the echo of this write.
     ms = probe.measure(
         lambda: qc.set_scene_label(1, "echo probe"),
-        lambda m: _named(m, "SceneLabelMessage"),
+        lambda m: (_named(m, "SceneLabelMessage")
+                   and field_present(m, "index") and m.index == 1
+                   and m.label == "echo probe"),
     )
     record_property("scene_label_echo_ms", ms)
-    assert ms is not None, "scene label write produced no echo at all"
+    _landed(ms, "scene label")
 
 
 def test_scene_color_echo_latency(qc, probe, restores, record_property):
@@ -162,10 +221,12 @@ def test_scene_color_echo_latency(qc, probe, restores, record_property):
 
     ms = probe.measure(
         lambda: qc.set_scene_color(1, 4294911783),
-        lambda m: _named(m, "SceneColorMessage"),
+        lambda m: (_named(m, "SceneColorMessage")
+                   and field_present(m, "index") and m.index == 1
+                   and m.color == 4294911783),
     )
     record_property("scene_color_echo_ms", ms)
-    assert ms is not None, "scene colour write produced no echo at all"
+    _landed(ms, "scene colour")
 
 
 def test_global_settings_echo_latency(qc, probe, restores, record_property):
@@ -173,9 +234,15 @@ def test_global_settings_echo_latency(qc, probe, restores, record_property):
     restores("stomp_mode_auto_assign",
              lambda: qc.update_settings(stomp_mode_auto_assign=original))
 
+    # Presence matters more than value here: this is a boolean, so a message that
+    # simply does not carry the field reads as False and would match a flip to
+    # False by accident. GeneralSettings also arrives unsolicited on standby and
+    # wake, which is exactly the sort of traffic a type-only match would time.
     ms = probe.measure(
         lambda: qc.update_settings(stomp_mode_auto_assign=not original),
-        lambda m: _named(m, "GeneralSettingsMessage"),
+        lambda m: (_named(m, "GeneralSettingsMessage")
+                   and field_present(m, "stomp_mode_auto_assign")
+                   and m.stomp_mode_auto_assign == (not original)),
     )
     record_property("global_settings_echo_ms", ms)
-    assert ms is not None, "global settings write produced no echo at all"
+    _landed(ms, "global settings")
