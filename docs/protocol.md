@@ -1135,7 +1135,25 @@ Grid{UPDATE, preset{stomp_mode_assignments{row, column, stomp_index}}}
 The UPDATE alone leaves the previous assignment in place. Three map fields travel with
 it and are writable the same way: `stomp_labels`, `single_stomp_labels` (both
 `map<uint32, string>`) and `stomp_is_momentary` (`map<uint32, bool>`), all keyed by
-footswitch index. The unit clears the label maps when an assignment is removed.
+footswitch index. The unit clears all three when an assignment is removed, sending one
+`Grid{UPDATE}` per map.
+
+**Momentary is real, and the manual does not mention it.** Manual 4.0.0 describes
+"momentary" only for the expression toe switch and Looper X, never for a stomp - but the
+touchscreen's **Assign footswitch** modal carries a Latching/Momentary toggle, and using
+it broadcasts `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}`. The key is the
+footswitch index rather than the column, confirmed on a case where the two differ: a
+block at column 3 assigned to footswitch E produced `key: 4`. Factory content leaves the
+map empty, so a missing entry means latching.
+
+**A momentary write only lands on a footswitch driving exactly ONE block.** The device
+enforces this on the wire, and silently - a write aimed at a multi-block switch is
+accepted, echoes nothing, and reads back unchanged. The unit greys out its own toggle in
+the same case, so this is a device rule rather than a transport wart. Measured within one
+preset: two single-block switches took the write and read back `true`, one of them
+verified on the unit's screen having never been touched by hand, while a two-block switch
+stayed `false` across repeated attempts. There is no error to catch, so check the
+assignment count before writing.
 
 **Expression pedal assignment** is a row/column-keyed parameter write like any other,
 using three fields on `Param`:
@@ -1424,10 +1442,67 @@ hardware by writing a value, reading it back, and restoring it.
 headphones}`, `looper_stomp_assignments`, `cloud_endpoint` and the
 `available_disk_space`/`total_disk_space` pair.
 
+**`looper_stomp_assignments` is the "Reassign Looper X Actions" menu**, and it is GLOBAL
+rather than per-preset. Eight entries, **indexed by footswitch A-H**, each value being the
+Looper X block's own catalog parameter index - the same 0-7 transport switches
+`set_param` drives:
+
+| value | action | value | action |
+|---|---|---|---|
+| 0 | RECORD OVERDUB | 4 | ONE SHOT |
+| 1 | PLAY STOP | 5 | HALF SPEED |
+| 2 | UNDO | 6 | PUNCH |
+| 3 | DUPLICATE | 7 | REVERSE |
+
+The factory layout is `[3, 4, 5, 6, 0, 1, 7, 2]`, i.e. A DUPLICATE, B ONE SHOT, C HALF
+SPEED, D PUNCH IN, E RECORD, F PLAY, G REVERSE, H UNDO. Writable with
+`update_settings(looper_stomp_assignments=[...])`: a host swap of the A and H entries was
+verified on the unit's own Looper Actions screen. The on-screen menu SWAPS rather than
+duplicates, since all eight actions are always assigned to all eight switches.
+
+**The MIDI CC follows the ACTION, not the footswitch.** With A reassigned to UNDO its tile
+read CC56, while H holding DUPLICATE read CC49. So the manual's Looper X block of CCs binds
+in a fixed order regardless of layout: CC49 DUPLICATE, CC50 ONE SHOT, CC51 HALF SPEED,
+CC52 PUNCH IN, CC53 RECORD, CC54 PLAY, CC55 REVERSE, CC56 UNDO.
+
 **`scene_block_bypass` changes what `set_bypass` persists**, so it is worth reading
 before concluding a bypass write failed. Its three values are the manual's three
 choices: `ALWAYS_OVERWRITE` (the default), `NONSTOMP_OVERWRITE` (footswitch presses in
 STOMP mode are not saved) and `NEVER_OVERWRITE` (nothing is saved).
+
+**Which routes each mode actually saves**, driven on the unit and measured on the wire.
+A HOST write behaves like a touchscreen edit, not like a footswitch press - the manual
+names only the two physical routes, so this was not inferable from it:
+
+| mode | touchscreen | footswitch | host `set_bypass` |
+|---|---|---|---|
+| `ALWAYS_OVERWRITE` | persists | persists | persists |
+| `NONSTOMP_OVERWRITE` | persists | discarded | persists |
+| `NEVER_OVERWRITE` | discarded | discarded | discarded |
+
+"Discarded" means the write applies and is then dropped on the next scene change, which
+is indistinguishable from a failed write unless you know the setting.
+
+**The unit's own wording**, which differs from the manual's shorthand and is what an owner
+actually reads. Body text: *"This feature controls whether changes to the bypass state of a
+block in Scene Mode are automatically saved to the active Scene"*. The three options, in
+order:
+
+1. *Always overwrite bypass state (default)*
+2. *Do not overwrite bypass state when changing bypass state via footswitches in Stomp Mode
+   (including Hybrid Stomp Mode) **or MIDI**. Changes made with the touchscreen will be saved.*
+3. *Do not overwrite bypass state when changing bypass state by any method.*
+
+Option 2 groups **MIDI with footswitches**, which the manual's summary omits entirely. That
+is consistent with what was measured - a USB HID write behaves like the touchscreen, and USB
+HID is not MIDI - but the MIDI half is UNTESTED here, since this library has no MIDI path.
+Anyone adding one should not assume it inherits the host write's behaviour.
+
+> **`ColBypass.column` has no presence and reads 0 on every entry** - the list is
+> POSITIONAL, `preset.bypass[row].colBypass[column]`, exactly like `Chain.row`. Filtering
+> by `column` matches nothing and silently yields the first entry or none at all. That
+> produced three confident "the write was discarded" results in a row before the constant
+> was noticed.
 
 **Do not confuse settings with commands.** `GeneralSettings.power_option` takes
 `SHUTDOWN`, `REBOOT`, `STANDBY` or `WAKE_UP`, and `reset_wifi_networks` discards saved
@@ -2040,10 +2115,30 @@ threshold, and the other controls stay inert until it does. And **REVERSE and HA
 do not change `state`** - they set `in_reverse` and `half_speed` while playback
 continues.
 
-**Master volume is READ-ONLY.** `MasterVolume.volume` is normalized 0..1 and maps
-linearly to the 0-100 on screen (the knob at 47 reported 0.471074373). A `MasterVolume`
-UPDATE carrying a new level is accepted and changes nothing, which fits the device's own
-pushes carrying `calibrate` rather than a setpoint.
+**Master volume IS writable.** `Grid`-style sparseness does not apply here; the whole
+write is `MasterVolume{UPDATE, volume}` with a normalized 0..1, and it lands on its own
+with no companion field. Confirmed by eye and by ear: a host write of `0.30` took the
+overlay to 30 and audibly dropped the level.
+
+This corrects a recorded finding. Earlier work measured the write as "accepted and
+changes nothing", and that measurement was a **stale read**, not a device refusal -
+`master_volume()` called immediately after the write returns the PREVIOUS value, so a
+sequence of write-then-read reports each result one step late. Reconnect, or wait, before
+believing a read. The same trap has now produced two wrong conclusions in this project.
+
+`volume` maps to the 0-100 on screen as `round(volume * 100)`: the wire value
+0.566115677 displayed 57, not 56. The knob quantizes in steps of exactly 1/121.
+
+**After a host write the physical knob soft-takes-over.** It does nothing until it is
+turned past the value the host set, and only then resumes control. That is precisely the
+behaviour the manual describes for Cortex Control - "adjusts output level and temporarily
+deactivates the hardware wheel" - so Cortex Control is not using some undiscovered route.
+It is writing this field.
+
+> **`calibrate: true` is not a flag, it is an action.** Sending it opens the full-screen
+> Master Volume Calibration dialog on the unit and waits for the owner to sweep the knob
+> min-to-max and tap SAVE. Do not include it to "be safe" alongside a level write; it
+> takes over the screen and forces a recalibration. Found the hard way.
 
 **And it is a gain stage of its own, not a rewrite of the port levels.** Across 114
 `MasterVolume` pushes while the knob was turned, no `IOSettings` port level changed at
@@ -2373,11 +2468,14 @@ visually on the device's own screen.
 | `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root, not children of My Presets |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | the single splitter/mixer MUTE; reported back in `mixBypass`, and one write sets all eight scenes |
 | `set_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence; an UPDATE alone leaves the old assignment |
+| `set_stomp_momentary` | `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}` | read-back + on-unit | keyed by footswitch, not column. **Only lands on a switch driving exactly one block** - the device refuses multi-block switches silently, as its own toggle does |
+| `set_stomp_label` | `Grid{UPDATE, preset{stomp_labels` or `single_stomp_labels{key, value}}}` | read-back + on-unit | `single_stomp_labels` is the one the unit writes when the switch drives a single block; it clears both on unassign |
 | `set_expression` | `Grid{UPDATE, preset{chains{row, models{column, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit | pedal 1 or 2 with a normalized sweep range |
 | `set_midi_out` / `set_preset_load_midi_out` | `MIDISettings{UPDATE, general_midi_messages` or `preset_load_messages{messages{source, msg}}}` | read-back | per-preset MIDI Out. A `Grid` update carrying the preset's own midi fields does nothing |
 | `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
 | `param_options` | reads `Param.dynamic_steps` | read-back | the option names of a list parameter, which the catalog does not carry |
 | `set_master_volume_assignment` | `GeneralSettings{UPDATE, master_volume_assignment{...}}` | read-back | which outputs the knob governs. Read-merge-write, because a submessage is replaced wholesale |
+| `set_master_volume` | `MasterVolume{UPDATE, volume}` | read-back + on-unit + by ear | normalized 0..1, displayed as `round(v * 100)`. Travels alone. The earlier "accepted and ignored" was a stale read. Never add `calibrate` - it opens the calibration dialog |
 | `set_global_bypass` | `GeneralSettings{UPDATE, global_bypass_cab` / `_ir{row1..row4}}` | read-back | global Cab / IR bypass per row |
 | `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index; which index is which band control is unestablished |
 | `set_mode_cycle` | `Mode{UPDATE, available_modes{modes}}` | read-back | the mode cycle order; the whole list is replaced |

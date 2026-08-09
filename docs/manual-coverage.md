@@ -20,12 +20,15 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 103 features audited: **63 yes**, **8 partly**, **21 no**, **11 n/a**.
+Of 103 features audited: **64 yes**, **8 partly**, **20 no**, **11 n/a**.
 
-Of the 91 features a host could plausibly drive, **65 are fully covered** and 13 more
-are partly covered - which here means the state is readable and at least one field of it
-is confirmed writable, with the neighbours the same shape but not individually
-exercised. Only 14 remain untouched.
+Of the 92 features a host could plausibly drive - everything above except the 11 marked
+n/a - **64 are fully covered** and 8 more are partly covered, which here means the state
+is readable and at least one field of it is confirmed writable, with the neighbours the
+same shape but not individually exercised. Only 20 remain untouched.
+
+Both paragraphs now count the same table. They had drifted apart: this one still read
+91/65/13/14 from an earlier revision, which no longer matched a row-by-row count.
 
 Four solo rounds and several sessions with the owner at the unit got it there. The solo
 rounds closed the per-preset non-audio gap (footswitch assignments, expression
@@ -51,7 +54,7 @@ need the physical world: Neural Capture, and loading from the factory Captures L
 | Recall a preset | yes | `recall_preset()`, `read_preset()` |
 | Switch scene | yes | `switch_scene()` |
 | Bank navigation | yes | any slot is addressable by name (`"28C"`) or index |
-| Master Volume level | partly | `master_volume()` reads it (0..1 mapping to the 0-100 on screen). READ-ONLY, and it is a separate gain stage - turning the knob changes no port level. The nearest equivalent is setting the individual output levels |
+| Master Volume level | yes | `master_volume()` reads it and `set_master_volume()` writes it, normalized 0..1 with the unit displaying `round(v * 100)`. The recorded "read-only" was a STALE READ, not a refusal - a read straight after a write returns the previous value. It is a separate gain stage applied downstream of the port levels, and after a host write the physical knob soft-takes-over, which is what the manual describes Cortex Control doing. Never send `calibrate` alongside a level: it opens the calibration dialog on the unit |
 | Master Volume output assignment | yes | `set_master_volume_assignment()`, which reads and merges because a submessage write would clear the flags it omits |
 | Master Volume knob function (global vs per output) | yes | `set_master_volume_assignment()`, which reads and merges - the raw field is a submessage, and writing one flag through `update_settings()` clears the other three |
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
@@ -99,10 +102,10 @@ need the physical world: Neural Capture, and loading from the factory Captures L
 | Mixer parameters | yes | `set_mixer_param()` |
 | Splitter / Mixer MUTE | yes | `set_split_mute()`. It is ONE control, not two; the write goes to `splitBypass` and the device reports it in `mixBypass` |
 | Side-chaining: set a block's SOURCE/TRIGGER | yes | `set_param_option(row, column, param="SOURCE", option=...)`. It is an ordinary comboBox parameter; `sidechain_source_flag` is bookkeeping and ignores writes |
-| Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()` |
+| Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()`. Momentary is keyed by footswitch, not column, and only lands on a switch driving ONE block - the device refuses multi-block switches silently, as its own toggle does. The manual never mentions stomp momentary; the touchscreen's Assign footswitch modal has it |
 | Expression pedal assignment to a parameter | yes | `set_expression(row, column, param, pedal, minimum, maximum)` |
 | Expression bypass (heel-toe / switch / stop) | yes | `set_expression_bypass()` with `ExpressionBypassMode`. All three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2 - not the manual's listed order |
-| Expression pedal calibration | no | candidate `IOSettings`. Manual calls it a global setting |
+| Expression pedal calibration | partly | the flow IS `IOSettings`, as guessed: calibrating a pedal on the unit broadcasts `exp_port{exp_port_id, calibrating: true}` and `false` on completion, for EXP 1 and EXP 2 alike. Observed, never driven from the host |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | it is an ordinary catalog model |
 | Looper X: transport actions and parameters | partly | `looper()` reads the full status and `LooperState` names five states including OVERDUBBING. The transport is not driven from here; MIDI CC#48-61 is the documented route |
