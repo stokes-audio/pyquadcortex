@@ -16,7 +16,7 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
-## Unreleased
+## 0.39.0 - 2026-08-08
 
 ### Master Volume is writable after all
 
