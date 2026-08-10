@@ -11,7 +11,7 @@ See the readme for a tour, and ``docs/`` for the protocol and internals.
 
 import logging
 
-__version__ = "0.39.0"
+__version__ = "0.40.0"
 
 # A library must not write to the application's console. Without a handler,
 # Python's handler of last resort prints WARNING and above to stderr, so a
