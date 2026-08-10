@@ -43,11 +43,18 @@ from pyquadcortex.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.proto import Preset_pb2 as preset
 
 #: The wire value the mixer, splitter and lane-output LEVEL parameters hold when
-#: nothing is attenuated - 10/13, which is 0 dB on the -100..+30 dB span those
+#: nothing is attenuated - 10/13, which is 0 dB on the -40..+12 dB span those
 #: controls cover. The catalog publishes them as 0..1 "dB" (see
 #: :attr:`~pyquadcortex.catalog.Parameter.range_is_placeholder`), so this is the
 #: reference point for reading and writing them. Measured on every row carrying
 #: one across 17 factory presets.
+#:
+#: Two releases said -100..+30 dB here, and the mistake is instructive: both spans
+#: put 0 dB at exactly 10/13 (100/130 = 40/52), so unity - the only point the
+#: original measurement had - cannot tell them apart. The true span comes from
+#: reading the screen against the wire at three more points: -3.1 dB at 0.71,
+#: +12.0 dB at 1.0, and -39.5 dB at 0.01, the lowest numeric step before the
+#: screen reads "Off". :func:`lane_level_db` / :func:`db_to_lane_level` convert.
 UNITY_LEVEL = 0.76923077
 
 
@@ -60,8 +67,8 @@ def input_level_db(level: float) -> float:
     every point lands within display rounding, and 0 dB is exactly 1/6). It also
     matches the hardware spec sheet's "MAX INPUT GAIN: +60dB".
 
-    INPUT ports only. Output, lane and mixer levels use different spans -
-    :data:`UNITY_LEVEL` documents the -100..+30 dB one.
+    INPUT ports only. Lane and mixer levels run -40..+12 dB instead -
+    :func:`lane_level_db` converts those.
     """
     return -12.0 + 72.0 * level
 
@@ -78,6 +85,42 @@ def db_to_input_level(db: float) -> float:
             f"input gain runs -12..+60 dB on the unit; {db} dB does not exist"
         )
     return (db + 12.0) / 72.0
+
+
+def lane_level_db(value: float) -> float:
+    """Convert a lane/mixer/splitter LEVEL wire ``value`` (0..1) to displayed dB.
+
+    These controls span **-40 to +12 dB**, so ``dB = -40 + 52 * value``, with 0 dB
+    at :data:`UNITY_LEVEL` (10/13 exactly). Solved from three screen readings taken
+    against simultaneous wire reads of a row's VOLUME: -3.1 dB at 0.71, +12.0 dB at
+    1.0, -39.5 dB at 0.01 (least squares over the three: -40.02..+11.99).
+
+    The bottom of the knob is special: -39.5 dB (wire 0.01) is the lowest NUMERIC
+    step, and below it the screen reads "Off" - so wire 0.0 is an Off position,
+    not -40 dB. A caller wanting silence writes 0.0, not the bottom of the dB
+    scale. This function still maps 0.0 to -40.0 because it converts the scale;
+    it does not model the Off detent.
+
+    The catalog publishes these parameters as 0..1 "dB" - a placeholder, which is
+    why ``real=`` raises for them and this helper exists.
+    """
+    return -40.0 + 52.0 * value
+
+
+def db_to_lane_level(db: float) -> float:
+    """Convert displayed dB to the wire value a lane/mixer/splitter LEVEL takes.
+
+    Inverse of :func:`lane_level_db`; see it for how the scale was measured.
+    Values outside -40..+12 dB do not exist on the unit and are refused rather
+    than silently clamped. The knob's numeric floor is -39.5 dB; for silence
+    write 0.0 directly (the Off position) instead of converting a dB value.
+    """
+    if not -40.0 <= db <= 12.0:
+        raise ValueError(
+            f"lane and mixer levels run -40..+12 dB on the unit; {db} dB "
+            f"does not exist (for silence write 0.0, the Off position)"
+        )
+    return (db + 40.0) / 52.0
 
 #: Where user setlists live. They sit SIDE BY SIDE here rather than nested inside
 #: "My Presets" - a folder created under My Presets is not a setlist and the device
@@ -1409,8 +1452,10 @@ Two of those names disagree with the catalog, which is why the map
             qc.set_lane_output(row=0, param="VOLUME", value=0.0)             # silent
 
         ``VOLUME`` publishes a placeholder catalog range, so ``real=`` raises for it
-        rather than converting: :data:`UNITY_LEVEL` is the value it holds when
-        nothing is attenuated, and 0.0 is silence.
+        rather than converting - use :func:`db_to_lane_level` to speak dB. The span
+        is -40..+12 dB with :data:`UNITY_LEVEL` at 0 dB, and the numeric range
+        stops at -39.5 dB: below that the knob reads "Off", which is wire 0.0. For
+        silence write 0.0, not the bottom of the dB scale.
 
         **``MUTE`` is 1.0 = MUTED** - the intuitive direction, measured by ear on
         hardware (a row at 0.0 was audible; 1.0 silenced that path). Worth stating

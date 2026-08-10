@@ -174,7 +174,18 @@ A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which 
 what every mixer, splitter and lane level in the factory content sits at when nothing
 is attenuated. Those parameters are published with a placeholder `0..1` range that
 claims to be dB, so `real=` is refused for them rather than converting into a number
-that means something else - pass `value=`.
+that means something else - pass `value=`, or speak dB through the helpers:
+
+```python
+from pyquadcortex import db_to_lane_level, lane_level_db
+
+qc.set_lane_output(row=0, param="VOLUME", value=db_to_lane_level(-6.0))
+lane_level_db(0.76923077)     # 0.0
+```
+
+The span is **-40 to +12 dB**. The knob's lowest numeric step is -39.5 dB; below it
+the unit shows "Off", which is wire `0.0` - so for silence write `0.0` rather than
+the bottom of the dB scale.
 
 The **splitter** divides a row into two lanes:
 

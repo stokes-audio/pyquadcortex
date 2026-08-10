@@ -246,7 +246,7 @@ def test_superseded_models_are_still_factory_and_still_resolvable(cat):
 # splitter and lane-output LEVEL controls are 0..1 "dB", and TEMPO is 0..1 "BPM".
 # That is the wire's own normalized scale, not the span the control covers, so
 # there is nothing to convert and the true span is not in the catalog. Measured:
-# those level parameters read 0.76923077 (10/13, i.e. 0 dB on -100..+30) on every
+# those level parameters read 0.76923077 (10/13, i.e. 0 dB on -40..+12) on every
 # row carrying one across 17 factory presets.
 
 

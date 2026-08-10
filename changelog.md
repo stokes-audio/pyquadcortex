@@ -16,6 +16,25 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## Unreleased
+
+### The lane/mixer level span is -40..+12 dB, not -100..+30
+
+A field report with three simultaneous screen-and-wire readings settled it:
+`dB = -40 + 52 * value`, with 0 dB still at `UNITY_LEVEL`. The two releases that said
+-100..+30 dB were fooled by arithmetic: both spans put 0 dB at exactly 10/13
+(100/130 = 40/52), and unity was the only point the original measurement had, so no
+amount of re-measuring unity could have caught it. A span needs a point away from the
+reference.
+
+**New: `lane_level_db(value)` and `db_to_lane_level(db)`**, mirroring the input-gain
+pair, since the catalog publishes a placeholder range for these parameters and `real=`
+raises - callers were doing the arithmetic by hand from a docstring that was wrong.
+
+Also from the same report: the knob's lowest numeric step is **-39.5 dB**, below which
+the unit shows "Off" - wire `0.0`. So `0.0` is an Off position, not -40 dB; for
+silence write `0.0` rather than converting the bottom of the dB scale.
+
 ## 0.39.0 - 2026-08-08
 
 ### Master Volume is writable after all

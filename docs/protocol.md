@@ -1540,7 +1540,8 @@ owner-set trims read simultaneously on screen and on the wire:
 
 It also matches the spec sheet's "MAX INPUT GAIN: +60dB". `input_level_db()` /
 `db_to_input_level()` convert. This is the INPUT span only - lane and mixer levels
-run -100..+30 dB (see `UNITY_LEVEL`), and the output span has not been measured.
+run -40..+12 dB (see `UNITY_LEVEL` and `lane_level_db()`), and the output span has
+not been measured.
 
 A cautionary note on how this was nearly gotten wrong: before the screen readings
 existed, the wire values were fitted to the Input Gate block's catalog range (-24..+24 dB)
@@ -2592,12 +2593,25 @@ Converting against such a range yields a number that means something else, so
 (`Parameter.range_is_placeholder` is the test) and `real=` is refused. Pass `value=`
 with the normalized 0..1 instead.
 
-**Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on a -100..+30
+**Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on a -40..+12
 dB span. Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on
 every one of the 34 rows carrying them across 17 factory presets, and lane `VOLUME` on
 52 of 68 rows. So that value is the default, not attenuation somebody dialled in -
 which is what makes a `LEVEL B` of 0.0 next to it recognisable as a deliberately
 silenced lane. `pyquadcortex.UNITY_LEVEL` holds it.
+
+The span itself comes from a later three-point screen-vs-wire fit of a row's VOLUME:
+-3.1 dB at 0.71, +12.0 dB at 1.0, -39.5 dB at 0.01. So `dB = -40 + 52 * value`, and
+`lane_level_db()` / `db_to_lane_level()` convert. Two releases said -100..+30 dB, and
+the error is a sharper instance of the two-clean-points lesson above: both spans put
+0 dB at exactly 10/13 (100/130 = 40/52), so the unity measurement - however many rows
+it covered - could never distinguish them. A span needs at least one point AWAY from
+the reference.
+
+The bottom of these knobs is a detent, not the end of the scale: -39.5 dB (wire 0.01)
+is the lowest numeric step, below which the screen reads "Off" - wire 0.0. So 0.0 is
+an Off position rather than -40 dB, which the earlier observation that 0.0 is silence
+already reflected.
 
 Note the ranges that ARE genuine on those same models, and do convert: Input Gate
 `NOISE REDUCTION` is 0..100 "%", `INPUT GAIN` is -24..+24 "dB", TempoControl `VOLUME`

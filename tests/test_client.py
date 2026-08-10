@@ -1764,6 +1764,26 @@ def test_db_to_input_level_refuses_gains_the_unit_does_not_have():
         db_to_input_level(-12.1)
 
 
+def test_lane_level_db_matches_the_three_measured_points():
+    """A row's VOLUME read on screen and on the wire at the same moment. Two
+    releases said -100..+30 dB: both spans put 0 dB at exactly 10/13, so the
+    original unity-only measurement could never tell them apart."""
+    from pyquadcortex import UNITY_LEVEL, db_to_lane_level, lane_level_db
+    for wire, screen in ((0.7099999785, -3.1), (1.0, 12.0), (0.0099999998, -39.5)):
+        assert abs(lane_level_db(wire) - screen) < 0.05    # display rounds to 0.1
+        assert abs(db_to_lane_level(screen) - wire) < 0.0005
+    assert lane_level_db(UNITY_LEVEL) == pytest.approx(0.0, abs=1e-6)
+    assert db_to_lane_level(0.0) == pytest.approx(10 / 13)
+
+
+def test_db_to_lane_level_refuses_levels_the_unit_does_not_have():
+    from pyquadcortex import db_to_lane_level
+    with pytest.raises(ValueError, match="does not exist"):
+        db_to_lane_level(12.1)
+    with pytest.raises(ValueError, match="Off position"):
+        db_to_lane_level(-41)
+
+
 def test_hybrid_mode_maps_all_six_ordered_pairs():
     """Read off the unit's own MODE indicator, which names the TOP row first."""
     from pyquadcortex.enums import FootswitchMode as M

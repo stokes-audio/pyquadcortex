@@ -21,7 +21,8 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from pyquadcortex.transport import DeviceLostError
 from pyquadcortex.client import (SCENE_UNLABELLED, UNITY_LEVEL,
-                                 db_to_input_level, input_level_db,
+                                 db_to_input_level, db_to_lane_level,
+                                 input_level_db, lane_level_db,
                                  USER_SETLIST_ROOT, Block,
                                  BlockRefused, Folder, MidiOut, QuadCortex, Split,
                                  StompAssignment, blocks, field_present,
@@ -100,6 +101,8 @@ __all__ = [
     "DeviceLostError",
     "input_level_db",
     "db_to_input_level",
+    "lane_level_db",
+    "db_to_lane_level",
     "SCENE_UNLABELLED",
     "field_present",
     "Input",
