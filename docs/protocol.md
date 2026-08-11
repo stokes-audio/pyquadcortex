@@ -1711,12 +1711,23 @@ and the asymmetry is load-bearing for anyone maintaining a cached preset:
   SET, one model with `column` SET, one param. Fully keyed, no positional guessing - an
   echo can be merged straight into a cached preset.
 * Echo latency, measured: **113-116 ms** for a parameter write; **290-420 ms** for a
-  block placement (the basis of `set_block(verify=True)`'s window). The rest are far
-  quicker - routing **9-17 ms**, and scene label, scene colour and global settings all
-  **about 2 ms** - so those two remain the slowest and are what the watcher's window is
-  sized against. The first scene write of a session has been seen as slow as 25 ms
-  before settling. Block bypass is still unmeasured: its test skips unless the target
-  block already carries a stored bypass entry. See `tests/hardware/test_write_echo.py`.
+  block placement (the basis of `set_block(verify=True)`'s window). These two remain the
+  slowest and are what the watcher's window is sized against.
+* The other write types read far quicker, and the figures need their caveat stated with
+  them. Scene label and scene colour land at **about 2 ms** (single-digit ms across four
+  runs; one first-write-of-session read 25 ms, on too few samples to call it a warm-up).
+  Routing reads **9-19 ms** and global settings **about 2 ms**. The caveat: a *type-only*
+  match on these same writes is what produced the discredited 2-11 ms band described in
+  `tests/hardware/readme.md`, so a number in this range is only worth as much as the
+  predicate behind it. The two scene figures come from predicates matched on the exact
+  index and value written, and pinned offline in
+  `tests/test_scene_echo_predicates.py`. The routing figure does **not**: its predicate
+  accepts any chain carrying the target port rather than the row that was written, so
+  treat 9-17 ms as provisional until it is row-keyed. Only the parameter control asserts
+  a latency *floor*, so none of these figures would fail the suite if it started timing
+  the wrong message.
+* Block bypass is still unmeasured: its test skips unless the target block already
+  carries a stored bypass entry. See `tests/hardware/test_write_echo.py`.
 
 ## Connect burst, measured
 
