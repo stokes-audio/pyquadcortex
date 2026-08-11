@@ -72,8 +72,8 @@ The package has two namespaces, and you can use either one or both.
 
 **`pyquadcortex.protocol`** is the message-level API: one Python call per Quad
 Cortex protocol message. It is complete, it is what everything below is written
-against, and it is what this library shipped as through 0.40.0. It moved here in
-0.41.0, unchanged.
+against, and it is what this library shipped as through 0.40.0. It moves here in
+the next release, unchanged.
 
 ```python
 from pyquadcortex import protocol

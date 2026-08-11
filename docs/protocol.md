@@ -1071,8 +1071,8 @@ so position is the index - the same convention as `models[]`. A host WRITE does 
 `index`; it is only the device's stored form that omits it. `pyquadcortex.protocol.tempo_params()`
 reads them positionally.
 
-**The menu's MODE control (global or per-preset tempo) is NOT on the wire**, and this has
-been established twice, the second time with an instrument worth trusting.
+**The menu's MODE control (global or per-preset tempo) is NEVER BROADCAST**, established
+twice, the second time with an instrument worth trusting.
 
 Toggling to GLOBAL, confirming the menu, toggling back to PRESET and confirming again
 produced no traffic of any kind - not `Grid`, not `GlobalTempo`, not `GeneralSettings`, and
@@ -1080,10 +1080,20 @@ nothing else. The re-test decoded 70 of the device's 72 message types (the first
 silently dropped 27 of them) and carried a liveness heartbeat proving the link was up for
 the whole 420-second window (the first attempt could not tell silence from a dead link).
 
-So MODE appears to be device-side state that is simply not published. It is a good
-illustration of why a negative result needs a trustworthy instrument: the first version of
-this conclusion happened to be correct, but nothing about how it was reached justified
-believing it.
+**Read that for exactly what it says.** For two releases this section said MODE was "not on
+the wire at all", and that is more than the measurement supports: every one of those tests
+LISTENED, and none of them ASKED. A control the device never announces may still answer a
+READ, or ride in one of the two message types the sweep did not decode. So the state of
+knowledge is "we have not found the wire path", which is an open investigation, not a
+closed door. It is still a good illustration of why a negative result needs a trustworthy
+instrument - and now also of the second half of that rule, which is to state only what the
+instrument measured.
+
+Untried, for whoever picks this up: a targeted READ of the candidate message types, and
+decoding the two the sweep missed. Cortex Control offers the same switch, so a route
+exists. Until it is found, the model shows the control and refuses it rather than guessing
+which scope a tempo write landed in (ADR-0007); `domain-model.md` §13 carries the same
+entry.
 
 Two related dead ends, for the record. `GlobalTempo` is global rather than
 per-preset and, when READ, returned only a running clock (`current_beat`,

@@ -20,9 +20,20 @@ import pyquadcortex
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
+def _reraise(name):
+    """walk_packages swallows import errors by default.
+
+    A subpackage whose ``__init__`` raises would then drop every module under it
+    from the list below, and this file would report a clean sweep of a package it
+    never opened.
+    """
+    raise
+
+
 MODULES = sorted(
     info.name
-    for info in pkgutil.walk_packages(pyquadcortex.__path__, "pyquadcortex.")
+    for info in pkgutil.walk_packages(pyquadcortex.__path__, "pyquadcortex.",
+                                      onerror=_reraise)
 )
 
 

@@ -18,7 +18,7 @@ import time
 
 from pyquadcortex import protocol
 from pyquadcortex.protocol import (Footswitch, MidiOut, MidiSource, Setlist, blocks,
-                          midi_out, stomp_assignments)
+                                   midi_out, stomp_assignments)
 
 SOURCE_NAME = "Brit 2203"
 DEST_SLOT = "30A"

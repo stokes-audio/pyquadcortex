@@ -270,7 +270,7 @@ The metronome's list controls have named enums, so nothing needs a magic number:
 
 ```python
 from pyquadcortex.protocol import (GlobalEQFilter, MetronomeRouting, MetronomeSound,
-                          TempoSubdivision, TimeSignature)
+                                   TempoSubdivision, TimeSignature)
 
 qc.set_time_signature(TimeSignature.SEVEN_EIGHT_2_3_2)
 qc.set_tempo_subdivision(TempoSubdivision.EIGHTH_TRIPLET)

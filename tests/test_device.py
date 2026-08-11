@@ -142,3 +142,11 @@ def test_repr_names_the_type_without_talking_to_the_unit():
     text = repr(Device.from_client(qc))
     assert "Device" in text
     assert qc.version_reads == 0
+
+
+def test_repr_says_open_before_close_and_closed_after(fake_stack):
+    """A model that lies about itself is the one thing this library must not do."""
+    device = pyquadcortex.connect(settle=0)
+    assert repr(device) == "<Device open>"
+    device.close()
+    assert repr(device) == "<Device closed>"

@@ -28,6 +28,7 @@ class Device:
         """Internal. Use :func:`connect` or :meth:`from_client`."""
         self._client = client
         self._owns_client = _owns_client
+        self._closed = False
         self._version = None
 
     @classmethod
@@ -76,12 +77,18 @@ class Device:
         return self._version
 
     def close(self) -> None:
-        """Release the unit, if this `Device` opened it.
+        """Finish with this `Device`, releasing the unit if it opened it.
 
         Safe to call more than once. A `Device` built by :meth:`from_client` owns
-        nothing, so this does nothing to the caller's connection.
+        nothing, so this marks the `Device` done and leaves the caller's
+        connection open for them to close.
+
+        Using a closed `Device` is not defined and not defended against: an owned
+        connection is gone, so a read through it fails the way the protocol layer
+        fails, which is the same as calling a method on a closed ``QuadCortex``.
         """
-        if self._owns_client and self._client is not None:
+        self._closed = True
+        if self._owns_client:
             self._client.close()
 
     def __enter__(self) -> "Device":
@@ -91,9 +98,11 @@ class Device:
         self.close()
 
     def __repr__(self) -> str:
-        # Deliberately says nothing about the unit: repr() is called by
-        # debuggers and logging, and must never trigger a device read.
-        return f"<{type(self).__name__} connected={self._client is not None}>"
+        # Says nothing about the unit, only about this object. repr() is called
+        # by debuggers and logging and must never trigger a device read - and a
+        # model that reports itself wrongly is the one thing this library
+        # cannot do.
+        return f"<{type(self).__name__} {'closed' if self._closed else 'open'}>"
 
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,

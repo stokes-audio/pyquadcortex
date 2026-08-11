@@ -19,7 +19,7 @@ import sys
 
 from pyquadcortex import protocol
 from pyquadcortex.protocol import (Input, Output, Setlist, blocks, field_present,
-                          free_rows, splits)
+                                   free_rows, splits)
 
 
 def main():

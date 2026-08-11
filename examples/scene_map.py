@@ -19,7 +19,7 @@ import time
 
 from pyquadcortex import protocol
 from pyquadcortex.protocol import (UNITY_LEVEL, BlockRefused, Scene, Setlist, blocks,
-                          field_present, free_rows, models, splits)
+                                   field_present, free_rows, models, splits)
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Brit 2203"     # a serial factory preset, so there is a row to branch

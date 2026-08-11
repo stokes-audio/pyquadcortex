@@ -67,3 +67,35 @@ def test_top_level_no_longer_re_exports_the_protocol_surface():
 def test_the_model_is_what_the_top_level_offers():
     assert pyquadcortex.connect is not protocol.connect
     assert set(pyquadcortex.__all__) >= {"connect", "Device", "protocol"}
+
+
+PROTOCOL_SOURCES = sorted(
+    pathlib.Path(protocol.__file__).parent.rglob("*.py"))
+
+
+def test_the_protocol_sources_were_actually_found():
+    """Guards the parametrisation below: an empty list would pass vacuously."""
+    assert len(PROTOCOL_SOURCES) > 5
+
+
+@pytest.mark.parametrize("source", PROTOCOL_SOURCES, ids=lambda p: p.name)
+def test_the_protocol_layer_never_imports_the_model(source):
+    """The model calls the protocol layer, never the other way round.
+
+    A back-import would make the layer map a lie, turn the protocol layer's
+    offline tests into model tests, and create an import cycle the day the model
+    grows past a skeleton. Checked on the source rather than at runtime, because
+    a lazy import inside a function would not show up in `sys.modules`.
+    """
+    tree = ast.parse(source.read_text())
+    offenders = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.startswith("pyquadcortex.model"):
+                offenders.append(node.module)
+        elif isinstance(node, ast.Import):
+            offenders += [a.name for a in node.names
+                          if a.name.startswith("pyquadcortex.model")]
+    assert not offenders, (
+        f"{source.name} imports {offenders} - the protocol layer must not "
+        f"depend on the model")
