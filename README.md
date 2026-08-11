@@ -20,6 +20,12 @@ script. What is and is not covered is listed feature by feature in
 The library imports as `pyquadcortex`; a command-line tool named `qcctl` comes
 with it.
 
+> **Upgrading from 0.40.0 or earlier?** The message-level API moved to
+> `pyquadcortex.protocol`. Change `from pyquadcortex import X` to
+> `from pyquadcortex.protocol import X`, and `pyquadcortex.connect()` to
+> `protocol.connect()`. Nothing else about it changed. See
+> [Two ways in](#two-ways-in) below.
+
 > Unofficial and not affiliated with, endorsed by, or supported by Neural DSP
 > Technologies. "Quad Cortex" and "Neural DSP" are trademarks of their owner and
 > are used here only to describe what this software talks to.
@@ -60,15 +66,57 @@ Python 3.11 or newer.
 it is running nothing else can talk to the device. (Wi-Fi can stay on, it makes
 no difference. The Quad Cortex just has to be plugged in over USB.)
 
+## Two ways in
+
+The package has two namespaces, and you can use either one or both.
+
+**`pyquadcortex.protocol`** is the message-level API: one Python call per Quad
+Cortex protocol message. It is complete, it is what everything below is written
+against, and it is what this library shipped as through 0.40.0. It moved here in
+0.41.0, unchanged.
+
+```python
+from pyquadcortex import protocol
+
+with protocol.connect() as qc:
+    qc.switch_scene(1)
+```
+
+**`pyquadcortex` itself** is the model of the unit: objects that look and behave
+the way the Quad Cortex does, so you write what you mean instead of holding
+protocol facts in your head. It is being built now, and today it gives you the
+unit's identity and not much else.
+
+```python
+import pyquadcortex
+
+with pyquadcortex.connect() as device:
+    print(device.firmware, device.serial)
+```
+
+Use the protocol layer for anything the model does not cover yet. To mix the two
+in one script, wrap a connection you already have:
+
+```python
+from pyquadcortex import Device, protocol
+
+with protocol.connect() as qc:
+    device = Device.from_client(qc)
+```
+
+Where the model is going is in
+[docs/domain-model.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/domain-model.md).
+Everything below on this page is the protocol layer.
+
 ## Quickstart
 
 Everything here uses the factory library, so it works on any unit.
 
 ```python
-import pyquadcortex
-from pyquadcortex import Input, Instrument, Scene, Setlist
+from pyquadcortex import protocol
+from pyquadcortex.protocol import Input, Instrument, Scene, Setlist
 
-with pyquadcortex.connect() as qc:
+with protocol.connect() as qc:
     # What are we talking to?
     print(qc.version().app_fw_version)
 
@@ -90,9 +138,9 @@ with pyquadcortex.connect() as qc:
                            instrument=Instrument.BASS)
 ```
 
-`connect()` finds the device, opens it, and completes the handshake the device
-requires, so what you get back is ready to use. As a context manager it also
-releases the device when the block ends; otherwise call `qc.close()`.
+`protocol.connect()` finds the device, opens it, and completes the handshake the
+device requires, so what you get back is ready to use. As a context manager it
+also releases the device when the block ends; otherwise call `qc.close()`.
 
 Closing tells the device the client is leaving, which is what Cortex Control does on
 quit. If you supplied your own transport and so own teardown yourself, send it with

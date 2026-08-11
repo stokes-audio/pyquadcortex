@@ -1,16 +1,16 @@
-"""Tests for the qcctl command-line interface (pyquadcortex.cli).
+"""Tests for the qcctl command-line interface (pyquadcortex.protocol.cli).
 
 These tests exercise ONLY argument parsing. They must never touch hidapi or open
-a device: importing ``pyquadcortex.cli`` and calling ``build_parser()`` has to be
+a device: importing ``pyquadcortex.protocol.cli`` and calling ``build_parser()`` has to be
 import-safe and device-free (device opening is deferred to
-``pyquadcortex.session``, whose ``import hid`` is itself lazy). If any of these
+``pyquadcortex.protocol.session``, whose ``import hid`` is itself lazy). If any of these
 tests start requiring hidapi, the lazy-import contract has been broken.
 """
 
 import pytest
 
-from pyquadcortex import cli, client
-from pyquadcortex.enums import Setlist
+from pyquadcortex.protocol import cli, client
+from pyquadcortex.protocol.enums import Setlist
 
 
 def test_parse_recall_args():

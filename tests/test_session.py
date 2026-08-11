@@ -1,14 +1,14 @@
-"""Tests for the connection entry point (pyquadcortex.session).
+"""Tests for the connection entry point (pyquadcortex.protocol.session).
 
 These must stay device-free: ``session.open_device`` is monkeypatched so no
 hidapi and no hardware are involved. What matters here is the contract
-:func:`pyquadcortex.connect` promises - the caller gets a client that is already
+:func:`pyquadcortex.protocol.connect` promises - the caller gets a client that is already
 handshaken, the device is released on exit, and nothing leaks if bring-up fails.
 """
 
 import pytest
 
-from pyquadcortex import client, session
+from pyquadcortex.protocol import client, session
 
 
 class FakeDevice:
@@ -161,7 +161,7 @@ def test_close_says_goodbye_before_tearing_down():
     announced the connect and then went quiet. The send needs a live transport, so
     ordering matters: it has to precede transport.stop and device.close.
     """
-    from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+    from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
     order = []
 
@@ -200,7 +200,7 @@ def test_disconnect_is_best_effort():
 def test_disconnect_is_public_for_callers_owning_their_own_transport():
     # A caller who supplied their own transport owns teardown and previously had no
     # non-private way to send the goodbye.
-    from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+    from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
     t = FakeTransport(FakeDevice())
     sent = []
@@ -215,7 +215,7 @@ def test_disconnect_is_public_for_callers_owning_their_own_transport():
 def test_connect_retries_the_handshake_within_its_patience(monkeypatch):
     """The device can be openable but silent for ~9-12s after a (re)boot, so a
     successful open proves nothing about readiness - retry the HANDSHAKE."""
-    from pyquadcortex import session
+    from pyquadcortex.protocol import session
 
     class QuietDevice:
         def close(self):
@@ -249,7 +249,7 @@ def test_connect_retries_the_handshake_within_its_patience(monkeypatch):
 
 
 def test_connect_gives_up_after_its_patience_with_the_silent_window_explained(monkeypatch):
-    from pyquadcortex import session
+    from pyquadcortex.protocol import session
 
     class QuietDevice:
         def close(self):

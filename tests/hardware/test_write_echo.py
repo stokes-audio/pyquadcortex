@@ -14,8 +14,8 @@ import time
 
 import pytest
 
-from pyquadcortex.client import QuadCortex, field_present
-from pyquadcortex.enums import Input
+from pyquadcortex.protocol.client import QuadCortex, field_present
+from pyquadcortex.protocol.enums import Input
 
 #: Generous by design. The point is to MEASURE the echo, so a test that waits
 #: three seconds and reports 400 ms is useful, while one that times out at the

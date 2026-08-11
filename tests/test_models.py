@@ -1,4 +1,4 @@
-"""Tests for the generated factory-model constants (pyquadcortex.models).
+"""Tests for the generated factory-model constants (pyquadcortex.protocol.models).
 
 The constants are generated from a device's ModelRepo by
 ``scripts/generate_models.py`` and cover only FACTORY models - the ones every
@@ -9,7 +9,7 @@ must be looked up at runtime through ``qc.catalog``.
 
 import pytest
 
-from pyquadcortex import models
+from pyquadcortex.protocol import models
 
 
 def test_anchors_match_ids_confirmed_on_hardware():

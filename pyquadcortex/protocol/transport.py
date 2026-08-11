@@ -36,8 +36,8 @@ import time
 
 from google.protobuf.message import DecodeError
 
-from pyquadcortex import framing, registry
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol import framing, registry
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 log = logging.getLogger(__name__)
 

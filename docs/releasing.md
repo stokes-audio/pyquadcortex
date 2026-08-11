@@ -18,9 +18,11 @@ source later, and nobody can reproduce it.
 
 ## 2. Bump the version if the last one was published
 
-The version lives in **one** place, `pyquadcortex/__init__.py`, and
-`pyproject.toml` reads it. Publishing the same version twice is impossible, so
-decide now rather than at the upload prompt.
+The version lives in **one** place, `pyquadcortex/_version.py`, and
+`pyproject.toml` reads it. Both namespaces publish it, so
+`pyquadcortex.__version__` and `pyquadcortex.protocol.__version__` can never
+disagree. Publishing the same version twice is impossible, so decide now rather
+than at the upload prompt.
 
 ## 3. Build FRESH, from a clean dist/
 

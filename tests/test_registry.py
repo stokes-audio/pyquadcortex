@@ -1,11 +1,11 @@
-"""Tests for the message registry (pyquadcortex.registry).
+"""Tests for the message registry (pyquadcortex.protocol.registry).
 
 The registry bridges the frame codec (which deals in integer message-type tags)
 and the generated protobuf message classes, mapping both directions.
 """
 
-from pyquadcortex import registry
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol import registry
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
 def test_maps_class_to_enum_and_back():

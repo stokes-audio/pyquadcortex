@@ -46,7 +46,7 @@ python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 
 ### The protobuf bindings
 
-The generated `pyquadcortex/proto/*_pb2.py` bindings are **committed to the
+The generated `pyquadcortex/protocol/proto/*_pb2.py` bindings are **committed to the
 repository on purpose** - that is what lets `pip install` work without a protoc
 toolchain. Please do not add them to `.gitignore`.
 

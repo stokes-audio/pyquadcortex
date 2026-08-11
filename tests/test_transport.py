@@ -1,4 +1,4 @@
-"""Tests for the framed HID transport (pyquadcortex.transport).
+"""Tests for the framed HID transport (pyquadcortex.protocol.transport).
 
 These use an in-memory fake HID device - NO real hardware. The fake mimics the
 subset of the hidapi ``hid.Device`` interface the transport relies on:
@@ -23,8 +23,8 @@ import time
 
 import pytest
 
-from pyquadcortex import framing, registry, transport
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol import framing, registry, transport
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 # Short timeouts keep the suite fast and prevent hangs if something misbehaves.
 REQUEST_TIMEOUT = 2.0
@@ -337,7 +337,7 @@ def _version_read(kernel_version):
 
 def _recall_broadcast(name, rid=None):
     """Build framed reports for a RecallPreset broadcast (optionally with id)."""
-    from pyquadcortex.proto import Preset_pb2 as preset
+    from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
     rp = pa.RecallPresetMessage(
         action=pa.MessageAction.UPDATE, preset=preset.BinaryPreset(name=name)
@@ -401,7 +401,7 @@ def test_library_does_not_print_to_the_console_by_default(capsys):
         "the pyquadcortex logger needs a NullHandler"
 
     capsys.readouterr()  # discard anything captured so far
-    logging.getLogger("pyquadcortex.transport").warning("should not reach the console")
+    logging.getLogger("pyquadcortex.protocol.transport").warning("should not reach the console")
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
@@ -412,8 +412,8 @@ def test_collect_gathers_every_matching_push_without_consuming_them():
     # device's whole folder tree), so collect() accumulates rather than taking
     # the first, and leaves messages available to waiters.
     import threading
-    from pyquadcortex import transport as tmod
-    from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+    from pyquadcortex.protocol import transport as tmod
+    from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
     t = tmod.Transport.__new__(tmod.Transport)
     t._lock = threading.RLock()

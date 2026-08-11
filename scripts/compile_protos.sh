@@ -2,7 +2,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 PROTO_SRC="$HERE/protocol/proto"
-OUT="$HERE/pyquadcortex/proto"
+OUT="$HERE/pyquadcortex/protocol/proto"
 mkdir -p "$OUT"
 # Prefer the version-matched generator from the venv dev extra (grpcio-tools);
 # fall back to system protoc for environments without the venv.

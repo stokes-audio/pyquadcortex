@@ -1,4 +1,4 @@
-"""High-level QuadCortex client for pyquadcortex.
+"""High-level QuadCortex client for pyquadcortex.protocol.
 
 This is the ergonomic API a caller (CLI, script) uses to control a Quad Cortex.
 It builds protobuf messages and hands them to a ``transport``-like object,
@@ -33,19 +33,19 @@ import uuid
 import warnings
 from typing import NamedTuple
 
-from pyquadcortex import catalog, enums, registry
-from pyquadcortex.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
+from pyquadcortex.protocol import catalog, enums, registry
+from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
                                 MetronomeSound, MidiOutType,
                                 MidiSource, Output, SceneBypassBehavior, Setlist,
                                 TempoSubdivision, TimeSignature)
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
-from pyquadcortex.proto import Preset_pb2 as preset
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
 #: The wire value the mixer, splitter and lane-output LEVEL parameters hold when
 #: nothing is attenuated - 10/13, which is 0 dB on the -40..+12 dB span those
 #: controls cover. The catalog publishes them as 0..1 "dB" (see
-#: :attr:`~pyquadcortex.catalog.Parameter.range_is_placeholder`), so this is the
+#: :attr:`~pyquadcortex.protocol.catalog.Parameter.range_is_placeholder`), so this is the
 #: reference point for reading and writing them. Measured on every row carrying
 #: one across 17 factory presets.
 #:
@@ -156,7 +156,7 @@ class QuadCortex:
 
     def __init__(self, transport, _owned_resources=None):
         self._t = transport
-        # Set by pyquadcortex.connect() so close() can tear down the transport
+        # Set by pyquadcortex.protocol.connect() so close() can tear down the transport
         # and HID device it opened on the caller's behalf. When a caller wires
         # their own transport, they own its lifecycle and this stays empty.
         self._owned = _owned_resources or []
@@ -167,7 +167,7 @@ class QuadCortex:
 
     @property
     def catalog(self):
-        """This unit's :class:`~pyquadcortex.catalog.ModelCatalog`, fetched once.
+        """This unit's :class:`~pyquadcortex.protocol.catalog.ModelCatalog`, fetched once.
 
         Every block on the grid is stored as an integer model id; the catalog is
         what turns that into a name, a category, and the parameter list in wire
@@ -206,7 +206,7 @@ class QuadCortex:
         failing thanks to the deliberate status-stage STALL, so swallowing the
         error is the normal path rather than a special case.
 
-        :func:`pyquadcortex.connect` calls this for you as the first step of
+        :func:`pyquadcortex.protocol.connect` calls this for you as the first step of
         :meth:`close`. It is public for callers who supplied their own transport
         and therefore own teardown themselves, who otherwise had no
         non-private way to send it.
@@ -262,7 +262,7 @@ class QuadCortex:
     def _hello(self, timeout: float = 5.0, settle: float = 2.0):
         """Perform the full connect handshake Cortex Control performs.
 
-        Internal: :func:`pyquadcortex.connect` calls this for you, so a caller
+        Internal: :func:`pyquadcortex.protocol.connect` calls this for you, so a caller
         never has to. It is only separate so the handshake can be tested and so
         an advanced caller wiring their own transport can still drive it.
 
@@ -404,7 +404,7 @@ class QuadCortex:
 
         Each entry is a ``ProductData`` with ``index`` (the linear slot position,
         see :func:`slot_to_position`), ``name``, and ``instrument`` (see
-        :class:`~pyquadcortex.enums.Instrument`).
+        :class:`~pyquadcortex.protocol.enums.Instrument`).
 
         The device always reports a setlist as its full complement of 256 slots,
         most of which are typically empty. By default only occupied slots are
@@ -484,7 +484,7 @@ class QuadCortex:
     def switch_scene(self, scene: int):
         """Switch the active scene.
 
-        Takes a :class:`~pyquadcortex.enums.Scene` (``Scene.B``); scenes are
+        Takes a :class:`~pyquadcortex.protocol.enums.Scene` (``Scene.B``); scenes are
         numbered from zero, so a bare integer works too.
         """
         msg = pa.SceneMessage(action=pa.MessageAction.UPDATE)
@@ -607,7 +607,7 @@ class QuadCortex:
 
         The parameter may be given as a wire ``param_index``, or by NAME via
         ``param`` together with ``model`` (the block's model id, or a
-        :class:`~pyquadcortex.catalog.Model`), which resolves the index through
+        :class:`~pyquadcortex.protocol.catalog.Model`), which resolves the index through
         the device catalog. Naming is the safer route: indices are positional
         and not every one is a visible knob - a cab's parameters are internal
         ``ir selector`` entries, so writing index 0 changes stored data and
@@ -732,7 +732,7 @@ class QuadCortex:
 
         Creates a block in an empty cell and replaces whatever is in an occupied
         one - the device makes no distinction. ``model`` is a model id or a
-        :class:`~pyquadcortex.catalog.Model`; :mod:`pyquadcortex.models` has
+        :class:`~pyquadcortex.protocol.catalog.Model`; :mod:`pyquadcortex.protocol.models` has
         constants for the factory blocks, and :attr:`catalog` resolves anything
         installed on the unit, including purchased models and Neural Captures.
 
@@ -838,7 +838,7 @@ class QuadCortex:
         write never applied" from "it applied and was later reset", which
         :meth:`read_preset` cannot do.
 
-        The reply also carries ``reason`` (:class:`~pyquadcortex.RecallReason`):
+        The reply also carries ``reason`` (:class:`~pyquadcortex.protocol.RecallReason`):
         why the preset last changed. Measured: a host recall and a plain READ
         both report ``OTHER``; the push emitted by a save reports ``SAVE``;
         ``UNDO`` is defined but not yet observed. State trackers watching
@@ -861,7 +861,7 @@ class QuadCortex:
         return reply.preset
 
     def active_scene(self, timeout: float = 10.0):
-        """Which scene the unit is on right now, as a :class:`~pyquadcortex.Scene`.
+        """Which scene the unit is on right now, as a :class:`~pyquadcortex.protocol.Scene`.
 
         ``Scene{READ}`` answers with ``selected_scene`` and echoes ``request_id``;
         confirmed live by switching scenes between reads. Several writes apply to
@@ -889,7 +889,7 @@ class QuadCortex:
         scene is ACTIVE and ignores any entry beyond it. So:
 
         * without ``scene``, this changes the block in the currently active scene;
-        * with ``scene`` (a :class:`~pyquadcortex.enums.Scene`), the unit is first
+        * with ``scene`` (a :class:`~pyquadcortex.protocol.enums.Scene`), the unit is first
           switched to that scene, which is a visible side effect worth knowing
           about - the unit is left sitting there.
 
@@ -1017,7 +1017,7 @@ class QuadCortex:
     #: The tempo parameter index carrying each BEAT of the bar, 1-based: beat 1 is
     #: index 10, beat 13 is index 22. These are the catalog's ``STEPSTATE0`` to
     #: ``STEPSTATE12``, one per beat, and each is a four-option list whose values
-    #: are the :class:`~pyquadcortex.enums.MetronomeBeat` states.
+    #: are the :class:`~pyquadcortex.protocol.enums.MetronomeBeat` states.
     #:
     #: Traced on hardware by touching cells on the Tempo page in a known order.
     #: An older capture corroborates the mapping from a direction nobody was
@@ -1134,7 +1134,7 @@ Two of those names disagree with the catalog, which is why the map
     def set_tempo_subdivision(self, subdivision: "TempoSubdivision"):
         """Set the metronome's SUBDIVISIONS, by name rather than by number.
 
-        Takes a :class:`~pyquadcortex.enums.TempoSubdivision`. A plain int is
+        Takes a :class:`~pyquadcortex.protocol.enums.TempoSubdivision`. A plain int is
         accepted and range-checked - an unknown one raises rather than storing a
         value that means nothing.
         """
@@ -1142,17 +1142,17 @@ Two of those names disagree with the catalog, which is why the map
 
     def set_metronome_sound(self, sound: "MetronomeSound"):
         """Set the metronome's SOUND. Takes a
-        :class:`~pyquadcortex.enums.MetronomeSound`."""
+        :class:`~pyquadcortex.protocol.enums.MetronomeSound`."""
         return self.set_tempo_option("SOUND", int(MetronomeSound(sound)))
 
     def set_metronome_routing(self, routing: "MetronomeRouting"):
         """Set where metronome playback goes. Takes a
-        :class:`~pyquadcortex.enums.MetronomeRouting`."""
+        :class:`~pyquadcortex.protocol.enums.MetronomeRouting`."""
         return self.set_tempo_option("ROUTING", int(MetronomeRouting(routing)))
 
     def set_time_signature(self, signature: "TimeSignature"):
         """Set the metronome's time signature. Takes a
-        :class:`~pyquadcortex.enums.TimeSignature`.
+        :class:`~pyquadcortex.protocol.enums.TimeSignature`.
 
         **This rewrites per-beat states**, because the accent pattern is stored per
         beat and the device re-lays it out for the new signature. Selecting 7/8
@@ -1166,7 +1166,7 @@ Two of those names disagree with the catalog, which is why the map
         """Set how ONE beat of the bar sounds.
 
         ``beat`` is 1-based, up to 13. ``state`` is a
-        :class:`~pyquadcortex.enums.MetronomeBeat` - ``NORMAL``, ``OFF``,
+        :class:`~pyquadcortex.protocol.enums.MetronomeBeat` - ``NORMAL``, ``OFF``,
         ``ACCENT`` or ``QUIET``. A plain int is accepted and range-checked::
 
             qc.set_beat(1, MetronomeBeat.ACCENT)   # the downbeat
@@ -1191,7 +1191,7 @@ Two of those names disagree with the catalog, which is why the map
     def set_beats(self, states) -> list:
         """Set consecutive beats from the START of the bar, in one call.
 
-        Takes an iterable of :class:`~pyquadcortex.enums.MetronomeBeat`, beat 1
+        Takes an iterable of :class:`~pyquadcortex.protocol.enums.MetronomeBeat`, beat 1
         first::
 
             qc.set_beats([ACCENT, NORMAL, OFF, QUIET])   # a 4/4 bar
@@ -1276,7 +1276,7 @@ Two of those names disagree with the catalog, which is why the map
         ``Grid`` UPDATE carrying a single chain ``{row, out_portid}`` re-points that
         row's output, and the value survives a save and recall.
 
-        Pass a :class:`~pyquadcortex.enums.Output`. Note that not every member is a
+        Pass a :class:`~pyquadcortex.protocol.enums.Output`. Note that not every member is a
         physical destination. Values **16 to 18** are internal grid routing
         (``NEXT_ROW_*``): a row set to one of those feeds another row rather than a
         jack.
@@ -1379,7 +1379,7 @@ Two of those names disagree with the catalog, which is why the map
 
         ``LEVEL A``, ``LEVEL B`` and ``MIXER LEVEL`` publish a placeholder catalog
         range, so pass ``value=`` rather than ``real=`` for them;
-        :data:`pyquadcortex.UNITY_LEVEL` is unity.
+        :data:`pyquadcortex.protocol.UNITY_LEVEL` is unity.
 
         Same call shape as :meth:`set_param`, including ``scene``.
         """
@@ -1583,7 +1583,7 @@ Two of those names disagree with the catalog, which is why the map
     def set_stomp_assignment(self, row: int, column: int, footswitch):
         """Assign the block at ``row``/``column`` to a STOMP-mode footswitch.
 
-        ``footswitch`` is a :class:`~pyquadcortex.enums.Footswitch` (or 0-7 for
+        ``footswitch`` is a :class:`~pyquadcortex.protocol.enums.Footswitch` (or 0-7 for
         A-H). One footswitch may drive several blocks - factory content does
         this - so assigning does not displace anything else.
 
@@ -1694,7 +1694,7 @@ Two of those names disagree with the catalog, which is why the map
     def set_midi_out(self, source, messages):
         """Set the MIDI messages a footswitch or expression pedal sends.
 
-        ``source`` is a :class:`~pyquadcortex.enums.MidiSource` - footswitches A-H
+        ``source`` is a :class:`~pyquadcortex.protocol.enums.MidiSource` - footswitches A-H
         (0-7) or the two expression pedals (8, 9). ``messages`` is a list of
         :class:`MidiOut` entries, up to 12; the list REPLACES whatever that source
         had.
@@ -1812,7 +1812,7 @@ Two of those names disagree with the catalog, which is why the map
         through a save: pedal 1, mode 1, invert, 250 ms, latch emulation.
 
 ``mode`` is an
-        :class:`~pyquadcortex.enums.ExpressionBypassMode`: all three are confirmed
+        :class:`~pyquadcortex.protocol.enums.ExpressionBypassMode`: all three are confirmed
         on the unit, and note the numbering is not the manual's listed order -
         ``STOP`` is 0, ``SWITCH`` 1 and ``HEEL_TOE`` 2. ``invert`` reverses the
         value at which the bypass engages, ``delay_ms`` is the switch delay (to
@@ -2008,7 +2008,7 @@ Two of those names disagree with the catalog, which is why the map
     def set_scene_bypass_behavior(self, behavior):
         """Set whether block bypass changes are saved per scene.
 
-        A :class:`~pyquadcortex.enums.SceneBypassBehavior`. This is global, and it
+        A :class:`~pyquadcortex.protocol.enums.SceneBypassBehavior`. This is global, and it
         decides what :meth:`set_bypass` persists.
 
         **A host write counts as a touchscreen edit, not a footswitch press.**
@@ -2057,7 +2057,7 @@ Two of those names disagree with the catalog, which is why the map
         confirmed on hardware, where writing one input left the other three
         byte-identical.
 
-        **``input_port_id`` takes the** :class:`~pyquadcortex.Input` **enum values,
+        **``input_port_id`` takes the** :class:`~pyquadcortex.protocol.Input` **enum values,
         NOT 1/2/3/4.** The combined ids are interleaved, so Return 1 is **4** and
         Return 2 is **5** (3 is INPUT_1_2, 6 is RETURN_1_2). Passing 3 for
         "Return 1" writes the combined Input 1/2 entry instead - an easy and
@@ -2331,7 +2331,7 @@ Two of those names disagree with the catalog, which is why the map
         top-level ``one_shot_play``, ``sync_start_waiting`` and
         ``quantize_enabled``.
 
-        ``status.state`` values are in :class:`~pyquadcortex.enums.LooperState`,
+        ``status.state`` values are in :class:`~pyquadcortex.protocol.enums.LooperState`,
         mapped by watching each transport control being pressed in a known order.
         Two things worth knowing from that session: with nothing plugged in the
         Looper sits in ``ARMED`` forever and its other controls stay inert, since
@@ -2679,17 +2679,17 @@ Two of those names disagree with the catalog, which is why the map
         list is replaced, which matches the feature - it IS the cycle.
 
         **A HYBRID slot is just another value in this list**, and all six are now
-        mapped - build them with :func:`~pyquadcortex.hybrid_mode`::
+        mapped - build them with :func:`~pyquadcortex.protocol.hybrid_mode`::
 
-            from pyquadcortex import FootswitchMode as Mode, hybrid_mode
+            from pyquadcortex.protocol import FootswitchMode as Mode, hybrid_mode
             qc.set_mode_cycle([hybrid_mode(Mode.PRESET, Mode.STOMP), Mode.SCENE])
 
         A hybrid gives footswitches A-D one mode and E-H another, so the composite
         encodes an ORDERED pair - 3 to 8, the six pairs in lexicographic order over
         PRESET, SCENE, STOMP. 4 and 7 are the two arrangements of Preset/Stomp, which
         is the manual's "tap the right edge to swap the Modes rows". See
-        :data:`~pyquadcortex.HYBRID_MODES` for the table and
-        :func:`~pyquadcortex.describe_mode` to name a value.
+        :data:`~pyquadcortex.protocol.HYBRID_MODES` for the table and
+        :func:`~pyquadcortex.protocol.describe_mode` to name a value.
 
         Two limits, both measured:
 
@@ -3034,7 +3034,7 @@ Two of those names disagree with the catalog, which is why the map
         ``band`` is 1 to 5 as the unit numbers them. Every value is the normalized
         0..1 the wire carries; ``gain`` is 0.5 for 0 dB and 0.75 for +6 dB on the
         -12..+12 dB range the manual gives. ``filter_type`` takes a
-        :class:`~pyquadcortex.enums.GlobalEQFilter`.
+        :class:`~pyquadcortex.protocol.enums.GlobalEQFilter`.
 
         The layout is **5 parameters per band**, at offsets ``0 GAIN``,
         ``1 FREQUENCY``, ``2 Q``, ``3 TYPE``, so band N's controls live at
@@ -3643,7 +3643,7 @@ class MidiOut(NamedTuple):
         An expression source sends a RANGE rather than a single value, so the
         unit asks for min and max even for a plain CC: the stored message is
         ``type: 1`` with ``param2``/``param3`` holding the ends of the sweep.
-        Use this for :attr:`~pyquadcortex.enums.MidiSource.EXPRESSION_1` and
+        Use this for :attr:`~pyquadcortex.protocol.enums.MidiSource.EXPRESSION_1` and
         ``EXPRESSION_2``; use :meth:`cc` for a footswitch.
         """
         return cls(type=MidiOutType.CC, channel=channel, param1=cc,
@@ -3731,7 +3731,7 @@ def beats(p: preset.BinaryPreset) -> dict:
 
     Reads tempo parameters 10 to 22 - the catalog's ``STEPSTATE0`` to
     ``STEPSTATE12`` - and returns them as
-    :class:`~pyquadcortex.enums.MetronomeBeat` values.
+    :class:`~pyquadcortex.protocol.enums.MetronomeBeat` values.
 
     All 13 are always present, whatever the time signature, so a 4/4 preset still
     reports beats 5 to 13. They are stored, simply not sounded. This does not
@@ -3971,7 +3971,7 @@ def params_equal(a: float, b: float, option_count=None,
 
     Counts come from the preset's ``dynamic_steps`` (authoritative for
     block-enumerating lists) or the catalog's
-    :attr:`~pyquadcortex.catalog.Parameter.option_count`; when neither knows the
+    :attr:`~pyquadcortex.protocol.catalog.Parameter.option_count`; when neither knows the
     parameter, compare as floats and expect false mismatches on rescaled lists -
     there is no honest way around that without the count.
 

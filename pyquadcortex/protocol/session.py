@@ -1,26 +1,28 @@
 """Opening a connection to a Quad Cortex.
 
-This is the front door: :func:`connect` finds the device, opens it, starts the
-framed transport, performs the connect handshake, and hands back a
-:class:`~pyquadcortex.client.QuadCortex` that is ready for commands. Callers
+This is the protocol layer's front door: :func:`connect` finds the device, opens
+it, starts the framed transport, performs the connect handshake, and hands back a
+:class:`~pyquadcortex.protocol.client.QuadCortex` that is ready for commands. Callers
 never deal with HID devices, vendor/product IDs, or the handshake themselves.
 
-    import pyquadcortex
+    from pyquadcortex import protocol
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         print(qc.version())
+
+For the model of the unit rather than the messages, use :func:`pyquadcortex.connect`.
 
 An advanced caller who needs to supply their own device or transport (a test
 double, a non-default HID backend) can still assemble the layers by hand -
-see :class:`pyquadcortex.transport.Transport` and
-:class:`pyquadcortex.client.QuadCortex`.
+see :class:`pyquadcortex.protocol.transport.Transport` and
+:class:`pyquadcortex.protocol.client.QuadCortex`.
 """
 
 import time
 
-from pyquadcortex import hid_ids
-from pyquadcortex.client import QuadCortex
-from pyquadcortex.transport import Transport
+from pyquadcortex.protocol import hid_ids
+from pyquadcortex.protocol.client import QuadCortex
+from pyquadcortex.protocol.transport import Transport
 
 
 class DeviceNotFoundError(RuntimeError):
@@ -83,14 +85,14 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
 
     Finds and opens the device, starts the transport, and performs the connect
     handshake the device requires before it will act on commands and push state.
-    The returned :class:`~pyquadcortex.client.QuadCortex` is ready immediately.
+    The returned :class:`~pyquadcortex.protocol.client.QuadCortex` is ready immediately.
 
     Use it as a context manager so the device is always released::
 
-        with pyquadcortex.connect() as qc:
+        with pyquadcortex.protocol.connect() as qc:
             qc.switch_scene(1)
 
-    Otherwise call :meth:`~pyquadcortex.client.QuadCortex.close` when done.
+    Otherwise call :meth:`~pyquadcortex.protocol.client.QuadCortex.close` when done.
 
     Args:
         timeout: seconds to wait for each handshake reply.
@@ -107,7 +109,7 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
             for the old single-attempt behaviour.
 
     Returns:
-        A connected :class:`~pyquadcortex.client.QuadCortex`.
+        A connected :class:`~pyquadcortex.protocol.client.QuadCortex`.
 
     Raises:
         DeviceNotFoundError: if no Quad Cortex could be opened.

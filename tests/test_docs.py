@@ -9,7 +9,7 @@ import re
 
 import pytest
 
-import pyquadcortex
+from pyquadcortex import protocol
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = sorted(ROOT.glob("docs/*.md")) + [ROOT / "README.md"]
@@ -29,21 +29,21 @@ def test_code_fences_are_balanced(doc):
 
 
 def test_api_method_table_entries_exist_where_the_table_says():
-    """`name(` in the table must be a real method; `pyquadcortex.name(` a real
+    """`name(` in the table must be a real method; `protocol.name(` a real
     module function. help() is the contract; the table must match it."""
     text = (ROOT / "docs" / "api.md").read_text()
     section = text[text.index("## Method groups"):text.index("**Rows and columns")]
     rows = "\n".join(line for line in section.splitlines()
                      if line.startswith("|"))     # table rows only, not prose
     problems = []
-    for m in re.finditer(r"`(pyquadcortex\.)?([a-z_][a-z0-9_]*)\(", rows):
+    for m in re.finditer(r"`(protocol\.)?([a-z_][a-z0-9_]*)\(", rows):
         prefixed, name = bool(m.group(1)), m.group(2)
         if prefixed:
-            if not callable(getattr(pyquadcortex, name, None)):
-                problems.append(f"pyquadcortex.{name} listed but absent")
+            if not callable(getattr(protocol, name, None)):
+                problems.append(f"protocol.{name} listed but absent")
         else:
-            if not hasattr(pyquadcortex.QuadCortex, name):
+            if not hasattr(protocol.QuadCortex, name):
                 hint = (" (it IS a module function - prefix it)"
-                        if hasattr(pyquadcortex, name) else "")
+                        if hasattr(protocol, name) else "")
                 problems.append(f"{name} listed as a method but is not{hint}")
     assert not problems, "; ".join(problems)

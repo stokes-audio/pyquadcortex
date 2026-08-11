@@ -9,7 +9,7 @@ generated protobuf message classes, in both directions:
 Extend ``_BY_NAME`` as more message types are exercised.
 """
 
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 # Map CortexMessageType.Enum name -> generated message class.
 # Extend as more message types are exercised.

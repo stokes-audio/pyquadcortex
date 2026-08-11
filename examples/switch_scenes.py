@@ -10,12 +10,12 @@ Run it with the unit connected by USB and Cortex Control quit:
 
 import time
 
-import pyquadcortex
-from pyquadcortex import Scene
+from pyquadcortex import protocol
+from pyquadcortex.protocol import Scene
 
 
 def main():
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         print(">>> Look at the Quad Cortex screen. Starting in:")
         for n in (3, 2, 1):
             print(f"      {n} ...")

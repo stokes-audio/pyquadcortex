@@ -17,8 +17,8 @@ Run it with the unit connected by USB and Cortex Control quit:
 import math
 import sys
 
-import pyquadcortex
-from pyquadcortex import (Input, Output, Setlist, blocks, field_present,
+from pyquadcortex import protocol
+from pyquadcortex.protocol import (Input, Output, Setlist, blocks, field_present,
                           free_rows, splits)
 
 
@@ -27,7 +27,7 @@ def main():
     setlist = Setlist.USER if "--user" in sys.argv else Setlist.FACTORY
     wanted = args[0] if args else "Brit 2203"
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         # A name, or a slot name like "28C". find_preset resolves the name to a slot.
         if wanted[0].isdigit():
             preset = qc.read_preset(setlist, wanted)

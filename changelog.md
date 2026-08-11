@@ -16,6 +16,57 @@ has landed or been deliberately dropped, the library has been verified on a seco
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
 
+## Unreleased
+
+### BREAKING: the protocol API moved to `pyquadcortex.protocol`
+
+**Change one import line.** `from pyquadcortex import X` becomes
+`from pyquadcortex.protocol import X`, and `pyquadcortex.connect()` becomes
+`protocol.connect()`:
+
+```python
+from pyquadcortex import protocol
+
+with protocol.connect() as qc:      # was: pyquadcortex.connect()
+    qc.switch_scene(1)
+```
+
+That is the whole migration. Every name the package exported at the top level is
+reachable under `pyquadcortex.protocol`, with the same behaviour - same classes,
+same methods, same arguments, same results. Nothing about the protocol API changed
+except where it is imported from. A test enumerates the old export list and proves
+it.
+
+`qcctl` is unchanged. If you installed the package in editable mode before this
+change, reinstall it so the console script points at the new module path.
+
+**Why now.** `import pyquadcortex` should hand you the Quad Cortex, not the wire.
+The model of the unit is being built, and it takes the top-level name; the protocol
+layer keeps everything it had, one import deeper. This library is deliberately 0.x
+with roughly no users, so the break is as cheap today as it will ever be. The
+decision is ADR-0006.
+
+### `pyquadcortex.connect()` now returns a `Device`
+
+The model's front door. Today it tells you what you are connected to and not much
+else:
+
+```python
+import pyquadcortex
+
+with pyquadcortex.connect() as device:
+    print(device.firmware, device.serial)
+```
+
+Presets, scenes, the grid and the rest are being added story by story - see
+[docs/domain-model.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/domain-model.md)
+for where it is going. Nothing is stubbed out to look finished, so if it is not
+there yet, use the protocol layer.
+
+To use both layers in one script, wrap a connection you already have with
+`Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
+your connection open.
+
 ## 0.40.0 - 2026-08-10
 
 ### The lane/mixer level span is -40..+12 dB, not -100..+30

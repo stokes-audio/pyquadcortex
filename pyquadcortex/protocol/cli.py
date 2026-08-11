@@ -1,20 +1,20 @@
 """Command-line entry point for qcctl.
 
-Wires argparse subcommands to :class:`pyquadcortex.client.QuadCortex` methods over a
-real hidapi transport. Declared in ``pyproject.toml`` as ``pyquadcortex.cli:main``.
+Wires argparse subcommands to :class:`pyquadcortex.protocol.client.QuadCortex` methods over a
+real hidapi transport. Declared in ``pyproject.toml`` as ``pyquadcortex.protocol.cli:main``.
 
-Testability contract: ``import pyquadcortex.cli`` and :func:`build_parser` MUST stay
+Testability contract: ``import pyquadcortex.protocol.cli`` and :func:`build_parser` MUST stay
 device-free - they must not import hidapi or open a device. Device opening is
-deferred to :mod:`pyquadcortex.session`, whose ``import hid`` is itself lazy, so
+deferred to :mod:`pyquadcortex.protocol.session`, whose ``import hid`` is itself lazy, so
 the parser stays fully unit-testable without hardware or the native libhidapi
 library present.
 """
 
 import argparse
 
-from pyquadcortex import client
-from pyquadcortex.enums import Setlist
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol import client
+from pyquadcortex.protocol.enums import Setlist
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,9 +67,9 @@ def _open_unconnected():
     Only the ``version`` subcommand wants this: a plain Version READ works
     without the connect gate, and the handshake's own version announce would
     race that READ's reply (READ replies carry no request_id to disambiguate).
-    Everything else goes through :func:`pyquadcortex.connect`.
+    Everything else goes through :func:`pyquadcortex.protocol.connect`.
     """
-    from pyquadcortex import session, transport
+    from pyquadcortex.protocol import session, transport
 
     device = session.open_device()
     # Leave the device in BLOCKING mode: transport._read_loop paces itself on the
@@ -89,7 +89,7 @@ def _open_unconnected():
 def main(argv=None):
     """Parse ``argv`` and dispatch to the matching client method."""
     ns = build_parser().parse_args(argv)
-    from pyquadcortex import session
+    from pyquadcortex.protocol import session
 
     try:
         if ns.command == "version":

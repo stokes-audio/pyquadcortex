@@ -18,8 +18,8 @@ Tap the transport's dispatch and record everything, then perform the action on t
 
 ```python
 import threading, time
-import pyquadcortex
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex import protocol
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 # Chatter that arrives constantly and drowns everything else. On the firmware
 # measured, GlobalTempoMessage is the only heavy one - about 60 every 15 seconds -
@@ -34,7 +34,7 @@ NOISE = {"GlobalTempoMessage", "IOMeterMessage", "GridModelMeterMessage",
 
 seen, lock = [], threading.Lock()
 
-with pyquadcortex.connect() as qc:
+with protocol.connect() as qc:
     transport = qc._t
     original = transport._dispatch
 

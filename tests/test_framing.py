@@ -1,4 +1,4 @@
-"""Tests for the HID frame codec (pyquadcortex.framing).
+"""Tests for the HID frame codec (pyquadcortex.protocol.framing).
 
 Pure, no-device tests against the CONFIRMED envelope (Windows USBPcap capture
 of Cortex Control 4.0.1; docs/protocol.md "Confirmed
@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from pyquadcortex import framing
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol import framing
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 FIXTURES = Path(__file__).parent / "fixtures" / "frames"
 # (filename, encode_round_trip) - device-emitted fixtures are decode-only.
