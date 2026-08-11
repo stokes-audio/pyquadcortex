@@ -1711,8 +1711,12 @@ and the asymmetry is load-bearing for anyone maintaining a cached preset:
   SET, one model with `column` SET, one param. Fully keyed, no positional guessing - an
   echo can be merged straight into a cached preset.
 * Echo latency, measured: **113-116 ms** for a parameter write; **290-420 ms** for a
-  block placement (the basis of `set_block(verify=True)`'s window). Other write types'
-  echoes are uncharacterised.
+  block placement (the basis of `set_block(verify=True)`'s window). The rest are far
+  quicker - routing **9-17 ms**, and scene label, scene colour and global settings all
+  **about 2 ms** - so those two remain the slowest and are what the watcher's window is
+  sized against. The first scene write of a session has been seen as slow as 25 ms
+  before settling. Block bypass is still unmeasured: its test skips unless the target
+  block already carries a stored bypass entry. See `tests/hardware/test_write_echo.py`.
 
 ## Connect burst, measured
 
@@ -2765,9 +2769,11 @@ Stated explicitly so nobody builds on a guess:
   copy), so tags are build-chain/cloud metadata that no save path preserves.
 - **Whether host writes are honoured during STANDBY** is untested. (Writes ARE
   honoured during lock mode, but that is a different state.)
-- **Echo behaviour for write types beyond parameter writes and block placement**
-  (bypass, routing, scene label/colour, global settings) has no measured latency or
-  shape; only those two are characterised.
+- **Echo latency for a bypass write** is still unmeasured. Routing, scene
+  label/colour and global settings are now characterised in
+  `tests/hardware/test_write_echo.py`; the bypass case skips unless the block it
+  targets already carries a stored bypass entry, so it needs a preset whose first
+  block has been bypassed at least once.
 - **Cross-setlist moves**, downloads/plugin folders
   (`SetlistPosition.is_downloads`, `is_plugin`), IR payloads
   (`FileMessage.ir_payload`), and bulk operations

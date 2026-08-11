@@ -91,6 +91,36 @@ def _named(message, name):
     return type(message).__name__ == name
 
 
+def matches_scene_label(message, index, label):
+    """Whether ``message`` is the device's echo of a scene-label write.
+
+    Deliberately no ``field_present`` guard on ``index``. It is a bare proto3
+    scalar with no presence, so ``field_present`` answers ``False`` for every
+    message including the echo this is looking for - a guard here matched
+    nothing and reported it as "no echo at all" while the unit was echoing in
+    25 ms. Comparing the value is enough on its own: an absent ``index`` reads 0
+    and every scene these tests touch is nonzero. Contrast
+    ``test_global_settings_echo_latency``, where the field really does have
+    presence and the guard really is doing work.
+
+    Exercised offline against a captured echo by
+    ``tests/test_scene_echo_predicates.py``, so it cannot go back to being
+    unsatisfiable without a green suite noticing.
+    """
+    return (_named(message, "SceneLabelMessage")
+            and message.index == index and message.label == label)
+
+
+def matches_scene_color(message, index, color):
+    """Whether ``message`` is the device's echo of a scene-colour write.
+
+    Presence-free on ``index`` for the same reason as
+    :func:`matches_scene_label`.
+    """
+    return (_named(message, "SceneColorMessage")
+            and message.index == index and message.color == color)
+
+
 def _landed(ms, what):
     """Every measurement asserts the same two things, so say them once.
 
@@ -201,14 +231,16 @@ def test_scene_label_echo_latency(qc, probe, restores, record_property):
     original = preset.scene_labels[1] if len(preset.scene_labels) > 1 else ""
     restores("scene 2 label", lambda: qc.set_scene_label(1, original))
 
-    # Content-matched like the two above. The unit answers a label change by
-    # sending all eight scenes, so "a SceneLabelMessage arrived" would time the
-    # first of a burst that is only partly the echo of this write.
+    # Content-matched like the two above. A scene edit made ON THE UNIT
+    # re-broadcasts all eight labels, so "a SceneLabelMessage arrived" would time
+    # whichever of that burst landed first rather than the echo of this write. A
+    # host write is narrower than the docs' "all eight" wording suggests - it was
+    # measured here as two identical messages for the written index alone - but
+    # matching on content costs nothing and is what keeps the two cases from
+    # needing different predicates.
     ms = probe.measure(
         lambda: qc.set_scene_label(1, "echo probe"),
-        lambda m: (_named(m, "SceneLabelMessage")
-                   and field_present(m, "index") and m.index == 1
-                   and m.label == "echo probe"),
+        lambda m: matches_scene_label(m, 1, "echo probe"),
     )
     record_property("scene_label_echo_ms", ms)
     _landed(ms, "scene label")
@@ -221,9 +253,7 @@ def test_scene_color_echo_latency(qc, probe, restores, record_property):
 
     ms = probe.measure(
         lambda: qc.set_scene_color(1, 4294911783),
-        lambda m: (_named(m, "SceneColorMessage")
-                   and field_present(m, "index") and m.index == 1
-                   and m.color == 4294911783),
+        lambda m: matches_scene_color(m, 1, 4294911783),
     )
     record_property("scene_color_echo_ms", ms)
     _landed(ms, "scene colour")
