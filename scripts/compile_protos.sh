@@ -34,6 +34,17 @@ else
   protoc -I "$PROTO_SRC" --python_out="$STAGE" Preset.proto ProductionAutomation.proto
 fi
 
+# protoc exiting 0 having written nothing would otherwise reach the gate as an
+# unexpanded glob, sail through it with nothing to compare, and die at the `cp`
+# with a bare "No such file or directory". Name the actual problem here.
+if [ ! -f "$STAGE/Preset_pb2.py" ]; then
+  echo "error: the generator exited 0 but wrote no *_pb2.py into $STAGE." >&2
+  echo "       Check whether the .proto files grew a \`package\` statement:" >&2
+  echo "       protoc then writes into a subdirectory named after it, and this" >&2
+  echo "       script (and the package's flat import layout) expect neither." >&2
+  exit 1
+fi
+
 # Every generated file carries the version of the generator that wrote it:
 #   # Protobuf Python Version: 7.35.1
 # Both helpers below are single awk processes on purpose. The obvious spellings
@@ -70,24 +81,36 @@ MOVED=""
 for staged in "$STAGE"/*_pb2.py; do
   name="$(basename "$staged")"
   new="$(gencode_of "$staged")"
-  committed="$(gencode_of "$OUT/$name")"
-  # No committed file means a binding that is new in this change; nothing to
-  # compare it against, and the pin check in tests/test_packaging.py covers it
-  # once it lands.
-  [ -n "$committed" ] || continue
-  if [ -z "$new" ]; then
+  # No file in the tree yet means a binding that is new in this change. There is
+  # nothing to compare it against, and the pin check in tests/test_packaging.py
+  # covers it once it lands.
+  [ -f "$OUT/$name" ] || continue
+  # "Missing" and "present but unstamped" are NOT the same answer, and reading
+  # them as one is how this gate would let the worst case through: bindings from
+  # a pre-stamp protoc carry no version line at all, so treating that as "new
+  # file, nothing to compare" would wave in any generator at all. Refuse and say
+  # so. Deleting the file is the deliberate way to say "yes, replace this".
+  existing="$(gencode_of "$OUT/$name")"
+  if [ -z "$existing" ]; then
     DOWNGRADES="$DOWNGRADES
-  $name: committed $committed, this generator stamps no version at all"
-  elif older_than "$new" "$committed"; then
+  $name: the copy in the tree carries no version stamp, so nothing here can
+    tell whether $new replaces it or downgrades it. Delete it and re-run if
+    replacing it is what you mean."
+  elif [ -z "$new" ]; then
     DOWNGRADES="$DOWNGRADES
-  $name: committed $committed, this generator emits $new"
-  elif [ "$new" != "$committed" ]; then
+  $name: tree has $existing, this generator stamps no version at all"
+  elif older_than "$new" "$existing"; then
+    DOWNGRADES="$DOWNGRADES
+  $name: tree has $existing, this generator emits $new"
+  elif [ "$new" != "$existing" ]; then
     MOVED="$new"
   fi
 done
 
 if [ -n "$DOWNGRADES" ]; then
-  echo "error: this generator would DOWNGRADE the committed gencode.$DOWNGRADES" >&2
+  # "the tree", not "committed": the baseline is the file on disk in OUT, which
+  # is not necessarily what is in HEAD.
+  echo "error: this generator would DOWNGRADE the gencode in the tree.$DOWNGRADES" >&2
   echo "" >&2
   echo "       Nothing was written. Older gencode still imports - protobuf only" >&2
   echo "       checks runtime >= gencode - so this would pass the whole suite" >&2
@@ -99,7 +122,7 @@ if [ -n "$DOWNGRADES" ]; then
   echo "" >&2
   echo "       If that already gives the version above, then the grpcio-tools" >&2
   echo "       floor in pyproject.toml is stale - find the release whose protoc" >&2
-  echo "       emits the committed gencode and raise the floor to it." >&2
+  echo "       emits the gencode above and raise the floor to it." >&2
   exit 1
 fi
 

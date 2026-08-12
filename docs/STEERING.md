@@ -80,7 +80,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0005 | A hardware-in-the-loop integration suite, state-neutral on success |
 | ADR-0006 | The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol` |
 | ADR-0007 | The model may represent a control whose wire path is still open |
-| ADR-0008 | The generator floor joins the bindings/pin unit, gated at regeneration and proved in CI |
+| ADR-0008 | The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin |
 
 ## 8. Open Questions
 
@@ -123,7 +123,7 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ### 2026-08-12 - The generator floor joins the bindings/pin unit (ADR-0008)
 
 **What changed:**
-- The dev extra's `grpcio-tools` floor went from `>=1.68` to `>=1.83.0`, with the reason written next to it. `grpcio-tools` ships its own protoc, so the installed version decides the gencode stamped into the committed bindings; 1.68.0 emits gencode 5.28.1 against bindings committed at 7.35.1
+- The dev extra's `grpcio-tools` floor went from `>=1.68` to `>=1.83.0`, with the reason written next to it. `grpcio-tools` ships its own protoc, so the installed version decides the gencode stamped into the committed bindings. The old floor let `pip install -e ".[dev]"` resolve to 1.82.1, which emits gencode 7.35.0 against bindings committed at 7.35.1; the script's system-`protoc` fallback has no floor at all
 - `scripts/compile_protos.sh` now generates into a temporary directory, compares the gencode it produced against the committed one, and refuses to install a downgrade. On refusal the tree is untouched
 - `tests/test_packaging.py` proves the committed state on every PR: all bindings from one generator, the pin floor equal to the committed gencode, the pin's ceiling one major above it
 - ADR.md: ADR-0008. Section 6's pin constraint says the floor is part of the same unit, and section 4 lists the two scripts added since it was last written

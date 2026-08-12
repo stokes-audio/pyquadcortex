@@ -115,10 +115,13 @@ the wheel, and it matters to anyone who regenerates them.
 
 `grpcio-tools` carries its own copy of protoc, so whichever version is installed
 decides the gencode written into the bindings. The dev extra's floor was
-`>=1.68`, and 1.68.0 emits gencode 5.28.1 against bindings committed at 7.35.1 -
-so regenerating could silently downgrade them. Nothing caught it: the protobuf
-runtime only checks `runtime >= gencode`, so older bindings import cleanly and
-pass the whole suite while `pyproject.toml`'s pin no longer describes them.
+`>=1.68`, low enough that `pip install -e ".[dev]"` could resolve to a generator
+emitting gencode 7.35.0 against bindings committed at 7.35.1 - and lower still
+through a venv that picked up `grpcio-tools` some other way, or the script's
+fallback to a system `protoc`, which no floor constrains. So regenerating could
+silently downgrade them. Nothing caught it: the protobuf runtime only checks
+`runtime >= gencode`, so older bindings import cleanly and pass the whole suite
+while `pyproject.toml`'s pin no longer describes them.
 
 The floor is now `grpcio-tools>=1.83.0`, the oldest release whose protoc emits
 gencode 7.35.1, and it moves in the same commit as any gencode bump.
