@@ -90,3 +90,22 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   - Finding the MODE wire path becomes a prerequisite of M3's device-settings Epic, not of M1. **No tempo surface ships at M1**, so nothing in this record is user-visible yet.
   - Design principle 3 keeps its meaning and gains a boundary: omission is for behaviour we do not understand, refusal is for behaviour we understand and cannot yet drive. A record that says which one applies is now expected of anything the model leaves out.
   - This does not license modelling controls on a hunch. It applies where the unit's behaviour is confirmed and only the message is missing; a control we have not understood on the hardware is still omitted.
+
+## ADR-0008: The generator floor joins the bindings/pin unit, gated at regeneration and proved in CI
+
+- **Status:** Decided (2026-08-12)
+- **Decision:** The `grpcio-tools` floor in the dev extra is part of what ADR-0001 calls one unit, alongside the committed bindings and the `protobuf` runtime pin. `scripts/compile_protos.sh` refuses to write bindings whose gencode is older than the committed ones, and `tests/test_packaging.py` asserts on every PR that the committed gencode and the pin floor are the same number.
+- **Context:** ADR-0001 couples the bindings to the runtime pin, but nothing enforced the coupling. The protobuf runtime validates `runtime >= gencode` and nothing else, so bindings written by an older generator import cleanly and pass the whole suite. The generator is `grpcio-tools`, which carries its own protoc, so the installed version silently decides the gencode: with the floor at `>=1.68`, a resolver was free to install 1.68.0, whose protoc emits gencode 5.28.1 against committed bindings at 7.35.1. Seven minors backwards, no failure anywhere.
+- **Options:**
+  - **(a) Gate in the script and prove the committed state in a test** - chosen. Two guards, two jobs.
+  - **(b) The script gate alone.** It never runs in CI, so nothing polices what lands on main, and it sees only gencode that arrives through the script - not a hand edit, an IDE-run protoc, or a pin bumped without regenerating.
+  - **(c) The test alone.** It fires after the bindings are already overwritten, and it cannot say "your generator is too old" because the offline suite has no generator to ask.
+  - **(d) A test that runs the installed generator and compares.** It would couple the offline suite to `grpcio-tools` and fail for contributors who never regenerate, which teaches people to ignore it.
+  - **(e) Pin `grpcio-tools` exactly.** Over-constrains every dev environment for one file's sake, and still proves nothing about the committed tree.
+- **Open Questions:** None.
+- **Rationale:** Prevention and detection are different jobs and neither covers the other. The script is the only place that can stop the downgrade before it reaches the tree, and it is where the mistake is actually made, so that is where the explanation belongs. The test is the only guard that runs on every PR, needs no toolchain, and holds for gencode that arrived by any route at all. The floor belongs in the same commit as the pin for the same reason the pin belongs with the bindings: all three describe one generated artifact, and the one that is easiest to forget is the one nothing was watching.
+- **Consequences:**
+  - The dev extra's floor moves with the gencode. It is `grpcio-tools>=1.83.0` today, for bindings at gencode 7.35.1.
+  - The floor cannot be read off `grpcio-tools` metadata: 1.82.1 declares `protobuf>=7.35.1` and still emits gencode 7.35.0. Finding the right floor means running candidate versions and reading the stamp they write.
+  - `compile_protos.sh` generates into a temporary directory and installs into the package only after the check passes, so a refusal leaves the tree exactly as it was.
+  - The pin floor and the committed gencode must be equal, not merely compatible. A floor above the gencode still imports for every user, which is precisely the drift ADR-0001 exists to prevent, so the test treats it as a failure rather than a curiosity.
