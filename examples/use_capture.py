@@ -15,8 +15,8 @@ SAFETY: a DRY RUN by default. Pass --write to save.
 import sys
 import time
 
-import pyquadcortex
-from pyquadcortex import Setlist, blocks, field_present, free_rows
+from pyquadcortex import protocol
+from pyquadcortex.protocol import Setlist, blocks, field_present, free_rows
 
 DEST_SLOT = "30A"
 DEST_NAME = "Capture probe"
@@ -27,7 +27,7 @@ def main():
     write = "--write" in sys.argv[1:]
     wanted = args[0] if args else None
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         captures = qc.captures()
         print(f"the Captures Library holds {len(captures)} captures")
         matches = ([c for c in captures if wanted.lower() in c.name.lower()]

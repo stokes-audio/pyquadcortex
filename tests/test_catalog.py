@@ -1,4 +1,4 @@
-"""Tests for the model catalog (pyquadcortex.catalog).
+"""Tests for the model catalog (pyquadcortex.protocol.catalog).
 
 The catalog is parsed from the device's ModelRepo payload: a gzipped tar holding
 a single ``ModelRepo.xml``. These tests build that container from a small
@@ -11,7 +11,7 @@ import tarfile
 
 import pytest
 
-from pyquadcortex import catalog
+from pyquadcortex.protocol import catalog
 
 # A miniature ModelRepo covering every case the parser must handle: a plain
 # factory model with parameters, a purchasable one (sku/plugin_id), a hidden

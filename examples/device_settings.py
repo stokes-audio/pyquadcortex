@@ -13,14 +13,14 @@ the most harmless setting there is.
 import sys
 import time
 
-import pyquadcortex
-from pyquadcortex import SceneBypassBehavior
+from pyquadcortex import protocol
+from pyquadcortex.protocol import SceneBypassBehavior
 
 
 def main():
     write = "--write" in sys.argv[1:]
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         s = qc.settings()
         print("device settings")
         print(f"  screen / LED brightness   {s.screen_brightness} / {s.led_brightness}")

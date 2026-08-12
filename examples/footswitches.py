@@ -16,9 +16,9 @@ SAFETY: a DRY RUN by default. Pass --write to save.
 import sys
 import time
 
-import pyquadcortex
-from pyquadcortex import (Footswitch, MidiOut, MidiSource, Setlist, blocks,
-                          midi_out, stomp_assignments)
+from pyquadcortex import protocol
+from pyquadcortex.protocol import (Footswitch, MidiOut, MidiSource, Setlist, blocks,
+                                   midi_out, stomp_assignments)
 
 SOURCE_NAME = "Brit 2203"
 DEST_SLOT = "30A"
@@ -28,7 +28,7 @@ DEST_NAME = "Footswitches"
 def main():
     write = "--write" in sys.argv[1:]
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         source = qc.find_preset(SOURCE_NAME, Setlist.FACTORY)
         preset = qc.read_preset(Setlist.FACTORY, source.index)
         time.sleep(1.5)

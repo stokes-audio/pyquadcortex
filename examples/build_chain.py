@@ -20,9 +20,10 @@ Run it with the unit connected by USB and Cortex Control quit:
 import sys
 import time
 
-import pyquadcortex
-from pyquadcortex import (BlockRefused, Input, Instrument, Output, Scene, Setlist,
-                          UNITY_LEVEL, blocks, field_present, free_rows, models)
+from pyquadcortex import protocol
+from pyquadcortex.protocol import (BlockRefused, Input, Instrument, Output, Scene,
+                                   Setlist, UNITY_LEVEL, blocks, field_present,
+                                   free_rows, models)
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Brit 2203"        # any factory preset (see inspect_preset.py)
@@ -37,7 +38,7 @@ SILENT_SCENE = Scene.E           # this scene mutes the new row
 def main():
     write = "--write" in sys.argv[1:]
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         source = qc.find_preset(SOURCE_NAME, Setlist.FACTORY)
         preset = qc.read_preset(Setlist.FACTORY, source.index)
 

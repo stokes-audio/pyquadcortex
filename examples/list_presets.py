@@ -10,15 +10,15 @@ Run it with the unit connected by USB and Cortex Control quit:
 import collections
 import sys
 
-import pyquadcortex
-from pyquadcortex import Instrument, Setlist
+from pyquadcortex import protocol
+from pyquadcortex.protocol import Instrument, Setlist
 
 
 def main():
     want_user = len(sys.argv) > 1 and sys.argv[1] == "user"
     setlist = Setlist.USER if want_user else Setlist.FACTORY
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         presets = qc.list_presets(setlist)
 
     print(f"{len(presets)} presets in {'My Presets' if want_user else 'the factory library'}\n")

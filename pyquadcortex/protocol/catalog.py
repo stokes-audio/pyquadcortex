@@ -15,10 +15,10 @@ purchased plugin models in particular.
 It does NOT enumerate Neural Captures. The Neural Capture category holds only a
 couple of entries and does not grow when a capture is saved: a capture BLOCK is one
 of those models and the capture it plays is a string parameter naming a library
-file. Use :meth:`pyquadcortex.QuadCortex.captures` to browse what is available.
+file. Use :meth:`pyquadcortex.protocol.QuadCortex.captures` to browse what is available.
 
 Which models are "factory" matters for the generated constants in
-:mod:`pyquadcortex.models`: only models every unit is guaranteed to have belong
+:mod:`pyquadcortex.protocol.models`: only models every unit is guaranteed to have belong
 there. :attr:`Model.is_factory` encodes that rule (see the class docstring).
 """
 
@@ -49,7 +49,7 @@ _CAPTURE_CATEGORY_IDS = frozenset({14, 20})
 class Parameter:
     """One knob of a model, at its wire index.
 
-    ``index`` is what :meth:`pyquadcortex.QuadCortex.set_param` addresses. Note
+    ``index`` is what :meth:`pyquadcortex.protocol.QuadCortex.set_param` addresses. Note
     that not every index is a visible knob: a cab's parameters are internal
     ``ir selector`` entries, for instance, so writing one changes stored data
     without moving anything on screen.
@@ -78,7 +78,7 @@ class Parameter:
         **Not reliable for a parameter whose options enumerate the preset's
         blocks** - a Doubler's TRIGGER publishes ``steps=45`` while the real list is
         19 to 25 entries depending on the preset. For those, read the list from the
-        preset with :func:`pyquadcortex.param_options`, which is authoritative.
+        preset with :func:`pyquadcortex.protocol.param_options`, which is authoritative.
 
         ``empty`` counts too, and only because the catalog is small enough to check
         exhaustively: 16 parameters carry that type, the 13 ``STEPSTATE`` per-beat
@@ -125,7 +125,7 @@ class Parameter:
         span is not recoverable from the catalog.
 
         For these, pass ``value=`` - the normalized 0..1 the wire carries - rather
-        than ``real=``. :data:`pyquadcortex.UNITY_LEVEL` is the value the level
+        than ``real=``. :data:`pyquadcortex.protocol.UNITY_LEVEL` is the value the level
         parameters hold when nothing is attenuated.
         """
         return self.minimum == 0.0 and self.maximum == 1.0 and bool(self.units)
@@ -136,7 +136,7 @@ class Parameter:
             f"{self.units!r}: that is the wire's own normalized scale, not the "
             f"span this parameter covers, so no conversion exists. Pass value= "
             f"with the normalized 0..1 instead of real= "
-            f"(pyquadcortex.UNITY_LEVEL is unity for the level parameters)."
+            f"(pyquadcortex.protocol.UNITY_LEVEL is unity for the level parameters)."
         )
 
     def to_normalized(self, real: float) -> float:

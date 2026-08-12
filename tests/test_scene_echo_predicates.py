@@ -31,8 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from pyquadcortex.client import field_present
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol.client import field_present
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 #: Echoes captured 2026-08-11 from the connected unit at 0.40.0 by tapping the RX
 #: dispatch across a scene-label and a scene-colour write. ``index`` rides the

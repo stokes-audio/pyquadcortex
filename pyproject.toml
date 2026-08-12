@@ -39,7 +39,7 @@ dependencies = [
 dev = ["pytest>=8", "grpcio-tools>=1.68"]
 
 [project.scripts]
-qcctl = "pyquadcortex.cli:main"
+qcctl = "pyquadcortex.protocol.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/stokes-audio/pyquadcortex"
@@ -51,7 +51,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-path = "pyquadcortex/__init__.py"
+path = "pyquadcortex/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pyquadcortex"]

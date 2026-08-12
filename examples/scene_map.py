@@ -17,9 +17,9 @@ SAFETY: a DRY RUN by default - it recalls and prints the plan without writing. P
 import sys
 import time
 
-import pyquadcortex
-from pyquadcortex import (UNITY_LEVEL, BlockRefused, Scene, Setlist, blocks,
-                          field_present, free_rows, models, splits)
+from pyquadcortex import protocol
+from pyquadcortex.protocol import (UNITY_LEVEL, BlockRefused, Scene, Setlist, blocks,
+                                   field_present, free_rows, models, splits)
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Brit 2203"     # a serial factory preset, so there is a row to branch
@@ -36,7 +36,7 @@ LANE_SCENES = (False, True, False, True, False, True, False, True)
 def main():
     write = "--write" in sys.argv[1:]
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         source = qc.find_preset(SOURCE_NAME, Setlist.FACTORY)
         preset = qc.read_preset(Setlist.FACTORY, source.index)
         time.sleep(1.5)

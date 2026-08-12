@@ -18,8 +18,8 @@ Run it with the unit connected by USB and Cortex Control quit:
 import sys
 import time
 
-import pyquadcortex
-from pyquadcortex import Input, Instrument, Setlist
+from pyquadcortex import protocol
+from pyquadcortex.protocol import Input, Instrument, Setlist
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Cali Basswalk"       # any factory preset (see list_presets.py)
@@ -37,11 +37,11 @@ def input_ports(preset):
 def main():
     write = "--write" in sys.argv[1:]
 
-    with pyquadcortex.connect() as qc:
+    with protocol.connect() as qc:
         # Look the source preset up by name, then recall it onto the grid.
         entry = qc.find_preset(SOURCE_NAME, Setlist.FACTORY)
         source = qc.read_preset(Setlist.FACTORY, entry.index)
-        rows = pyquadcortex.input_chain_rows(source, Input.INPUT_1)
+        rows = protocol.input_chain_rows(source, Input.INPUT_1)
         print(f"Recalled factory preset {source.name!r}")
         print(f"  inputs currently {[Input(p).name for p in input_ports(source)]}")
         print(f"  {'re-pointing' if write else 'would re-point'} rows {rows} to "

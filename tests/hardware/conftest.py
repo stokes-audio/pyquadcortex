@@ -24,9 +24,14 @@ def pytest_ignore_collect(collection_path, config):
 
 @pytest.fixture(scope="session")
 def qc():
-    """One connection for the whole run; the handshake is expensive."""
-    import pyquadcortex
-    with pyquadcortex.connect() as client:
+    """One connection for the whole run; the handshake is expensive.
+
+    This is a PROTOCOL-level suite, so it connects through
+    :mod:`pyquadcortex.protocol` and gets a ``QuadCortex``.
+    ``pyquadcortex.connect()`` returns the model's ``Device`` instead (ADR-0006).
+    """
+    from pyquadcortex import protocol
+    with protocol.connect() as client:
         yield client
 
 

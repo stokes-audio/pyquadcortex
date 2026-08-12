@@ -3,6 +3,23 @@
 The complete surface, for looking things up. The
 [readme](../README.md) is the introduction; this is the reference.
 
+**This page is the protocol layer**, which lives at `pyquadcortex.protocol`: one
+Python call per Quad Cortex protocol message. Everything on this page is imported
+from there.
+
+```python
+from pyquadcortex import protocol
+
+with protocol.connect() as qc:
+    print(qc.version())
+```
+
+The other half of the library is the model, at the top level
+(`pyquadcortex.connect()`), which represents the unit itself rather than the
+messages. It is being built now; its design is in
+[domain-model.md](domain-model.md). Use the protocol layer for anything the model
+does not cover yet.
+
 `QuadCortex` has over a hundred methods, so they are grouped below by what they
 touch. Anything marked as global changes the UNIT rather than a preset - there is
 nothing to save and nothing to recall to undo it.
@@ -19,9 +36,10 @@ nothing to save and nothing to recall to undo it.
 
 ## Method groups
 
-Most of these are methods on the object `connect()` returns. Entries written
-`pyquadcortex.name(...)` are MODULE-LEVEL functions - they take a preset you already
-read and need no connection; calling them as methods raises `AttributeError`.
+Most of these are methods on the object `protocol.connect()` returns. Entries
+written `protocol.name(...)` are MODULE-LEVEL functions - they take a preset you
+already read and need no connection; calling them as methods raises
+`AttributeError`.
 
 | | |
 |---|---|
@@ -29,25 +47,25 @@ read and need no connection; calling them as methods raises `AttributeError`.
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(row, column, param_index, value)`, `set_bypass(row, column, bypassed)` |
 | **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `move_block(...)`, `catalog` |
-| **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `pyquadcortex.splits(preset)` |
+| **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
 | **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
 | **Input gate** | `set_input_gate(row, param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
-| **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `set_split_mute(row)`, `pyquadcortex.splits(preset)` |
-| **Footswitches** | `set_stomp_assignment(row, column, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `pyquadcortex.stomp_assignments(preset)` |
+| **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
+| **Footswitches** | `set_stomp_assignment(row, column, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
 | **Expression pedals** | `set_expression(row, column, param, pedal, minimum, maximum)` |
-| **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `pyquadcortex.midi_out(preset)` |
-| **Per-preset tempo** | `set_tempo_param(name, ...)`, `set_tempo_option(name, n)`, `pyquadcortex.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
+| **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `protocol.midi_out(preset)` |
+| **Per-preset tempo** | `set_tempo_param(name, ...)`, `set_tempo_option(name, n)`, `protocol.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
 | **Metronome** | `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()` - all taking full enums |
-| **Per-beat accents** | `set_beat(n, MetronomeBeat.ACCENT)`, `set_beats([...])`, `pyquadcortex.beats(preset)` |
-| **Inspect a preset** (module functions) | `pyquadcortex.blocks(preset)`, `pyquadcortex.splits(preset)`, `pyquadcortex.free_rows(preset)`, `pyquadcortex.row_status(preset)`, `pyquadcortex.bypass_state(preset, row, column)`, `pyquadcortex.param_state(preset, row, column, index)`, `pyquadcortex.param_options(preset, row, column, index)`, `pyquadcortex.input_chain_rows(preset, input)`, `pyquadcortex.params_equal(a, b, option_count=)`, `pyquadcortex.field_present(msg, field)` |
+| **Per-beat accents** | `set_beat(n, MetronomeBeat.ACCENT)`, `set_beats([...])`, `protocol.beats(preset)` |
+| **Inspect a preset** (module functions) | `protocol.blocks(preset)`, `protocol.splits(preset)`, `protocol.free_rows(preset)`, `protocol.row_status(preset)`, `protocol.bypass_state(preset, row, column)`, `protocol.param_state(preset, row, column, index)`, `protocol.param_options(preset, row, column, index)`, `protocol.input_chain_rows(preset, input)`, `protocol.params_equal(a, b, option_count=)`, `protocol.field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `set_global_bypass()`, `set_master_volume_assignment()`, `mode()`, `set_mode()`, `set_mode_cycle()`, `set_gig_view()` |
 | **Global EQ** | `global_eq()`, `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)`, `set_global_eq_bypassed()` |
 | **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
 | **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`, `set_tuner_mute()`, `looper()` (states named by `LooperState`) |
-| **List parameters** | `set_param_option(row, column, param, option, source)`, `pyquadcortex.param_options(preset, ...)` - includes a block's side-chain SOURCE |
+| **List parameters** | `set_param_option(row, column, param, option, source)`, `protocol.param_options(preset, ...)` - includes a block's side-chain SOURCE |
 | **Setlists** | `create_setlist(name)`, `delete_setlist(name)`, `duplicate_setlist(src, dest)`, `list_folders()` |
 | **Copying** | `copy_preset(from_setlist, position, to_setlist)` - recall + save, so it loads each source |
 | **Device list** | `pin_model()`, `unpin_model()`, `pinned_models()`, `master_volume()` |
@@ -89,7 +107,7 @@ Things worth knowing before you script against this:
   arbiter: confirm with `wait_for_listing()` rather than a fixed sleep, because
   settling time grows with the number of changes.
 - **Don't count a row's blocks with `len()`.** Every row reports all 8 column
-  slots whether or not they hold anything. Use `pyquadcortex.blocks(preset)`.
+  slots whether or not they hold anything. Use `protocol.blocks(preset)`.
 
 ## Blocks and the model catalog
 
@@ -97,7 +115,7 @@ A grid cell holds a block. `set_block()` fills an empty cell or replaces an
 occupied one, and `remove_block()` clears it:
 
 ```python
-from pyquadcortex import models
+from pyquadcortex.protocol import models
 
 qc.read_preset(Setlist.FACTORY, "27A")                 # load it onto the grid
 qc.set_block(row=0, column=2, model=models.GuitarOverdrive.CHIEF_DS1)
@@ -105,7 +123,7 @@ qc.remove_block(row=0, column=5)
 qc.save_current_preset(Setlist.USER, "30A", "My Patch")
 ```
 
-`pyquadcortex.models` has constants for the **412 factory blocks** every unit
+`pyquadcortex.protocol.models` has constants for the **412 factory blocks** every unit
 has, grouped by category. Anything else - purchased plugin models, and the Neural
 Captures you made yourself - has ids that differ per device, so look those up on
 the connected unit through `qc.catalog`:
@@ -177,7 +195,7 @@ claims to be dB, so `real=` is refused for them rather than converting into a nu
 that means something else - pass `value=`, or speak dB through the helpers:
 
 ```python
-from pyquadcortex import db_to_lane_level, lane_level_db
+from pyquadcortex.protocol import db_to_lane_level, lane_level_db
 
 qc.set_lane_output(row=0, param="VOLUME", value=db_to_lane_level(-6.0))
 lane_level_db(0.76923077)     # 0.0
@@ -212,7 +230,7 @@ blocks are bypassed - a parameter can hold a different value in each one. Name a
 scene and the library does the rest:
 
 ```python
-from pyquadcortex import Scene
+from pyquadcortex.protocol import Scene
 
 qc.read_preset(Setlist.FACTORY, "1A")                 # load it onto the grid
 
@@ -229,7 +247,7 @@ spelunking needed, and the proto's shape is a trap (its bypass table is addresse
 positionally; the `row`/`column` fields inside it read 0 everywhere):
 
 ```python
-from pyquadcortex import bypass_state, param_state
+from pyquadcortex.protocol import bypass_state, param_state
 
 st = bypass_state(preset, row=0, column=3)     # .scene_mode, .scenes (8 bools)
 pv = param_state(preset, row=0, column=3, param_index=0)   # .scene_mode, .values
@@ -251,8 +269,8 @@ Use `set_metronome_muted` and not the volume to silence a click:
 The metronome's list controls have named enums, so nothing needs a magic number:
 
 ```python
-from pyquadcortex import (GlobalEQFilter, MetronomeRouting, MetronomeSound,
-                          TempoSubdivision, TimeSignature)
+from pyquadcortex.protocol import (GlobalEQFilter, MetronomeRouting, MetronomeSound,
+                                   TempoSubdivision, TimeSignature)
 
 qc.set_time_signature(TimeSignature.SEVEN_EIGHT_2_3_2)
 qc.set_tempo_subdivision(TempoSubdivision.EIGHTH_TRIPLET)
@@ -267,7 +285,7 @@ There are four, and `MetronomeBeat` names them in the order a cell cycles when y
 touch it:
 
 ```python
-from pyquadcortex import MetronomeBeat, beats
+from pyquadcortex.protocol import MetronomeBeat, beats
 
 qc.set_time_signature(TimeSignature.FOUR_FOUR)   # FIRST - see the warning below
 qc.set_beat(1, MetronomeBeat.ACCENT)             # emphasize the downbeat

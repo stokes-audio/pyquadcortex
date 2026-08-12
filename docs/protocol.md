@@ -177,7 +177,7 @@ offset  size  field
 Padding is zero from the host. **From the device, padding is stale buffer
 content and must be ignored** (`len` is authoritative).
 
-Constants in `pyquadcortex/framing.py`: `REPORT_SIZE = 128` (body),
+Constants in `pyquadcortex/protocol/framing.py`: `REPORT_SIZE = 128` (body),
 `CHUNK_SIZE = 126` (body minus the `len`/`flags` prefix), `OUT_REPORT_ID = 0x02`,
 `IN_REPORT_ID = 0x01`, `FLAG_FIRST = 0x40`, `FLAG_LAST = 0x80`.
 
@@ -344,7 +344,7 @@ keyed grid edits work.
 bites hardest is **`SceneBypass.bypass`**, because walking per-scene bypass is a
 natural thing to want and the obvious loop crashes on the first preset read.
 
-Use `pyquadcortex.field_present(msg, "name")`, which answers `False` instead of
+Use `pyquadcortex.protocol.field_present(msg, "name")`, which answers `False` instead of
 raising. Two more presence details worth knowing, both observed in real payloads:
 `Chain.row` is absent on a recalled preset (see [7.5](#75-grid-edits-and-the-edit-path)),
 and `Param.index` is absent too - a parameter's index is its POSITION in the
@@ -396,7 +396,7 @@ the library subscribes to, mirroring Cortex Control's burst. `RecallPreset` is
 the one that matters most (it is how a full preset is obtained), but the device
 appears to want the whole set before it considers the client fully connected.
 
-`QuadCortex._hello()`, which `pyquadcortex.connect()` runs for you, does the
+`QuadCortex._hello()`, which `pyquadcortex.protocol.connect()` runs for you, does the
 same thing with one deliberate difference: it does **not** issue a host
 `Version` READ. The device sends its own `Version` READ anyway, and a redundant
 host READ would race a caller's later version request, since READ replies carry
@@ -696,7 +696,7 @@ calls for copied scenes.
 Basswalk" (27E) has four scenes it does not use and all four labels read `" "`; 34 of
 the 136 scene labels across 17 factory presets are that. So `if not label` is wrong,
 `label.strip()` is right, and writing a blank scene means sending `" "` to match what
-the unit does. `pyquadcortex.SCENE_UNLABELLED` holds it, and
+the unit does. `pyquadcortex.protocol.SCENE_UNLABELLED` holds it, and
 `set_scene_label(index, None)` sends it - confirmed to round-trip a save as `" "`.
 
 A scene copy can also be done entirely client-side without this message: read
@@ -868,7 +868,7 @@ device does not have there and does nothing. `set_splitter_param` and
 
 Nor is `in_portid == EMPTY` an occupancy signal: it means "not fed from a physical jack", the normal
 state of any non-input row. Factory "Brit 2203" has six blocks on row 2 with
-`in_portid` EMPTY. Use `pyquadcortex.blocks(preset)` to iterate the cells that
+`in_portid` EMPTY. Use `pyquadcortex.protocol.blocks(preset)` to iterate the cells that
 actually hold something.
 
 **Row output routing.** `Grid{UPDATE, preset{chains{row, out_portid}}}` re-points a
@@ -933,7 +933,7 @@ where the lane leaves and rejoins.
 
 **`split` and `mix` have no presence**, so `HasField` reports them absent even when
 set, and code that gates on presence - the correct habit everywhere else in this
-schema - sees nothing here. Read them directly, as `pyquadcortex.splits()` does.
+schema - sees nothing here. Read them directly, as `pyquadcortex.protocol.splits()` does.
 
 Confirmed: factory "Darkglass AO900 1" (27H) and "Darkglass AO900 2" (28A) both report
 `(split=4, mix=4)` on rows 0 and 2, and the parallel lane's single block does sit at
@@ -951,7 +951,7 @@ whether a branch exists on `split`, and read `mix` separately;
 **The row below a branch is spoken for, even when it is empty.** The parallel lane
 lives there, so a row can hold no blocks and still not be available: writing to it
 puts content inside the existing chain's parallel path rather than beside it. Block
-count alone therefore answers "is this row free?" wrongly. `pyquadcortex.free_rows()`
+count alone therefore answers "is this row free?" wrongly. `pyquadcortex.protocol.free_rows()`
 excludes both occupied rows and lane rows.
 
 ### Per-preset tempo, LED and metronome
@@ -1068,26 +1068,55 @@ these 13, and three `DUMMY` entries carrying no steps at all.
 
 **In the stored preset these params are POSITIONAL.** All 24 arrive with `index` absent,
 so position is the index - the same convention as `models[]`. A host WRITE does set
-`index`; it is only the device's stored form that omits it. `pyquadcortex.tempo_params()`
+`index`; it is only the device's stored form that omits it. `pyquadcortex.protocol.tempo_params()`
 reads them positionally.
 
-**The menu's MODE control (global or per-preset tempo) is NOT on the wire**, and this has
-been established twice, the second time with an instrument worth trusting.
+**The menu's MODE control (global or per-preset tempo) is NEVER BROADCAST**, established
+three times, the last two with instruments worth trusting.
 
-Toggling to GLOBAL, confirming the menu, toggling back to PRESET and confirming again
-produced no traffic of any kind - not `Grid`, not `GlobalTempo`, not `GeneralSettings`, and
-nothing else. The re-test decoded 70 of the device's 72 message types (the first attempt
-silently dropped 27 of them) and carried a liveness heartbeat proving the link was up for
-the whole 420-second window (the first attempt could not tell silence from a dead link).
+1. **The first attempt.** Toggling to GLOBAL, pressing OK, toggling back to PRESET,
+   pressing OK again and then saving the preset produced no `Grid`, `GlobalTempo` or
+   `GeneralSettings` traffic. It happened to reach the right answer, but it silently
+   dropped 27 of the device's 72 message types and could not tell silence from a dead
+   link, so nothing about how it was reached justified believing it.
+2. **The re-test.** The same toggle, confirm, toggle back, confirm again sequence,
+   watched properly: 70 of the 72 message types decoded, and a liveness heartbeat proving
+   the link was up for the whole **420-second** window. No traffic of any kind.
+3. **The device-wide sweep of 2026-08-06.** One long listener run over the whole unit,
+   banner-marked per section so every message is attributable to the action that caused
+   it; the Tempo menu section falls between roughly 765 s and 1395 s of it. Changing MODE
+   and changing it back drew silence again. Its action script says only "change MODE to
+   its other setting" and "change MODE back", with no OK step written down before the
+   `BANK UP` that ends the section, so it repeats the toggle rather than the commit. The
+   commit case rests on the two runs above.
 
-So MODE appears to be device-side state that is simply not published. It is a good
-illustration of why a negative result needs a trustworthy instrument: the first version of
-this conclusion happened to be correct, but nothing about how it was reached justified
-believing it.
+**Read that for exactly what it says.** For eight releases - 0.33.0 through 0.40.0 - this
+section said MODE "is NOT on the wire", and the coverage audit and the model design said
+"not on the wire at all". Both are more than the measurement supports: every one of those
+tests LISTENED, and none of them ASKED. A control the device never announces may still
+answer a READ, or ride in one of the two message types the re-test did not decode. So the
+state of knowledge is "we have not found the wire path", which is an open investigation,
+not a closed door. It is still a good illustration of why a negative result needs a
+trustworthy instrument - and now also of the second half of that rule, which is to state
+only what the instrument measured.
 
-Two related dead ends, for the record. `GlobalTempo` is global rather than
-per-preset and, when READ, returned only a running clock (`current_beat`,
-`current_bar`, `current_tick`) with no parameters. And `MetronomeStatusUpdate`
+Untried, for whoever picks this up: a targeted READ of the candidate message types, and
+decoding the two the re-test missed. Cortex Control offers the same switch, so a route
+exists. Until it is found, the model shows the control and refuses it rather than guessing
+which scope a tempo write landed in (ADR-0007); `domain-model.md` §13 carries the same
+entry.
+
+**Ask `GlobalTempo` first.** A single READ of it returned only a running clock
+(`current_beat`, `current_bar`, `current_tick`) with no parameters, and that was written up
+here as a dead end. It should not be read as one. Section 8's broadcast notes record that
+`GlobalTempo` **alternates two shapes** - one push carrying `metronome_status`, one
+carrying the 25 params - and a captured Cortex Control session decodes a `GlobalTempo`
+UPDATE carrying a `params` list in the same `index` / `param_values` shape as
+`tempoProgramData`. One READ reply that happened to come back in the clock shape says
+nothing about the other. It is the only message type this project has seen carrying global
+tempo parameters, which makes it the first place to ask rather than a closed one.
+
+One genuine related dead end, for the record: `MetronomeStatusUpdate`
 carries only `is_enabled` and `preroll_enabled`, with no mute or level field at all -
 which is why muting means setting `TempoControl.VOLUME` to zero.
 
@@ -2415,7 +2444,7 @@ Confirmed on hardware: `1` guitar, `2` bass, `4` vocal. The values are powers of
 two and `3` is unused, which is consistent with bit flags, though no preset with
 multiple bits set has been observed.
 
-Named forms of all of the above live in `pyquadcortex/enums.py` (`Input`,
+Named forms of all of the above live in `pyquadcortex/protocol/enums.py` (`Input`,
 `Output`, `Instrument`, `Setlist`).
 
 ## 9. The pushed preset structure
@@ -2613,7 +2642,7 @@ dB span. Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that
 every one of the 34 rows carrying them across 17 factory presets, and lane `VOLUME` on
 52 of 68 rows. So that value is the default, not attenuation somebody dialled in -
 which is what makes a `LEVEL B` of 0.0 next to it recognisable as a deliberately
-silenced lane. `pyquadcortex.UNITY_LEVEL` holds it.
+silenced lane. `pyquadcortex.protocol.UNITY_LEVEL` holds it.
 
 The span itself comes from a later three-point screen-vs-wire fit of a row's VOLUME:
 -3.1 dB at 0.71, +12.0 dB at 1.0, -39.5 dB at 0.01. So `dB = -40 + 52 * value`, and
@@ -2707,7 +2736,7 @@ USB input 5, USB input 6, USB input 7, USB input 8, ...
 
 So option index 1 is **'Follow Input'**, a fixed entry, and the fixed entries are
 followed by one per block in the preset - which is exactly why the stored value's
-denominator tracks the block count. `pyquadcortex.param_options()` reads this.
+denominator tracks the block count. `pyquadcortex.protocol.param_options()` reads this.
 
 Attributes that classify a model:
 

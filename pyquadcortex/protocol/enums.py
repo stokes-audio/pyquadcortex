@@ -4,7 +4,7 @@ These mirror the Quad Cortex's own protocol enums, so members can be passed
 straight to the client methods (they subclass ``int`` / ``str`` and serialize as
 the plain value):
 
-    from pyquadcortex import Input, Instrument, Setlist
+    from pyquadcortex.protocol import Input, Instrument, Setlist
 
     qc.set_chain_input(row=0, in_portid=Input.RETURN_1)
     qc.save_current_preset(Setlist.USER, pos, "My Preset",
@@ -123,7 +123,7 @@ class FootswitchMode(IntEnum):
     """What the footswitches do: the three base modes, as ``Mode.mode`` numbers them.
 
     A merged HYBRID slot is a different value entirely - see
-    :func:`~pyquadcortex.enums.hybrid_mode`.
+    :func:`~pyquadcortex.protocol.enums.hybrid_mode`.
     """
 
     PRESET = 0
@@ -286,7 +286,7 @@ class SceneBypassBehavior(IntEnum):
     """How block bypass changes are kept when working with scenes.
 
     This is a GLOBAL device setting, and it changes what
-    :meth:`~pyquadcortex.QuadCortex.set_bypass` actually persists - worth reading
+    :meth:`~pyquadcortex.protocol.QuadCortex.set_bypass` actually persists - worth reading
     before concluding a bypass write failed. The three values are the manual's
     three choices, in its order.
     """
@@ -348,8 +348,8 @@ class GlobalEQFilter(IntEnum):
     """Filter shape of a Global EQ band, as an option index.
 
     The control is a five-option list, so its wire value is ``index / 4``:
-    :func:`pyquadcortex.option_value` does that, and
-    :meth:`~pyquadcortex.QuadCortex.set_global_eq` takes this enum directly.
+    :func:`pyquadcortex.protocol.option_value` does that, and
+    :meth:`~pyquadcortex.protocol.QuadCortex.set_global_eq` takes this enum directly.
 
     Mapped by cycling the control through every shape on the unit with the values
     read off the wire, and confirmed independently by the shipped defaults: a

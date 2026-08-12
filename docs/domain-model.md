@@ -1,8 +1,10 @@
 # The domain model
 
-> **Status: M0 design - no code exists yet.** This document is the design for the object
-> model of the Quad Cortex that pyquadcortex will expose: a Python API that looks and
-> behaves like the unit itself. Part I (this document's bulk) is the structural design -
+> **Status: the design; M1 is being built against it.** This document is the design for
+> the object model of the Quad Cortex that pyquadcortex exposes: a Python API that looks
+> and behaves like the unit itself. The namespaces below have landed; everything else here
+> is still ahead of the code, and the code says what is built. Part I (this document's
+> bulk) is the structural design -
 > the object hierarchy, from the [Quad Cortex manual](https://neuraldsp.com/manual/quad-cortex).
 > Part II (state tracking, the save lifecycle, and everything verified on hardware) was
 > designed separately and is now merged in below, with its remaining gaps named in
@@ -58,6 +60,12 @@ qc = protocol.connect()                          # today's QuadCortex, unchanged
 layers mix in one script. The rename lands with M1 (the first model release), so no
 release ever has `connect()` meaning two different things. This amends ADR-0004's
 "additive namespace" consequence and is recorded as ADR-0006.
+
+**This part is built, and not yet released.** It landed in the M1 Epic (story OM-M1.1);
+the version is cut once the model can read a preset, so that no published release ever has
+`connect()` meaning two different things. `pyquadcortex/protocol/` is today's protocol
+layer moved verbatim, and the `Device` the front door hands back is still a skeleton -
+identity only - and fills in over the rest of M1.
 
 ---
 
@@ -563,9 +571,12 @@ class Tuner:
 
 class Tempo:                             # the Tempo & Metronome menu
     bpm: float                           # the tempo IN EFFECT - see the note below
+    mode: TempoMode                      # GLOBAL or PRESET, as the menu shows it.
+                                         # The wire path is still open, so both
+                                         # reading and writing it REFUSE rather
+                                         # than guess - see ADR-0007 and section 13
     led: bool
     metronome: Metronome
-    # MODE (Global vs Preset): omitted - not on the wire at all (appendix)
 class Metronome:
     muted: bool                          # MUTE on the unit, PLAYBACK in the manual:
                                          # one control. It mutes; it does not stop the
@@ -608,6 +619,20 @@ class System:                            # the SYSTEM SETTINGS section of chapte
     storage: Storage                     # read-only: presets/captures/IRs disk usage
     master_volume_knob: MasterVolumeKnob # enum: global vs output-specific
 ```
+
+> **`Tempo.mode` is modelled and refused, on purpose.** The unit's Tempo menu has a
+> GLOBAL / PRESET switch, and in PRESET mode the tempo and all seven metronome settings
+> belong to the preset - which the wire confirms, since every preset carries a writable
+> `TempoControl` block. What has not been found is the message that reads or moves the
+> switch: three tests watched for a broadcast on commit and saw nothing. That is not the
+> same as unreadable, so the question is open rather than closed. The model therefore
+> shows the switch, because the player can see it, and refuses both reading and writing it
+> until the wire path is found. It does not let a tempo write through and work out the
+> scope afterwards - that would look like it worked. This is ADR-0007, and it gates M3,
+> not M1; no tempo surface ships at M1.
+>
+> `bpm` is the tempo in effect, which is the preset's own tempo in PRESET mode and the
+> device's in GLOBAL mode. The unit resolves that, not the model.
 
 > **Two sections, not one.** Chapter 10 has four named subsections - Account, System,
 > Device, Support. Brightness, device storage and the master-volume knob function live
@@ -992,6 +1017,23 @@ tried rather than just what is unknown.
 
 ### Genuinely open
 
+- **The TEMPO MODE wire path.** The unit's Tempo menu has a GLOBAL / PRESET switch, and
+  in PRESET mode the tempo and all seven metronome settings belong to the preset. Three
+  independent tests watched for a broadcast when the switch is changed, and saw nothing.
+  The strong instrument is **the second**, the re-test: 70 of the device's 72 message
+  types decoded over a 420-second window with a liveness heartbeat. The third is the
+  device-wide sweep of 2026-08-06, a much longer run whose Tempo menu section falls
+  between roughly 765 s and 1395 s; its script toggles MODE and toggles it back, and
+  records no OK step, so the commit case rests on the first two. `protocol.md`'s
+  "Per-preset tempo, LED and metronome" has all three set out. The negative is
+  trustworthy, and it goes exactly this far: **the unit does not ANNOUNCE the switch.** It
+  does not follow that the switch cannot be read, and this list previously said it did.
+  Cortex Control offers the same control, so some route exists. What has not been tried is
+  a targeted READ of the candidate messages - `GlobalTempo` first, since it is the only
+  type seen carrying global tempo parameters - or decoding the two message types the
+  re-test did not cover. Until it is found, the model shows `Tempo.mode` and refuses it
+  rather than guessing which scope a tempo write landed in (ADR-0007). This gates M3's
+  device-settings work; it does not gate M1, because no tempo surface ships at M1.
 - **`RecallPreset.reason` UNDO.** The value exists in the schema and has never been
   observed. It may be unreachable on this firmware: there is **no grid-level undo on the
   unit** - the only UNDO is Looper X's, which is a Looper action and not a preset recall -
@@ -1033,7 +1075,7 @@ tried rather than just what is unknown.
 | I/O device variant | `Version.is_ess`, subject to the caveat above |
 | Capture metadata | `ProductData.instrument` and `.device`, subject to the caveat above |
 | Master volume | writable; the recorded refusal was a stale read |
-| Per-preset tempo MODE | confirmed NOT on the wire on a third independent test - this is now an M1 design decision, not an open question |
+| Per-preset tempo MODE | **reopened.** Three tests confirm the unit never broadcasts it, which is not the same as never answering. Moved back to *Genuinely open* above; how the model behaves meanwhile is ADR-0007 |
 
 ### Two method notes this round earned
 
@@ -1054,8 +1096,10 @@ carries one permanently.
 Every feature the manual describes, mapped to the model or explicitly omitted.
 **Protocol** is the current reachability from [`manual-coverage.md`](manual-coverage.md)
 (*yes* / *partly* / *no* / *n/a*); *unaudited* marks features this design pass found
-missing from that audit. An omission with a protocol path of *no* becomes reachable
-work only after the protocol layer grows the path - closing wire gaps is separate work.
+missing from that audit, and *open* marks one this project understands on the unit but
+cannot yet drive, because the message that carries it has not been found (ADR-0007). An
+omission with a protocol path of *no* becomes reachable work only after the protocol layer
+grows the path - closing wire gaps is separate work.
 
 Manual chapters 1-2 (welcome, hardware overview), 7 (plugin compatibility tables), 9's
 host-side audio setup, and 12 (specs, regulatory) describe physical hardware, host
@@ -1078,8 +1122,8 @@ the n/a rows below where they intersect the API at all.
 | Tuner input source | `device.tuner.source` | yes | `RETURN_1_2` refused by the device itself |
 | Tuner mute | `device.tuner.muted` | yes | |
 | Live Tuner (streaming needle) | **omitted** | no | the device refuses `enable_meter` from a host; unsupported by decision |
-| Tempo (BPM) | `device.tempo.bpm` | yes | |
-| Tempo MODE (Global vs Preset) | **omitted** | no | broadcasts nothing, even on commit - not on the wire at all |
+| Tempo (BPM) | `device.tempo.bpm` | yes | the tempo in effect. Which scope it comes from is the unit's business, and depends on the MODE row below |
+| Tempo MODE (Global vs Preset) | `device.tempo.mode` - **modelled, and refused until the wire path is found** | open | the switch is real and what it does is understood; the message that drives it is not. Three tests watched for a broadcast on commit and saw nothing, which rules out a broadcast and not a read. An **open protocol investigation**, not a permanent omission (ADR-0007), and a prerequisite of M3 rather than M1 |
 | Tap tempo | **omitted** | no | `GlobalTempo` read returns only a running clock; MIDI CC#44 is the documented route |
 | Tempo LED | `device.tempo.led` | yes | |
 | Metronome volume/playback/pan/T-sig/subdivisions/sound/routing | `device.tempo.metronome.*` | yes | full enums for all four option lists |
@@ -1261,3 +1305,9 @@ the n/a rows below where they intersect the API at all.
   `preset_dirty()` answers in 2-11 ms (§11). The findings that belonged to the protocol
   layer were handed over separately and shipped there; the breadth items the session did
   not reach are named in §13 rather than left implied.
+- **2026-08-11** - M1 construction starts. The namespaces section is now built rather than
+  planned. TEMPO MODE is reopened: three tests prove the unit never BROADCASTS the switch,
+  which this doc had over-read as "not on the wire at all". `Tempo` gains `mode`, modelled
+  and refused rather than omitted or guessed (ADR-0007); the appendix row and §13 say the
+  same. Nothing here ships at M1 - tempo is an M3 surface - so this is a design change,
+  not a behaviour change.

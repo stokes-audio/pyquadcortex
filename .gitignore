@@ -46,6 +46,6 @@ desktop.ini
 .claude/
 .aider*
 
-# NOTE: pyquadcortex/proto/*_pb2.py are generated but INTENTIONALLY committed,
+# NOTE: pyquadcortex/protocol/proto/*_pb2.py are generated but INTENTIONALLY committed,
 # so that installing the package needs no protoc toolchain. Do not ignore them.
 # See docs/architecture.md.

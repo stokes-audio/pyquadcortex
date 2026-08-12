@@ -5,8 +5,10 @@ installing the package. The git history has the detail and the reasoning; this
 file answers the narrower question "I upgraded, what is different for me?".
 
 Versions follow the usual 0.x convention: the minor number moves for new
-capability, the patch number for fixes. Anything may still change while the
-major number is 0.
+capability and the patch number for fixes. While the major number is 0, a
+breaking change moves the **minor** too - it does not move the major, because
+that number is reserved for the 1.0.0 conditions below. Anything may still
+change while the major number is 0.
 
 That is a deliberate signal, not neglect. Everything here is verified against ONE
 unit on one firmware, protocol facts are still being corrected at a live rate, and
@@ -15,6 +17,96 @@ the roadmap plans a reshape of the public API (the domain model in
 has landed or been deliberately dropped, the library has been verified on a second
 unit or firmware, and the protocol record has gone a sustained stretch without a
 correction.
+
+## Unreleased
+
+### BREAKING: the protocol API moved to `pyquadcortex.protocol`
+
+**Change one import line.** `from pyquadcortex import X` becomes
+`from pyquadcortex.protocol import X`, and `pyquadcortex.connect()` becomes
+`protocol.connect()`:
+
+```python
+from pyquadcortex import protocol
+
+with protocol.connect() as qc:      # was: pyquadcortex.connect()
+    qc.switch_scene(1)
+```
+
+That is the whole migration for the names the package exported. Every one of them
+is reachable under `pyquadcortex.protocol`, with the same behaviour - same
+classes, same methods, same arguments, same results. Nothing about the protocol
+API changed except where it is imported from. A test enumerates the old export
+list and proves it.
+
+**Submodule paths took the same step**, and no test can prove that part for you
+because those were never top-level exports. If you import a submodule directly,
+add `protocol.` to it:
+
+| before | after |
+|---|---|
+| `pyquadcortex.proto` | `pyquadcortex.protocol.proto` |
+| `pyquadcortex.client` | `pyquadcortex.protocol.client` |
+| `pyquadcortex.enums` | `pyquadcortex.protocol.enums` |
+| `pyquadcortex.session` | `pyquadcortex.protocol.session` |
+
+`pyquadcortex.proto` is the one to check for: decoding a capture with the shipped
+protobuf bindings is the documented way to do it, and the line in
+`docs/capture.md` used to read `from pyquadcortex.proto import
+ProductionAutomation_pb2 as pa`.
+
+`qcctl` is unchanged. If you installed the package in editable mode before this
+change, reinstall it so the console script points at the new module path.
+
+**Why now.** `import pyquadcortex` should hand you the Quad Cortex, not the wire.
+The model of the unit is being built, and it takes the top-level name; the protocol
+layer keeps everything it had, one import deeper. This library is deliberately 0.x
+with roughly no users, so the break is as cheap today as it will ever be. The
+decision is ADR-0006.
+
+### `pyquadcortex.connect()` now returns a `Device`
+
+The model's front door. Today it tells you what you are connected to and not much
+else:
+
+```python
+import pyquadcortex
+
+with pyquadcortex.connect() as device:
+    print(device.firmware, device.serial)
+```
+
+Presets, scenes, the grid and the rest are being added story by story - see
+[docs/domain-model.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/domain-model.md)
+for where it is going. Nothing is stubbed out to look finished, so if it is not
+there yet, use the protocol layer.
+
+To use both layers in one script, wrap a connection you already have with
+`Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
+your connection open.
+
+### Withdrawn: the Tempo menu's MODE is "not on the wire"
+
+The 0.23.0 entry below records, under **Settled**, that the Tempo menu's MODE
+(global vs per-preset) is not on the wire. **That claim is withdrawn.** It was
+carried in the documentation from 0.33.0 through 0.40.0 and is wider than the
+evidence behind it.
+
+What was actually measured is that MODE is never BROADCAST. Three independent
+tests watched for a broadcast when the switch was changed and saw nothing, and
+the instrument in the later two is worth trusting - 70 of the device's 72 message
+types decoded, with a liveness heartbeat proving the link was up. But all three
+listened, and none of them asked. **A control the device never announces may
+still answer a READ.** Nothing has tried one.
+
+So MODE is an open protocol investigation rather than a settled dead end. Nothing
+in the library changes: there was no MODE surface before and there is none now.
+The reason it is worth an entry is that the withdrawn claim is what the coverage
+audit and the model design were both written against. The correction is in
+`docs/protocol.md`, `docs/manual-coverage.md`, `docs/capture.md` and
+`docs/domain-model.md`, and the decision it forced - that the model shows a
+control it cannot yet drive and refuses it, rather than omitting it or guessing -
+is ADR-0007.
 
 ## 0.40.0 - 2026-08-10
 

@@ -17,9 +17,9 @@ import pathlib
 
 import pytest
 
-from pyquadcortex import blocks, field_present
-from pyquadcortex.enums import Input
-from pyquadcortex.proto import Preset_pb2 as preset_pb
+from pyquadcortex.protocol import blocks, field_present
+from pyquadcortex.protocol.enums import Input
+from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "presets" / "structural_preset.bin"
 
@@ -223,7 +223,7 @@ def test_splits_recovers_the_branch_columns(real_preset):
     # unknowable and had to be inferred from a lone block lining up. It is in
     # Chain.split_control_points instead - whose split and mix fields have NO
     # presence, so HasField reports them absent and they are easy to miss entirely.
-    from pyquadcortex import splits
+    from pyquadcortex.protocol import splits
 
     found = splits(real_preset)
     # This fixture's rows are serial: they report the -1 sentinel, which splits()
@@ -242,7 +242,7 @@ def test_splits_recovers_the_branch_columns(real_preset):
 def test_split_control_point_fields_have_no_presence(real_preset):
     # Locks in WHY splits() reads the values directly: gating on presence, which is
     # the correct habit everywhere else in this schema, silently yields nothing here.
-    from pyquadcortex import field_present
+    from pyquadcortex.protocol import field_present
 
     for chain in real_preset.chains:
         for scp in chain.split_control_points:

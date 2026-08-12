@@ -1,4 +1,4 @@
-"""Tests for the high-level QuadCortex client (pyquadcortex.client).
+"""Tests for the high-level QuadCortex client (pyquadcortex.protocol.client).
 
 The client builds protobuf messages and hands them to a transport-like object
 exposing ``send(message)`` and ``request(message, timeout=...)``. It never
@@ -10,11 +10,11 @@ import itertools
 
 import pytest
 
-from pyquadcortex import catalog, client
-from pyquadcortex.enums import (Footswitch, Input, Instrument, MidiSource,
+from pyquadcortex.protocol import catalog, client
+from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
                                 Output, SceneBypassBehavior, Setlist)
-from pyquadcortex.proto import ProductionAutomation_pb2 as pa
-from pyquadcortex.proto import Preset_pb2 as preset
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
 
 class FakeTransport:
@@ -488,7 +488,7 @@ def test_hello_performs_full_connect_handshake():
 
 
 def test_switch_scene_accepts_a_scene_enum():
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
@@ -650,7 +650,7 @@ def test_set_param_writes_one_scene_by_promoting_then_switching():
     flag OR a value in one message, never both - sending them together silently
     ignores the flag, which is why this looked impossible.
     """
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
@@ -684,7 +684,7 @@ def test_set_param_without_a_scene_writes_the_active_scene_only():
 
 
 def test_set_param_can_skip_promotion():
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
@@ -702,7 +702,7 @@ def test_set_param_scene_mode_sends_the_flag_alone():
 
 
 def test_set_lane_output_supports_per_scene_values():
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
@@ -724,7 +724,7 @@ def test_set_bypass_targets_a_scene_by_switching_to_it():
     # wrong - it wrote a default False to the active scene and did nothing to the
     # scene asked for. Naming a scene therefore means: switch to it, then write
     # index 0. Ordering over the pipe is enough; no settle delay is needed.
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
@@ -830,7 +830,7 @@ def test_set_lane_output_writes_into_output_control_not_models():
 
 
 def test_position_to_slot_inverts_slot_to_position():
-    from pyquadcortex.client import position_to_slot
+    from pyquadcortex.protocol.client import position_to_slot
 
     assert position_to_slot(218) == "28C"
     assert position_to_slot(0) == "1A"
@@ -898,7 +898,7 @@ def test_set_splitter_param_writes_combined_splitter_not_splitter():
 
 
 def test_splitter_param_per_scene_uses_promote_switch_write():
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
@@ -926,7 +926,7 @@ def test_set_tempo_param_reaches_tempo_program_data():
 
 
 def test_mixer_param_per_scene_uses_promote_switch_write():
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
@@ -939,7 +939,7 @@ def test_mixer_param_per_scene_uses_promote_switch_write():
 
 
 def test_save_current_preset_sets_the_default_scene_by_switching_first():
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
@@ -1223,14 +1223,14 @@ def test_tuner_writes_warn_when_they_will_silence_the_rig():
 
 
 def test_power_option_enum_matches_the_schema():
-    from pyquadcortex import PowerOption
+    from pyquadcortex.protocol import PowerOption
     wire = {v.name: v.number for v in
             pa.PowerOptions.DESCRIPTOR.enum_types_by_name["Enum"].values}
     assert {m.name: m.value for m in PowerOption} == wire
 
 
 def test_recall_reason_enum_matches_the_schema():
-    from pyquadcortex import RecallReason
+    from pyquadcortex.protocol import RecallReason
     wire = {v.name: v.number for v in
             pa.RecallPresetReason.DESCRIPTOR.enum_types_by_name["Enum"].values}
     assert wire == {"OTHER": 0, "UNDO": 1, "SAVE": 2}
@@ -1253,7 +1253,7 @@ def test_read_current_preset_uses_recallpreset_read_and_request_id():
 
 
 def test_active_scene_reads_and_returns_the_enum():
-    from pyquadcortex.enums import Scene
+    from pyquadcortex.protocol.enums import Scene
     push = pa.SceneMessage(action=pa.MessageAction.UPDATE, request_id=1,
                            selected_scene=2)
     qc = client.QuadCortex(StateTransport(push))
@@ -1262,7 +1262,7 @@ def test_active_scene_reads_and_returns_the_enum():
 
 
 def test_params_equal_compares_lists_by_selected_option():
-    from pyquadcortex import params_equal
+    from pyquadcortex.protocol import params_equal
     # same option, same count
     assert params_equal(1 / 3, 1 / 3, option_count=4)
     assert not params_equal(1 / 3, 2 / 3, option_count=4)
@@ -1273,7 +1273,7 @@ def test_params_equal_compares_lists_by_selected_option():
 
 
 def test_params_equal_on_plain_floats_uses_a_tolerance_and_handles_nan():
-    from pyquadcortex import params_equal
+    from pyquadcortex.protocol import params_equal
     assert params_equal(0.5, 0.50000001)
     assert not params_equal(0.5, 0.56)
     nan = float("nan")
@@ -1282,7 +1282,7 @@ def test_params_equal_on_plain_floats_uses_a_tolerance_and_handles_nan():
 
 
 def test_params_equal_rejects_a_degenerate_option_count():
-    from pyquadcortex import params_equal
+    from pyquadcortex.protocol import params_equal
     with pytest.raises(ValueError, match="at least 2 options"):
         params_equal(0.0, 0.0, option_count=1)
 
@@ -1747,7 +1747,7 @@ def test_update_settings_sends_only_the_named_fields():
 
 def test_input_level_db_matches_the_four_measured_points():
     """Owner-set trims read on screen and on the wire at the same moment."""
-    from pyquadcortex import db_to_input_level, input_level_db
+    from pyquadcortex.protocol import db_to_input_level, input_level_db
     for wire, screen in ((0.4055555462837219, 17.2), (0.40042707324028015, 16.8),
                          (0.5000885725021362, 24.0), (0.1666666716337204, 0.0)):
         assert abs(input_level_db(wire) - screen) < 0.05   # display rounds to 0.1
@@ -1757,7 +1757,7 @@ def test_input_level_db_matches_the_four_measured_points():
 
 
 def test_db_to_input_level_refuses_gains_the_unit_does_not_have():
-    from pyquadcortex import db_to_input_level
+    from pyquadcortex.protocol import db_to_input_level
     with pytest.raises(ValueError, match="does not exist"):
         db_to_input_level(61)
     with pytest.raises(ValueError, match="does not exist"):
@@ -1768,7 +1768,7 @@ def test_lane_level_db_matches_the_three_measured_points():
     """A row's VOLUME read on screen and on the wire at the same moment. Two
     releases said -100..+30 dB: both spans put 0 dB at exactly 10/13, so the
     original unity-only measurement could never tell them apart."""
-    from pyquadcortex import UNITY_LEVEL, db_to_lane_level, lane_level_db
+    from pyquadcortex.protocol import UNITY_LEVEL, db_to_lane_level, lane_level_db
     for wire, screen in ((0.7099999785, -3.1), (1.0, 12.0), (0.0099999998, -39.5)):
         assert abs(lane_level_db(wire) - screen) < 0.05    # display rounds to 0.1
         assert abs(db_to_lane_level(screen) - wire) < 0.0005
@@ -1777,7 +1777,7 @@ def test_lane_level_db_matches_the_three_measured_points():
 
 
 def test_db_to_lane_level_refuses_levels_the_unit_does_not_have():
-    from pyquadcortex import db_to_lane_level
+    from pyquadcortex.protocol import db_to_lane_level
     with pytest.raises(ValueError, match="does not exist"):
         db_to_lane_level(12.1)
     with pytest.raises(ValueError, match="Off position"):
@@ -1786,8 +1786,8 @@ def test_db_to_lane_level_refuses_levels_the_unit_does_not_have():
 
 def test_hybrid_mode_maps_all_six_ordered_pairs():
     """Read off the unit's own MODE indicator, which names the TOP row first."""
-    from pyquadcortex.enums import FootswitchMode as M
-    from pyquadcortex.enums import HYBRID_MODES, hybrid_mode
+    from pyquadcortex.protocol.enums import FootswitchMode as M
+    from pyquadcortex.protocol.enums import HYBRID_MODES, hybrid_mode
     assert hybrid_mode(M.PRESET, M.SCENE) == 3
     assert hybrid_mode(M.PRESET, M.STOMP) == 4
     assert hybrid_mode(M.SCENE, M.PRESET) == 5
@@ -1801,14 +1801,14 @@ def test_hybrid_mode_maps_all_six_ordered_pairs():
 
 
 def test_hybrid_mode_refuses_the_same_mode_on_both_rows():
-    from pyquadcortex.enums import FootswitchMode as M
-    from pyquadcortex.enums import hybrid_mode
+    from pyquadcortex.protocol.enums import FootswitchMode as M
+    from pyquadcortex.protocol.enums import hybrid_mode
     with pytest.raises(ValueError, match="DIFFERENT modes"):
         hybrid_mode(M.SCENE, M.SCENE)
 
 
 def test_describe_mode_names_base_hybrid_and_the_broken_value():
-    from pyquadcortex.enums import describe_mode
+    from pyquadcortex.protocol.enums import describe_mode
     assert describe_mode(1) == "SCENE"
     assert describe_mode(7) == "HYBRID STOMP (A-D) + PRESET (E-H)"
     assert "INVALID" in describe_mode(9)
@@ -1835,8 +1835,8 @@ def test_set_mode_cycle_refuses_what_the_device_would_silently_drop():
 
 
 def test_set_mode_cycle_sends_a_valid_hybrid():
-    from pyquadcortex.enums import FootswitchMode as M
-    from pyquadcortex.enums import hybrid_mode
+    from pyquadcortex.protocol.enums import FootswitchMode as M
+    from pyquadcortex.protocol.enums import hybrid_mode
     qc = client.QuadCortex(FakeTransport())
     qc.set_mode_cycle([hybrid_mode(M.PRESET, M.STOMP), M.SCENE])
     assert list(qc._t.sent[-1].available_modes.modes) == [4, 1]
@@ -2574,7 +2574,7 @@ def test_delete_setlist_addresses_the_folder_key():
 
 def test_looper_state_enum_omits_the_value_never_observed():
     # Overdub was the obvious guess for 3 and turned out to be 6, so 3 stays out.
-    from pyquadcortex.enums import LooperState
+    from pyquadcortex.protocol.enums import LooperState
     assert [int(s) for s in LooperState] == [1, 2, 4, 5, 6]
     assert int(LooperState.OVERDUBBING) == 6
     assert 3 not in [int(s) for s in LooperState], "3 was never seen; do not invent it"
@@ -2583,13 +2583,13 @@ def test_looper_state_enum_omits_the_value_never_observed():
 def test_expression_bypass_mode_numbering_is_not_the_manual_order():
     # Each set deliberately on the unit with a scene change fencing them apart:
     # Heel-Toe stored 2, Switch 1, Stop 0. An earlier release had this reversed.
-    from pyquadcortex.enums import ExpressionBypassMode as M
+    from pyquadcortex.protocol.enums import ExpressionBypassMode as M
     assert (int(M.STOP), int(M.SWITCH), int(M.HEEL_TOE)) == (0, 1, 2)
 
 
 def test_set_expression_bypass_accepts_the_enum():
     qc = client.QuadCortex(FakeTransport())
-    from pyquadcortex.enums import ExpressionBypassMode as M
+    from pyquadcortex.protocol.enums import ExpressionBypassMode as M
     qc.set_expression_bypass(row=0, column=1, pedal=1, mode=M.HEEL_TOE)
     assert qc._t.sent[-1].preset.chains[0].models[0].expression_bypass_info[0].type == 2
 
@@ -2695,7 +2695,7 @@ def test_set_global_eq_maps_band_and_control_to_the_wire_index():
 
 
 def test_set_global_eq_sends_the_filter_type_as_an_option_value():
-    from pyquadcortex.enums import GlobalEQFilter
+    from pyquadcortex.protocol.enums import GlobalEQFilter
     qc = client.QuadCortex(FakeTransport())
     qc.set_global_eq(band=1, filter_type=GlobalEQFilter.LOW_SHELF)
     p = qc._t.sent[-1].parameters[0]
@@ -2851,7 +2851,7 @@ def test_beats_map_to_the_stepstate_indices():
 
 
 def test_set_beat_writes_the_traced_wire_values():
-    from pyquadcortex.enums import MetronomeBeat
+    from pyquadcortex.protocol.enums import MetronomeBeat
 
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
@@ -2868,7 +2868,7 @@ def test_set_beat_writes_the_traced_wire_values():
 
 
 def test_set_beat_rejects_a_beat_the_unit_cannot_store():
-    from pyquadcortex.enums import MetronomeBeat
+    from pyquadcortex.protocol.enums import MetronomeBeat
 
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
@@ -2881,7 +2881,7 @@ def test_set_beat_rejects_a_beat_the_unit_cannot_store():
 
 
 def test_set_beats_writes_consecutive_beats_and_leaves_the_rest():
-    from pyquadcortex.enums import MetronomeBeat as B
+    from pyquadcortex.protocol.enums import MetronomeBeat as B
 
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
@@ -2895,7 +2895,7 @@ def test_set_beats_writes_consecutive_beats_and_leaves_the_rest():
 
 def test_beats_reads_the_states_back_as_the_enum():
     """The end state of the traced session: ENFD on beats 1-4."""
-    from pyquadcortex.enums import MetronomeBeat as B
+    from pyquadcortex.protocol.enums import MetronomeBeat as B
 
     p = preset.BinaryPreset()
     tp = p.tempoProgramData.add()
@@ -2962,7 +2962,7 @@ def test_tempo_params_is_empty_when_the_preset_carries_none():
 
 
 def test_the_option_lists_match_the_counts_the_catalog_publishes():
-    from pyquadcortex.enums import (MetronomeRouting, MetronomeSound,
+    from pyquadcortex.protocol.enums import (MetronomeRouting, MetronomeSound,
                                     TempoSubdivision, TimeSignature)
     assert len(TempoSubdivision) == 4
     assert len(MetronomeRouting) == 5
@@ -2971,7 +2971,7 @@ def test_the_option_lists_match_the_counts_the_catalog_publishes():
 
 
 def test_the_earlier_one_off_pairings_agree_with_the_full_lists():
-    from pyquadcortex.enums import (MetronomeRouting, MetronomeSound,
+    from pyquadcortex.protocol.enums import (MetronomeRouting, MetronomeSound,
                                     TempoSubdivision, TimeSignature)
     assert int(TempoSubdivision.EIGHTH) == 1        # stored 0.3333 = 1/3
     assert int(TimeSignature.THREE_FOUR) == 1       # stored 0.05 = 1/20
@@ -2985,7 +2985,7 @@ def test_the_earlier_one_off_pairings_agree_with_the_full_lists():
 
 def test_the_last_option_of_each_list_is_the_wire_value_1():
     # This is what the ordering was confirmed with on the unit.
-    from pyquadcortex.enums import (MetronomeRouting, MetronomeSound,
+    from pyquadcortex.protocol.enums import (MetronomeRouting, MetronomeSound,
                                     TempoSubdivision, TimeSignature)
     for enum_cls, count in ((TempoSubdivision, 4), (MetronomeRouting, 5),
                             (MetronomeSound, 6), (TimeSignature, 21)):
@@ -2995,7 +2995,7 @@ def test_the_last_option_of_each_list_is_the_wire_value_1():
 
 
 def test_typed_metronome_setters_send_the_right_index_and_value():
-    from pyquadcortex.enums import (MetronomeRouting, MetronomeSound,
+    from pyquadcortex.protocol.enums import (MetronomeRouting, MetronomeSound,
                                     TempoSubdivision, TimeSignature)
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())

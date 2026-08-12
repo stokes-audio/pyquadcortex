@@ -29,33 +29,55 @@ shapes), see [`protocol.md`](protocol.md). This document covers the code.
 
 ## Layer map
 
-Each file in `pyquadcortex/` owns exactly one concern, and each layer knows only
-about the layer directly below it.
+The package has two public namespaces (ADR-0006). `pyquadcortex` is the model of
+the unit; `pyquadcortex.protocol` is the message-level API everything below the
+model is built from. Each file owns exactly one concern, and each layer knows
+only about the layer directly below it.
 
 ```
-    cli.py             argparse subcommands -> client methods
+    pyquadcortex/            THE MODEL - what import pyquadcortex hands back
+      model/device.py        connect(): opens the unit, returns a Device.
+      |                      Speaks the unit's vocabulary, never the wire.
+      |                      (Directory, cache and grid land in later stories.)
       |
-    session.py         connect(): find + open the HID device, start the
-      |                transport, run the connect handshake, hand back a client
+      |                      -- the model/protocol seam --
       |
-    client.py          QuadCortex: the public API. Builds protobuf messages.
-      |                Knows NOTHING about HID, reports, or framing.
+    pyquadcortex/protocol/   THE PROTOCOL LAYER - one call per protocol message
+      cli.py                 argparse subcommands -> client methods
       |
-    transport.py       Framed I/O over an hidapi-like device: write reports,
-      |                RX thread + reassembly, request/response and broadcast
-      |                correlation, keepalive thread.
+      session.py             connect(): find + open the HID device, start the
+      |                      transport, run the connect handshake, hand back a
+      |                      client
       |
-    registry.py        CortexMessageType enum integer <-> generated protobuf class
+      client.py              QuadCortex: the message-level API. Builds protobuf
+      |                      messages. Knows NOTHING about HID, reports, or
+      |                      framing.
       |
-    framing.py         HID frame codec: logical (message_type, protobuf_bytes)
-      |                <-> raw 129-byte HID reports. Pure bytes and ints.
+      transport.py           Framed I/O over an hidapi-like device: write
+      |                      reports, RX thread + reassembly, request/response
+      |                      and broadcast correlation, keepalive thread.
+      |
+      registry.py            CortexMessageType enum integer <-> generated
+      |                      protobuf class
+      |
+      framing.py             HID frame codec: logical (message_type,
+      |                      protobuf_bytes) <-> raw 129-byte HID reports.
+      |                      Pure bytes and ints.
       |
     [ hidapi / the device ]
 
-    proto/             Generated bindings (committed; see below)
-    enums.py           Named port / instrument / setlist-path values
-    hid_ids.py         Vendor and product IDs, interface number
+      proto/                 Generated bindings (committed; see below)
+      enums.py               Named port / instrument / setlist-path values
+      hid_ids.py             Vendor and product IDs, interface number
+
+    pyquadcortex/_version.py The version string, read by both namespaces and by
+                             pyproject.toml
 ```
+
+The model calls the protocol layer and never the other way round: nothing under
+`pyquadcortex/protocol/` may import from `pyquadcortex/model/`. A caller can use
+either namespace, or both - `Device.from_client(qc)` puts a model on a protocol
+connection that is already open.
 
 ### framing.py
 
@@ -123,9 +145,10 @@ Also in this module: `slot_to_position("28C") -> 218` and
 
 ### session.py
 
-`connect()` is the front door: `open_device()` finds and opens the HID
-interface, a `Transport` is started around it, `QuadCortex._hello()` runs the
-connect handshake, and the returned client is ready for commands. The client
+`protocol.connect()` is the protocol layer's front door: `open_device()` finds
+and opens the HID interface, a `Transport` is started around it,
+`QuadCortex._hello()` runs the connect handshake, and the returned client is
+ready for commands. The client
 remembers what it opened (`_owned_resources`) so `close()` and the context
 manager tear down only what `connect()` created. A client built around a
 caller-supplied transport owns nothing and `close()` is a no-op.
@@ -139,6 +162,21 @@ accident: see [Testing philosophy](#testing-philosophy).
 the device work; the `version` subcommand deliberately bypasses the handshake
 (`_open_unconnected()`) because a plain `Version` READ works without the connect
 gate, and the handshake's own version announce would race that READ's reply.
+
+`pyproject.toml` declares the console script as
+`pyquadcortex.protocol.cli:main`; `qcctl` itself is unchanged.
+
+### model/device.py
+
+`pyquadcortex.connect()` opens the unit through `protocol.connect()` and returns
+a `Device`, which carries the unit's identity and owns the connection.
+`Device.from_client(qc)` wraps a protocol connection the caller already has, and
+does NOT take ownership of it. `Device.client` is the way back down to the
+message level for anything the model does not cover yet.
+
+The rest of the model - the Directory, the write-through cache, the loaded preset
+and the grid - is designed in [domain-model.md](domain-model.md) and is being
+built story by story. Nothing is stubbed out to look finished.
 
 ## What flows through the layers
 
@@ -280,7 +318,7 @@ from.
 
 ## The generated protobuf bindings
 
-`pyquadcortex/proto/ProductionAutomation_pb2.py` and `Preset_pb2.py` are
+`pyquadcortex/protocol/proto/ProductionAutomation_pb2.py` and `Preset_pb2.py` are
 **generated code that is deliberately committed to git**. That is unusual, and
 it is on purpose:
 
@@ -292,17 +330,14 @@ it is on purpose:
   and nothing platform-specific to get wrong.
 - CI installs the package and runs the suite without a protobuf compiler.
 
-**Do not add `pyquadcortex/proto/*_pb2.py` to `.gitignore`, and do not delete
-them as "build output".** Doing so breaks installs from PyPI and from a plain
-checkout.
+**Do not add `pyquadcortex/protocol/proto/*_pb2.py` to `.gitignore`, and do not
+delete them as "build output".** Doing so breaks installs from PyPI and from a
+plain checkout.
 
-Note that `pyquadcortex/proto/__init__.py`'s docstring still claims the
-bindings are gitignored and regenerated per machine. That statement is stale;
-the files are tracked (`git ls-files pyquadcortex/proto`). The rest of that
-module is load-bearing: protoc emits absolute sibling imports
-(`ProductionAutomation_pb2` does `import Preset_pb2`), which fail inside a
-package, so `__init__.py` appends its own directory to `sys.path`. That is what
-lets unmodified protoc output keep working after a regeneration.
+`pyquadcortex/protocol/proto/__init__.py` is load-bearing: protoc emits absolute
+sibling imports (`ProductionAutomation_pb2` does `import Preset_pb2`), which fail
+inside a package, so `__init__.py` appends its own directory to `sys.path`. That
+is what lets unmodified protoc output keep working after a regeneration.
 
 ### Regenerating
 
@@ -312,7 +347,7 @@ scripts/compile_protos.sh
 
 It prefers the version-matched generator from the dev extra
 (`grpcio-tools`, hence `.venv/bin/python -m grpc_tools.protoc`) and falls back
-to a system `protoc`. Output goes to `pyquadcortex/proto/`.
+to a system `protoc`. Output goes to `pyquadcortex/protocol/proto/`.
 
 **The runtime pin must match the gencode version.** The protobuf runtime
 validates at import time that `runtime >= gencode` (see the
@@ -342,7 +377,9 @@ How each layer is faked:
 | `client` | `FakeTransport`: records `sent`, returns canned `request` responses, replays a `broadcast` and captures the `match` predicate | `tests/test_client.py` |
 | `session` | `open_device` and `Transport` monkeypatched | `tests/test_session.py` |
 | `cli` | `build_parser()` exercised directly | `tests/test_cli.py` |
+| `model` | `FakeClient`: answers the calls the model makes on a `QuadCortex`, plus the same monkeypatched device+transport as `session` | `tests/test_device.py` |
 | schema | asserts the enum integers the code relies on and that core messages instantiate | `tests/test_schema_compiles.py` |
+| namespaces | the pre-flip `__all__`, read verbatim from git, must all resolve under `pyquadcortex.protocol` | `tests/test_namespace.py` |
 
 ### The import-safety contract
 
@@ -352,10 +389,13 @@ Concretely:
 
 - `import hid` appears exactly once, lazily, inside `session.open_device()`.
   Nothing at module scope anywhere in the package may import it.
-- `pyquadcortex/__init__.py` may keep importing `client`, `enums`, and
-  `session`, because none of those import `hid` at module scope.
+- `pyquadcortex/__init__.py` may keep importing the model and the whole protocol
+  surface, because none of those import `hid` at module scope.
 - `cli.build_parser()` must construct no transport and open no device; `main()`
   imports `session` inside the function body.
+- `tests/test_import_cleanliness.py` walks every module in the package and
+  imports each one in a subprocess, so a new module in either namespace is
+  covered the day it is added.
 
 Why it matters: the `hid` package is a ctypes binding that needs the native
 hidapi library present, which is an OS-level install (`brew install hidapi`,

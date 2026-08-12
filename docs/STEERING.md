@@ -13,7 +13,7 @@ pyquadcortex is an unofficial Python library for controlling the Neural DSP Quad
 
 ### In scope
 
-The whole repository: the `pyquadcortex/` package (including the committed generated bindings in `pyquadcortex/proto/`), the recovered schema in `protocol/`, tests, examples, docs, and tooling.
+The whole repository: the `pyquadcortex/` package (including the committed generated bindings in `pyquadcortex/protocol/proto/`), the recovered schema in `protocol/`, tests, examples, docs, and tooling.
 
 ### Out of scope
 
@@ -31,15 +31,17 @@ The whole repository: the `pyquadcortex/` package (including the committed gener
 
 ### System shape
 
-A strict one-concern-per-file layering: `cli` → `session` → `client` → `transport` → `registry`/`framing` → hidapi, where each layer knows only the layer directly below it. `QuadCortex` (`client.py`) is the public API and knows nothing about HID reports, framing, or bytes; everything time-dependent and concurrent lives in `transport.py`. The full layer map, message flow, and the recipe for adding an operation are in [`architecture.md`](architecture.md) - that document is the deep reference and is not duplicated here.
+Two public namespaces in one package (see ADR-0006). `pyquadcortex` is the model of the unit - what `import pyquadcortex` hands back - and `pyquadcortex.protocol` is the message-level API it is built on. The model calls the protocol layer and never the reverse.
+
+Inside the protocol layer, a strict one-concern-per-file layering: `cli` → `session` → `client` → `transport` → `registry`/`framing` → hidapi, where each layer knows only the layer directly below it. `QuadCortex` (`protocol/client.py`) is the message-level API and knows nothing about HID reports, framing, or bytes; everything time-dependent and concurrent lives in `protocol/transport.py`. The full layer map, message flow, and the recipe for adding an operation are in [`architecture.md`](architecture.md) - that document is the deep reference and is not duplicated here.
 
 ### Data and state
 
-The library is stateless between calls: every read is a live exchange, and the unit is the source of truth. The planned domain model layer (see [`roadmap.md`](roadmap.md)) introduces a broadcast-fed write-through cache above `client.py`; until it lands, callers hold whatever state they need.
+The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. The model layer (design in [`domain-model.md`](domain-model.md)) introduces a broadcast-fed write-through cache above `protocol/client.py`; at the time of writing the model is a skeleton and that cache is not built, so callers still hold whatever state they need.
 
 ## 4. Owned Paths
 
-- `pyquadcortex/` - the package, including the committed generated bindings in `pyquadcortex/proto/`
+- `pyquadcortex/` - the package. Two namespaces: `pyquadcortex/model/` (the model of the unit) and `pyquadcortex/protocol/` (the message-level API, including the committed generated bindings in `pyquadcortex/protocol/proto/`)
 - `protocol/` - the recovered `.proto` schema and its tooling
 - `tests/` - the fully offline suite and its fixtures
 - `examples/` - runnable scripts, also used as hardware-verification shapes
@@ -51,10 +53,10 @@ The library is stateless between calls: every read is a live exchange, and the u
 
 | Pattern | What | Why (or `see ADR-000N`) | Canonical example | When the pattern does not apply |
 |---------|------|-------------------------|-------------------|----------------------------------|
-| Layered message flow | New operations are a registry entry plus a thin `QuadCortex` method that builds a protobuf and picks `send`/`request`/`await_broadcast` | Wire concerns stay below `client.py`, which keeps the whole API testable with a fake transport (see ADR-0002) | `QuadCortex.switch_scene` in `pyquadcortex/client.py` | `cli.py`'s `version` subcommand deliberately bypasses the connect handshake (`_open_unconnected`) |
+| Layered message flow | New operations are a registry entry plus a thin `QuadCortex` method that builds a protobuf and picks `send`/`request`/`await_broadcast` | Wire concerns stay below `client.py`, which keeps the whole API testable with a fake transport (see ADR-0002) | `QuadCortex.switch_scene` in `pyquadcortex/protocol/client.py` | `cli.py`'s `version` subcommand deliberately bypasses the connect handshake (`_open_unconnected`) |
 | Fake-per-layer offline tests | Each layer has a purpose-built double: golden captured frames for `framing`, `FakeHid` for `transport`, `FakeTransport` for `client` | see ADR-0002 | `FakeTransport` in `tests/test_client.py` | Hardware verification happens manually via `examples/`, outside the suite |
-| Evidence-bearing docstrings | Each operation's docstring states what is confirmed on hardware vs inferred from the schema | The device gives no errors for wrong writes, so recorded evidence is the only trail | `QuadCortex.read_preset` in `pyquadcortex/client.py` | Non-protocol helpers (pure functions) carry ordinary docstrings |
-| Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/client.py` | Read paths, and non-grid operations |
+| Evidence-bearing docstrings | Each operation's docstring states what is confirmed on hardware vs inferred from the schema | The device gives no errors for wrong writes, so recorded evidence is the only trail | `QuadCortex.read_preset` in `pyquadcortex/protocol/client.py` | Non-protocol helpers (pure functions) carry ordinary docstrings |
+| Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
 
 ## 6. Constraints
 
@@ -77,6 +79,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0004 | The domain model lands additively on top of the unchanged protocol layer |
 | ADR-0005 | A hardware-in-the-loop integration suite, state-neutral on success |
 | ADR-0006 | The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol` |
+| ADR-0007 | The model may represent a control whose wire path is still open |
 
 ## 8. Open Questions
 
@@ -115,6 +118,39 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-11 - The namespace flip lands, and ADR-0007
+
+**What changed:**
+- The package now has two namespaces: `pyquadcortex` is the model, `pyquadcortex.protocol` is today's protocol layer moved verbatim. Sections 3 and 4 describe both; the patterns table's file paths moved with the code
+- ADR.md: ADR-0007 - the model may represent a control whose wire path is still open, provided the operation it cannot perform refuses rather than guesses
+- `docs/domain-model.md`: TEMPO MODE reopened. `Tempo` gains `mode`; the appendix row and §13 changed from "not on the wire at all" to an open investigation, and the appendix legend gained *open* as a status so the row's value is defined rather than improvised
+- One account of the TEMPO MODE evidence, the same in every document: **three** tests, not two; the strong instrument (70 of 72 message types, 420-second window, liveness heartbeat) is **the second**, and the third is the 2026-08-06 device-wide sweep, whose script toggles MODE without a written OK step; the over-strong claim stood for **eight** releases, 0.33.0 through 0.40.0. `changelog.md` carries the withdrawal under Unreleased, which it had been missing
+- `docs/protocol.md` no longer files `GlobalTempo` as a dead end. One READ of it returned a clock; the same document records that it alternates two shapes and that the other one carries the 25 params, so it is the first place to ask, not a closed door
+- The same correction landed in the protocol record itself, which is where the over-strong claim actually lived: `protocol.md` ("Per-preset tempo, LED and metronome"), `manual-coverage.md` (two places), and `capture.md`, whose listener chapter used the claim as its exemplar and now carries the second lesson too - a listener proves only that the device does not ANNOUNCE something
+- Section 6's offline-suite constraint: the hardware suite is built, not merely decided - it shipped in 0.39.0 and this line had not caught up
+
+**Why:**
+- M1 Epic (stokes-audio/pyquadcortex#8), Story #9. The flip goes first because every other story in the Epic imports through the new layout (ADR-0006)
+- ADR-0007 is an owner decision taken during the same story: "three tests saw no broadcast" had been over-read as "not on the wire", and a control we understand but cannot drive should refuse rather than be omitted or guessed at
+
+**Also closed in review, on the same branch:**
+- `Device` now checks field PRESENCE before reporting firmware or serial, and caches only a complete reply. Both fields sit in synthetic `oneof`s, so an absent one decodes as `""` and would have been reported as the unit's answer - the guess ADR-0007 forbids, in shipped code. CLAUDE.md carries the rule
+- A closed `Device` refuses `firmware`, `serial` and `client` instead of answering from cache. `_closed` had been read by nothing but `__repr__`. This defines only the explicit `close()`; a connection that goes away on its own stays with the reconnect story (#15)
+- `__repr__` says whether the `Device` owns or borrows its connection, which decides whether `close()` releases the unit and was otherwise invisible
+- Test guards that were weaker than they read: the pre-flip export snapshot is pinned by content hash and exact count (a live `git show` cannot work - CI checks out one commit deep); the parity check asserts each name still resolves to something in the protocol layer rather than merely existing; the layering check reads every import spelling, including `from pyquadcortex import model`, which is the house style and was invisible to it; the import-cleanliness sentinel takes the trailing dot
+- `scripts/check_artifacts.py`, run by CI's `build` job: `twine check` reads metadata, so nothing was looking inside the wheel for the generated bindings ADR-0001 exists to ship
+- `scripts/compile_protos.sh` refuses an output directory that is not the bindings directory instead of `mkdir -p`-ing a new one, writing into it and reporting success
+
+**Scope of impact:**
+- **Updated:** STEERING.md, ADR.md, CLAUDE.md, domain-model.md, architecture.md, api.md, README.md, capture.md, protocol.md, manual-coverage.md, releasing.md, contributing.md, changelog.md, `.github/workflows/ci.yml`, `scripts/`
+- **Not updated (intentionally):** ADR-0001 - it is `Decided` and append-only, so its `pyquadcortex/proto/` paths stay as written; the directory it names moved under ADR-0006 and now lives at `pyquadcortex/protocol/proto/`. The decision itself is unchanged. ADR-0004 and ADR-0006 - the flip is what ADR-0006 already decided, not a new decision. `roadmap.md`'s illustrative model snippet - it reads `pyquadcortex.connect()`, which is now exactly right
+
+**Downstream to consider:**
+- The version moved to `pyquadcortex/_version.py` so both namespaces can publish it without one importing the other; `pyproject.toml` and `releasing.md` follow it
+- `qcctl` is declared as `pyquadcortex.protocol.cli:main`. The command is unchanged, but an editable install from before the flip needs reinstalling before the console script resolves
+- No release is cut here. Per ADR-0006 the version is cut once the M1 anchor works, so no release ever has `connect()` meaning two different things
+- Finding the TEMPO MODE wire path is now a prerequisite of M3's device-settings Epic
 
 ### 2026-08-06 - Domain model Part II: state tracking and save behavior
 
