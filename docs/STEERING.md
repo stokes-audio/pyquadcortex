@@ -46,7 +46,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 - `tests/` - the fully offline suite and its fixtures
 - `examples/` - runnable scripts, also used as hardware-verification shapes
 - `docs/` - protocol record, architecture, coverage, this file
-- `scripts/` - `compile_protos.sh`
+- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`
 - `.github/workflows/` - CI
 
 ## 5. Patterns in Use
@@ -62,7 +62,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 ## 6. Constraints
 
 - **Runtime dependencies are exactly `hid` and `protobuf`.** The wheel installs with no compiler, no protoc, no build step.
-- **The protobuf runtime pin is coupled to the committed gencode.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001).
+- **The protobuf runtime pin is coupled to the committed gencode, and so is the generator floor.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001). The generator is `grpcio-tools`, which carries its own protoc and so decides the gencode by which version is installed, hence the `grpcio-tools>=1.83.0` floor in the dev extra. Older gencode still imports, so both guards are explicit: `scripts/compile_protos.sh` refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode and the pin floor are the same number (see ADR-0008).
 - **Python >= 3.11.**
 - **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - lives in `tests/hardware/` and runs only under `pytest --hardware` (see ADR-0005). Its modules must stay import-safe offline: `tests/test_scene_echo_predicates.py` imports `tests/hardware/test_write_echo.py` to exercise its predicates with no unit attached, which is the only way a predicate that can never match gets caught cheaply.
 - **Wire baseline: CorOS / Cortex Control 4.0.1, firmware d14e.** The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
@@ -81,6 +81,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0005 | A hardware-in-the-loop integration suite, state-neutral on success |
 | ADR-0006 | The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol` |
 | ADR-0007 | The model may represent a control whose wire path is still open |
+| ADR-0008 | The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin |
 
 ## 8. Open Questions
 
@@ -159,8 +160,8 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
   `tests/test_import_cleanliness.py`
 - **Not updated (intentionally):** ADR.md - neither change reverses or refines a recorded
   decision. The boundary IS design principle 5, already written and reviewed in
-  `domain-model.md`; the rename is a naming correction that the same document's §5 had
-  already decided in the other direction. README.md and api.md - the new value types have
+  `domain-model.md`; the rename is a directory name, chosen to stop colliding with an
+  identifier the protocol layer uses. README.md and api.md - the new value types have
   no surface handing them out yet (the Directory is story #12), and the readme tour should
   show what a caller can do, not what exists. The protocol layer - it keeps its zero-based
   indexes, its `Footswitch` enum and its measured scales, and nothing below the seam
@@ -183,6 +184,25 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 - The scan is scoped to the whole package rather than to `pyquadcortex/device/`, because
   a rule scoped to a directory is satisfiable by moving the code one directory up - which
   is precisely what a failure message naming a directory invites
+
+### 2026-08-12 - The generator floor joins the bindings/pin unit (ADR-0008)
+
+**What changed:**
+- The dev extra's `grpcio-tools` floor went from `>=1.68` to `>=1.83.0`, with the reason written next to it. `grpcio-tools` ships its own protoc, so the installed version decides the gencode stamped into the committed bindings. The old floor let `pip install -e ".[dev]"` resolve to 1.82.1, which emits gencode 7.35.0 against bindings committed at 7.35.1; the script's system-`protoc` fallback has no floor at all
+- `scripts/compile_protos.sh` now generates into a temporary directory, compares the gencode it produced against the committed one, and refuses to install a downgrade. On refusal the tree is untouched
+- `tests/test_packaging.py` proves the committed state on every PR: all bindings from one generator, the pin floor equal to the committed gencode, the pin's ceiling one major above it
+- ADR.md: ADR-0008. Section 6's pin constraint says the floor is part of the same unit, and section 4 lists the two scripts added since it was last written
+
+**Why:**
+- Found while working the PR #17 review. ADR-0001 makes the bindings and the pin one unit, but nothing enforced it: protobuf validates `runtime >= gencode` and nothing else, so bindings regenerated by an older generator import cleanly and pass the whole suite while walking the pin backwards
+- The floor is not derivable from package metadata. `grpcio-tools` 1.82.1 declares `protobuf>=7.35.1` and still emits gencode 7.35.0, so 1.83.0 was found by running each candidate and reading the stamp it writes
+
+**Scope of impact:**
+- **Updated:** `pyproject.toml`, `scripts/compile_protos.sh`, `tests/test_packaging.py`, ADR.md, STEERING.md, CLAUDE.md, architecture.md, contributing.md, changelog.md
+- **Not updated (intentionally):** the bindings themselves - regenerating is its own change with its own pin bump (ADR-0001), and this one deliberately leaves the generated files byte-identical
+
+**Downstream to consider:**
+- The floor now moves with every gencode bump. `compile_protos.sh` prints the number to put in the pin when the gencode moves up, but the `grpcio-tools` floor is the maintainer's to raise
 
 ### 2026-08-11 - The namespace flip lands, and ADR-0007
 

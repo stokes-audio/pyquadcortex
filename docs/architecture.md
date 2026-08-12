@@ -379,7 +379,9 @@ scripts/compile_protos.sh
 
 It prefers the version-matched generator from the dev extra
 (`grpcio-tools`, hence `.venv/bin/python -m grpc_tools.protoc`) and falls back
-to a system `protoc`. Output goes to `pyquadcortex/protocol/proto/`.
+to a system `protoc`. It generates into a temporary directory first and copies
+into `pyquadcortex/protocol/proto/` only after the gencode check below passes,
+so a refusal leaves the tree untouched.
 
 **The runtime pin must match the gencode version.** The protobuf runtime
 validates at import time that `runtime >= gencode` (see the
@@ -390,8 +392,34 @@ a newer generator, bump that lower bound to the new gencode version in the same
 commit; if you cross a major version, bump the upper bound too. A mismatch is a
 hard `ImportError` for every user, not a warning.
 
-Commit regenerated bindings together with the `.proto` change and the pyproject
-pin, so the tree is never internally inconsistent.
+**The generator floor moves with it.** `grpcio-tools` bundles its own protoc, so
+whichever version is installed is what decides the gencode. That makes an *older*
+generator the quiet failure: `runtime >= gencode` is still satisfied, so bindings
+regenerated backwards import fine and pass every test while the pin no longer
+describes them. `pyproject.toml`'s dev extra therefore floors `grpcio-tools` at
+the oldest release whose protoc emits the committed gencode - `>=1.83.0` for
+gencode 7.35.1 - and that floor is raised in the same commit as any gencode bump.
+
+The floor cannot be read off package metadata. `grpcio-tools` releases do not
+track `protobuf` releases, and the declared dependency is a runtime floor rather
+than the gencode stamp: 1.82.1 requires `protobuf>=7.35.1` and still emits
+gencode 7.35.0. Find the floor by running candidates and reading the stamp:
+
+```bash
+printf 'syntax = "proto3";\nmessage Ping { int32 n = 1; }\n' > /tmp/ping.proto
+python -m grpc_tools.protoc -I /tmp --python_out=/tmp /tmp/ping.proto
+grep "Protobuf Python Version" /tmp/ping_pb2.py
+```
+
+Two guards keep this honest, and they cover different routes (ADR-0008):
+
+| Guard | Catches | When |
+|---|---|---|
+| `scripts/compile_protos.sh` | a generator that would write older gencode than what is committed - it refuses and writes nothing | at regeneration, before the tree changes |
+| `tests/test_packaging.py` | committed gencode that disagrees with itself or with the pin, however it got there | every PR, no protoc needed |
+
+Commit regenerated bindings together with the `.proto` change, the pyproject
+pin and the generator floor, so the tree is never internally inconsistent.
 
 ## Testing philosophy
 

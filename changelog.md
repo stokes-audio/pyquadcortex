@@ -135,6 +135,29 @@ audit and the model design were both written against. The correction is in
 control it cannot yet drive and refuses it, rather than omitting it or guessing -
 is ADR-0007.
 
+### Regenerating the protobuf bindings can no longer walk the pin backwards
+
+Nothing you install changes. This is about the generated bindings that ship in
+the wheel, and it matters to anyone who regenerates them.
+
+`grpcio-tools` carries its own copy of protoc, so whichever version is installed
+decides the gencode written into the bindings. The dev extra's floor was
+`>=1.68`, low enough that `pip install -e ".[dev]"` could resolve to a generator
+emitting gencode 7.35.0 against bindings committed at 7.35.1 - and lower still
+through a venv that picked up `grpcio-tools` some other way, or the script's
+fallback to a system `protoc`, which no floor constrains. So regenerating could
+silently downgrade them. Nothing caught it: the protobuf runtime only checks
+`runtime >= gencode`, so older bindings import cleanly and pass the whole suite
+while `pyproject.toml`'s pin no longer describes them.
+
+The floor is now `grpcio-tools>=1.83.0`, the oldest release whose protoc emits
+gencode 7.35.1, and it moves in the same commit as any gencode bump.
+`scripts/compile_protos.sh` refuses to install bindings older than the committed
+ones and leaves the tree untouched when it does; `tests/test_packaging.py`
+checks on every PR that the committed gencode and the pin floor are the same
+number. The bindings themselves are unchanged - regenerating is its own change
+with its own pin bump (ADR-0001, ADR-0008).
+
 ## 0.40.0 - 2026-08-10
 
 ### The lane/mixer level span is -40..+12 dB, not -100..+30
