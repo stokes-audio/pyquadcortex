@@ -146,15 +146,15 @@ def test_the_protocol_sources_were_actually_found():
     assert len(PROTOCOL_SOURCES) > 5
 
 
-MODEL_PACKAGE = "pyquadcortex.model"
+MODEL_PACKAGE = "pyquadcortex.device"
 
 
 def _is_the_model(dotted: str) -> bool:
     """True for the model package and anything inside it, and nothing else.
 
-    The dot boundary matters: a top-level `pyquadcortex/models.py` is a
-    different module, and a prefix test with no boundary would report importing
-    it as a layering violation.
+    The dot boundary matters: a hypothetical top-level `pyquadcortex/devices.py`
+    is a different module, and a prefix test with no boundary would report
+    importing it as a layering violation.
     """
     return dotted == MODEL_PACKAGE or dotted.startswith(MODEL_PACKAGE + ".")
 
@@ -181,9 +181,9 @@ def _imported_modules(tree: ast.AST, package: str) -> list[str]:
     relative imports are resolved against.
 
     Covering all the spellings matters because the house style here is the
-    package-attribute form - `pyquadcortex/model/device.py` opens with
-    `from pyquadcortex import protocol` - so `from pyquadcortex import model` is
-    the spelling a future author is most likely to reach for, and it names no
+    package-attribute form - `pyquadcortex/device/device.py` opens with
+    `from pyquadcortex import protocol` - so `from pyquadcortex import device`
+    is the spelling a future author is most likely to reach for, and it names no
     module at all in the AST. The relative forms need `node.level` resolved for
     the same reason.
     """
@@ -222,14 +222,16 @@ def test_the_protocol_layer_never_imports_the_model(source):
 
 
 IMPORT_SPELLINGS = [
-    ("absolute from", "from pyquadcortex.model import Device", True),
-    ("absolute plain", "import pyquadcortex.model", True),
-    ("package attribute", "from pyquadcortex import model", True),
-    ("relative from", "from ..model import Device", True),
-    ("relative attribute", "from .. import model", True),
+    ("absolute from", "from pyquadcortex.device import Device", True),
+    ("absolute plain", "import pyquadcortex.device", True),
+    ("package attribute", "from pyquadcortex import device", True),
+    ("relative from", "from ..device import Device", True),
+    ("relative attribute", "from .. import device", True),
+    ("the module inside it", "from pyquadcortex.device import device", True),
     ("a sibling module", "from pyquadcortex.protocol import client", False),
-    ("a top-level models.py", "from pyquadcortex import models", False),
-    ("the model's own package", "from pyquadcortex.models import X", False),
+    ("a hypothetical devices.py", "from pyquadcortex import devices", False),
+    ("a name, not a module", "from pyquadcortex.protocol import open_device",
+     False),
 ]
 
 

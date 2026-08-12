@@ -25,7 +25,7 @@ REQUIRED = (
     "pyquadcortex/protocol/proto/ProductionAutomation_pb2.py",
     "pyquadcortex/protocol/cli.py",
     "pyquadcortex/protocol/client.py",
-    "pyquadcortex/model/device.py",
+    "pyquadcortex/device/device.py",
     "pyquadcortex/_version.py",
 )
 

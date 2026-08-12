@@ -41,7 +41,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 
 ## 4. Owned Paths
 
-- `pyquadcortex/` - the package. Two namespaces: `pyquadcortex/model/` (the model of the unit) and `pyquadcortex/protocol/` (the message-level API, including the committed generated bindings in `pyquadcortex/protocol/proto/`)
+- `pyquadcortex/` - the package. Two namespaces: `pyquadcortex/device/` (the model of the unit) and `pyquadcortex/protocol/` (the message-level API, including the committed generated bindings in `pyquadcortex/protocol/proto/`)
 - `protocol/` - the recovered `.proto` schema and its tooling
 - `tests/` - the fully offline suite and its fixtures
 - `examples/` - runnable scripts, also used as hardware-verification shapes

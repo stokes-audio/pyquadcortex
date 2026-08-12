@@ -36,7 +36,7 @@ only about the layer directly below it.
 
 ```
     pyquadcortex/            THE MODEL - what import pyquadcortex hands back
-      model/device.py        connect(): opens the unit, returns a Device.
+      device/device.py       connect(): opens the unit, returns a Device.
       |                      Speaks the unit's vocabulary, never the wire.
       |                      (Directory, cache and grid land in later stories.)
       |
@@ -75,7 +75,7 @@ only about the layer directly below it.
 ```
 
 The model calls the protocol layer and never the other way round: nothing under
-`pyquadcortex/protocol/` may import from `pyquadcortex/model/`. A caller can use
+`pyquadcortex/protocol/` may import from `pyquadcortex/device/`. A caller can use
 either namespace, or both - `Device.from_client(qc)` puts a model on a protocol
 connection that is already open.
 
@@ -166,7 +166,7 @@ gate, and the handshake's own version announce would race that READ's reply.
 `pyproject.toml` declares the console script as
 `pyquadcortex.protocol.cli:main`; `qcctl` itself is unchanged.
 
-### model/device.py
+### device/device.py
 
 `pyquadcortex.connect()` opens the unit through `protocol.connect()` and returns
 a `Device`, which carries the unit's identity and owns the connection.
