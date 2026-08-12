@@ -39,9 +39,6 @@ class HandshakeBurst:
     out of the read path of the latency measurements in ``test_write_echo.py``,
     which are calibrated numbers.
 
-    Removing a listener from inside a listener is safe by contract - see
-    ``Transport.add_listener`` and ADR-0008.
-
     Runs on the RX thread, so it does the least it can: append and return.
     """
 
@@ -78,19 +75,36 @@ class HandshakeBurst:
         started = time.monotonic()
         deadline = started + patience
         while time.monotonic() < deadline:
-            if sentinel in self.names():
+            if self._recorded(sentinel):
                 self.settled_in = time.monotonic() - started
                 break
             time.sleep(0.1)
         self.close()
 
     def close(self):
-        """Stop recording and come off the transport. Idempotent."""
+        """Stop recording and come off the transport. Idempotent.
+
+        Runs on the caller's thread, from :meth:`record_until`. If you ever move
+        the stop into :meth:`__call__` - closing the moment the sentinel lands,
+        which is tempting - it has to happen OUTSIDE that method's ``with
+        self._lock`` block: ``_lock`` is not reentrant, so closing from inside it
+        deadlocks the RX thread permanently.
+        """
         with self._lock:
             already = self.closed
             self.closed = True
         if not already and self._detach is not None:
             self._detach()
+
+    def _recorded(self, name):
+        """Whether a message of type ``name`` has been recorded.
+
+        Scans in place rather than going through :meth:`names`, which would copy
+        the whole recording on every poll, briefly contending with the RX thread
+        at the busiest moment it has.
+        """
+        with self._lock:
+            return name in self._names
 
     def names(self):
         """A snapshot of what has been recorded, in arrival order."""

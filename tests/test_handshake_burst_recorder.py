@@ -3,15 +3,19 @@
 ``tests/hardware/conftest.py`` attaches a listener before the handshake, records
 what the unit pushes, and stops once the burst is over. Stopping is what makes the
 recording mean "the burst" rather than "the traffic so far", and it has three
-parts: recording stops, the listener comes off the transport, and a message that
-arrives after both - the RX thread notifies from a snapshot - does not reopen it.
+parts: recording stops, the listener comes off the transport, and a message
+arriving after both - the RX thread notifies from a snapshot - does not reopen it.
 
-The hardware suite cannot check any of that. It reads the recording after the
-fixture has closed it and has no way to tell "closed correctly" from "closed and
-then quietly kept recording"; the assertions are floors, which contamination
-satisfies too. So if the close broke, the burst test would go back to asserting on
-whatever the rest of the suite provoked and would still pass. That is the trap
-``tests/test_scene_echo_predicates.py`` was written for.
+**Who covers what**, because it is not obvious and getting it backwards leads to
+deleting the wrong assertion:
+
+* The hardware burst test covers the WIRING. If the fixture stopped calling
+  ``record_until``, its ``assert handshake_burst.closed`` and ``settled_in is not
+  None`` fail loudly - neither is a floor, so contamination cannot satisfy them.
+  Those two lines are load-bearing, not belt-and-braces.
+* This file covers the STOPPING ITSELF, which no hardware test can see: a recorder
+  that sets its flag and keeps recording anyway, or one that stops recording but
+  stays on the transport, reads exactly like a working one from the outside.
 
 Timing is real here rather than faked, so the code under test is the code that
 runs on the unit.
@@ -125,9 +129,12 @@ def test_record_until_gives_up_rather_than_hanging_on_a_silent_unit(recorder_cla
     assert transport.listeners == []
 
 
-def test_the_recorder_is_safe_to_call_from_more_than_one_thread(recorder_class):
-    # It runs on the RX thread while the test thread reads names(). Nothing here
-    # is subtle; the point is that the lock covers both sides.
+def test_recording_and_reading_at_the_same_time_loses_nothing(recorder_class):
+    # A smoke test, and labelled as one deliberately. The recorder is written to
+    # from the RX thread while the test thread reads names(), so the paths do
+    # overlap - but list.append and list() are atomic under CPython's GIL, so
+    # removing the lock entirely leaves this green. It would NOT catch that, and
+    # an earlier version of this comment claimed it would.
     transport = FakeTransport()
     burst = recorder_class()
     burst.attach(transport)

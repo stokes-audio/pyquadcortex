@@ -48,9 +48,15 @@ The wait costs about 8 seconds once per run and buys more than it costs.
 hundred messages, so without it every latency measurement below would be taken on
 a link still busy answering the handshake.
 
-The hardware suite cannot check that the recorder stopped cleanly - it reads the
-recording afterwards and its assertions are floors, which contamination satisfies
-too. So the stop is pinned offline, in
+The burst test's `assert handshake_burst.closed` and `settled_in is not None` are
+what hold that up. They are not belt-and-braces: they are the only things that
+fail if the fixture stops waiting for the burst, since every other assertion in
+that test is a floor and contamination satisfies a floor. Do not delete them as
+redundant.
+
+What they cannot see is a recorder that sets its flag and keeps recording anyway,
+or one that stops recording but stays attached to the transport. Both read like a
+working recorder from the outside, so both are pinned offline in
 `tests/test_handshake_burst_recorder.py`.
 
 ## Why the control test exists

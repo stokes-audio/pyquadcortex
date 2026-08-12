@@ -448,7 +448,10 @@ class Transport:
 
         A listener that raises is logged and skipped: the RX thread survives, the
         other listeners still see that message, and the message still reaches its
-        waiter. Same contract as every other step in this module's RX path.
+        waiter. Same contract as every other step in this module's RX path, and
+        wider than the rest of it - ``BaseException``, not just ``Exception``,
+        because ``pytest.fail()`` and ``sys.exit()`` are ordinary things for
+        caller code to do and neither may cost the connection its read loop.
 
         A listener lives only as long as the connection. Device loss neither
         removes nor notifies listeners - there is simply nothing further to
@@ -507,9 +510,18 @@ class Transport:
         for listener in listeners:
             try:
                 listener(message)
-            except Exception:
-                # The RX thread never dies, and one broken listener never costs
-                # its peers or the waiter their copy of this message.
+            except BaseException:
+                # BaseException, not Exception, and this is the only place in the
+                # module that goes that wide. Everything else on the RX path is
+                # our own code, where a BaseException means something genuinely
+                # fatal; a listener is arbitrary caller code, and the ways it can
+                # raise outside Exception are ordinary rather than exotic -
+                # pytest.fail() and sys.exit() both do. Letting one of those
+                # through kills the RX thread, and the failure the caller sees is
+                # a TimeoutError on the next request with device_lost unset: the
+                # connection is dead and nothing says why. "The RX thread never
+                # dies" is absolute, so it outranks the usual rule about not
+                # swallowing BaseException.
                 log.exception(
                     "inbound listener %r raised on %s; skipping it for this "
                     "message", listener, type(message).__name__

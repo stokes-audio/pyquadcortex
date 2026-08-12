@@ -135,7 +135,7 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 - M1 Epic (stokes-audio/pyquadcortex#8), Story #11. This is the protocol-layer half of that story, carved out because it is independent of the model work: `docs/domain-model.md` section 9 needs a push-fed cache, and a cache cannot be fed by three hooks that are all one-shot and scoped to a trigger
 
 **Scope of impact:**
-- **Updated:** `pyquadcortex/protocol/transport.py`, `client.py`, `session.py`, `tests/test_transport.py`, `tests/test_client.py`, `tests/test_session.py`, `tests/hardware/conftest.py`, `tests/hardware/test_broadcast_listener.py` (new), `tests/hardware/readme.md`, ADR.md, CLAUDE.md, STEERING.md, architecture.md, api.md, protocol.md, changelog.md
+- **Updated:** `pyquadcortex/protocol/transport.py`, `client.py`, `session.py`, `tests/test_transport.py`, `tests/test_client.py`, `tests/test_session.py`, `tests/test_handshake_burst_recorder.py` (new), `tests/hardware/conftest.py`, `tests/hardware/test_broadcast_listener.py` (new), `tests/hardware/readme.md`, ADR.md, CLAUDE.md, STEERING.md, architecture.md, api.md, protocol.md, changelog.md
 - **Not updated (intentionally):** ADR-0002 - the offline suite still imports no `hid` and the new tests run against `FakeHid` like the rest; ADR-0005 - the new hardware tests only listen, so they write nothing and have nothing to restore, which meets the contract rather than changing it; `docs/domain-model.md` - section 9 designed this and needed no correction; the coverage table in `protocol.md` - no new message type is involved
 
 **Downstream to consider:**

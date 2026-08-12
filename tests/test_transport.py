@@ -528,6 +528,33 @@ def test_a_raising_listener_costs_nobody_else_the_message(caplog):
         "a raising listener must be logged, not silently swallowed"
 
 
+def test_a_listener_raising_outside_exception_still_cannot_kill_the_rx_thread():
+    # The reason this is not covered by the test above: a listener is arbitrary
+    # caller code, and two ordinary things it might do - pytest.fail() and
+    # sys.exit() - raise BaseException subclasses, which a plain `except
+    # Exception` lets through. That kills the read loop, and what the caller then
+    # sees is a TimeoutError with device_lost unset: the connection is dead and
+    # nothing says why. SystemExit stands in for both here.
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    after = []
+
+    def bails_out(message):
+        raise SystemExit("a listener that called sys.exit()")
+
+    t.start()
+    try:
+        t.add_listener(bails_out)
+        t.add_listener(after.append)
+        fake.inject(*_recall_broadcast("push", rid=None))
+        assert _wait_until(lambda: after), "the peer listener lost the message"
+        assert t._rx.is_alive(), "the RX thread died"
+        assert t.request(pa.VersionMessage(action=pa.MessageAction.READ),
+                         timeout=REQUEST_TIMEOUT) is not None
+    finally:
+        t.stop()
+
+
 def test_a_listener_cannot_read_from_the_device_on_the_rx_thread():
     # The design rule this enforces: the RX thread applies pushes and notes what
     # needs re-reading, and the caller's thread does the re-reading. All three
