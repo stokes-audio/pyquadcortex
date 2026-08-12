@@ -91,15 +91,15 @@ LOG.write(f"-- heartbeat: {suppressed} chatter msgs, "
 ```
 
 A silent log with a beating heart is a finding. A silent log without one is nothing at all.
-The finding that the Tempo menu's MODE control is never broadcast was reached twice: the
-first time with neither safeguard, and again with both, and only the second time was worth
-anything.
+The finding that the Tempo menu's MODE control is never broadcast was reached three times:
+the first time with neither safeguard, and twice more with both, and only the later two
+were worth anything.
 
 The same example carries a second lesson, learned later and the harder way. A listener
 proves only what a listener can prove: **that the device does not ANNOUNCE something.** For
-two releases that measurement was written up as "MODE is not on the wire at all", which is
-a claim about readability that no amount of listening can support. Say what the instrument
-measured, not what it implies.
+eight releases - 0.33.0 through 0.40.0 - that measurement was written up as "MODE is not on
+the wire at all", which is a claim about readability that no amount of listening can
+support. Say what the instrument measured, not what it implies.
 
 **3. A match predicate that tests a field the reply never sets rejects every valid answer.**
 Reading the unit's Favorites list needs `RecentsFavorites{READ, is_favorites: true}`, and

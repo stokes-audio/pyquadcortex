@@ -1072,32 +1072,51 @@ so position is the index - the same convention as `models[]`. A host WRITE does 
 reads them positionally.
 
 **The menu's MODE control (global or per-preset tempo) is NEVER BROADCAST**, established
-twice, the second time with an instrument worth trusting.
+three times, the last two with instruments worth trusting.
 
-Toggling to GLOBAL, confirming the menu, toggling back to PRESET and confirming again
-produced no traffic of any kind - not `Grid`, not `GlobalTempo`, not `GeneralSettings`, and
-nothing else. The re-test decoded 70 of the device's 72 message types (the first attempt
-silently dropped 27 of them) and carried a liveness heartbeat proving the link was up for
-the whole 420-second window (the first attempt could not tell silence from a dead link).
+1. **The first attempt.** Toggling to GLOBAL, pressing OK, toggling back to PRESET,
+   pressing OK again and then saving the preset produced no `Grid`, `GlobalTempo` or
+   `GeneralSettings` traffic. It happened to reach the right answer, but it silently
+   dropped 27 of the device's 72 message types and could not tell silence from a dead
+   link, so nothing about how it was reached justified believing it.
+2. **The re-test.** The same toggle, confirm, toggle back, confirm again sequence,
+   watched properly: 70 of the 72 message types decoded, and a liveness heartbeat proving
+   the link was up for the whole **420-second** window. No traffic of any kind.
+3. **The device-wide sweep of 2026-08-06.** One long listener run over the whole unit,
+   banner-marked per section so every message is attributable to the action that caused
+   it; the Tempo menu section falls between roughly 765 s and 1395 s of it. Changing MODE
+   and changing it back drew silence again. Its action script says only "change MODE to
+   its other setting" and "change MODE back", with no OK step written down before the
+   `BANK UP` that ends the section, so it repeats the toggle rather than the commit. The
+   commit case rests on the two runs above.
 
-**Read that for exactly what it says.** For two releases this section said MODE was "not on
-the wire at all", and that is more than the measurement supports: every one of those tests
-LISTENED, and none of them ASKED. A control the device never announces may still answer a
-READ, or ride in one of the two message types the sweep did not decode. So the state of
-knowledge is "we have not found the wire path", which is an open investigation, not a
-closed door. It is still a good illustration of why a negative result needs a trustworthy
-instrument - and now also of the second half of that rule, which is to state only what the
-instrument measured.
+**Read that for exactly what it says.** For eight releases - 0.33.0 through 0.40.0 - this
+section said MODE "is NOT on the wire", and the coverage audit and the model design said
+"not on the wire at all". Both are more than the measurement supports: every one of those
+tests LISTENED, and none of them ASKED. A control the device never announces may still
+answer a READ, or ride in one of the two message types the re-test did not decode. So the
+state of knowledge is "we have not found the wire path", which is an open investigation,
+not a closed door. It is still a good illustration of why a negative result needs a
+trustworthy instrument - and now also of the second half of that rule, which is to state
+only what the instrument measured.
 
 Untried, for whoever picks this up: a targeted READ of the candidate message types, and
-decoding the two the sweep missed. Cortex Control offers the same switch, so a route
+decoding the two the re-test missed. Cortex Control offers the same switch, so a route
 exists. Until it is found, the model shows the control and refuses it rather than guessing
 which scope a tempo write landed in (ADR-0007); `domain-model.md` §13 carries the same
 entry.
 
-Two related dead ends, for the record. `GlobalTempo` is global rather than
-per-preset and, when READ, returned only a running clock (`current_beat`,
-`current_bar`, `current_tick`) with no parameters. And `MetronomeStatusUpdate`
+**Ask `GlobalTempo` first.** A single READ of it returned only a running clock
+(`current_beat`, `current_bar`, `current_tick`) with no parameters, and that was written up
+here as a dead end. It should not be read as one. Section 8's broadcast notes record that
+`GlobalTempo` **alternates two shapes** - one push carrying `metronome_status`, one
+carrying the 25 params - and a captured Cortex Control session decodes a `GlobalTempo`
+UPDATE carrying a `params` list in the same `index` / `param_values` shape as
+`tempoProgramData`. One READ reply that happened to come back in the clock shape says
+nothing about the other. It is the only message type this project has seen carrying global
+tempo parameters, which makes it the first place to ask rather than a closed one.
+
+One genuine related dead end, for the record: `MetronomeStatusUpdate`
 carries only `is_enabled` and `preroll_enabled`, with no mute or level field at all -
 which is why muting means setting `TempoControl.VOLUME` to zero.
 

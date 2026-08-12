@@ -24,6 +24,12 @@ The version lives in **one** place, `pyquadcortex/_version.py`, and
 disagree. Publishing the same version twice is impossible, so decide now rather
 than at the upload prompt.
 
+**Which digit moves** is the changelog preamble's rule, not a judgement call: new
+capability moves the minor, fixes move the patch, and while the major number is 0
+a breaking change moves the minor as well. The major number stays at 0 until the
+three conditions listed there are met, so a break does not reach for 1.0.0 on its
+own.
+
 ## 3. Build FRESH, from a clean dist/
 
 ```bash

@@ -20,11 +20,13 @@ script. What is and is not covered is listed feature by feature in
 The library imports as `pyquadcortex`; a command-line tool named `qcctl` comes
 with it.
 
-> **Upgrading from 0.40.0 or earlier?** The message-level API moved to
-> `pyquadcortex.protocol`. Change `from pyquadcortex import X` to
+> **Upgrading from 0.40.0 or earlier?** In the next release the message-level API
+> moves to `pyquadcortex.protocol`. Change `from pyquadcortex import X` to
 > `from pyquadcortex.protocol import X`, and `pyquadcortex.connect()` to
-> `protocol.connect()`. Nothing else about it changed. See
-> [Two ways in](#two-ways-in) below.
+> `protocol.connect()`. Submodule paths take the same step, so
+> `pyquadcortex.proto`, `.client`, `.enums` and `.session` become
+> `pyquadcortex.protocol.proto` and the rest. Nothing else about the API
+> changed. See [Two ways in](#two-ways-in) below.
 
 > Unofficial and not affiliated with, endorsed by, or supported by Neural DSP
 > Technologies. "Quad Cortex" and "Neural DSP" are trademarks of their owner and
@@ -71,9 +73,13 @@ no difference. The Quad Cortex just has to be plugged in over USB.)
 The package has two namespaces, and you can use either one or both.
 
 **`pyquadcortex.protocol`** is the message-level API: one Python call per Quad
-Cortex protocol message. It is complete, it is what everything below is written
-against, and it is what this library shipped as through 0.40.0. It moves here in
-the next release, unchanged.
+Cortex protocol message. It covers every message this library has confirmed on
+hardware, it is what everything below is written against, and it is what this
+library shipped as through 0.40.0. It moves here in the next release, unchanged,
+and its submodules move with it (`pyquadcortex.proto` becomes
+`pyquadcortex.protocol.proto`, and so on). What the unit can do that this library
+still cannot is listed in
+[docs/manual-coverage.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/manual-coverage.md).
 
 ```python
 from pyquadcortex import protocol

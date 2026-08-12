@@ -5,8 +5,10 @@ installing the package. The git history has the detail and the reasoning; this
 file answers the narrower question "I upgraded, what is different for me?".
 
 Versions follow the usual 0.x convention: the minor number moves for new
-capability, the patch number for fixes. Anything may still change while the
-major number is 0.
+capability and the patch number for fixes. While the major number is 0, a
+breaking change moves the **minor** too - it does not move the major, because
+that number is reserved for the 1.0.0 conditions below. Anything may still
+change while the major number is 0.
 
 That is a deliberate signal, not neglect. Everything here is verified against ONE
 unit on one firmware, protocol facts are still being corrected at a live rate, and
@@ -31,11 +33,27 @@ with protocol.connect() as qc:      # was: pyquadcortex.connect()
     qc.switch_scene(1)
 ```
 
-That is the whole migration. Every name the package exported at the top level is
-reachable under `pyquadcortex.protocol`, with the same behaviour - same classes,
-same methods, same arguments, same results. Nothing about the protocol API changed
-except where it is imported from. A test enumerates the old export list and proves
-it.
+That is the whole migration for the names the package exported. Every one of them
+is reachable under `pyquadcortex.protocol`, with the same behaviour - same
+classes, same methods, same arguments, same results. Nothing about the protocol
+API changed except where it is imported from. A test enumerates the old export
+list and proves it.
+
+**Submodule paths took the same step**, and no test can prove that part for you
+because those were never top-level exports. If you import a submodule directly,
+add `protocol.` to it:
+
+| before | after |
+|---|---|
+| `pyquadcortex.proto` | `pyquadcortex.protocol.proto` |
+| `pyquadcortex.client` | `pyquadcortex.protocol.client` |
+| `pyquadcortex.enums` | `pyquadcortex.protocol.enums` |
+| `pyquadcortex.session` | `pyquadcortex.protocol.session` |
+
+`pyquadcortex.proto` is the one to check for: decoding a capture with the shipped
+protobuf bindings is the documented way to do it, and the line in
+`docs/capture.md` used to read `from pyquadcortex.proto import
+ProductionAutomation_pb2 as pa`.
 
 `qcctl` is unchanged. If you installed the package in editable mode before this
 change, reinstall it so the console script points at the new module path.
@@ -66,6 +84,29 @@ there yet, use the protocol layer.
 To use both layers in one script, wrap a connection you already have with
 `Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
 your connection open.
+
+### Withdrawn: the Tempo menu's MODE is "not on the wire"
+
+The 0.23.0 entry below records, under **Settled**, that the Tempo menu's MODE
+(global vs per-preset) is not on the wire. **That claim is withdrawn.** It was
+carried in the documentation from 0.33.0 through 0.40.0 and is wider than the
+evidence behind it.
+
+What was actually measured is that MODE is never BROADCAST. Three independent
+tests watched for a broadcast when the switch was changed and saw nothing, and
+the instrument in the later two is worth trusting - 70 of the device's 72 message
+types decoded, with a liveness heartbeat proving the link was up. But all three
+listened, and none of them asked. **A control the device never announces may
+still answer a READ.** Nothing has tried one.
+
+So MODE is an open protocol investigation rather than a settled dead end. Nothing
+in the library changes: there was no MODE surface before and there is none now.
+The reason it is worth an entry is that the withdrawn claim is what the coverage
+audit and the model design were both written against. The correction is in
+`docs/protocol.md`, `docs/manual-coverage.md`, `docs/capture.md` and
+`docs/domain-model.md`, and the decision it forced - that the model shows a
+control it cannot yet drive and refuses it, rather than omitting it or guessing -
+is ADR-0007.
 
 ## 0.40.0 - 2026-08-10
 

@@ -39,3 +39,10 @@ jobs:
           pip install build twine
           python -m build
           twine check dist/*
+      # twine check reads metadata, not the file list. The generated protobuf
+      # bindings are what lets `pip install` work with no protoc toolchain
+      # (ADR-0001), so a build rule that dropped them would produce a wheel that
+      # installs cleanly and fails on the first import. Nothing else in the repo
+      # looks inside a built artifact.
+      - name: The artifacts carry the bindings, the CLI and both namespaces
+        run: python scripts/check_artifacts.py dist

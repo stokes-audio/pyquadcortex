@@ -124,7 +124,9 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 **What changed:**
 - The package now has two namespaces: `pyquadcortex` is the model, `pyquadcortex.protocol` is today's protocol layer moved verbatim. Sections 3 and 4 describe both; the patterns table's file paths moved with the code
 - ADR.md: ADR-0007 - the model may represent a control whose wire path is still open, provided the operation it cannot perform refuses rather than guesses
-- `docs/domain-model.md`: TEMPO MODE reopened. `Tempo` gains `mode`; the appendix row and §13 changed from "not on the wire at all" to an open investigation
+- `docs/domain-model.md`: TEMPO MODE reopened. `Tempo` gains `mode`; the appendix row and §13 changed from "not on the wire at all" to an open investigation, and the appendix legend gained *open* as a status so the row's value is defined rather than improvised
+- One account of the TEMPO MODE evidence, the same in every document: **three** tests, not two; the strong instrument (70 of 72 message types, 420-second window, liveness heartbeat) is **the second**, and the third is the 2026-08-06 device-wide sweep, whose script toggles MODE without a written OK step; the over-strong claim stood for **eight** releases, 0.33.0 through 0.40.0. `changelog.md` carries the withdrawal under Unreleased, which it had been missing
+- `docs/protocol.md` no longer files `GlobalTempo` as a dead end. One READ of it returned a clock; the same document records that it alternates two shapes and that the other one carries the 25 params, so it is the first place to ask, not a closed door
 - The same correction landed in the protocol record itself, which is where the over-strong claim actually lived: `protocol.md` ("Per-preset tempo, LED and metronome"), `manual-coverage.md` (two places), and `capture.md`, whose listener chapter used the claim as its exemplar and now carries the second lesson too - a listener proves only that the device does not ANNOUNCE something
 - Section 6's offline-suite constraint: the hardware suite is built, not merely decided - it shipped in 0.39.0 and this line had not caught up
 
@@ -132,8 +134,16 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 - M1 Epic (stokes-audio/pyquadcortex#8), Story #9. The flip goes first because every other story in the Epic imports through the new layout (ADR-0006)
 - ADR-0007 is an owner decision taken during the same story: "three tests saw no broadcast" had been over-read as "not on the wire", and a control we understand but cannot drive should refuse rather than be omitted or guessed at
 
+**Also closed in review, on the same branch:**
+- `Device` now checks field PRESENCE before reporting firmware or serial, and caches only a complete reply. Both fields sit in synthetic `oneof`s, so an absent one decodes as `""` and would have been reported as the unit's answer - the guess ADR-0007 forbids, in shipped code. CLAUDE.md carries the rule
+- A closed `Device` refuses `firmware`, `serial` and `client` instead of answering from cache. `_closed` had been read by nothing but `__repr__`. This defines only the explicit `close()`; a connection that goes away on its own stays with the reconnect story (#15)
+- `__repr__` says whether the `Device` owns or borrows its connection, which decides whether `close()` releases the unit and was otherwise invisible
+- Test guards that were weaker than they read: the pre-flip export snapshot is pinned by content hash and exact count (a live `git show` cannot work - CI checks out one commit deep); the parity check asserts each name still resolves to something in the protocol layer rather than merely existing; the layering check reads every import spelling, including `from pyquadcortex import model`, which is the house style and was invisible to it; the import-cleanliness sentinel takes the trailing dot
+- `scripts/check_artifacts.py`, run by CI's `build` job: `twine check` reads metadata, so nothing was looking inside the wheel for the generated bindings ADR-0001 exists to ship
+- `scripts/compile_protos.sh` refuses an output directory that is not the bindings directory instead of `mkdir -p`-ing a new one, writing into it and reporting success
+
 **Scope of impact:**
-- **Updated:** STEERING.md, ADR.md, CLAUDE.md, domain-model.md, architecture.md, api.md, README.md, capture.md, protocol.md, manual-coverage.md, releasing.md, contributing.md, changelog.md
+- **Updated:** STEERING.md, ADR.md, CLAUDE.md, domain-model.md, architecture.md, api.md, README.md, capture.md, protocol.md, manual-coverage.md, releasing.md, contributing.md, changelog.md, `.github/workflows/ci.yml`, `scripts/`
 - **Not updated (intentionally):** ADR-0001 - it is `Decided` and append-only, so its `pyquadcortex/proto/` paths stay as written; the directory it names moved under ADR-0006 and now lives at `pyquadcortex/protocol/proto/`. The decision itself is unchanged. ADR-0004 and ADR-0006 - the flip is what ADR-0006 already decided, not a new decision. `roadmap.md`'s illustrative model snippet - it reads `pyquadcortex.connect()`, which is now exactly right
 
 **Downstream to consider:**

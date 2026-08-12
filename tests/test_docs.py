@@ -28,13 +28,17 @@ def test_code_fences_are_balanced(doc):
     )
 
 
+def _api_table_rows() -> str:
+    text = (ROOT / "docs" / "api.md").read_text()
+    section = text[text.index("## Method groups"):text.index("**Rows and columns")]
+    return "\n".join(line for line in section.splitlines()
+                     if line.startswith("|"))     # table rows only, not prose
+
+
 def test_api_method_table_entries_exist_where_the_table_says():
     """`name(` in the table must be a real method; `protocol.name(` a real
     module function. help() is the contract; the table must match it."""
-    text = (ROOT / "docs" / "api.md").read_text()
-    section = text[text.index("## Method groups"):text.index("**Rows and columns")]
-    rows = "\n".join(line for line in section.splitlines()
-                     if line.startswith("|"))     # table rows only, not prose
+    rows = _api_table_rows()
     problems = []
     for m in re.finditer(r"`(protocol\.)?([a-z_][a-z0-9_]*)\(", rows):
         prefixed, name = bool(m.group(1)), m.group(2)
@@ -47,3 +51,20 @@ def test_api_method_table_entries_exist_where_the_table_says():
                         if hasattr(protocol, name) else "")
                 problems.append(f"{name} listed as a method but is not{hint}")
     assert not problems, "; ".join(problems)
+
+
+def test_the_api_table_carries_no_pre_flip_import_paths():
+    """A row still spelled the old way is skipped by the check above, not caught.
+
+    That check matches an optional `protocol.` prefix and then a lowercase name,
+    so `` `pyquadcortex.blocks(` `` matches nothing at all - the prefix group
+    fails, the name group swallows `pyquadcortex`, and it runs into a `.` where
+    it wants a `(`. Before the move that row was the case being checked. A rule
+    that silently passes over exactly the rows this change could leave behind is
+    worth nothing here, so stale spellings are named instead.
+    """
+    stale = re.findall(r"`pyquadcortex\.(?!protocol\b|model\b)[a-z_][a-z0-9_.]*\(",
+                       _api_table_rows())
+    assert not stale, (
+        f"docs/api.md still shows {sorted(set(stale))} - the message-level API "
+        f"is imported from pyquadcortex.protocol now (ADR-0006)")

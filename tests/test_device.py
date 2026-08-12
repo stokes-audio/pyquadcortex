@@ -13,23 +13,51 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
 class FakeClient:
-    """The two things the model asks of a protocol client, and no more."""
+    """The two things the model asks of a protocol client, and no more.
 
-    def __init__(self, firmware="d14e", serial="QCS0000001"):
+    ``version()`` here decides the shape the model reads. The producer side of
+    that agreement is pinned by
+    ``test_the_real_client_returns_the_reply_shape_the_model_reads`` below, so
+    this fake cannot drift away from what ``QuadCortex.version()`` actually
+    hands back.
+    """
+
+    def __init__(self, firmware="d14e", serial="QCS0000001", omit=()):
         self._firmware = firmware
         self._serial = serial
+        self._omit = set(omit)
         self.version_reads = 0
         self.closed = False
 
     def version(self, timeout=10.0):
         self.version_reads += 1
         reply = pa.VersionMessage(action=pa.MessageAction.UPDATE)
-        reply.app_fw_version = self._firmware
-        reply.device_serial_number = self._serial
+        if "app_fw_version" not in self._omit:
+            reply.app_fw_version = self._firmware
+        if "device_serial_number" not in self._omit:
+            reply.device_serial_number = self._serial
         return reply
 
     def close(self):
         self.closed = True
+
+
+class ReplyingTransport:
+    """A transport that answers a request with a canned reply, by message name.
+
+    Used to drive the REAL ``QuadCortex`` rather than a stub of it.
+    """
+
+    def __init__(self, canned):
+        self.canned = canned
+        self.sent = []
+
+    def send(self, msg):
+        self.sent.append(msg)
+
+    def request(self, msg, timeout=5.0):
+        self.sent.append(msg)
+        return self.canned[type(msg).__name__]
 
 
 class FakeDevice:
@@ -147,6 +175,115 @@ def test_repr_names_the_type_without_talking_to_the_unit():
 def test_repr_says_open_before_close_and_closed_after(fake_stack):
     """A model that lies about itself is the one thing this library must not do."""
     device = pyquadcortex.connect(settle=0)
-    assert repr(device) == "<Device open>"
+    assert repr(device) == "<Device open, owns its connection>"
     device.close()
-    assert repr(device) == "<Device closed>"
+    assert repr(device) == "<Device closed, owns its connection>"
+
+
+def test_repr_distinguishes_an_owned_connection_from_a_borrowed_one():
+    """Whether close() releases the unit is otherwise invisible from outside."""
+    assert repr(Device.from_client(FakeClient())) == (
+        "<Device open, borrows its connection>")
+
+
+# -- what a Version reply has to carry ---------------------------------------
+
+
+def test_the_real_client_returns_the_reply_shape_the_model_reads():
+    """Pins the producer, not just the model's stub of it.
+
+    ``Device.firmware`` and ``Device.serial`` read two named fields off whatever
+    ``QuadCortex.version()`` returns. Without this, the real method could return
+    something else entirely - or nothing - and every test here would still pass,
+    because they all read the reply the fake builds.
+    """
+    reply = pa.VersionMessage(action=pa.MessageAction.UPDATE)
+    reply.app_fw_version = "d14e"
+    reply.device_serial_number = "QCS0000001"
+    transport = ReplyingTransport({"VersionMessage": reply})
+    qc = client.QuadCortex(transport)
+
+    got = qc.version()
+    assert isinstance(got, pa.VersionMessage)
+    assert got.app_fw_version == "d14e"
+    assert got.device_serial_number == "QCS0000001"
+    assert Device.from_client(qc).firmware == "d14e"
+    assert isinstance(transport.sent[-1], pa.VersionMessage)
+
+
+def test_a_version_reply_missing_a_field_is_refused_not_reported_as_empty():
+    """An absent field decodes as "", which would ship a guess as a fact."""
+    device = Device.from_client(FakeClient(omit=["app_fw_version"]))
+    with pytest.raises(RuntimeError, match="app_fw_version"):
+        device.firmware
+
+
+def test_an_incomplete_version_reply_is_not_cached():
+    """A cached empty string could never be recovered from on this connection."""
+    qc = FakeClient(omit=["device_serial_number"])
+    device = Device.from_client(qc)
+    with pytest.raises(RuntimeError):
+        device.serial
+    qc._omit = set()                     # the unit answers properly next time
+    assert device.serial == "QCS0000001"
+    assert qc.version_reads == 2
+
+
+# -- a closed Device answers nothing -----------------------------------------
+
+
+def test_a_closed_device_refuses_reads_it_could_have_served_from_cache(fake_stack):
+    """The cache must not outlive the connection it was read over."""
+    device = pyquadcortex.connect(settle=0)
+    device._version = _fake_version_reply()      # as if identity had been read
+    device.close()
+    for attribute in ("firmware", "serial", "client"):
+        with pytest.raises(RuntimeError, match="closed"):
+            getattr(device, attribute)
+
+
+def test_a_closed_borrowed_device_refuses_reads_that_would_still_work():
+    """close() means done with this Device, even when the connection lives on."""
+    qc = FakeClient()
+    device = Device.from_client(qc)
+    device.close()
+    assert not qc.closed, "the caller opened it, so the caller closes it"
+    with pytest.raises(RuntimeError, match="closed"):
+        device.firmware
+
+
+def _fake_version_reply():
+    reply = pa.VersionMessage(action=pa.MessageAction.UPDATE)
+    reply.app_fw_version = "d14e"
+    reply.device_serial_number = "QCS0000001"
+    return reply
+
+
+# -- connect() passes its arguments through ----------------------------------
+
+
+def test_connect_hands_every_argument_to_the_protocol_layer(monkeypatch):
+    """A dropped handshake_patience has no symptom a fake stack can show.
+
+    The fake transport swallows the handshake, so a `Device` still comes back
+    with the argument missing - and on real hardware the unit would get 5
+    seconds of patience instead of 30, inside a documented 9 to 17 second
+    openable-but-silent window.
+    """
+    seen = {}
+
+    def spy(**kwargs):
+        seen.update(kwargs)
+        return FakeClient()
+
+    monkeypatch.setattr(protocol, "connect", spy)
+    pyquadcortex.connect(timeout=1.5, settle=0.25, handshake_patience=45.0)
+    assert seen == {"timeout": 1.5, "settle": 0.25, "handshake_patience": 45.0}
+
+
+def test_connect_passes_its_defaults_through_unchanged(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(protocol, "connect",
+                        lambda **kw: (seen.update(kw), FakeClient())[1])
+    pyquadcortex.connect()
+    assert seen == {"timeout": 5.0, "settle": 2.0, "handshake_patience": 30.0}

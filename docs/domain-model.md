@@ -61,9 +61,11 @@ layers mix in one script. The rename lands with M1 (the first model release), so
 release ever has `connect()` meaning two different things. This amends ADR-0004's
 "additive namespace" consequence and is recorded as ADR-0006.
 
-**This part is built.** The flip shipped in the M1 Epic (story OM-M1.1), and
-`pyquadcortex/protocol/` is today's protocol layer moved verbatim. The `Device` it hands
-back is still a skeleton - identity only - and fills in over the rest of M1.
+**This part is built, and not yet released.** It landed in the M1 Epic (story OM-M1.1);
+the version is cut once the model can read a preset, so that no published release ever has
+`connect()` meaning two different things. `pyquadcortex/protocol/` is today's protocol
+layer moved verbatim, and the `Device` the front door hands back is still a skeleton -
+identity only - and fills in over the rest of M1.
 
 ---
 
@@ -1017,16 +1019,21 @@ tried rather than just what is unknown.
 
 - **The TEMPO MODE wire path.** The unit's Tempo menu has a GLOBAL / PRESET switch, and
   in PRESET mode the tempo and all seven metronome settings belong to the preset. Three
-  independent tests watched for a broadcast when the switch is changed and committed, and
-  saw nothing - the third decoded 70 of the device's 72 message types over a 420-second
-  window with a liveness heartbeat, so the negative is trustworthy as far as it goes. It
-  goes exactly this far: **the unit does not ANNOUNCE the switch.** It does not follow
-  that the switch cannot be read, and this list previously said it did. Cortex Control
-  offers the same control, so some route exists. What has not been tried is a targeted
-  READ of the candidate messages, or decoding the two message types the sweep did not
-  cover. Until it is found, the model shows `Tempo.mode` and refuses it rather than
-  guessing which scope a tempo write landed in (ADR-0007). This gates M3's device-settings
-  work; it does not gate M1, because no tempo surface ships at M1.
+  independent tests watched for a broadcast when the switch is changed, and saw nothing.
+  The strong instrument is **the second**, the re-test: 70 of the device's 72 message
+  types decoded over a 420-second window with a liveness heartbeat. The third is the
+  device-wide sweep of 2026-08-06, a much longer run whose Tempo menu section falls
+  between roughly 765 s and 1395 s; its script toggles MODE and toggles it back, and
+  records no OK step, so the commit case rests on the first two. `protocol.md`'s
+  "Per-preset tempo, LED and metronome" has all three set out. The negative is
+  trustworthy, and it goes exactly this far: **the unit does not ANNOUNCE the switch.** It
+  does not follow that the switch cannot be read, and this list previously said it did.
+  Cortex Control offers the same control, so some route exists. What has not been tried is
+  a targeted READ of the candidate messages - `GlobalTempo` first, since it is the only
+  type seen carrying global tempo parameters - or decoding the two message types the
+  re-test did not cover. Until it is found, the model shows `Tempo.mode` and refuses it
+  rather than guessing which scope a tempo write landed in (ADR-0007). This gates M3's
+  device-settings work; it does not gate M1, because no tempo surface ships at M1.
 - **`RecallPreset.reason` UNDO.** The value exists in the schema and has never been
   observed. It may be unreachable on this firmware: there is **no grid-level undo on the
   unit** - the only UNDO is Looper X's, which is a Looper action and not a preset recall -
@@ -1089,8 +1096,10 @@ carries one permanently.
 Every feature the manual describes, mapped to the model or explicitly omitted.
 **Protocol** is the current reachability from [`manual-coverage.md`](manual-coverage.md)
 (*yes* / *partly* / *no* / *n/a*); *unaudited* marks features this design pass found
-missing from that audit. An omission with a protocol path of *no* becomes reachable
-work only after the protocol layer grows the path - closing wire gaps is separate work.
+missing from that audit, and *open* marks one this project understands on the unit but
+cannot yet drive, because the message that carries it has not been found (ADR-0007). An
+omission with a protocol path of *no* becomes reachable work only after the protocol layer
+grows the path - closing wire gaps is separate work.
 
 Manual chapters 1-2 (welcome, hardware overview), 7 (plugin compatibility tables), 9's
 host-side audio setup, and 12 (specs, regulatory) describe physical hardware, host
