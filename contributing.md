@@ -58,6 +58,11 @@ scripts/compile_protos.sh
 
 If you regenerate with a newer `protobuf`, the runtime pin in `pyproject.toml` must
 be raised to match the generated code, or imports will fail for everyone else.
+
+Regenerating with an *older* generator is the quieter mistake, so the script
+checks for it: if your `grpcio-tools` would write older gencode than what is
+committed, it refuses and leaves the bindings alone. Reinstall the dev extra
+(`pip install -U -e ".[dev]"`) to get a generator at or above the pinned floor.
 See [docs/architecture.md](docs/architecture.md) for the details.
 
 ## Running the tests

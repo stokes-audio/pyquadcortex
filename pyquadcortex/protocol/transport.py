@@ -200,7 +200,7 @@ class Transport:
         stalled the link for its full duration. Listeners
         (:meth:`add_listener`) are the only caller code that runs on that thread,
         so this guard is what makes the listener contract enforced rather than
-        merely requested (ADR-0008).
+        merely requested (ADR-0009).
 
         Cheap enough to leave in every entry point: one identity comparison.
         """

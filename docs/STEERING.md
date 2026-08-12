@@ -37,7 +37,7 @@ Inside the protocol layer, a strict one-concern-per-file layering: `cli` → `se
 
 ### Data and state
 
-The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. It does carry one hook for a caller who wants to be told rather than to ask - `Transport.add_listener`, a subscription that sees every message the unit pushes for the life of the connection (ADR-0008) - but the transport stores none of it. The model layer (design in [`domain-model.md`](domain-model.md)) introduces a broadcast-fed write-through cache above `protocol/client.py`; at the time of writing the model is a skeleton and that cache is not built, so callers still hold whatever state they need.
+The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. It does carry one hook for a caller who wants to be told rather than to ask - `Transport.add_listener`, a subscription that sees every message the unit pushes for the life of the connection (ADR-0009) - but the transport stores none of it. The model layer (design in [`domain-model.md`](domain-model.md)) introduces a broadcast-fed write-through cache above `protocol/client.py`; at the time of writing the model is a skeleton and that cache is not built, so callers still hold whatever state they need.
 
 ## 4. Owned Paths
 
@@ -46,7 +46,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 - `tests/` - the fully offline suite and its fixtures
 - `examples/` - runnable scripts, also used as hardware-verification shapes
 - `docs/` - protocol record, architecture, coverage, this file
-- `scripts/` - `compile_protos.sh`
+- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`
 - `.github/workflows/` - CI
 
 ## 5. Patterns in Use
@@ -61,7 +61,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 ## 6. Constraints
 
 - **Runtime dependencies are exactly `hid` and `protobuf`.** The wheel installs with no compiler, no protoc, no build step.
-- **The protobuf runtime pin is coupled to the committed gencode.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001).
+- **The protobuf runtime pin is coupled to the committed gencode, and so is the generator floor.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001). The generator is `grpcio-tools`, which carries its own protoc and so decides the gencode by which version is installed, hence the `grpcio-tools>=1.83.0` floor in the dev extra. Older gencode still imports, so both guards are explicit: `scripts/compile_protos.sh` refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode and the pin floor are the same number (see ADR-0008).
 - **Python >= 3.11.**
 - **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - lives in `tests/hardware/` and runs only under `pytest --hardware` (see ADR-0005). Its modules must stay import-safe offline: `tests/test_scene_echo_predicates.py` imports `tests/hardware/test_write_echo.py` to exercise its predicates with no unit attached, which is the only way a predicate that can never match gets caught cheaply.
 - **Wire baseline: CorOS / Cortex Control 4.0.1, firmware d14e.** The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
@@ -80,7 +80,8 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0005 | A hardware-in-the-loop integration suite, state-neutral on success |
 | ADR-0006 | The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol` |
 | ADR-0007 | The model may represent a control whose wire path is still open |
-| ADR-0008 | Persistent listeners run on the RX thread, which may not read from the device |
+| ADR-0008 | The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin |
+| ADR-0009 | Persistent listeners run on the RX thread, which may not read from the device |
 
 ## 8. Open Questions
 
@@ -120,14 +121,14 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
-### 2026-08-12 - A persistent broadcast subscription at the protocol layer, and ADR-0008
+### 2026-08-12 - A persistent broadcast subscription at the protocol layer, and ADR-0009
 
 **What changed:**
 - `Transport.add_listener` / `remove_listener`: a subscription that sees every decoded inbound message for the life of the connection, including the unsolicited pushes `_dispatch` used to drop for want of a waiter. `QuadCortex` passes both through so the layer above never reaches into `_t`
 - The transport now refuses `request`, `await_broadcast` and `collect` when they are called from the RX thread. That is what makes "a listener never reads from the device" enforced rather than requested
 - `protocol.connect(before_handshake=...)` calls back with the started transport before the handshake runs, which is the only moment early enough to hear the handshake's own state burst
-- ADR.md: ADR-0008 - listeners run on the RX thread, and the RX thread may not read; the queue-and-delivery-thread alternative and the document-but-do-not-enforce alternative are recorded with why each was rejected
-- Section 3's "Data and state" names the one hook that is not a live exchange; section 7's table gained the ADR-0008 row
+- ADR.md: ADR-0009 - listeners run on the RX thread, and the RX thread may not read; the queue-and-delivery-thread alternative and the document-but-do-not-enforce alternative are recorded with why each was rejected
+- Section 3's "Data and state" names the one hook that is not a live exchange; section 7's table gained the ADR-0009 row
 - `docs/protocol.md` "Connect burst, measured" gained the fact that decided the hook: `connect()` returns at 2.0 s, the ModelRepo lands at 4.9 s and the seed preset at 10.1 s, so a listener attached to the returned client has missed the burst it wanted
 - `tests/hardware/` gained `test_broadcast_listener.py`, and the suite's connection fixture now records the burst - it cannot be attached on demand later, because the burst happens during `connect()`
 
@@ -138,10 +139,32 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 - **Updated:** `pyquadcortex/protocol/transport.py`, `client.py`, `session.py`, `tests/test_transport.py`, `tests/test_client.py`, `tests/test_session.py`, `tests/test_handshake_burst_recorder.py` (new), `tests/hardware/conftest.py`, `tests/hardware/test_broadcast_listener.py` (new), `tests/hardware/readme.md`, ADR.md, CLAUDE.md, STEERING.md, architecture.md, api.md, protocol.md, changelog.md
 - **Not updated (intentionally):** ADR-0002 - the offline suite still imports no `hid` and the new tests run against `FakeHid` like the rest; ADR-0005 - the new hardware tests only listen, so they write nothing and have nothing to restore, which meets the contract rather than changing it; `docs/domain-model.md` - section 9 designed this and needed no correction; the coverage table in `protocol.md` - no new message type is involved
 
+**Also in this branch:**
+- Merged main (PR #19) in. That change took ADR-0008 for the generator floor, so the listener record is ADR-0009; the two commit messages on this branch predate the renumber and still say 0008
+
 **Downstream to consider:**
 - The model-side cache (the other half of #11) is the intended consumer and is being written separately. It registers through `before_handshake` so the burst warms it for free
 - `tests/hardware/test_write_echo.py` still taps `Transport._dispatch` by monkeypatching it, which predates this and could now be an ordinary listener. Left alone deliberately: it is a working measurement harness, and `tests/test_scene_echo_predicates.py` imports it offline
-- ADR-0008 leaves one question open on purpose - whether a listener hears about device loss. It stops receiving today, and the answer belongs with reconnect (#15)
+- ADR-0009 leaves one question open on purpose - whether a listener hears about device loss. It stops receiving today, and the answer belongs with reconnect (#15)
+
+### 2026-08-12 - The generator floor joins the bindings/pin unit (ADR-0008)
+
+**What changed:**
+- The dev extra's `grpcio-tools` floor went from `>=1.68` to `>=1.83.0`, with the reason written next to it. `grpcio-tools` ships its own protoc, so the installed version decides the gencode stamped into the committed bindings. The old floor let `pip install -e ".[dev]"` resolve to 1.82.1, which emits gencode 7.35.0 against bindings committed at 7.35.1; the script's system-`protoc` fallback has no floor at all
+- `scripts/compile_protos.sh` now generates into a temporary directory, compares the gencode it produced against the committed one, and refuses to install a downgrade. On refusal the tree is untouched
+- `tests/test_packaging.py` proves the committed state on every PR: all bindings from one generator, the pin floor equal to the committed gencode, the pin's ceiling one major above it
+- ADR.md: ADR-0008. Section 6's pin constraint says the floor is part of the same unit, and section 4 lists the two scripts added since it was last written
+
+**Why:**
+- Found while working the PR #17 review. ADR-0001 makes the bindings and the pin one unit, but nothing enforced it: protobuf validates `runtime >= gencode` and nothing else, so bindings regenerated by an older generator import cleanly and pass the whole suite while walking the pin backwards
+- The floor is not derivable from package metadata. `grpcio-tools` 1.82.1 declares `protobuf>=7.35.1` and still emits gencode 7.35.0, so 1.83.0 was found by running each candidate and reading the stamp it writes
+
+**Scope of impact:**
+- **Updated:** `pyproject.toml`, `scripts/compile_protos.sh`, `tests/test_packaging.py`, ADR.md, STEERING.md, CLAUDE.md, architecture.md, contributing.md, changelog.md
+- **Not updated (intentionally):** the bindings themselves - regenerating is its own change with its own pin bump (ADR-0001), and this one deliberately leaves the generated files byte-identical
+
+**Downstream to consider:**
+- The floor now moves with every gencode bump. `compile_protos.sh` prints the number to put in the pin when the gencode moves up, but the `grpcio-tools` floor is the maintainer's to raise
 
 ### 2026-08-11 - The namespace flip lands, and ADR-0007
 

@@ -36,7 +36,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "grpcio-tools>=1.68"]
+# grpcio-tools carries its own protoc, so the version installed here is what
+# decides the gencode stamped into the committed bindings. The floor is the
+# oldest release whose protoc emits gencode 7.35.1, matching the bindings in
+# the tree: an older one regenerates them BACKWARDS and still imports, because
+# protobuf only checks runtime >= gencode (ADR-0001). Raise this in the same
+# commit as any gencode bump.
+# Ask the compiler, never the metadata: grpcio-tools versions do not track
+# protobuf ones, and 1.82.1 declares `protobuf>=7.35.1` while still emitting
+# gencode 7.35.0.
+dev = ["pytest>=8", "grpcio-tools>=1.83.0"]
 
 [project.scripts]
 qcctl = "pyquadcortex.protocol.cli:main"
