@@ -15,5 +15,8 @@ should import them from. The design is in ``docs/domain-model.md``.
 """
 
 from pyquadcortex.device.device import Device, connect
+from pyquadcortex.device.translate import (FootswitchLetter, PresetAddress,
+                                           SceneLetter)
 
-__all__ = ["Device", "connect"]
+__all__ = ["Device", "connect", "FootswitchLetter", "SceneLetter",
+           "PresetAddress"]

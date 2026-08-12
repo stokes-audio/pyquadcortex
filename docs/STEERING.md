@@ -57,6 +57,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 | Fake-per-layer offline tests | Each layer has a purpose-built double: golden captured frames for `framing`, `FakeHid` for `transport`, `FakeTransport` for `client` | see ADR-0002 | `FakeTransport` in `tests/test_client.py` | Hardware verification happens manually via `examples/`, outside the suite |
 | Evidence-bearing docstrings | Each operation's docstring states what is confirmed on hardware vs inferred from the schema | The device gives no errors for wrong writes, so recorded evidence is the only trail | `QuadCortex.read_preset` in `pyquadcortex/protocol/client.py` | Non-protocol helpers (pure functions) carry ordinary docstrings |
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
+| One translation boundary | Screen values become wire values in exactly one module, and a source-reading test proves no other model module does it | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate.py` | The protocol layer, which keeps its zero-based indexes and raw scales |
 
 ## 6. Constraints
 
@@ -118,6 +119,59 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-12 - One translation boundary, and the model package is `device/`
+
+**What changed:**
+- `pyquadcortex/device/translate.py`: the one module where a screen value becomes a wire
+  value and back - rows 1-4, slots 1-8, scene and footswitch letters, preset addresses,
+  and the four display-unit mappings the protocol layer has measured (input gain dB, lane
+  and mixer dB, tuner reference Hz, hold timing ms). `PresetAddress`, `FootswitchLetter`
+  and `SceneLetter` are its public value types, re-exported from `pyquadcortex`
+- Section 5 gained the pattern row; section 4's owned-paths line and CLAUDE.md name the
+  new rule. `architecture.md` carries the module in its layer map and a section on it;
+  `domain-model.md` marks principle 5, `PresetAddress` and `FootswitchLetter` as built
+- **The model package directory is `pyquadcortex/device/`, renamed from `model/`.** Done
+  as its own commit so the story's diff stays readable
+
+**Why:**
+- M1 Epic (stokes-audio/pyquadcortex#8), Story #10. It ships before the surfaces that use
+  it so no later story invents its own conversion. The Intent Brief names off-by-one as a
+  silent failure mode, and the protocol layer's own header agrees: an edit to the wrong
+  row still succeeds and still reads back correctly, so nothing tells you. A centralized,
+  exhaustively tested boundary is the whole mitigation, which is why two of its tests read
+  the model package's source instead of calling it
+- The rename is an owner decision. *Model* already means an amp or pedal block here
+  (`protocol/models.py`, `catalog.Model`, `ModelCatalog`, `set_block(model=...)`), and
+  `domain-model.md` §5 settled that collision once by giving the word to the virtual
+  device list. The package directory had taken it back
+
+**Scope of impact:**
+- **Updated:** STEERING.md, CLAUDE.md, architecture.md, domain-model.md, changelog.md,
+  `pyquadcortex/device/`, `pyquadcortex/__init__.py`, `scripts/check_artifacts.py`,
+  `tests/test_translation.py` (new), `tests/test_namespace.py`,
+  `tests/test_import_cleanliness.py`
+- **Not updated (intentionally):** ADR.md - neither change reverses or refines a recorded
+  decision. The boundary IS design principle 5, already written and reviewed in
+  `domain-model.md`; the rename is a naming correction that the same document's §5 had
+  already decided in the other direction. README.md and api.md - the new value types have
+  no surface handing them out yet (the Directory is story #12), and the readme tour should
+  show what a caller can do, not what exists. The protocol layer - it keeps its zero-based
+  indexes, its `Footswitch` enum and its measured scales, and nothing below the seam
+  changed
+- **No deprecation shim for the rename.** `pyquadcortex.__all__` lists `protocol` and never
+  listed `model`, and the model namespace has not been released - 0.40.0 predates the flip
+  - so nothing published points at the old path
+
+**Downstream to consider:**
+- Stories #11 through #16 convert through this module rather than doing their own
+  arithmetic, and the source-reading tests will fail them if they do not
+- The conversions M1 does not need yet land here too, with the surface that needs them.
+  A parameter whose display mapping is unverified stays out of the model entirely
+  (principle 3), so no mapping is ever invented in this module
+- The `+1`/`-1` check is deliberately blunt: any literal one added to or subtracted from
+  anything in the model package outside the boundary fails it. If a future module has a
+  genuine counter, widening the check is a deliberate edit with a reason, not a quiet one
 
 ### 2026-08-11 - The namespace flip lands, and ADR-0007
 

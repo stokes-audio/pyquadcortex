@@ -130,6 +130,7 @@ def test_the_model_is_what_the_top_level_offers():
     assert pyquadcortex.connect is not protocol.connect
     assert set(pyquadcortex.__all__) == {
         "__version__", "connect", "Device", "protocol",
+        "FootswitchLetter", "SceneLetter", "PresetAddress",
         "DeviceNotFoundError", "DeviceLostError",
     }
     for name in pyquadcortex.__all__:

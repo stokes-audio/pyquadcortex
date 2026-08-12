@@ -40,6 +40,10 @@ only about the layer directly below it.
       |                      Speaks the unit's vocabulary, never the wire.
       |                      (Directory, cache and grid land in later stories.)
       |
+      device/translate.py    Screen values <-> wire values, and the ONLY place
+      |                      either becomes the other: rows, slots, scene and
+      |                      footswitch letters, preset addresses, display units
+      |
       |                      -- the model/protocol seam --
       |
     pyquadcortex/protocol/   THE PROTOCOL LAYER - one call per protocol message
@@ -177,6 +181,33 @@ message level for anything the model does not cover yet.
 The rest of the model - the Directory, the write-through cache, the loaded preset
 and the grid - is designed in [domain-model.md](domain-model.md) and is being
 built story by story. Nothing is stubbed out to look finished.
+
+### device/translate.py
+
+The model speaks what the touchscreen shows - rows 1 to 4, slots 1 to 8, scenes
+and footswitches as letters, dB, Hz, ms - and the wire speaks zero-based indexes
+and raw scales. Every conversion between the two lives here and nowhere else in
+`pyquadcortex/device/` (design principle 5 in
+[domain-model.md](domain-model.md)).
+
+One module rather than a convention, because the mistake it prevents is silent.
+This document's own layer map sits above a protocol layer whose header says it: a
+write to the wrong row lands on a real row and reads back perfectly, so nothing
+tells the caller. Collecting the arithmetic in one place makes it reviewable in
+one place, and `tests/test_translation.py` proves the rest of the model package
+does none of it by reading the source, rather than by trusting anyone to
+remember.
+
+Conversions with a measured scale behind them - input gain dB, lane and mixer dB,
+the slot-name/position pair - delegate to the protocol-layer helper that carries
+the measurement and its evidence, instead of restating the arithmetic. Two copies
+of a measured scale drift apart, and both copies go on returning a plausible
+number.
+
+Public value types: `PresetAddress`, `FootswitchLetter`, `SceneLetter`,
+re-exported from `pyquadcortex`. The conversion functions are not published: a
+caller never needs them, and the model reaches them as
+`translate.row_to_wire(...)`.
 
 ## What flows through the layers
 

@@ -85,6 +85,32 @@ To use both layers in one script, wrap a connection you already have with
 `Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
 your connection open.
 
+### The model talks in the numbers on your screen
+
+Rows are 1 to 4, slots are 1 to 8, scenes and footswitches are letters, and levels
+are the dB the unit displays. The wire counts from zero and stores raw scales, and
+the model converts in exactly one place so nothing else has to remember to.
+
+Three value types come with it, exported from `pyquadcortex`:
+
+```python
+from pyquadcortex import PresetAddress, FootswitchLetter, SceneLetter
+
+PresetAddress.parse("28C")          # bank 28, position C
+PresetAddress.parse("28X")          # ValueError, here rather than at write time
+FootswitchLetter.E                  # a footswitch is a letter, never a number
+```
+
+The footswitch rule is worth the sentence it costs. A footswitch index and a
+block's column are different numbers that agree most of the time, which is how a
+bug hid for months: a block in column 3 assigned to footswitch E is stored under
+key 4. No model API takes a bare footswitch number, so a column cannot be passed
+where a footswitch belongs.
+
+There is nothing handing out preset addresses yet - the Directory is still being
+built - so today these are useful mostly for validating an address before you use
+it with the protocol layer.
+
 ### Withdrawn: the Tempo menu's MODE is "not on the wire"
 
 The 0.23.0 entry below records, under **Settled**, that the Tempo menu's MODE
