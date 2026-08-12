@@ -125,9 +125,12 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 **What changed:**
 - `pyquadcortex/device/translate.py`: the one module where a screen value becomes a wire
   value and back - rows 1-4, slots 1-8, scene and footswitch letters, preset addresses,
-  and the four display-unit mappings the protocol layer has measured (input gain dB, lane
-  and mixer dB, tuner reference Hz, hold timing ms). `PresetAddress`, `FootswitchLetter`
-  and `SceneLetter` are its public value types, re-exported from `pyquadcortex`
+  and four display-unit mappings (input gain dB, lane and mixer dB, tuner reference Hz,
+  hold timing ms). The two level scales call the protocol helper that carries the
+  measurement; the other two have no helper to call, so they are pinned against what the
+  protocol write method expects, and the tuner's docstring says how thin its evidence is -
+  one observed pair. `PresetAddress`, `FootswitchLetter` and `SceneLetter` are its public
+  value types, re-exported from `pyquadcortex`
 - Section 5 gained the pattern row; section 4's owned-paths line and CLAUDE.md name the
   new rule. `architecture.md` carries the module in its layer map and a section on it;
   `domain-model.md` marks principle 5, `PresetAddress` and `FootswitchLetter` as built
@@ -141,10 +144,13 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
   row still succeeds and still reads back correctly, so nothing tells you. A centralized,
   exhaustively tested boundary is the whole mitigation, which is why two of its tests read
   the model package's source instead of calling it
-- The rename is an owner decision. *Model* already means an amp or pedal block here
-  (`protocol/models.py`, `catalog.Model`, `ModelCatalog`, `set_block(model=...)`), and
-  `domain-model.md` §5 settled that collision once by giving the word to the virtual
-  device list. The package directory had taken it back
+- The rename is an owner decision. In this codebase the identifier `model` means an amp or
+  pedal block - `protocol/models.py`, `catalog.Model`, `ModelCatalog`,
+  `set_block(model=...)`. `domain-model.md` §5 renamed that concept to *virtual device* in
+  the model's vocabulary, because that is what the screen calls it, but the protocol layer
+  still spells it `model` and will keep doing so. A directory named `model/` therefore
+  collides with real code a reader is looking at, whatever the design doc calls the
+  concept
 
 **Scope of impact:**
 - **Updated:** STEERING.md, CLAUDE.md, architecture.md, domain-model.md, changelog.md,
@@ -169,9 +175,14 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 - The conversions M1 does not need yet land here too, with the surface that needs them.
   A parameter whose display mapping is unverified stays out of the model entirely
   (principle 3), so no mapping is ever invented in this module
-- The `+1`/`-1` check is deliberately blunt: any literal one added to or subtracted from
-  anything in the model package outside the boundary fails it. If a future module has a
-  genuine counter, widening the check is a deliberate edit with a reason, not a quiet one
+- The arithmetic check is deliberately blunt and deliberately wide: a literal one in any
+  spelling (`1`, `1.0`, `True`, `-1`), `ord`/`chr`, a letter table, `divmod`, and a
+  one-based `enumerate` all fail it, anywhere in the package outside the boundary and the
+  protocol layer. If a future module has a genuine counter, widening the check is a
+  deliberate edit with a reason, not a quiet one
+- The scan is scoped to the whole package rather than to `pyquadcortex/device/`, because
+  a rule scoped to a directory is satisfiable by moving the code one directory up - which
+  is precisely what a failure message naming a directory invites
 
 ### 2026-08-11 - The namespace flip lands, and ADR-0007
 

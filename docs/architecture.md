@@ -198,16 +198,17 @@ one place, and `tests/test_translation.py` proves the rest of the model package
 does none of it by reading the source, rather than by trusting anyone to
 remember.
 
-Conversions with a measured scale behind them - input gain dB, lane and mixer dB,
-the slot-name/position pair - delegate to the protocol-layer helper that carries
-the measurement and its evidence, instead of restating the arithmetic. Two copies
-of a measured scale drift apart, and both copies go on returning a plausible
-number.
+Where a protocol-layer helper already performs the conversion - input gain dB,
+lane and mixer dB, the slot-name/position pair - this module calls it instead of
+restating the arithmetic. Two copies of a measured scale drift apart, and both
+copies go on returning a plausible number. The tuner and hold-timing mappings
+have no helper to call, only a documented rule and a shared constant, so their
+tests pin them against what the protocol write method expects.
 
 Public value types: `PresetAddress`, `FootswitchLetter`, `SceneLetter`,
-re-exported from `pyquadcortex`. The conversion functions are not published: a
-caller never needs them, and the model reaches them as
-`translate.row_to_wire(...)`.
+re-exported from `pyquadcortex`. The conversion functions are the module's own
+surface and are not re-exported: a caller never needs them, and the model reaches
+them as `translate.row_to_wire(...)`.
 
 ## What flows through the layers
 

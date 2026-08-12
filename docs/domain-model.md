@@ -1329,6 +1329,7 @@ the n/a rows below where they intersect the API at all.
 - **2026-08-12** - Design principle 5 is built (M1 story #10): `pyquadcortex/device/translate.py`
   owns every conversion between a screen value and a wire value, with `PresetAddress`,
   `FootswitchLetter` and `SceneLetter` landing as part of it. The model package directory
-  is `device/` rather than `model/`, because §5 gave the word *model* to the virtual
-  device list and the directory had taken it back. No design changed here; this records
-  what is now code.
+  is `device/` rather than `model/`, because the protocol layer spells an amp or pedal
+  block `model` in code (`models.py`, `Model`, `ModelCatalog`) and will keep doing so,
+  whatever §5 renamed the concept to in this document. No design changed here; this
+  records what is now code.

@@ -29,7 +29,7 @@ import pathlib
 import pytest
 
 import pyquadcortex
-from pyquadcortex import protocol
+from pyquadcortex import device, protocol
 
 PRE_FLIP_INIT = (pathlib.Path(__file__).resolve().parent
                  / "fixtures" / "surface" / "pre_flip_init.py.txt")
@@ -147,7 +147,11 @@ def test_the_protocol_sources_were_actually_found():
     assert len(PROTOCOL_SOURCES) > 5
 
 
-MODEL_PACKAGE = "pyquadcortex.device"
+#: Read from the package rather than typed here. A hardcoded string survives the
+#: package being renamed or moved, and the check below then looks for imports of
+#: a package that no longer exists - passing for every source file, for ever,
+#: with its own guard test still green.
+MODEL_PACKAGE = device.__name__
 
 
 def _is_the_model(dotted: str) -> bool:

@@ -46,12 +46,13 @@ SLOTS = (1, 2, 3, 4, 5, 6, 7, 8)
 #: OFFSET from this, not the pitch itself - see :func:`tuner_reference_hz`.
 CONCERT_A_HZ = 440.0
 
-# What the wire may carry for each of the above, derived from them so the two
-# accounts cannot disagree about how many there are. Scenes and footswitches
-# share the eight-index range with slots.
+# What the wire may carry for a row and a slot, derived from the screen values
+# above so the two accounts cannot disagree about how many there are. Scene and
+# footswitch indexes are NOT validated against these: they have their own enums
+# at the protocol layer, and borrowing a range named for grid columns to check a
+# footswitch is the confusion this module exists to end.
 _WIRE_ROWS = tuple(range(len(ROWS)))
 _WIRE_COLUMNS = tuple(range(len(SLOTS)))
-_LETTERS = "ABCDEFGH"
 
 #: Only the three value types are re-exported from :mod:`pyquadcortex`; a caller
 #: holds those. The conversions are the seam's own business and are reached as
@@ -70,24 +71,44 @@ __all__ = [
 ]
 
 
-def _screen_number(value, what: str, allowed: tuple) -> int:
-    """Check one screen coordinate before it is converted.
+def _a_whole_number(value, what: str) -> int:
+    """A plain ``int``, and nothing that is merely spelled like one.
 
-    ``bool`` is refused explicitly because it is a subclass of ``int`` and
-    ``True == 1``: an unguarded check converts ``True`` to the first row or slot
-    and edits it, which is exactly the silent wrong answer this module exists to
-    prevent. A float is refused for the same reason in slower motion - ``1.0``
-    means the caller is computing coordinates in a type that rounds.
+    Three things are refused here, and each one is a silent wrong answer rather
+    than a crash if it gets through:
+
+    * ``bool``, because it subclasses ``int`` and ``True == 1``, so an unguarded
+      check converts ``True`` to the first row or slot and edits it.
+    * a ``float``, because ``1.0`` means the caller is computing coordinates in
+      a type that rounds, and 218.9 becoming preset 218 recalls a real preset.
+    * any :class:`enum.Enum`, because the protocol layer's coordinate enums are
+      ``IntEnum``: :class:`~pyquadcortex.protocol.enums.Scene` ``B`` is 1, and
+      handing it to a row converter otherwise produces row 2 without complaint.
+      That is the footswitch-versus-column confusion in another costume. The two
+      wire-index converters that legitimately take one of those enums unwrap it
+      themselves, so only the RIGHT enum gets through.
     """
+    if isinstance(value, enum.Enum):
+        raise TypeError(
+            f"{what} must be a plain int; {value!r} is a {type(value).__name__}, "
+            f"which numbers something else"
+        )
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(
             f"{what} must be an int, not {type(value).__name__} ({value!r})"
         )
+    return value
+
+
+def _screen_number(value, what: str, allowed: tuple) -> int:
+    """One screen coordinate, checked against the values the unit shows."""
+    _a_whole_number(value, what)
     if value not in allowed:
-        raise ValueError(
-            f"{what} must be {allowed[0]} to {allowed[-1]} - the unit shows "
-            f"{len(allowed)} of them; got {value}"
-        )
+        contiguous = allowed[-1] - allowed[0] + 1 == len(allowed)
+        span = (f"{allowed[0]} to {allowed[-1]}" if contiguous
+                else f"one of {list(allowed)}")
+        raise ValueError(f"{what} must be {span} - the unit has "
+                         f"{len(allowed)} of them; got {value}")
     return value
 
 
@@ -179,9 +200,19 @@ def _letter(value, kind: type, what: str, trap: str):
     A number is refused rather than converted even though the wire is numeric.
     ``trap`` names what that number would more likely have been - the mistake the
     letter types exist to make impossible.
+
+    The OTHER letter type is refused too. :class:`SceneLetter` and
+    :class:`FootswitchLetter` are both ``StrEnum`` over A to H, so each is a
+    plain string as far as any check goes, and scene E reaching a footswitch API
+    is the same wrong-thing-right-shape mistake as passing the number 4.
     """
     if isinstance(value, kind):
         return value
+    if isinstance(value, enum.Enum):
+        raise TypeError(
+            f"{what} is a {kind.__name__}; {value!r} is a "
+            f"{type(value).__name__}, which labels something else"
+        )
     if isinstance(value, bool) or isinstance(value, (int, float)):
         raise TypeError(
             f"{what} is a letter A to H, not the number {value!r} - the model "
@@ -212,9 +243,20 @@ def footswitch_to_wire(footswitch) -> protocol.Footswitch:
 
 
 def footswitch_from_wire(index) -> FootswitchLetter:
-    """The wire's footswitch index (0-7) as the letter the unit labels it with."""
-    return FootswitchLetter(
-        _LETTERS[_screen_number(index, "a wire footswitch index", _WIRE_COLUMNS)])
+    """The wire's footswitch index (0-7) as the letter the unit labels it with.
+
+    Takes a plain int or a :class:`~pyquadcortex.protocol.enums.Footswitch`. A
+    :class:`~pyquadcortex.protocol.enums.Scene` is refused even though it is an
+    ``IntEnum`` over the same eight numbers, because a scene index arriving here
+    means something upstream mixed up two things the unit keeps apart.
+
+    The letter comes from the protocol enum's own member name rather than a
+    second copy of the alphabet, so the two layers cannot disagree about which
+    index is which switch.
+    """
+    if not isinstance(index, protocol.Footswitch):
+        _a_whole_number(index, "a wire footswitch index")
+    return FootswitchLetter(protocol.Footswitch(index).name)
 
 
 def scene_to_wire(scene) -> protocol.Scene:
@@ -229,9 +271,14 @@ def scene_to_wire(scene) -> protocol.Scene:
 
 
 def scene_from_wire(index) -> SceneLetter:
-    """The wire's scene index (0-7) as the letter the unit labels it with."""
-    return SceneLetter(
-        _LETTERS[_screen_number(index, "a wire scene index", _WIRE_COLUMNS)])
+    """The wire's scene index (0-7) as the letter the unit labels it with.
+
+    Takes a plain int or a :class:`~pyquadcortex.protocol.enums.Scene`, and
+    refuses a footswitch index for the reason in :func:`footswitch_from_wire`.
+    """
+    if not isinstance(index, protocol.Scene):
+        _a_whole_number(index, "a wire scene index")
+    return SceneLetter(protocol.Scene(index).name)
 
 
 # -- preset addresses: "28C" on screen, a linear position on the wire -------
@@ -254,6 +301,10 @@ def slot_to_position(name: str) -> int:
     ("01A") is accepted; :func:`position_to_slot` renders unpadded by default,
     because that is what the unit displays.
     """
+    if not isinstance(name, str):
+        raise TypeError(
+            f"a slot name is text like '28C', not {type(name).__name__} "
+            f"({name!r})")
     return protocol.slot_to_position(name)
 
 
@@ -266,8 +317,13 @@ def position_to_slot(position: int, pad: bool = False) -> str:
 
     Unpadded by default ("1A"), which is what the unit displays; ``pad=True``
     gives "01A".
+
+    A whole number only. The protocol helper takes ``int(position)``, so 218.9
+    would quietly become 218 and ``True`` would become 1 - and unlike a bad row,
+    a bad position names a real preset that recalls without complaint.
     """
-    return protocol.position_to_slot(position, pad=pad)
+    return protocol.position_to_slot(
+        _a_whole_number(position, "a wire preset position"), pad=pad)
 
 
 @dataclass(frozen=True)
@@ -289,10 +345,7 @@ class PresetAddress:
     position: str
 
     def __post_init__(self):
-        if isinstance(self.bank, bool) or not isinstance(self.bank, int):
-            raise TypeError(
-                f"a bank is a number, not {type(self.bank).__name__} "
-                f"({self.bank!r})")
+        _a_whole_number(self.bank, "a bank")
         if not isinstance(self.position, str):
             raise TypeError(
                 f"a position is a letter A to H, not "
@@ -319,7 +372,10 @@ class PresetAddress:
             raise TypeError(
                 f"a preset address is text like '28C', not "
                 f"{type(text).__name__} ({text!r})")
-        match = re.fullmatch(r"\s*(\d+)\s*([A-Za-z])\s*", text)
+        # ASCII digits only, and nothing between the bank and the letter.
+        # Python's `\d` spans every Unicode digit, so an unrestricted pattern
+        # read "٢٨C" as bank 28.
+        match = re.fullmatch(r"\s*([0-9]+)([A-Za-z])\s*", text)
         if not match:
             raise ValueError(
                 f"a preset address is a bank number and a letter A to H, like "
@@ -338,10 +394,17 @@ class PresetAddress:
 
 # -- display units ----------------------------------------------------------
 #
-# Each mapping below was measured on hardware and is documented at the protocol
-# layer, on the helper that performs it. The model delegates rather than
-# restating the arithmetic: two copies of a measured scale drift, and the drift
-# is invisible because both copies still return a plausible number.
+# Every mapping below was measured on hardware and is written up at the protocol
+# layer. Two of the four - the level scales - have a protocol helper that
+# performs the conversion, and this module calls it rather than restating the
+# arithmetic: two copies of a measured scale drift, and both copies go on
+# returning a plausible number. The other two have no helper to call. The tuner
+# has only a documented rule, and hold timing has the protocol layer's constant
+# tuple, which is the part worth sharing. Both are pinned in
+# tests/test_translation.py against what the protocol WRITE method expects.
+#
+# What this module adds either way is the type guard, because the protocol
+# helpers are arithmetic and will happily multiply a bool.
 
 
 def input_level_db(level: float) -> float:
@@ -352,8 +415,14 @@ def input_level_db(level: float) -> float:
 
     An input port and a lane are both a 0..1 wire value and they are NOT the
     same scale - see :func:`lane_level_db`.
+
+    A level outside 0..1 is converted rather than refused, unlike
+    :func:`hold_timing_ms`, which refuses an index outside its six. The
+    difference is that an out-of-span level still has a meaning under a linear
+    scale - it is off the end of the knob - while an index outside its list
+    names nothing at all. Neither has been seen from a unit.
     """
-    return protocol.input_level_db(level)
+    return protocol.input_level_db(_a_number(level, "an input level"))
 
 
 def db_to_input_level(db: float) -> float:
@@ -362,7 +431,7 @@ def db_to_input_level(db: float) -> float:
     Refuses anything outside -12..+60 dB rather than clamping, because a clamped
     write lands and reads back as a value the caller never asked for.
     """
-    return protocol.db_to_input_level(db)
+    return protocol.db_to_input_level(_a_number(db, "an input gain in dB"))
 
 
 def lane_level_db(value: float) -> float:
@@ -375,16 +444,21 @@ def lane_level_db(value: float) -> float:
     screen and -39.5 dB (wire 0.01) is the lowest numeric step. This converts the
     scale; it does not model the Off position.
     """
-    return protocol.lane_level_db(value)
+    return protocol.lane_level_db(_a_number(value, "a lane level"))
 
 
 def db_to_lane_level(db: float) -> float:
     """Displayed dB as the wire value a lane, mixer or splitter LEVEL takes.
 
-    Refuses anything outside -40..+12 dB. For silence write the wire's 0.0
-    directly - the Off position - rather than converting a dB value.
+    Refuses anything outside -40..+12 dB.
+
+    **-40.0 dB is silence, not the bottom of the knob.** It converts to wire
+    0.0, which is the Off detent: the lowest NUMERIC step on the unit is -39.5
+    dB, and the screen reads "Off" below it. So asking for -40 dB mutes the
+    lane, and anything between -40.0 and -39.5 is a reading the screen has no
+    way to show. For silence, write the wire's 0.0 directly and mean it.
     """
-    return protocol.db_to_lane_level(db)
+    return protocol.db_to_lane_level(_a_number(db, "a lane level in dB"))
 
 
 def tuner_reference_hz(offset: float) -> float:
@@ -423,8 +497,8 @@ def hold_timing_ms(index: int) -> int:
     rounded to the nearest real setting.
     """
     choices = protocol.QuadCortex.HOLD_TIMING_MS
-    if isinstance(index, bool) or not isinstance(index, int) \
-            or not 0 <= index < len(choices):
+    _a_whole_number(index, "a wire hold-timing index")
+    if not 0 <= index < len(choices):
         raise ValueError(
             f"hold timing reads {index!r}, which is outside the "
             f"{len(choices)} values the unit offers - something wrote an "
@@ -437,14 +511,16 @@ def ms_to_hold_timing(milliseconds: int) -> int:
     """Milliseconds as the ``hold_timing`` index the wire carries.
 
     Only the six values the unit offers convert. Anything else is refused rather
-    than rounded, because the device would store it and no gesture would match
-    it.
+    than rounded, and that is meant literally: 500.9 ms is not 500 ms, and
+    ``"500"`` is not a number. The protocol layer's setter takes
+    ``int(milliseconds)`` and so accepts both, which is the behaviour this
+    docstring would otherwise be describing wrongly.
     """
     choices = protocol.QuadCortex.HOLD_TIMING_MS
-    try:
-        return choices.index(int(milliseconds))
-    except (ValueError, TypeError):
+    _a_whole_number(milliseconds, "hold timing in ms")
+    if milliseconds not in choices:
         raise ValueError(
             f"hold timing must be one of {list(choices)} ms, "
             f"not {milliseconds!r}"
-        ) from None
+        )
+    return choices.index(milliseconds)

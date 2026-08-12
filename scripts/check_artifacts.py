@@ -26,6 +26,7 @@ REQUIRED = (
     "pyquadcortex/protocol/cli.py",
     "pyquadcortex/protocol/client.py",
     "pyquadcortex/device/device.py",
+    "pyquadcortex/device/translate.py",
     "pyquadcortex/_version.py",
 )
 

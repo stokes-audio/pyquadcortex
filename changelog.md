@@ -85,13 +85,15 @@ To use both layers in one script, wrap a connection you already have with
 `Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
 your connection open.
 
-### The model talks in the numbers on your screen
+### Groundwork: the model will talk in the numbers on your screen
 
-Rows are 1 to 4, slots are 1 to 8, scenes and footswitches are letters, and levels
-are the dB the unit displays. The wire counts from zero and stores raw scales, and
-the model converts in exactly one place so nothing else has to remember to.
+Rows will be 1 to 4, slots 1 to 8, scenes and footswitches letters, and levels the
+dB the unit displays. The wire counts from zero and stores raw scales, and the
+model now converts in exactly one place so nothing else has to remember to.
 
-Three value types come with it, exported from `pyquadcortex`:
+**Nothing that reads a row or a level exists yet** - the preset and grid surfaces
+are still being built - so what you can use today is the three value types this
+groundwork brought with it, exported from `pyquadcortex`:
 
 ```python
 from pyquadcortex import PresetAddress, FootswitchLetter, SceneLetter
@@ -107,9 +109,8 @@ bug hid for months: a block in column 3 assigned to footswitch E is stored under
 key 4. No model API takes a bare footswitch number, so a column cannot be passed
 where a footswitch belongs.
 
-There is nothing handing out preset addresses yet - the Directory is still being
-built - so today these are useful mostly for validating an address before you use
-it with the protocol layer.
+Until the Directory arrives, `PresetAddress` is most useful for checking an
+address before you hand it to the protocol layer.
 
 ### Withdrawn: the Tempo menu's MODE is "not on the wire"
 

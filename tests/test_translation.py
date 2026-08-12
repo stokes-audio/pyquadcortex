@@ -13,11 +13,14 @@ model package's source and prove no other module does the arithmetic or reaches
 past the boundary for a protocol helper that does.
 """
 import ast
+import importlib
 import pathlib
+import pkgutil
 
 import pytest
 
-from pyquadcortex import device, protocol
+import pyquadcortex
+from pyquadcortex import protocol
 from pyquadcortex.device import translate
 
 
@@ -78,6 +81,48 @@ def test_a_wire_column_outside_the_row_is_refused(column):
 def test_a_bool_is_not_a_slot():
     with pytest.raises(TypeError):
         translate.slot_to_wire(True)
+
+
+# -- one index is never another index ----------------------------------------
+#
+# The protocol layer's coordinate enums are IntEnums, so each one is an int and
+# passes any `isinstance(x, int)` check. Scene B is 1 and row 2 is wire 1, which
+# means a Scene handed to a row converter produces a real row rather than a
+# complaint. That is the same class of mistake as the footswitch-versus-column
+# confusion this module exists to prevent, so it is refused the same way.
+
+
+@pytest.mark.parametrize("converter,wrong", [
+    ("row_to_wire", protocol.Scene.B),
+    ("slot_to_wire", protocol.Footswitch.C),
+    ("row_from_wire", protocol.Footswitch.A),
+    ("slot_from_wire", protocol.Scene.H),
+])
+def test_a_coordinate_from_somewhere_else_is_refused(converter, wrong):
+    with pytest.raises(TypeError):
+        getattr(translate, converter)(wrong)
+
+
+def test_a_scene_index_is_not_a_footswitch_index():
+    with pytest.raises(TypeError):
+        translate.footswitch_from_wire(protocol.Scene.E)
+
+
+def test_a_footswitch_index_is_not_a_scene_index():
+    with pytest.raises(TypeError):
+        translate.scene_from_wire(protocol.Footswitch.E)
+
+
+def test_a_scene_letter_is_not_a_footswitch():
+    """Both are letters A to H and both are strings, so nothing but the type
+    itself keeps `scenes["E"]`'s key out of a footswitch API."""
+    with pytest.raises(TypeError):
+        translate.footswitch_to_wire(translate.SceneLetter.E)
+
+
+def test_a_footswitch_letter_is_not_a_scene():
+    with pytest.raises(TypeError):
+        translate.scene_to_wire(translate.FootswitchLetter.B)
 
 
 # -- footswitches: letters in the model, indexes on the wire -----------------
@@ -239,6 +284,31 @@ def test_a_wire_position_outside_a_setlist_is_refused(position):
         translate.PresetAddress.from_wire(position)
 
 
+@pytest.mark.parametrize("position", [218.9, True, "218", None])
+def test_a_wire_position_that_is_not_a_whole_number_is_refused(position):
+    """The protocol helper takes `int(position)`, so 218.9 quietly becomes 218
+    and True becomes 1. Every other coordinate path here refuses a float and a
+    bool; this is the path where the wrong answer recalls a real preset."""
+    with pytest.raises(TypeError):
+        translate.position_to_slot(position)
+    with pytest.raises(TypeError):
+        translate.PresetAddress.from_wire(position)
+
+
+@pytest.mark.parametrize("name", [218, None, ["28C"]])
+def test_a_slot_name_that_is_not_text_is_refused(name):
+    with pytest.raises(TypeError):
+        translate.slot_to_position(name)
+
+
+@pytest.mark.parametrize("malformed", ["28 C", "٢٨C", "2 8C"])
+def test_an_address_with_stray_characters_is_refused(malformed):
+    """Internal whitespace and non-ASCII digits both parsed before: Python's
+    `\\d` spans every Unicode digit, so "٢٨C" read as bank 28."""
+    with pytest.raises(ValueError):
+        translate.PresetAddress.parse(malformed)
+
+
 def test_the_address_conversion_says_the_naming_depends_on_the_mode():
     """An address is only unambiguous alongside the mode it was read in: linear
     position 5 reads "1F" normally and "2B" under a PRESET-containing HYBRID.
@@ -251,10 +321,26 @@ def test_the_address_conversion_says_the_naming_depends_on_the_mode():
 
 # -- display units -----------------------------------------------------------
 #
-# Each of these has a protocol-layer helper that already carries the measurement
-# and its evidence. The model must not restate the arithmetic, so these tests
-# check the boundary against that helper rather than against a number retyped
-# here - a retyped constant agrees with itself forever.
+# **What the equality assertions below do and do not prove.** Two of these four
+# mappings delegate to a protocol-layer helper, so `translate.input_level_db(v)
+# == protocol.input_level_db(v)` cannot fail today - it is one function calling
+# the other. It is not a check on the arithmetic, and it is not a substitute for
+# one. What it pins is that the boundary goes on DELEGATING: the day someone
+# copies the formula in here to add a clamp or a rounding rule, this is what
+# fails.
+#
+# The measured numbers themselves are pinned where the measurement lives, in
+# tests/test_client.py: `test_input_level_db_matches_the_four_measured_points`
+# and `test_lane_level_db_matches_the_three_measured_points` check the screen
+# readings taken against simultaneous wire reads. Nothing here restates them,
+# because a second copy of a measured constant drifts and both copies keep
+# returning a plausible number.
+#
+# The other two mappings - the tuner and hold timing - have no protocol helper
+# to call, only a documented rule and a shared constant, so they are pinned
+# below against the protocol WRITE path through a fake transport. That is a real
+# check: it fails if the model's idea of 442 Hz stops matching what the method
+# that sends it expects.
 
 
 class Recorder:
@@ -315,6 +401,17 @@ def test_unity_on_a_lane_level_is_zero_db():
 def test_a_lane_level_the_unit_has_no_setting_for_is_refused(db):
     with pytest.raises(ValueError, match="-40"):
         translate.db_to_lane_level(db)
+
+
+@pytest.mark.parametrize("converter", ["input_level_db", "db_to_input_level",
+                                       "lane_level_db", "db_to_lane_level"])
+@pytest.mark.parametrize("wrong", [True, "0.5", None])
+def test_a_level_that_is_not_a_number_is_refused(converter, wrong):
+    """`True` is an int, so an unguarded lane level read it as full scale and
+    returned +12 dB. A string reached the protocol layer and came back as a
+    `TypeError` about multiplying a sequence."""
+    with pytest.raises(TypeError):
+        getattr(translate, converter)(wrong)
 
 
 def test_the_two_level_scales_are_not_interchangeable():
@@ -379,39 +476,96 @@ def test_a_hold_timing_index_the_unit_cannot_have_written_is_refused(index):
         translate.hold_timing_ms(index)
 
 
+@pytest.mark.parametrize("ms", [500.9, 800.0, "500", True])
+def test_a_hold_timing_that_is_not_a_whole_number_of_ms_is_refused(ms):
+    """`int(milliseconds)` rounded 500.9 down to a valid setting and read "500"
+    as a number, which is not what "refused rather than rounded" means."""
+    with pytest.raises(TypeError):
+        translate.ms_to_hold_timing(ms)
+
+
+@pytest.mark.parametrize("index", ["3", 3.0, True])
+def test_a_hold_timing_index_that_is_not_a_whole_number_is_refused(index):
+    """A wrong TYPE raises TypeError here, as it does everywhere else in this
+    module; a wrong VALUE raises ValueError. This one used to raise ValueError
+    for both."""
+    with pytest.raises(TypeError):
+        translate.hold_timing_ms(index)
+
+
 # -- the boundary is the ONLY place -----------------------------------------
 #
 # Everything above proves the conversions are right. These two prove they are
 # the only ones, which is the half a reviewer cannot check by reading a diff:
 # a stray `- 1` in a future module is one character, looks deliberate, and
 # produces an edit that lands on a real row and reads back perfectly.
+#
+# The scan covers EVERY source file in the package that is not the protocol
+# layer, not just the model directory. Scoping it to `device/` would leave the
+# rule satisfiable by putting the arithmetic in `pyquadcortex/coords.py`, one
+# directory up - which is where somebody would put it after reading a failure
+# message that named a directory.
 
 BOUNDARY = pathlib.Path(translate.__file__).resolve()
-MODEL_SOURCES = sorted(
-    p for p in pathlib.Path(device.__file__).resolve().parent.rglob("*.py"))
+PACKAGE_ROOT = pathlib.Path(pyquadcortex.__file__).resolve().parent
+PROTOCOL_ROOT = pathlib.Path(protocol.__file__).resolve().parent
+MODEL_SOURCES = sorted(p for p in PACKAGE_ROOT.rglob("*.py")
+                       if not p.is_relative_to(PROTOCOL_ROOT))
 OTHER_MODEL_SOURCES = [p for p in MODEL_SOURCES if p != BOUNDARY]
 
 
-def _off_by_one_arithmetic(tree: ast.AST) -> list[int]:
-    """Line numbers of every `x + 1` / `x - 1` / `x += 1` in `tree`.
+def _index_arithmetic(tree: ast.AST) -> list[str]:
+    """Every spelling of index arithmetic in `tree`, as "line N: what".
 
-    Blunt on purpose. A rule that only fired on operands spelled `row` or `slot`
-    would miss `n - 1`, and `n` is what the arithmetic is called by the time
-    someone has extracted a helper for it.
+    Blunt on purpose, and wider than `+ 1`. A rule that only fired on operands
+    spelled `row` or `slot` would miss `n - 1`, and `n` is what the arithmetic
+    is called by the time somebody has extracted a helper for it. The calls
+    listed here are how a person actually writes the conversions this module
+    owns: `ord`/`chr` or a letter table for a scene or footswitch letter,
+    `divmod` for a preset address.
     """
-    def is_one(node) -> bool:
+    def one(node) -> bool:
+        """A literal one, however spelled: 1, 1.0, or True - which equals 1."""
         return (isinstance(node, ast.Constant)
-                and type(node.value) is int and node.value == 1)
+                and isinstance(node.value, (int, float))
+                and not isinstance(node.value, str)
+                and node.value == 1)
 
-    hits = []
+    def offset(node) -> bool:
+        return one(node) or (isinstance(node, ast.UnaryOp)
+                             and isinstance(node.op, ast.USub)
+                             and one(node.operand))
+
+    def letter_table(node) -> bool:
+        """A string literal that is a run of the letters the unit labels with."""
+        return (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and len(node.value) >= 3 and "ABCDEFGH".startswith(node.value))
+
+    def called(node):
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        return node.func.attr if isinstance(node.func, ast.Attribute) else None
+
+    found = []
     for node in ast.walk(tree):
+        where = f"line {getattr(node, 'lineno', 0)}"
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
-            if is_one(node.left) or is_one(node.right):
-                hits.append(node.lineno)
+            if offset(node.left) or offset(node.right):
+                found.append(f"{where}: adds or subtracts one")
         elif isinstance(node, ast.AugAssign) \
-                and isinstance(node.op, (ast.Add, ast.Sub)) and is_one(node.value):
-            hits.append(node.lineno)
-    return sorted(set(hits))
+                and isinstance(node.op, (ast.Add, ast.Sub)) and offset(node.value):
+            found.append(f"{where}: adds or subtracts one")
+        elif isinstance(node, ast.Call):
+            name = called(node)
+            if name in ("ord", "chr"):
+                found.append(f"{where}: {name}() - letter arithmetic")
+            elif name == "divmod":
+                found.append(f"{where}: divmod() - splitting a linear position")
+            elif name == "enumerate" and len(node.args) > 1:
+                found.append(f"{where}: enumerate() with a start offset")
+        elif letter_table(node):
+            found.append(f"{where}: a letter table, {node.value!r}")
+    return sorted(set(found))
 
 
 #: Protocol-layer names that carry a coordinate or a raw scale. Reaching for one
@@ -429,15 +583,40 @@ def _protocol_conversions_used(tree: ast.AST) -> list[str]:
     Only through the protocol layer: `translate.slot_to_position(...)` is the
     boundary doing its job and must not be reported, so a bare attribute name is
     not enough to accuse on.
+
+    Which local names MEAN the protocol layer is worked out first, because the
+    spellings that reach it are not all `protocol.`: a module can alias the
+    package, import a submodule of it, or reach through two attributes at once
+    (`protocol.QuadCortex.HOLD_TIMING_MS`). Each of those was a hole in the
+    first version of this check, and each is one a person would write without
+    any idea they were evading anything.
     """
-    def is_the_protocol_layer(node) -> bool:
-        return ((isinstance(node, ast.Name) and node.id == "protocol")
-                or (isinstance(node, ast.Attribute) and node.attr == "protocol"))
+    # `protocol` is seeded because the house style is
+    # `from pyquadcortex import protocol`, and a module using that name without
+    # the import in the same snippet is the ordinary case in a sample below.
+    aliases = {"pyquadcortex", "protocol"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("pyquadcortex"):
+                    aliases.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module == "pyquadcortex" or module.startswith("pyquadcortex.protocol"):
+                for alias in node.names:
+                    if module != "pyquadcortex" or alias.name == "protocol":
+                        aliases.add(alias.asname or alias.name)
+
+    def root_of(node):
+        """The leftmost name in an attribute chain, or None."""
+        while isinstance(node, ast.Attribute):
+            node = node.value
+        return node.id if isinstance(node, ast.Name) else None
 
     found = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr in PROTOCOL_CONVERSIONS \
-                and is_the_protocol_layer(node.value):
+                and root_of(node.value) in aliases:
             found.append(node.attr)
         elif isinstance(node, ast.ImportFrom) \
                 and (node.module or "").startswith("pyquadcortex.protocol"):
@@ -445,28 +624,41 @@ def _protocol_conversions_used(tree: ast.AST) -> list[str]:
     return sorted(set(found))
 
 
-def test_the_source_walk_found_the_model_package():
-    """Guards both checks below: an empty list passes them vacuously."""
+def test_the_scan_covers_every_module_that_is_not_the_protocol_layer():
+    """Guards both checks below. An empty list passes them vacuously, and a
+    scan that skipped a module enforces nothing in it.
+
+    Checked against the import machinery's own walk, so a module added tomorrow
+    is covered the day it is created rather than the day somebody remembers to
+    add it here.
+    """
     assert BOUNDARY in MODEL_SOURCES
     assert len(OTHER_MODEL_SOURCES) >= 2
+    walked = {
+        pathlib.Path(importlib.import_module(info.name).__file__).resolve()
+        for info in pkgutil.walk_packages(pyquadcortex.__path__, "pyquadcortex.")
+        if not info.name.startswith("pyquadcortex.protocol")
+    }
+    missed = sorted(str(p) for p in walked - set(MODEL_SOURCES))
+    assert not missed, f"the scan does not cover {missed}"
 
 
 def test_the_boundary_itself_does_the_arithmetic():
     """The exclusion below has to be load-bearing. If the boundary stopped
     converting, the check would pass because nothing anywhere converts - which
     is the one failure a "no arithmetic elsewhere" test cannot see."""
-    hits = _off_by_one_arithmetic(ast.parse(BOUNDARY.read_text()))
-    assert hits, f"{BOUNDARY.name} does no +1/-1 arithmetic at all"
+    found = _index_arithmetic(ast.parse(BOUNDARY.read_text()))
+    assert found, f"{BOUNDARY.name} does no index arithmetic at all"
 
 
 @pytest.mark.parametrize("source", OTHER_MODEL_SOURCES, ids=lambda p: p.name)
 def test_no_index_arithmetic_outside_the_boundary(source):
-    hits = _off_by_one_arithmetic(ast.parse(source.read_text()))
-    assert not hits, (
-        f"{source.name} does +1/-1 arithmetic at line(s) {hits}. If that is a "
-        f"screen coordinate becoming a wire index, it belongs in "
-        f"{BOUNDARY.name} with a test - an off-by-one here edits a real row, "
-        f"just not the one intended, and reads back perfectly"
+    found = _index_arithmetic(ast.parse(source.read_text()))
+    assert not found, (
+        f"{source.name} does index arithmetic - {found}. If that is a screen "
+        f"value becoming a wire value it belongs in {BOUNDARY.name} with a "
+        f"test, wherever in the package the file sits - an off-by-one here "
+        f"edits a real row, just not the one intended, and reads back perfectly"
     )
 
 
@@ -487,9 +679,21 @@ ARITHMETIC_SAMPLES = [
     ("one on the left", "column = 1 - offset", True),
     ("hidden in a call", "qc.set_param(row=row - 1, column=slot - 1)", True),
     ("a comprehension", "[s - 1 for s in slots]", True),
+    ("a negated one", "wire_row = row + -1", True),
+    ("a float one", "wire_row = row - 1.0", True),
+    ("a bool one", "wire_row = row - True", True),
+    ("a letter from an index", "letter = chr(ord('A') + index)", True),
+    ("an index from a letter", "index = ord(letter) - ord('A')", True),
+    ("a letter table lookup", "letter = 'ABCDEFGH'[index]", True),
+    ("a letter table search", "index = 'ABCDEFGH'.index(letter)", True),
+    ("a letter table under any name", "LETTERS = 'ABCDEFGH'", True),
+    ("splitting a linear position", "bank, letter = divmod(position, 8)", True),
+    ("a one-based enumerate", "[(n, r) for n, r in enumerate(rows, 1)]", True),
     ("the boundary doing it", "wire_row = translate.row_to_wire(row)", False),
     ("arithmetic that is not off-by-one", "total = a + 2", False),
-    ("a true that is not a one", "flag = other + True", False),
+    ("a plain enumerate", "[(i, r) for i, r in enumerate(rows)]", False),
+    ("a string that is not a letter table", "name = 'ABY Splitter'", False),
+    ("an ordinary attribute", "name = block.device.name", False),
 ]
 
 
@@ -497,8 +701,16 @@ ARITHMETIC_SAMPLES = [
                          ids=[s[0] for s in ARITHMETIC_SAMPLES])
 def test_the_arithmetic_check_sees_what_it_claims_to(label, source, detected):
     """A check with blind spots enforces the rule only for the spellings
-    somebody happened to think of."""
-    assert bool(_off_by_one_arithmetic(ast.parse(source))) is detected
+    somebody happened to think of, while reading as though it enforced all of
+    them.
+
+    The samples that earn their place are the ones the first version of this
+    check missed: letter arithmetic, a letter table, `divmod` on a preset
+    position, and the three ways of writing one that are not the token `1`.
+    None of those is exotic. They are how the conversions this module owns get
+    written by somebody writing them somewhere else.
+    """
+    assert bool(_index_arithmetic(ast.parse(source))) is detected
 
 
 CONVERSION_SAMPLES = [
@@ -506,9 +718,19 @@ CONVERSION_SAMPLES = [
     ("through the package", "x = pyquadcortex.protocol.lane_level_db(v)", True),
     ("an import", "from pyquadcortex.protocol import slot_to_position", True),
     ("a module import", "from pyquadcortex.protocol.client import UNITY_LEVEL", True),
+    ("two attributes deep", "x = protocol.QuadCortex.HOLD_TIMING_MS", True),
+    ("an aliased package",
+     "from pyquadcortex import protocol as p\nx = p.Footswitch.A", True),
+    ("an imported submodule",
+     "from pyquadcortex.protocol import client\nx = client.lane_level_db(v)", True),
+    ("an aliased submodule",
+     "from pyquadcortex.protocol import client as c\nx = c.UNITY_LEVEL", True),
+    ("a plain import",
+     "import pyquadcortex.protocol\nx = pyquadcortex.protocol.Scene.A", True),
     ("the boundary's own name", "x = translate.slot_to_position(name)", False),
     ("a protocol name that is not a conversion",
      "x = protocol.field_present(reply, 'serial')", False),
+    ("something else entirely, named the same", "x = self.grid.Scene.A", False),
 ]
 
 
@@ -516,6 +738,8 @@ CONVERSION_SAMPLES = [
                          ids=[s[0] for s in CONVERSION_SAMPLES])
 def test_the_reach_past_the_boundary_check_sees_what_it_claims_to(label, source,
                                                                   detected):
+    """Same standard as the arithmetic samples: the entries worth having are
+    the spellings the first version of this check could not see."""
     assert bool(_protocol_conversions_used(ast.parse(source))) is detected
 
 
