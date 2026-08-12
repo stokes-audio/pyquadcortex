@@ -444,6 +444,14 @@ def test_the_tuner_reference_refuses_something_that_is_not_a_pitch():
         translate.hz_to_tuner_reference("442")
 
 
+def test_the_tuner_reference_is_not_rounded_to_a_precision_nobody_has_read():
+    """The wire value the unit sent for a screen reading of 442 was
+    1.99999809, so this returns 441.99999809. Rounding it to 442 would mean
+    knowing how many digits the FREQ field shows, and nobody has read that off
+    the unit."""
+    assert translate.tuner_reference_hz(1.99999809) == pytest.approx(441.99999809)
+
+
 # -- hold timing: milliseconds on screen, one of six indexes on the wire ------
 
 

@@ -475,6 +475,11 @@ def tuner_reference_hz(offset: float) -> float:
     (see :meth:`pyquadcortex.protocol.QuadCortex.set_tuner_reference`). No range
     is enforced for the same reason: the unit's FREQ limits have not been read,
     and a limit invented here would refuse a setting the unit allows.
+
+    Nothing is rounded either, so the wire's 1.99999809 reads back as
+    441.99999809 rather than the 442 on the screen. How many digits the unit's
+    FREQ field shows has not been read off it, and rounding to a precision
+    nobody has checked would be the same guess in the other direction.
     """
     return CONCERT_A_HZ + _a_number(offset, "a tuner reference offset")
 
