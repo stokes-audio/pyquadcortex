@@ -85,6 +85,52 @@ To use both layers in one script, wrap a connection you already have with
 `Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
 your connection open.
 
+### New: listen to everything the unit sends
+
+The unit talks without being asked. Turn a knob on its touchscreen, recall a
+preset, let the metronome run, and it pushes messages about it. Until now those
+messages were only reachable if you happened to be waiting for that exact one,
+and anything else was dropped. `add_listener` hands you all of them:
+
+```python
+from pyquadcortex import protocol
+
+def watch(message):
+    print(type(message).__name__)
+
+with protocol.connect() as qc:
+    stop = qc.add_listener(watch)
+    ...
+    stop()                     # or qc.remove_listener(watch)
+```
+
+Your function is called for every message, and it takes nothing away from the
+rest of the library: a call that was waiting for a reply still gets it.
+
+Two rules, because your function runs on the thread that reads from the USB
+device:
+
+- **Do not block in it.** Whatever it does delays the next message being read.
+- **Do not read from the device in it.** That thread is the one that would have to
+  deliver the answer, so the call could never be answered - and the connection
+  would stall behind it for as long as it waited. Rather than let that happen, the
+  library raises `RuntimeError` if you try. Note what you need and read it from
+  your own thread.
+- **Treat the message as read-only.** It is the same object the rest of the
+  library sees, not a copy.
+
+To hear the burst of state the unit sends when a client connects - nearly
+everything it knows, including the preset currently loaded - register before the
+handshake, because it arrives seconds after `connect()` returns:
+
+```python
+with protocol.connect(before_handshake=lambda t: t.add_listener(watch)) as qc:
+    ...
+```
+
+The decision behind the two rules is ADR-0009. This is the groundwork for the
+model keeping itself current without asking twice.
+
 ### Withdrawn: the Tempo menu's MODE is "not on the wire"
 
 The 0.23.0 entry below records, under **Settled**, that the Tempo menu's MODE
