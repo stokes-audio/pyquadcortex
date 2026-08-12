@@ -36,16 +36,28 @@ fi
 
 # Every generated file carries the version of the generator that wrote it:
 #   # Protobuf Python Version: 7.35.1
+# Both helpers below are single awk processes on purpose. The obvious spellings
+# pipe into `head -1`, and under `set -o pipefail` a producer that gets SIGPIPE
+# when head exits early fails the whole pipeline - which, inside `$(...)`, comes
+# back as an empty string and reads as "not older". A gate that fails open is
+# worse than no gate.
 gencode_of() {
   [ -f "$1" ] || return 0
-  sed -n 's/^# Protobuf Python Version: *//p' "$1" | head -1
+  awk '/^# Protobuf Python Version: /{print $NF; exit}' "$1"
 }
 
-# 0 when $1 is strictly older than $2. Numeric field sort rather than sort -V,
-# which is not in every POSIX sort.
+# 0 when $1 is strictly older than $2, comparing dot-separated fields
+# numerically. Absent fields count as 0, so 7.35 is older than 7.35.1.
 older_than() {
-  [ "$1" = "$2" ] && return 1
-  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | head -1)" = "$1" ]
+  awk -v a="$1" -v b="$2" 'BEGIN {
+    fields = split(a, left, ".")
+    if (split(b, right, ".") > fields) fields = split(b, right, ".")
+    for (i = 1; i <= fields; i++) {
+      if (left[i] + 0 < right[i] + 0) exit 0
+      if (left[i] + 0 > right[i] + 0) exit 1
+    }
+    exit 1
+  }'
 }
 
 # THE GATE. protobuf only validates `runtime >= gencode`, so bindings written by

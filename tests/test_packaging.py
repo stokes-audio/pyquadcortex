@@ -108,7 +108,9 @@ def _committed_gencode() -> dict[str, str]:
 def _protobuf_pin() -> str:
     """The `protobuf` requirement string from pyproject's runtime deps."""
     for requirement in PYPROJECT["project"]["dependencies"]:
-        if re.match(r"protobuf\b", requirement):
+        # Anchored on a version operator, not a word boundary: `protobuf-stubs`
+        # is a real package name and `protobuf\b` would happily match it.
+        if re.match(r"protobuf\s*[<>=!~]", requirement):
             return requirement
     raise AssertionError("pyproject no longer depends on protobuf at all")
 
