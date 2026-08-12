@@ -90,3 +90,21 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   - Finding the MODE wire path becomes a prerequisite of M3's device-settings Epic, not of M1. **No tempo surface ships at M1**, so nothing in this record is user-visible yet.
   - Design principle 3 keeps its meaning and gains a boundary: omission is for behaviour we do not understand, refusal is for behaviour we understand and cannot yet drive. A record that says which one applies is now expected of anything the model leaves out.
   - This does not license modelling controls on a hunch. It applies where the unit's behaviour is confirmed and only the message is missing; a control we have not understood on the hardware is still omitted.
+
+## ADR-0008: Persistent listeners run on the RX thread, which may not read from the device
+
+- **Status:** Decided (2026-08-12)
+- **Decision:** A persistent inbound subscription (`Transport.add_listener`) is called on the transport's RX thread, synchronously, before the message reaches any collector or waiter. The transport enforces the other half of that bargain: `request`, `await_broadcast` and `collect` raise `RuntimeError` when called from the RX thread, so a listener cannot read from the device. A listener that raises is logged and skipped, costing its peers and the message's waiter nothing.
+- **Context:** The three existing inbound hooks are one-shot and scoped to a trigger, so a message nobody is expecting is dropped. A push-fed cache (`docs/domain-model.md` section 9) needs the opposite: every decoded message, for the life of the connection. Where that callback runs is the whole decision, because the RX thread is the one thread in this library that must never block and never die - a wedged read loop takes the connection with it, and every request outstanding.
+- **Options:**
+  - **(a) Call listeners on the RX thread, and forbid reads from it - chosen.** Cheapest, and it keeps arrival order exact. It also gives the ordering the cache design assumes: a listener has already applied a push before the caller that provoked it wakes up, so no caller can observe a reply that its own cache has not seen.
+  - **(b) A delivery thread with a queue.** The RX thread would be immune to a slow listener, at the cost of a thread, an unbounded queue, and a cache that lags the reply that fed it. It buys immunity from a listener that blocks while making one that blocks harmless enough to survive unnoticed.
+  - **(c) Call listeners on the RX thread and document the rules without enforcing them.** The rule that matters ("do not read from the device here") is invisible when broken: the read appears to work, then times out, having stopped the read loop for the whole timeout. This project's oldest lesson is that a failure which looks like success is the expensive kind.
+- **Open Questions:** Whether a listener should be notified when the device is lost. Today it simply stops receiving, which is enough for a cache whose owner learns about loss from the exception on its next call. Reconnect (issue #15) is where this gets answered.
+- **Rationale:** The design already says the RX thread applies pushes and notes what needs re-reading while the caller's thread does the re-reading. Option (a) is that sentence in code. The enforcement costs one thread-identity comparison per call and converts a silent, connection-wide stall into an immediate error naming the rule - and it can refuse nothing that ever worked, because a correlated wait issued from the thread that delivers replies can only ever time out.
+- **Consequences:**
+  - A listener must return promptly. Anything expensive belongs on the caller's thread, reached by noting what needs doing rather than doing it.
+  - Nothing may weaken the refusal to keep a convenience. A future listener that wants a value it did not receive marks it for re-reading; it does not fetch it.
+  - `send` is deliberately not refused: it is fire-and-forget and cannot deadlock. A listener that writes owns the delay it adds to the read loop.
+  - Registering in time for the connect handshake's burst needs `protocol.connect(before_handshake=...)`, because the burst arrives after `connect()` returns.
+  - Existing behaviour is untouched: listeners consume nothing, and `send`/`request`/`collect`/`await_broadcast` answer exactly as they did with no listener registered.

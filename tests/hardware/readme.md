@@ -26,6 +26,18 @@ could not put back, rather than aborting on the first. That message is the list
 to fix by hand. Global settings are the ones worth checking first, since they
 survive a preset recall.
 
+## One connection, and why it records the connect burst
+
+Every test shares one connection, because the unit lets only one process hold the
+HID interface - a test that opened a second one would fail on whatever order it
+happened to run in.
+
+That connection attaches a listener before the handshake and records the type of
+every message the unit pushes. It is attached on every run, not only for the tests
+that read it, because it cannot be attached later: the burst happens during
+`connect()`. It records type names and stops at 4000 of them, so the metronome's
+endless tempo stream cannot grow it for the length of the run.
+
 ## Why the control test exists
 
 `test_parameter_echo_latency_is_the_control` measures a write whose latency was

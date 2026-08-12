@@ -1766,6 +1766,14 @@ once - including the seed RecallPreset - at about **9 s after connect**, consist
 several sessions on d14e. (Earlier sessions recorded 10-25 s for lazily-serviced pushes;
 keep timeouts generous, but 9 s is the typical seed arrival.)
 
+**`connect()` returns before the burst arrives.** Re-measured 2026-08-12 on d14e with a
+transport listener registered before the handshake: `connect()` handed back its client 2.0 s
+in, having seen only the `ResetCommsBuffers` echo and the unit's own `Version` READ. The
+ModelRepo landed at 4.9 s, the 399 `File` listings and most settings at 5.1 s, and the seed
+`RecallPreset` at 10.1 s - 474 messages of 24 distinct types by 15 s. So a listener attached
+to the client `connect()` returns is about 3 s too late for the ModelRepo and 8 s too late
+for the current preset, which is why `connect(before_handshake=...)` exists.
+
 Two ambient-traffic facts for anyone instrumenting the link: `GlobalTempo` streams one
 pair of messages per BEAT - 1.5 s apart at 40 bpm - so its rate follows the tempo and it
 is a poor heartbeat but a decent liveness hint; and a single knob turn on the touchscreen

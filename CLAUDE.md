@@ -18,6 +18,7 @@ Read `docs/STEERING.md` before non-trivial work (new operations, transport or fr
 - Grid mutations use the row/column-keyed pattern (`set_param` / `set_bypass`) - never extend the wholesale `write_preset` path.
 - Docstrings state their evidence: confirmed on hardware vs inferred from the schema. When you verify something on hardware, record it (docstring + coverage table) in the same change.
 - Code in the RX path preserves "the RX thread never dies": wrap every decode, skip unknown types at debug level, reset the reassembly buffer on anything malformed.
+- A `Transport.add_listener` listener runs ON the RX thread (ADR-0008). It applies what the push carries, notes what needs re-reading, and returns. It never reads from the device - `request`, `await_broadcast` and `collect` refuse to run on that thread, and that refusal is not to be relaxed for convenience. Anything registering a listener that must see the connect handshake's burst registers it through `protocol.connect(before_handshake=...)`; by the time `connect()` returns, the burst is still seconds away.
 - Hardware sessions: quit Cortex Control first - it holds the HID interface exclusively.
 - Describe the protocol work as documenting the device's protocol as-is (recovered schema, observed traffic). Do not call it "reverse engineering" in docs, comments, commit messages, or issues.
 - Changed code under a path listed in `docs/STEERING.md` § Owned Paths? Diff and update STEERING/CLAUDE/ADR in the same PR.

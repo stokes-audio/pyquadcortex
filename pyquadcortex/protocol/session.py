@@ -80,7 +80,8 @@ def open_device():
 
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
-            handshake_patience: float = 30.0) -> QuadCortex:
+            handshake_patience: float = 30.0,
+            before_handshake=None) -> QuadCortex:
     """Open a Quad Cortex and return a connected, ready-to-use client.
 
     Finds and opens the device, starts the transport, and performs the connect
@@ -107,6 +108,16 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
             failing, which is why the default is 30. Each attempt restarts the
             full handshake (safe: it begins with a fresh session id). Set to 0
             for the old single-attempt behaviour.
+        before_handshake: optional ``callable(transport)``, called once with the
+            started :class:`~pyquadcortex.protocol.transport.Transport` after it
+            starts and before the handshake runs. This is the only way to
+            register a listener
+            (:meth:`~pyquadcortex.protocol.transport.Transport.add_listener`)
+            early enough to see the handshake's own burst of state, which
+            delivers one message of nearly every state type the unit has - the
+            cheapest way to learn what the unit is currently doing. Called once,
+            not once per handshake attempt. An exception from it aborts the
+            connect and releases the device, like any other bring-up failure.
 
     Returns:
         A connected :class:`~pyquadcortex.protocol.client.QuadCortex`.
@@ -120,6 +131,10 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
     owned = [device.close, transport.stop]
     try:
         transport.start()
+        # Before the handshake, so a listener registered here sees the state
+        # burst the handshake provokes rather than joining after it.
+        if before_handshake is not None:
+            before_handshake(transport)
         qc = QuadCortex(transport, _owned_resources=owned)
         deadline = time.monotonic() + handshake_patience
         attempt = 0

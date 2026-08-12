@@ -37,7 +37,7 @@ Inside the protocol layer, a strict one-concern-per-file layering: `cli` → `se
 
 ### Data and state
 
-The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. The model layer (design in [`domain-model.md`](domain-model.md)) introduces a broadcast-fed write-through cache above `protocol/client.py`; at the time of writing the model is a skeleton and that cache is not built, so callers still hold whatever state they need.
+The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. It does carry one hook for a caller who wants to be told rather than to ask - `Transport.add_listener`, a subscription that sees every message the unit pushes for the life of the connection (ADR-0008) - but the transport stores none of it. The model layer (design in [`domain-model.md`](domain-model.md)) introduces a broadcast-fed write-through cache above `protocol/client.py`; at the time of writing the model is a skeleton and that cache is not built, so callers still hold whatever state they need.
 
 ## 4. Owned Paths
 
@@ -80,6 +80,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0005 | A hardware-in-the-loop integration suite, state-neutral on success |
 | ADR-0006 | The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol` |
 | ADR-0007 | The model may represent a control whose wire path is still open |
+| ADR-0008 | Persistent listeners run on the RX thread, which may not read from the device |
 
 ## 8. Open Questions
 
@@ -118,6 +119,29 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-12 - A persistent broadcast subscription at the protocol layer, and ADR-0008
+
+**What changed:**
+- `Transport.add_listener` / `remove_listener`: a subscription that sees every decoded inbound message for the life of the connection, including the unsolicited pushes `_dispatch` used to drop for want of a waiter. `QuadCortex` passes both through so the layer above never reaches into `_t`
+- The transport now refuses `request`, `await_broadcast` and `collect` when they are called from the RX thread. That is what makes "a listener never reads from the device" enforced rather than requested
+- `protocol.connect(before_handshake=...)` calls back with the started transport before the handshake runs, which is the only moment early enough to hear the handshake's own state burst
+- ADR.md: ADR-0008 - listeners run on the RX thread, and the RX thread may not read; the queue-and-delivery-thread alternative and the document-but-do-not-enforce alternative are recorded with why each was rejected
+- Section 3's "Data and state" names the one hook that is not a live exchange; section 7's table gained the ADR-0008 row
+- `docs/protocol.md` "Connect burst, measured" gained the fact that decided the hook: `connect()` returns at 2.0 s, the ModelRepo lands at 4.9 s and the seed preset at 10.1 s, so a listener attached to the returned client has missed the burst it wanted
+- `tests/hardware/` gained `test_broadcast_listener.py`, and the suite's connection fixture now records the burst - it cannot be attached on demand later, because the burst happens during `connect()`
+
+**Why:**
+- M1 Epic (stokes-audio/pyquadcortex#8), Story #11. This is the protocol-layer half of that story, carved out because it is independent of the model work: `docs/domain-model.md` section 9 needs a push-fed cache, and a cache cannot be fed by three hooks that are all one-shot and scoped to a trigger
+
+**Scope of impact:**
+- **Updated:** `pyquadcortex/protocol/transport.py`, `client.py`, `session.py`, `tests/test_transport.py`, `tests/test_client.py`, `tests/test_session.py`, `tests/hardware/conftest.py`, `tests/hardware/test_broadcast_listener.py` (new), `tests/hardware/readme.md`, ADR.md, CLAUDE.md, STEERING.md, architecture.md, api.md, protocol.md, changelog.md
+- **Not updated (intentionally):** ADR-0002 - the offline suite still imports no `hid` and the new tests run against `FakeHid` like the rest; ADR-0005 - the new hardware tests only listen, so they write nothing and have nothing to restore, which meets the contract rather than changing it; `docs/domain-model.md` - section 9 designed this and needed no correction; the coverage table in `protocol.md` - no new message type is involved
+
+**Downstream to consider:**
+- The model-side cache (the other half of #11) is the intended consumer and is being written separately. It registers through `before_handshake` so the burst warms it for free
+- `tests/hardware/test_write_echo.py` still taps `Transport._dispatch` by monkeypatching it, which predates this and could now be an ordinary listener. Left alone deliberately: it is a working measurement harness, and `tests/test_scene_echo_predicates.py` imports it offline
+- ADR-0008 leaves one question open on purpose - whether a listener hears about device loss. It stops receiving today, and the answer belongs with reconnect (#15)
 
 ### 2026-08-11 - The namespace flip lands, and ADR-0007
 

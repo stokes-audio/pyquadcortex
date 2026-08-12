@@ -25,6 +25,7 @@ class FakeTransport:
         self.canned = canned or {}
         self.broadcast = None
         self.last_match = None  # the match predicate read_preset passed, if any
+        self.listeners = []
         self._ids = itertools.count(1)
 
     def send(self, msg):
@@ -41,6 +42,16 @@ class FakeTransport:
         self.last_match = match
         trigger()
         return self.broadcast
+
+    def add_listener(self, listener):
+        self.listeners.append(listener)
+        return lambda: self.remove_listener(listener)
+
+    def remove_listener(self, listener):
+        if listener in self.listeners:
+            self.listeners.remove(listener)
+            return True
+        return False
 
 
 # -- 5.1 read_current_preset -------------------------------------------------
@@ -3130,3 +3141,27 @@ def test_set_master_volume_accepts_both_ends(edge):
     qc = client.QuadCortex(FakeTransport())
     qc.set_master_volume(edge)
     assert qc._t.sent[-1].volume == edge
+
+
+# -- listening to what the device pushes ---------------------------------------
+
+
+def test_add_and_remove_listener_pass_straight_through_to_the_transport():
+    # The client's whole job here is to spare the caller reaching into qc._t. The
+    # contract - RX thread, no blocking, no reads - belongs to the transport and is
+    # tested there.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    seen = []
+
+    drop = qc.add_listener(seen.append)
+    assert fake.listeners == [seen.append]
+
+    drop()
+    assert fake.listeners == []
+    assert qc.remove_listener(seen.append) is False, \
+        "removing what is not registered reports so rather than raising"
+
+    qc.add_listener(seen.append)
+    assert qc.remove_listener(seen.append) is True
+    assert fake.listeners == []

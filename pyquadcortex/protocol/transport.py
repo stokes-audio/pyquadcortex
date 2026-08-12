@@ -8,6 +8,9 @@ speaks the Quad Cortex framed protocol. It:
   * runs a background RX thread that reads input reports, reassembles
     multi-report messages, decodes them, and correlates responses to callers by
     ``request_id``;
+  * hands every decoded message to any persistent listener (``add_listener``),
+    which is how a long-lived caller sees the unsolicited pushes no waiter is
+    expecting;
   * runs a background keepalive thread that periodically pokes the device so it
     keeps the session alive.
 
@@ -24,6 +27,10 @@ Thread-safety / robustness notes:
   * The RX thread must never die: every per-message decode/parse is wrapped so a
     malformed frame or unknown message type is logged and skipped, and the
     reassembly buffer is reset so one bad frame cannot wedge the stream.
+  * Listeners run ON the RX thread, so the same rule covers them: one that raises
+    is logged and skipped, and one may not issue a correlated read (``request``,
+    ``await_broadcast``, ``collect`` refuse to run on that thread - see
+    ``_refuse_read_from_rx``).
   * The keepalive thread swallows send failures and keeps going.
 """
 
@@ -102,6 +109,10 @@ class Transport:
         # (expected_class, Event, [response|None]).
         self._type_waiters = []
         self._collectors = []
+        # Persistent listeners: called with EVERY decoded inbound message until
+        # removed. Unlike the three above, not scoped to one trigger or one
+        # reply. See add_listener.
+        self._listeners = []
         self._lock = threading.Lock()  # guards _pending / _ids (state only)
         # Serializes device writes so each logical message's reports are written
         # as an atomic group (a keepalive can't slip between a multi-report
@@ -174,6 +185,30 @@ class Transport:
         for _cls, _match, ev, _slot in waiters:
             ev.set()
 
+    # -- the RX thread may not read --------------------------------------------
+
+    def _refuse_read_from_rx(self, what):
+        """Refuse a correlated wait attempted from the RX thread.
+
+        The RX thread is the only thread that delivers a reply, so a wait issued
+        from inside it can never be satisfied: it would sit out its entire
+        timeout with the read loop stopped behind it, which is the "the RX thread
+        never blocks" rule broken in the worst way available. Listeners
+        (:meth:`add_listener`) are the only caller code that runs on that thread,
+        so this guard is what makes the listener contract enforced rather than
+        merely requested (ADR-0008).
+
+        Cheap enough to leave in every entry point: one identity comparison.
+        """
+        if threading.current_thread() is self._rx:
+            raise RuntimeError(
+                f"{what}() was called from the RX thread, which is the thread "
+                f"that would have to deliver the answer - so it can only ever "
+                f"time out. A listener applies what a push carries and notes "
+                f"what needs re-reading; the caller's thread does the "
+                f"re-reading (docs/domain-model.md section 9)."
+            )
+
     # -- outbound ------------------------------------------------------------
 
     def send(self, message):
@@ -238,7 +273,11 @@ class Transport:
         the same request_id before the SetlistPosition echo). So the reply is
         the first inbound message whose TYPE matches the request's, and whose
         request_id - if present on both sides - matches too.
+
+        Refused when called from the RX thread, where it could only ever time out
+        (see ``_refuse_read_from_rx``).
         """
+        self._refuse_read_from_rx("request")
         self._check_lost()
         ev = threading.Event()
         slot = [None]
@@ -281,7 +320,12 @@ class Transport:
 
         Returns the messages in arrival order. Unlike a waiter, a collector does
         not consume messages - they still reach any waiter or other collector.
+
+        Refused when called from the RX thread, which would stall the read loop
+        for the whole window and so collect nothing (see
+        ``_refuse_read_from_rx``).
         """
+        self._refuse_read_from_rx("collect")
         self._check_lost()
         got = []
         entry = (expected_class, match, got)
@@ -317,7 +361,11 @@ class Transport:
         the id on the push). The device services large pushes lazily (10-25s
         observed), hence the generous default timeout. Raises ``TimeoutError``
         on no matching broadcast.
+
+        Refused when called from the RX thread, where it could only ever time out
+        (see ``_refuse_read_from_rx``).
         """
+        self._refuse_read_from_rx("await_broadcast")
         self._check_lost()
         ev = threading.Event()
         slot = [None]
@@ -344,6 +392,113 @@ class Transport:
         if slot[0] is None:
             self._check_lost()   # woken by _confirm_lost, not by a broadcast
         return slot[0]
+
+    # -- persistent listeners --------------------------------------------------
+
+    def add_listener(self, listener):
+        """Register ``listener`` to see EVERY decoded inbound message.
+
+        The transport's other three inbound hooks are one-shot and scoped to a
+        trigger: :meth:`request` correlates one reply, :meth:`await_broadcast`
+        waits for one push, :meth:`collect` gathers for a fixed number of
+        seconds. A listener is none of those. It stays registered until it is
+        removed and sees every message the RX thread decodes - including the
+        unsolicited pushes no waiter is expecting, which :meth:`_dispatch` would
+        otherwise drop at debug level. That is what a push-fed cache needs (see
+        ``docs/domain-model.md`` section 9).
+
+        ``listener`` is called as ``listener(message)`` with the parsed protobuf.
+
+        Additive by construction: a listener does not CONSUME a message. It is
+        notified first, and the message then reaches every collector and waiter
+        exactly as it would have with no listener registered.
+
+        Registration and removal are safe while the RX thread is running.
+        Returns a zero-argument callable that removes this registration;
+        :meth:`remove_listener` does the same job for a caller who kept the
+        listener rather than the callable.
+
+        **Listeners run on the RX thread**, synchronously, in registration order,
+        before the message reaches its waiter (so a cache fed by a listener is
+        already current when the blocked caller wakes). Two consequences:
+
+        * **A listener must not block.** It spends the RX thread's time: whatever
+          it does delays the next report being read. Apply the push and return.
+        * **A listener may not read from the device**, and that is enforced
+          rather than asked for: :meth:`request`, :meth:`await_broadcast` and
+          :meth:`collect` raise ``RuntimeError`` when called from the RX thread
+          (see ``_refuse_read_from_rx``). Such a call could never have worked -
+          the RX thread is the one that delivers replies, so a wait from inside
+          it only ever times out - and the rule it breaks is older than this
+          method: the RX thread applies pushes and notes what needs re-reading,
+          and the caller's thread does the re-reading
+          (``docs/domain-model.md`` section 9). :meth:`send` is NOT refused,
+          being fire-and-forget, but a listener that writes owns the delay it
+          adds to the read loop.
+
+        A listener that raises is logged and skipped: the RX thread survives, the
+        other listeners still see that message, and the message still reaches its
+        waiter. Same contract as every other step in this module's RX path.
+
+        A listener lives only as long as the connection. Device loss neither
+        removes nor notifies listeners - there is simply nothing further to
+        deliver - and a new connection means a new ``Transport`` and a new
+        registration.
+
+        Evidence: the mechanism is proven offline against ``FakeHid``
+        (``tests/test_transport.py``). That a listener registered before the
+        connect handshake sees the handshake's state burst is confirmed on
+        hardware (``tests/hardware/test_broadcast_listener.py``). Registering
+        that early needs ``protocol.connect(before_handshake=...)``, because
+        ``connect`` runs the handshake before it hands the client back.
+
+        Raises:
+            DeviceLostError: if the device is already known to be gone.
+        """
+        self._check_lost()
+        with self._lock:
+            self._listeners.append(listener)
+        return lambda: self.remove_listener(listener)
+
+    def remove_listener(self, listener):
+        """Unregister ``listener``; return True if it had been registered.
+
+        Never raises and is safe to call twice, so a teardown path can call it
+        unconditionally. Removal is by equality, which is what makes
+        ``remove_listener(self._apply)`` work for a bound method: each attribute
+        access builds a new object, and those compare equal.
+
+        Safe to call from inside a listener, though the message being delivered
+        may still reach the listener being removed - notification runs over a
+        snapshot taken before the first listener was called.
+        """
+        with self._lock:
+            try:
+                self._listeners.remove(listener)
+            except ValueError:
+                return False
+        return True
+
+    def _notify_listeners(self, message):
+        """Hand ``message`` to every listener (RX thread).
+
+        Snapshot under the lock, call outside it: a listener that registers or
+        removes a listener would otherwise deadlock on the non-reentrant state
+        lock, and holding that lock across arbitrary caller code is exactly what
+        the rest of this module avoids.
+        """
+        with self._lock:
+            listeners = list(self._listeners)
+        for listener in listeners:
+            try:
+                listener(message)
+            except Exception:
+                # The RX thread never dies, and one broken listener never costs
+                # its peers or the waiter their copy of this message.
+                log.exception(
+                    "inbound listener %r raised on %s; skipping it for this "
+                    "message", listener, type(message).__name__
+                )
 
     # -- inbound -------------------------------------------------------------
 
@@ -471,7 +626,12 @@ class Transport:
         that id belongs to the waiter. Cascade messages of other types (which
         echo the id of the request that caused them) and unsolicited broadcasts
         simply find no waiter and are dropped at debug level.
+
+        Persistent listeners (:meth:`add_listener`) are notified FIRST, before any
+        collector or waiter, and consume nothing: the routing below runs exactly
+        as it would with no listener registered.
         """
+        self._notify_listeners(message)
         with self._lock:
             collectors = [c for c in self._collectors
                           if c[0] is type(message) and (c[1] is None or c[1](message))]
