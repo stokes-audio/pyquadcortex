@@ -808,7 +808,10 @@ does nothing. Echoes are unambiguous where recalls are positional, so an echo me
 into our copy with no guessing.
 
 Measured echo latency: **113-116 ms** for a parameter write, **290-420 ms** for a block
-placement.
+placement. These two set the watcher's window. The other write types read far quicker
+(scene label, scene colour and global settings about 2 ms, routing 9-19 ms), but those
+figures carry a caveat that belongs with them rather than here - see
+[`protocol.md`](protocol.md); block bypass is still unmeasured entirely.
 
 **Each write gets a watcher** that compares the echo against what we sent and reports one
 of three outcomes:
@@ -1019,7 +1022,7 @@ tried rather than just what is unknown.
 | Echo latencies for the unmeasured write types | `tests/hardware/test_write_echo.py`; the two previously measured types are the two slowest |
 | Writes during standby | honoured, and they survive the wake |
 | Bank size, 8 versus 4 | 8, and 4 under a PRESET hybrid - and slot NAMES are mode-dependent, so `slot_to_position` speaks the non-hybrid naming |
-| Scene name and colour writes | `SceneLabel` / `SceneColor`, all eight sent per change |
+| Scene name and colour writes | `SceneLabel` / `SceneColor`. An edit made on the unit re-broadcasts all eight. A host write was observed echoing only the index it wrote, as two identical messages - one capture of one label write, so treat the count as indicative and the "only the written index" half as the load-bearing part |
 | Scene copy and swap | `SceneCopy{from_index, to_index, is_swap}` |
 | The three ExpressionBypass fields | `invert`, `delay_ms` in real milliseconds, `latch_emulation` |
 | `SCENE BYPASS BEHAVIOR` persistence | a host write counts as a touchscreen edit; see `protocol.md` |
@@ -1090,7 +1093,7 @@ the n/a rows below where they intersect the API at all.
 | Scenes dropdown | `preset.scenes` | yes | |
 | Stomp assignment (see ch. 4) | `preset.stomps` | yes | |
 | Gig View open/close | `device.gig_view` | yes | |
-| Gig View EDIT SCENE (name, color) | `scene.name`, `scene.color` | yes | both write as `SceneLabel` / `SceneColor`; the unit sends all eight scenes on every change |
+| Gig View EDIT SCENE (name, color) | `scene.name`, `scene.color` | yes | both write as `SceneLabel` / `SceneColor`; an edit made on the unit sends all eight scenes (a host write echoes only the index it wrote) |
 | Gig View SWAP SCENE / COPY SCENE | `scene.copy_from()` / `scene.swap_with()` | yes | one message: `SceneCopy{from_index, to_index, is_swap}`. Copying selects the destination scene, which is where the label side effect comes from |
 | Gig View EDIT STOMP | `stomp.label`, `stomp.targets` | yes | |
 | I/O: input LEVEL / IMPEDANCE / TYPE | `io.inputs[...]` | yes | fields travel one per message - absorbed |
