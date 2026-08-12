@@ -9,8 +9,10 @@ Nothing on the unit and nothing in the reply tells you. So a test is the only
 thing that can.
 
 Two of the checks below are structural rather than behavioural: they read the
-model package's source and prove no other module does the arithmetic or reaches
-past the boundary for a protocol helper that does.
+source of every file in the package that is not the protocol layer, and prove no
+other module does the arithmetic or reaches past the boundary for a protocol
+helper that does. Not just the model directory - a rule scoped to a directory is
+satisfiable by moving the code to a different one.
 """
 import ast
 import importlib
