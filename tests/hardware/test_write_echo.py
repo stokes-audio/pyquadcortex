@@ -45,36 +45,68 @@ class EchoProbe:
         self._want = None
         self._seen = None
         self._sent_at = None
+        self._messages = 0
+        self._errors = 0
+        self._first_error = None
         self._inner = client._t._dispatch
         client._t._dispatch = self._tap
 
     def _tap(self, message, *args, **kwargs):
         with self._lock:
             if self._want is not None and self._seen is None:
+                self._messages += 1
                 try:
                     if self._want(message):
                         self._seen = (time.monotonic() - self._sent_at, message)
-                except Exception:                    # noqa: BLE001 - a bad predicate must not kill the link
-                    pass
+                except Exception as exc:             # noqa: BLE001 - the RX thread never dies
+                    # Swallowed so the link survives, but COUNTED. Not recording
+                    # it is what let a predicate that could never be true read as
+                    # a silent device; see why_nothing_matched.
+                    self._errors += 1
+                    if self._first_error is None:
+                        self._first_error = f"{type(exc).__name__}: {exc}"
         return self._inner(message, *args, **kwargs)
 
     def measure(self, write, matches, timeout=ECHO_TIMEOUT):
         """Run ``write()``, then wait for a broadcast satisfying ``matches``.
 
-        Returns the latency in milliseconds, or ``None`` if nothing matched -
-        which is itself a result worth recording, since a write type that never
-        echoes cannot be confirmed by a watcher at all.
+        Returns the latency in milliseconds, or ``None`` if nothing matched.
+        ``None`` is not a finding on its own - see :meth:`why_nothing_matched`
+        for the several things it can mean.
         """
         with self._lock:
             self._want, self._seen, self._sent_at = matches, None, time.monotonic()
+            self._messages, self._errors, self._first_error = 0, 0, None
         write()
         deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+        try:
+            while time.monotonic() < deadline:
+                with self._lock:
+                    if self._seen is not None:
+                        return self._seen[0] * 1000.0
+                time.sleep(0.005)
+            return None
+        finally:
             with self._lock:
-                if self._seen is not None:
-                    return self._seen[0] * 1000.0
-            time.sleep(0.005)
-        return None
+                self._want = None
+
+    def why_nothing_matched(self):
+        """What the probe actually saw, for a measurement that came back empty.
+
+        A predicate that raises, a predicate that can never be true, and a device
+        that stayed quiet all end as ``None``. This suite exists because two of
+        those were confused once: a guard on a field with no presence was read as
+        "the unit stopped echoing" while it was echoing in about 2 ms. So a miss
+        reports what was observed and leaves the cause to the reader.
+        """
+        with self._lock:
+            if self._errors:
+                return (f"the predicate RAISED on {self._errors} of "
+                        f"{self._messages} messages, so it never had a verdict "
+                        f"to give (first: {self._first_error})")
+            return (f"no message satisfied the predicate, out of "
+                    f"{self._messages} seen during the window. Either the unit "
+                    f"was silent or the predicate cannot match what it sends")
 
     def close(self):
         self._client._t._dispatch = self._inner
@@ -91,15 +123,69 @@ def _named(message, name):
     return type(message).__name__ == name
 
 
-def _landed(ms, what):
+#: What the scene tests write. Shared with ``tests/test_scene_echo_predicates.py``
+#: rather than repeated there: the offline test exists to exercise the predicates
+#: at the values these call sites actually use, and two copies of a literal drift
+#: apart silently, leaving the offline test green and covering nothing.
+#:
+#: The index must stay nonzero - see :func:`matches_scene_label`.
+SCENE_INDEX = 1
+SCENE_LABEL_PROBE = "echo probe"
+SCENE_COLOR_PROBE = 4294911783
+
+
+def matches_scene_label(message, index, label):
+    """Whether ``message`` is the device's echo of a scene-label write.
+
+    Deliberately no ``field_present`` guard on ``index``: it is a bare proto3
+    scalar, so the field cannot answer a presence question at all and
+    ``field_present`` says ``False`` for every message including the echo this is
+    looking for. A guard here matched nothing and was read as "no echo at all"
+    while the unit was echoing in about 2 ms. Contrast
+    ``test_global_settings_echo_latency``, whose field sits in a ``oneof``, where
+    the same guard is both valid and load-bearing.
+
+    Dropping it is only safe while ``index`` is nonzero. An absent ``index``
+    reads 0, so ``matches_scene_label(m, 0, "")`` would match a message that
+    carried neither field - the accidental match the global-settings guard exists
+    to prevent. That precondition is asserted rather than left to this paragraph.
+
+    ``tests/test_scene_echo_predicates.py`` exercises this offline against the
+    values the call sites use. That catches a predicate that cannot match; it
+    does not catch a caller that stops using it, nor a firmware that stops
+    sending what it matches on.
+    """
+    assert index, "scene index 0 is indistinguishable from an absent index"
+    return (_named(message, "SceneLabelMessage")
+            and message.index == index and message.label == label)
+
+
+def matches_scene_color(message, index, color):
+    """Whether ``message`` is the device's echo of a scene-colour write.
+
+    Presence-free on ``index``, with the same reasoning and the same nonzero
+    precondition as :func:`matches_scene_label`.
+    """
+    assert index, "scene index 0 is indistinguishable from an absent index"
+    return (_named(message, "SceneColorMessage")
+            and message.index == index and message.color == color)
+
+
+def _landed(ms, what, probe):
     """Every measurement asserts the same two things, so say them once.
 
     Arrival alone is not the whole claim. These numbers are what the write
     watcher's timeout rests on, so a latency that has crept up toward that
     timeout has to fail here - otherwise the suite stays green while the figure
     it was written to defend quietly stops being true.
+
+    A miss reports what the probe saw rather than blaming the unit. The old
+    wording here was "produced no echo at all", which is a claim about the
+    hardware, and it was wrong the one time it fired: the device was echoing and
+    the predicate could not match.
     """
-    assert ms is not None, f"{what} write produced no echo at all"
+    assert ms is not None, (
+        f"{what} write: nothing matched - {probe.why_nothing_matched()}")
     assert ms < WATCHER_BUDGET, (
         f"{what} echo took {ms:.1f} ms, past the {WATCHER_BUDGET:.0f} ms this "
         f"suite allows out of the watcher's {WATCHER_TIMEOUT_MS:.0f} ms. Either "
@@ -130,7 +216,7 @@ def test_parameter_echo_latency_is_the_control(qc, probe, restores, record_prope
             for ch in m.preset.chains for mo in ch.models),
     )
     record_property("parameter_echo_ms", ms)
-    _landed(ms, "parameter")
+    _landed(ms, "parameter", probe)
     # The reference is the earlier session's 113-116 ms, taken by hand with a
     # different instrument; this harness reads the same write at 120-125 ms. The
     # few ms between them are the harness itself - the clock starts before the
@@ -178,7 +264,7 @@ def test_bypass_echo_latency(qc, probe, restores, record_property):
             for b in m.preset.bypass for cb in b.colBypass),
     )
     record_property("bypass_echo_ms", ms)
-    _landed(ms, "bypass")
+    _landed(ms, "bypass", probe)
 
 
 def test_routing_echo_latency(qc, probe, restores, record_property):
@@ -193,40 +279,52 @@ def test_routing_echo_latency(qc, probe, restores, record_property):
             ch.in_portid == int(target) for ch in m.preset.chains),
     )
     record_property("routing_echo_ms", ms)
-    _landed(ms, "routing")
+    _landed(ms, "routing", probe)
 
 
 def test_scene_label_echo_latency(qc, probe, restores, record_property):
     preset = qc.read_current_preset()
-    original = preset.scene_labels[1] if len(preset.scene_labels) > 1 else ""
-    restores("scene 2 label", lambda: qc.set_scene_label(1, original))
+    original = (preset.scene_labels[SCENE_INDEX]
+                if len(preset.scene_labels) > SCENE_INDEX else "")
+    restores("scene 2 label", lambda: qc.set_scene_label(SCENE_INDEX, original))
 
-    # Content-matched like the two above. The unit answers a label change by
-    # sending all eight scenes, so "a SceneLabelMessage arrived" would time the
-    # first of a burst that is only partly the echo of this write.
+    # Write something the scene does not already hold. Every other test in this
+    # file derives its target from the current value; these two used to write a
+    # fixed constant, so a run that left the probe label in place - a killed
+    # process, a failed restore - would make the next run a no-op write, and
+    # whether a no-op echoes is unmeasured. That failure would arrive as "nothing
+    # matched", which is exactly the message this suite already misread once.
+    target = SCENE_LABEL_PROBE if original != SCENE_LABEL_PROBE else "echo probe 2"
+
+    # Content-matched like the two above. A scene edit made ON THE UNIT
+    # re-broadcasts all eight labels, so "a SceneLabelMessage arrived" would time
+    # whichever of that burst landed first rather than the echo of this write. A
+    # host write was observed to be narrower - two identical messages for the
+    # written index alone - but matching on content costs nothing and keeps one
+    # predicate honest for both cases.
     ms = probe.measure(
-        lambda: qc.set_scene_label(1, "echo probe"),
-        lambda m: (_named(m, "SceneLabelMessage")
-                   and field_present(m, "index") and m.index == 1
-                   and m.label == "echo probe"),
+        lambda: qc.set_scene_label(SCENE_INDEX, target),
+        lambda m: matches_scene_label(m, SCENE_INDEX, target),
     )
     record_property("scene_label_echo_ms", ms)
-    _landed(ms, "scene label")
+    _landed(ms, "scene label", probe)
 
 
 def test_scene_color_echo_latency(qc, probe, restores, record_property):
     preset = qc.read_current_preset()
-    original = preset.scene_colors[1] if len(preset.scene_colors) > 1 else 0
-    restores("scene 2 colour", lambda: qc.set_scene_color(1, original))
+    original = (preset.scene_colors[SCENE_INDEX]
+                if len(preset.scene_colors) > SCENE_INDEX else 0)
+    restores("scene 2 colour", lambda: qc.set_scene_color(SCENE_INDEX, original))
+
+    # Never a no-op write, for the reason given in the label test above.
+    target = SCENE_COLOR_PROBE if original != SCENE_COLOR_PROBE else 4278233600
 
     ms = probe.measure(
-        lambda: qc.set_scene_color(1, 4294911783),
-        lambda m: (_named(m, "SceneColorMessage")
-                   and field_present(m, "index") and m.index == 1
-                   and m.color == 4294911783),
+        lambda: qc.set_scene_color(SCENE_INDEX, target),
+        lambda m: matches_scene_color(m, SCENE_INDEX, target),
     )
     record_property("scene_color_echo_ms", ms)
-    _landed(ms, "scene colour")
+    _landed(ms, "scene colour", probe)
 
 
 def test_global_settings_echo_latency(qc, probe, restores, record_property):
@@ -245,4 +343,4 @@ def test_global_settings_echo_latency(qc, probe, restores, record_property):
                    and m.stomp_mode_auto_assign == (not original)),
     )
     record_property("global_settings_echo_ms", ms)
-    _landed(ms, "global settings")
+    _landed(ms, "global settings", probe)
