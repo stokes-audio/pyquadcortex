@@ -24,35 +24,73 @@ def pytest_ignore_collect(collection_path, config):
 
 
 class HandshakeBurst:
-    """Records the type name of every message the unit pushes, from the start.
+    """Records the type of every message the unit pushes DURING the connect burst.
 
     Attached by the connection fixture through
     ``protocol.connect(before_handshake=...)``, which is the only moment early
-    enough to catch the handshake's burst - by the time ``connect`` returns, the
-    burst is over.
+    enough to catch the burst - by the time ``connect`` returns, the burst has not
+    even started.
 
-    Records NAMES rather than messages, and stops at ``LIMIT``. The metronome's
-    tempo stream never stops, so an unbounded recorder on a connection that lives
-    for the whole run would keep growing all run; the burst is only the first few
-    hundred messages of it.
+    It stops recording and takes itself off the transport as soon as the burst is
+    over, which is what makes the recording mean "the burst" rather than "the
+    traffic so far". The metronome's tempo stream never stops, so a recorder left
+    running would hold the whole run, and a test asserting on it would really be
+    asserting on whatever other tests had provoked first. Stopping also keeps it
+    out of the read path of the latency measurements in ``test_write_echo.py``,
+    which are calibrated numbers.
 
-    Runs on the transport's RX thread, so it does the least it can: take the
-    lock, append, return.
+    Removing a listener from inside a listener is safe by contract - see
+    ``Transport.add_listener`` and ADR-0008.
+
+    Runs on the RX thread, so it does the least it can: append and return.
     """
-
-    LIMIT = 4000
 
     def __init__(self):
         self._lock = threading.Lock()
         self._names = []
-        self.dropped = 0
+        self._detach = None
+        self.closed = False
+        self.settled_in = None  # seconds the burst took, or None if it timed out
+
+    def attach(self, transport):
+        """Register on ``transport``. Called before the handshake runs."""
+        self._detach = transport.add_listener(self)
 
     def __call__(self, message):
         with self._lock:
-            if len(self._names) < self.LIMIT:
-                self._names.append(type(message).__name__)
-            else:
-                self.dropped += 1
+            if self.closed:
+                # The RX thread notifies from a snapshot, so a message can still
+                # arrive after removal. It must not reopen the recording.
+                return
+            self._names.append(type(message).__name__)
+
+    def record_until(self, sentinel, patience):
+        """Record until a ``sentinel``-typed message arrives, then stop.
+
+        The seed ``RecallPresetMessage`` is the tail of the burst - measured
+        2026-08-12 on d14e: ModelRepo at 4.9 s, the folder listings and settings
+        at 5.1 s, the current preset at 10.1 s - so waiting for it means the whole
+        burst has been recorded, however long the unit takes about it.
+
+        Stops on ``patience`` seconds regardless, so a unit that never sends it
+        cannot hang the run. ``settled_in`` says which of the two happened.
+        """
+        started = time.monotonic()
+        deadline = started + patience
+        while time.monotonic() < deadline:
+            if sentinel in self.names():
+                self.settled_in = time.monotonic() - started
+                break
+            time.sleep(0.1)
+        self.close()
+
+    def close(self):
+        """Stop recording and come off the transport. Idempotent."""
+        with self._lock:
+            already = self.closed
+            self.closed = True
+        if not already and self._detach is not None:
+            self._detach()
 
     def names(self):
         """A snapshot of what has been recorded, in arrival order."""
@@ -73,14 +111,20 @@ def _connection():
     ``pyquadcortex.connect()`` returns the model's ``Device`` instead (ADR-0006).
 
     The burst recorder is attached for every run, not just the tests that read
-    it: registering it costs one list append per message, and it cannot be
-    attached later on demand, because the burst happens during ``connect``.
+    it, because it cannot be attached later on demand: the burst happens during
+    ``connect``.
+
+    The fixture then waits for the burst to finish before handing the connection
+    over, so the recording is exactly the burst whatever order the tests run in.
+    It costs about 8 s once per run and buys more than it costs: `connect()`
+    returns roughly 3 s before the unit starts streaming several hundred messages,
+    so without the wait every latency measurement in this suite would be taken on
+    a link that is still busy answering the handshake.
     """
     from pyquadcortex import protocol
     burst = HandshakeBurst()
-    with protocol.connect(
-        before_handshake=lambda transport: transport.add_listener(burst)
-    ) as client:
+    with protocol.connect(before_handshake=burst.attach) as client:
+        burst.record_until("RecallPresetMessage", patience=30.0)
         yield client, burst
 
 

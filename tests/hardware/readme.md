@@ -35,8 +35,23 @@ happened to run in.
 That connection attaches a listener before the handshake and records the type of
 every message the unit pushes. It is attached on every run, not only for the tests
 that read it, because it cannot be attached later: the burst happens during
-`connect()`. It records type names and stops at 4000 of them, so the metronome's
-endless tempo stream cannot grow it for the length of the run.
+`connect()`.
+
+The fixture then waits for the burst to finish before handing the connection to
+the first test, and stops the recorder there. The recording is therefore exactly
+the burst, whatever order the tests run in. The metronome's tempo stream never
+stops, so a recorder left running would hold the whole run's traffic and a test
+asserting on it would really be asserting on whatever other tests provoked first.
+
+The wait costs about 8 seconds once per run and buys more than it costs.
+`connect()` returns roughly 3 seconds before the unit starts streaming several
+hundred messages, so without it every latency measurement below would be taken on
+a link still busy answering the handshake.
+
+The hardware suite cannot check that the recorder stopped cleanly - it reads the
+recording afterwards and its assertions are floors, which contamination satisfies
+too. So the stop is pinned offline, in
+`tests/test_handshake_burst_recorder.py`.
 
 ## Why the control test exists
 

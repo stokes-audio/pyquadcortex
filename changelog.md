@@ -112,9 +112,12 @@ device:
 
 - **Do not block in it.** Whatever it does delays the next message being read.
 - **Do not read from the device in it.** That thread is the one that would have to
-  deliver the answer, so the call could only ever time out - with the connection
-  stalled behind it. Rather than let that happen, the library raises
-  `RuntimeError` if you try. Note what you need and read it from your own thread.
+  deliver the answer, so the call could never be answered - and the connection
+  would stall behind it for as long as it waited. Rather than let that happen, the
+  library raises `RuntimeError` if you try. Note what you need and read it from
+  your own thread.
+- **Treat the message as read-only.** It is the same object the rest of the
+  library sees, not a copy.
 
 To hear the burst of state the unit sends when a client connects - nearly
 everything it knows, including the preset currently loaded - register before the

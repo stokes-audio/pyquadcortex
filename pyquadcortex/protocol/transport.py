@@ -113,7 +113,9 @@ class Transport:
         # removed. Unlike the three above, not scoped to one trigger or one
         # reply. See add_listener.
         self._listeners = []
-        self._lock = threading.Lock()  # guards _pending / _ids (state only)
+        # Guards every registry above plus _ids. State only: never held across
+        # blocking device I/O, and never held while calling a listener.
+        self._lock = threading.Lock()
         # Serializes device writes so each logical message's reports are written
         # as an atomic group (a keepalive can't slip between a multi-report
         # message's header and its continuation reports). SEPARATE from _lock:
@@ -190,10 +192,12 @@ class Transport:
     def _refuse_read_from_rx(self, what):
         """Refuse a correlated wait attempted from the RX thread.
 
-        The RX thread is the only thread that delivers a reply, so a wait issued
-        from inside it can never be satisfied: it would sit out its entire
-        timeout with the read loop stopped behind it, which is the "the RX thread
-        never blocks" rule broken in the worst way available. Listeners
+        The RX thread is the only thread that delivers a message to a waiter, so a
+        wait issued from inside it can never be satisfied: it sits out its whole
+        window with the read loop stopped behind it, which is the "the RX thread
+        never blocks" rule broken in the worst way available. ``request`` and
+        ``await_broadcast`` would time out; ``collect`` would return empty, having
+        stalled the link for its full duration. Listeners
         (:meth:`add_listener`) are the only caller code that runs on that thread,
         so this guard is what makes the listener contract enforced rather than
         merely requested (ADR-0008).
@@ -203,10 +207,11 @@ class Transport:
         if threading.current_thread() is self._rx:
             raise RuntimeError(
                 f"{what}() was called from the RX thread, which is the thread "
-                f"that would have to deliver the answer - so it can only ever "
-                f"time out. A listener applies what a push carries and notes "
-                f"what needs re-reading; the caller's thread does the "
-                f"re-reading (docs/domain-model.md section 9)."
+                f"that would have to deliver the answer - so the wait can never "
+                f"be satisfied, and the read loop stops for its whole duration. "
+                f"A listener applies what a push carries and notes what needs "
+                f"re-reading; the caller's thread does the re-reading "
+                f"(docs/domain-model.md section 9)."
             )
 
     # -- outbound ------------------------------------------------------------
@@ -413,6 +418,11 @@ class Transport:
         notified first, and the message then reaches every collector and waiter
         exactly as it would have with no listener registered.
 
+        **Treat the message as read-only.** It is not a copy: the object handed to
+        a listener is the same one the next listener and the waiter receive, so a
+        listener that normalizes or tidies it in place changes what they see.
+        Read what you need out of it and merge that into your own state.
+
         Registration and removal are safe while the RX thread is running.
         Returns a zero-argument callable that removes this registration;
         :meth:`remove_listener` does the same job for a caller who kept the
@@ -429,7 +439,7 @@ class Transport:
           :meth:`collect` raise ``RuntimeError`` when called from the RX thread
           (see ``_refuse_read_from_rx``). Such a call could never have worked -
           the RX thread is the one that delivers replies, so a wait from inside
-          it only ever times out - and the rule it breaks is older than this
+          it can never be satisfied - and the rule it breaks is older than this
           method: the RX thread applies pushes and notes what needs re-reading,
           and the caller's thread does the re-reading
           (``docs/domain-model.md`` section 9). :meth:`send` is NOT refused,
@@ -464,9 +474,14 @@ class Transport:
         """Unregister ``listener``; return True if it had been registered.
 
         Never raises and is safe to call twice, so a teardown path can call it
-        unconditionally. Removal is by equality, which is what makes
-        ``remove_listener(self._apply)`` work for a bound method: each attribute
-        access builds a new object, and those compare equal.
+        unconditionally. Removal takes the FIRST registration equal to
+        ``listener``, which is what makes ``remove_listener(self._apply)`` work
+        for a bound method: each attribute access builds a new object, and those
+        compare equal. Two consequences of that, neither of them a problem unless
+        it is a surprise: registering the same callable twice registers it twice
+        and it is then called twice per message, needing one removal each; and a
+        listener whose class defines ``__eq__`` can have an equal-but-different
+        registration removed instead of the one passed.
 
         Safe to call from inside a listener, though the message being delivered
         may still reach the listener being removed - notification runs over a

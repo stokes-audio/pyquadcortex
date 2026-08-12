@@ -24,13 +24,6 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 #: offers (40 bpm). Ten seconds is several beats even there.
 UNSOLICITED_PATIENCE = 10.0
 
-#: How long to wait for the handshake's state burst. Measured on this unit
-#: (2026-08-12, CorOS 4.0.1 / d14e): ModelRepo at 4.9 s, the ~399 File listings
-#: and most settings by 5.1 s, and the current preset at 10.1 s - 474 messages of
-#: 24 distinct types by 15 s. Three times the measured figure, because the wait
-#: ends as soon as the preset lands and a fixed sleep would only make the suite
-#: slower.
-BURST_PATIENCE = 30.0
 
 
 class Recorder:
@@ -75,29 +68,27 @@ def test_a_listener_registered_before_connecting_sees_the_handshake_burst(
     distinct types by 15 s. The floors below sit well under that, because a test
     pinned to the exact tally would fail on a unit with a different number of
     presets rather than on a real regression.
+
+    The recorder is already closed by the time any test runs - the connection
+    fixture waits for the burst and then stops it - so this reads the burst itself
+    and not the traffic other tests have provoked since.
     """
-    def tally():
-        names = handshake_burst.names()
-        return {name: names.count(name) for name in sorted(set(names))}
+    names = handshake_burst.names()
+    counted = {name: names.count(name) for name in sorted(set(names))}
+    report = (f"recorded {len(names)} message(s), settled in "
+              f"{handshake_burst.settled_in}s: {counted}")
 
-    # The current preset lands last of the burst (10.1 s measured), so it is the
-    # signal that everything else has already arrived.
-    _wait_until(lambda: "RecallPresetMessage" in tally(), BURST_PATIENCE)
-
-    counted = tally()
-    total = sum(counted.values())
-    report = f"recorded {total} message(s) in {BURST_PATIENCE}s: {counted}"
-
-    assert total >= 100, report
+    assert handshake_burst.closed, "the recorder was still running - see conftest"
+    assert handshake_burst.settled_in is not None, (
+        f"the seed preset never arrived, so the burst was cut off by the "
+        f"fixture's patience rather than by finishing - {report}")
+    assert len(names) >= 100, report
     assert len(counted) >= 15, f"too few distinct state types in the burst - {report}"
     # Nothing in the handshake REQUESTS these. The subscription is a burst of
     # fire-and-forget READs, so almost every message here is one _dispatch would
     # have dropped for want of a waiter.
     assert "FileMessage" in counted, report          # the folder enumeration
     assert "RecallPresetMessage" in counted, report  # the preset on the grid now
-    assert handshake_burst.dropped == 0, (
-        f"the recorder hit its {handshake_burst.LIMIT}-message cap, so this tally "
-        f"is not the burst alone")
 
 
 def test_a_listener_on_a_live_connection_hears_pushes_nobody_asked_for(qc):

@@ -109,12 +109,35 @@ def test_before_handshake_runs_after_start_and_before_the_handshake(fake_stack):
 
     qc = session.connect(settle=0, before_handshake=before)
     t = FakeTransport.instances[0]
-    assert len(calls) == 1, "the hook runs once, not once per handshake attempt"
     got, started, sent_by_then = calls[0]
     assert got is t, "the hook gets the transport a listener registers on"
     assert started, "the RX thread must already be reading"
     assert sent_by_then == [], "the hook ran after the handshake had begun"
     assert type(t.sent[0]).__name__ == "ResetCommsBuffersMessage"
+    qc.close()
+
+
+def test_before_handshake_runs_once_however_many_handshake_attempts_it_takes(
+        monkeypatch, fake_stack):
+    """Registering twice would register the listener twice, and it would then be
+    called twice per message. The device can be openable but silent for ~9-17s
+    after a boot, so a connect taking three handshake attempts is ordinary rather
+    than exotic - and a hook called per attempt would still pass a test where the
+    first attempt succeeds.
+    """
+    attempts = {"n": 0}
+
+    def flaky_hello(self, timeout=5.0, settle=2.0):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise TimeoutError("no response for request_id=1")
+
+    monkeypatch.setattr(client.QuadCortex, "_hello", flaky_hello)
+    calls = []
+    qc = session.connect(settle=0, handshake_patience=30.0,
+                         before_handshake=calls.append)
+    assert attempts["n"] == 3, "the handshake was not actually retried"
+    assert len(calls) == 1, "the hook runs once, not once per handshake attempt"
     qc.close()
 
 
