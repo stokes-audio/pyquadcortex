@@ -69,6 +69,11 @@ NOISE_FIELDS = frozenset({
     "request_id", "current_beat", "current_bar", "current_tick", "current_time",
     "available_disk_space", "cpu_percent", "timestamp", "session_id",
     "elapsed", "count_in_beats_remaining", "count_in_bars_remaining",
+    # Observed drifting between two captures 30 seconds apart, with nothing
+    # touching storage. Named from the wire rather than guessed: an earlier
+    # version of this list said "available_disk_space", which is a field on
+    # GeneralSettings itself and not the one the device actually moves.
+    "free_storage_size_kb",
 })
 
 

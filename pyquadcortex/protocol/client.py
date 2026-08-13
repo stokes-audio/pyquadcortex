@@ -1398,11 +1398,17 @@ Two of those names disagree with the catalog, which is why the map
         is how a single earlier READ came back holding only the running clock and
         got written up as a dead end.
 
-        **A read straight after a write can return the PREVIOUS value.** This type
-        does not echo ``request_id`` - zero of 64 captured pushes carried one - so
-        there is no way to tell the reply to your READ from an ambient push already
-        in flight. Allow a settle of a second or two after
-        :meth:`set_tempo_mode` before believing the answer.
+        **A read straight after a write returns the PREVIOUS value, and "a moment"
+        is not long enough.** This type does not echo ``request_id`` - zero of 64
+        captured pushes carried one - so this returns the next AMBIENT params push,
+        which may have been generated before your write. That shape arrives only
+        about every seven seconds, so **wait longer than that interval** - ten
+        seconds is the figure the hardware suite uses. Observed directly: a write
+        followed by a 3-second settle read back the old value, while the write had
+        landed and every read afterwards agreed.
+
+        A caller who needs certainty rather than a settle should discard the first
+        matching push and take the second, which cannot predate the call.
         """
         index = self.TEMPO_MODE_PARAM
         seen = []

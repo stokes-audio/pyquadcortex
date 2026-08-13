@@ -141,7 +141,16 @@ HOLD_SECONDS = 8.0
 
 #: A read straight after a write returns the PREVIOUS value - three settings have
 #: already looked like they refused a write that had in fact landed (client.py).
-SETTLE_SECONDS = 3.0
+#:
+#: This one has to clear a specific, measured bar rather than be merely generous.
+#: ``tempo_mode()`` cannot correlate its reply (this type never echoes
+#: ``request_id``), so it returns the next AMBIENT params push - and that shape
+#: arrives only about every seven seconds. A settle shorter than that interval can
+#: hand back a push generated BEFORE the write. Caught in the act: a restore with a
+#: 3.0 s settle read back the old value while the write had in fact landed, and
+#: four reads two seconds apart afterwards all agreed it had. Ten seconds clears
+#: the interval with room to spare.
+SETTLE_SECONDS = 10.0
 
 
 def test_tempo_mode_is_writable(qc, restores):

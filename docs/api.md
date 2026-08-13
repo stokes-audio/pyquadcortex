@@ -282,10 +282,13 @@ so a state tracker CAN follow it - it just cannot be told the moment it moves.
 `tempo_mode()` waits for a reply carrying parameters rather than the running clock,
 which can take a few seconds.
 
-**A read straight after a write can return the previous value.** This message type
-does not echo `request_id` - zero of 64 captured pushes carried one - so there is no
-way to tell your READ's reply from an ambient push already in flight. Allow a second
-or two to settle after `set_tempo_mode` before believing `tempo_mode()`.
+**A read straight after a write returns the previous value, and "a moment" is not
+enough.** This message type does not echo `request_id` - zero of 64 captured pushes
+carried one - so `tempo_mode()` returns the next ambient params push, which may have
+been generated before your write. That shape arrives only about every seven seconds,
+so wait longer than that: **ten seconds** is what the hardware suite uses. Measured
+the hard way - a write followed by a 3-second settle read back the old value, while
+the write had in fact landed.
 
 The per-preset controls:
 
