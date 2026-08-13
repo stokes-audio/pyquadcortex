@@ -85,6 +85,52 @@ To use both layers in one script, wrap a connection you already have with
 `Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
 your connection open.
 
+### New: listen to everything the unit sends
+
+The unit talks without being asked. Turn a knob on its touchscreen, recall a
+preset, let the metronome run, and it pushes messages about it. Until now those
+messages were only reachable if you happened to be waiting for that exact one,
+and anything else was dropped. `add_listener` hands you all of them:
+
+```python
+from pyquadcortex import protocol
+
+def watch(message):
+    print(type(message).__name__)
+
+with protocol.connect() as qc:
+    stop = qc.add_listener(watch)
+    ...
+    stop()                     # or qc.remove_listener(watch)
+```
+
+Your function is called for every message, and it takes nothing away from the
+rest of the library: a call that was waiting for a reply still gets it.
+
+Two rules, because your function runs on the thread that reads from the USB
+device:
+
+- **Do not block in it.** Whatever it does delays the next message being read.
+- **Do not read from the device in it.** That thread is the one that would have to
+  deliver the answer, so the call could never be answered - and the connection
+  would stall behind it for as long as it waited. Rather than let that happen, the
+  library raises `RuntimeError` if you try. Note what you need and read it from
+  your own thread.
+- **Treat the message as read-only.** It is the same object the rest of the
+  library sees, not a copy.
+
+To hear the burst of state the unit sends when a client connects - nearly
+everything it knows, including the preset currently loaded - register before the
+handshake, because it arrives seconds after `connect()` returns:
+
+```python
+with protocol.connect(before_handshake=lambda t: t.add_listener(watch)) as qc:
+    ...
+```
+
+The decision behind the two rules is ADR-0009. This is the groundwork for the
+model keeping itself current without asking twice.
+
 ### Groundwork: the model will talk in the numbers on your screen
 
 Rows will be 1 to 4, slots 1 to 8, scenes and footswitches letters, and levels the
@@ -126,14 +172,48 @@ types decoded, with a liveness heartbeat proving the link was up. But all three
 listened, and none of them asked. **A control the device never announces may
 still answer a READ.** Nothing has tried one.
 
-So MODE is an open protocol investigation rather than a settled dead end. Nothing
-in the library changes: there was no MODE surface before and there is none now.
-The reason it is worth an entry is that the withdrawn claim is what the coverage
-audit and the model design were both written against. The correction is in
-`docs/protocol.md`, `docs/manual-coverage.md`, `docs/capture.md` and
-`docs/domain-model.md`, and the decision it forced - that the model shows a
-control it cannot yet drive and refuses it, rather than omitting it or guessing -
-is ADR-0007.
+So MODE is an open protocol investigation rather than a settled dead end. **It was
+asked, and it answered** - see the next entry.
+
+### The Tempo menu's MODE switch is readable and writable
+
+`qc.tempo_mode()` returns a `TempoMode` - `PRESET` or `GLOBAL` - and
+`qc.set_tempo_mode(TempoMode.GLOBAL)` moves the switch. It is the DEVICE tempo
+block's parameter 1, carried in `GlobalTempo.params`.
+
+**This is a global setting**, despite riding a tempo message. It affects every
+preset and there is nothing to save afterwards, so read it first if you intend to
+put it back. It does not move either tempo block: the unit keeps the preset's
+settings and the device's at the same time, and MODE only picks which one plays.
+
+The entry above withdrew the claim that this control was not on the wire. It was
+on the wire the whole time - though not via a naive READ, see the caveat below. The three tests that found nothing were measuring
+something real and narrower - the unit emits no CHANGE EVENT when the switch moves -
+and the mistake was reading that as "cannot be asked". The current value in fact
+rides the tempo stream the unit sends anyway. Confirmed on the wire, on the unit's
+own screen, and by the tempo actually in effect, which switched between the two
+blocks' stored values.
+
+The method that found it - capture the whole readable state in each position
+and diff, rather than looking for the field you expect - is now what ADR-0010
+requires before any control is written down as having no wire path.
+
+Watch out for one thing if you read `GlobalTempo` yourself: it alternates two
+message shapes, one carrying the running clock and one carrying the 25
+parameters. Wait for a reply that actually has parameters. Taking the first
+`GlobalTempo` to arrive is what produced the original dead end.
+
+### `TEMPO` takes bpm: the span is 40 to 240
+
+`set_tempo_param("TEMPO", real=120)` now works, and `tempo_bpm()` /
+`bpm_to_tempo()` convert if you want the numbers directly. Previously `real=`
+was refused here, because the catalog publishes a placeholder range for this
+parameter and converting against it gives a number that means something else.
+
+The span was measured off the screen instead: 59 bpm at `0.095`, 111 at `0.355`,
+120 at `0.400`, each exact to the displayed integer. The endpoints are the fit's
+rather than driven, and they land on the 40-240 range the unit's manual
+documents.
 
 ### Regenerating the protobuf bindings can no longer walk the pin backwards
 

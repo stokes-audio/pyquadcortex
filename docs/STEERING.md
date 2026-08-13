@@ -37,7 +37,7 @@ Inside the protocol layer, a strict one-concern-per-file layering: `cli` → `se
 
 ### Data and state
 
-The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. The model layer (design in [`domain-model.md`](domain-model.md)) introduces a broadcast-fed write-through cache above `protocol/client.py`; at the time of writing the model is a skeleton and that cache is not built, so callers still hold whatever state they need.
+The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. It does carry one hook for a caller who wants to be told rather than to ask - `Transport.add_listener`, a subscription that sees every message the unit pushes for the life of the connection (ADR-0009) - but the transport stores none of it. The model layer (design in [`domain-model.md`](domain-model.md)) introduces a broadcast-fed write-through cache above `protocol/client.py`; at the time of writing the model is a skeleton and that cache is not built, so callers still hold whatever state they need.
 
 ## 4. Owned Paths
 
@@ -82,6 +82,8 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0006 | The domain model takes the top-level namespace; the protocol layer moves to `pyquadcortex.protocol` |
 | ADR-0007 | The model may represent a control whose wire path is still open |
 | ADR-0008 | The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin |
+| ADR-0009 | Persistent listeners run on the RX thread, which may not read from the device |
+| ADR-0010 | A control with no known wire path gets a bounded search before it is modelled as refused |
 
 ## 8. Open Questions
 
@@ -184,6 +186,46 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 - The scan is scoped to the whole package rather than to `pyquadcortex/device/`, because
   a rule scoped to a directory is satisfiable by moving the code one directory up - which
   is precisely what a failure message naming a directory invites
+
+### 2026-08-12 - TEMPO MODE closes, and ADR-0010
+
+**What changed:**
+- **The Tempo menu's MODE switch is readable and writable.** It is the DEVICE tempo block's parameter 1, carried in `GlobalTempo.params`: `0.0` PRESET, `1.0` GLOBAL. `QuadCortex.tempo_mode()` / `set_tempo_mode()` and the `TempoMode` enum ship at the protocol layer; `docs/protocol.md` gains "MODE is the DEVICE tempo block's parameter 1" and a coverage-table row
+- ADR.md: ADR-0010 - a control with no known wire path gets a differential state capture before it is recorded as having none. ADR-0007's rule is unchanged and now has no instance, which is the healthy state for it
+- `docs/domain-model.md`: `Tempo.mode` stops being refused and becomes an ordinary property; §13's *Genuinely open* loses its first entry and the *Closed* table records where the answer lives; both appendix tempo rows updated. `manual-coverage.md` gains a MODE row and its tally moves to 104 / 65 yes
+- `docs/capture.md` gains "Diff the whole state, do not hunt for a field" - the method that found it, and the four things in the harness that are load-bearing. Its listener chapter, which used this claim as its exemplar, now carries the ending
+- **`TEMPO`'s span fits 40..240 bpm**, from three INTERIOR screen-vs-wire points measured during the same session, exact to the displayed integer at each. The endpoints are the fit's, not driven. `real=` on that parameter now takes bpm, via `tempo_bpm()` / `bpm_to_tempo()`; `protocol.md`'s placeholder-span list now has two of its eight parameters' spans measured and seven covered; splitter `FREQUENCY` is the one still unrecovered
+- `tests/hardware/state_snapshot.py` is the harness, reusable for the next control of this kind. It subscribes through `Transport.add_listener` (ADR-0009), which landed in the same release and is exactly the hook it needs - the first version predated it and monkey-patched `_dispatch`; `tests/test_state_snapshot.py` proves offline that it can see an unknown field number, a presence-tracked zero, and a value in only one of two message shapes
+
+**Why:**
+- The wire path was a named dependency of Epic #8 and a prerequisite of M3's device-settings work. Three earlier tests had established that the unit never BROADCASTS the switch, which had been over-read as "not on the wire"; a READ found it in one session
+- The method is the durable part. Earlier attempts hunted for the field they expected, in the messages they expected; MODE was one index away inside a message shape the investigation had already written off. Diffing the whole answerable state finds a thing without knowing where to look
+
+### 2026-08-12 - A persistent broadcast subscription at the protocol layer, and ADR-0009
+
+**What changed:**
+- `Transport.add_listener` / `remove_listener`: a subscription that sees every decoded inbound message for the life of the connection, including the unsolicited pushes `_dispatch` used to drop for want of a waiter. `QuadCortex` passes both through so the layer above never reaches into `_t`
+- The transport now refuses `request`, `await_broadcast` and `collect` when they are called from the RX thread. That is what makes "a listener never reads from the device" enforced rather than requested
+- `protocol.connect(before_handshake=...)` calls back with the started transport before the handshake runs, which is the only moment early enough to hear the handshake's own state burst
+- ADR.md: ADR-0009 - listeners run on the RX thread, and the RX thread may not read; the queue-and-delivery-thread alternative and the document-but-do-not-enforce alternative are recorded with why each was rejected
+- Section 3's "Data and state" names the one hook that is not a live exchange; section 7's table gained the ADR-0009 row
+- `docs/protocol.md` "Connect burst, measured" gained the fact that decided the hook: `connect()` returns at 2.0 s, the ModelRepo lands at 4.9 s and the seed preset at 10.1 s, so a listener attached to the returned client has missed the burst it wanted
+- `tests/hardware/` gained `test_broadcast_listener.py`, and the suite's connection fixture now records the burst - it cannot be attached on demand later, because the burst happens during `connect()`
+
+**Why:**
+- M1 Epic (stokes-audio/pyquadcortex#8), Story #11. This is the protocol-layer half of that story, carved out because it is independent of the model work: `docs/domain-model.md` section 9 needs a push-fed cache, and a cache cannot be fed by three hooks that are all one-shot and scoped to a trigger
+
+**Scope of impact:**
+- **Updated:** `pyquadcortex/protocol/transport.py`, `client.py`, `session.py`, `tests/test_transport.py`, `tests/test_client.py`, `tests/test_session.py`, `tests/test_handshake_burst_recorder.py` (new), `tests/hardware/conftest.py`, `tests/hardware/test_broadcast_listener.py` (new), `tests/hardware/readme.md`, ADR.md, CLAUDE.md, STEERING.md, architecture.md, api.md, protocol.md, changelog.md
+- **Not updated (intentionally):** ADR-0002 - the offline suite still imports no `hid` and the new tests run against `FakeHid` like the rest; ADR-0005 - the new hardware tests only listen, so they write nothing and have nothing to restore, which meets the contract rather than changing it; `docs/domain-model.md` - section 9 designed this and needed no correction; the coverage table in `protocol.md` - no new message type is involved
+
+**Also in this branch:**
+- Merged main (PR #19) in. That change took ADR-0008 for the generator floor, so the listener record is ADR-0009; the two commit messages on this branch predate the renumber and still say 0008
+
+**Downstream to consider:**
+- The model-side cache (the other half of #11) is the intended consumer and is being written separately. It registers through `before_handshake` so the burst warms it for free
+- `tests/hardware/test_write_echo.py` still taps `Transport._dispatch` by monkeypatching it, which predates this and could now be an ordinary listener. Left alone deliberately: it is a working measurement harness, and `tests/test_scene_echo_predicates.py` imports it offline
+- ADR-0009 leaves one question open on purpose - whether a listener hears about device loss. It stops receiving today, and the answer belongs with reconnect (#15)
 
 ### 2026-08-12 - The generator floor joins the bindings/pin unit (ADR-0008)
 

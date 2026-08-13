@@ -20,10 +20,10 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 103 features audited: **64 yes**, **8 partly**, **20 no**, **11 n/a**.
+Of 104 features audited: **65 yes**, **8 partly**, **20 no**, **11 n/a**.
 
-Of the 92 features a host could plausibly drive - everything above except the 11 marked
-n/a - **64 are fully covered** and 8 more are partly covered, which here means the state
+Of the 93 features a host could plausibly drive - everything above except the 11 marked
+n/a - **65 are fully covered** and 8 more are partly covered, which here means the state
 is readable and at least one field of it is confirmed writable, with the neighbours the
 same shape but not individually exercised. Only 20 remain untouched.
 
@@ -41,11 +41,13 @@ every option of the metronome's four lists, and the per-beat accent cells.
 
 What is left is of two kinds. A few writes are **confirmed no-ops** with no route found:
 preset tags, and duplicating a setlist as a device operation (the library does it by
-recall-and-save instead). One feature has **no wire path found yet** - the Tempo menu's
-MODE, which broadcasts nothing even on commit, though nothing has ever asked it directly
-(see [`domain-model.md`](domain-model.md#13-still-open)). And two whole features remain
-unexplored because they need the physical world: Neural Capture, and loading from the
-factory Captures Library.
+recall-and-save instead). And two whole features remain unexplored because they need the
+physical world: Neural Capture, and loading from the factory Captures Library.
+
+The Tempo menu's MODE was the last feature with no wire path found. It closed on
+2026-08-12: the device never broadcasts it, which three tests established correctly and
+which this document had over-read as unreachable, and it answers a READ perfectly well
+(`tempo_mode()` / `set_tempo_mode()`).
 
 ---
 
@@ -62,10 +64,11 @@ factory Captures Library.
 | Tuner: open/close | partly | `show_tuner()` is accepted; that it opens on screen has not been eyeballed |
 | Tuner: reference pitch, input source, mute | yes | `set_tuner_input()`, `set_tuner_reference()` and `set_tuner_mute()` all confirmed. Reference is an OFFSET in Hz from 440. Input accepts both inputs, both returns, INPUT_1_2 and USB 5/6; `RETURN_1_2` is refused by the DEVICE, so combined-returns tuning does not exist |
 | Tuner: Live Tuner (the needle) | no | UNSUPPORTED by decision. `enable_meter` refuses a host write - it stays false and `meter` stays 0.0 - so the needle never streams. Not worth chasing for an instrument you have to be holding; see `docs/roadmap.md` |
-| Tap tempo | no | candidate `GlobalTempo`. A READ of it returned only a running clock, never parameters |
-| Tempo value (per preset) | yes | `set_tempo_param("TEMPO", value=...)`. Note the catalog range is a placeholder, so `value=` not `real=` |
-| Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE has no wire path found yet - it is never broadcast, and nothing has tried reading it directly |
+| Tap tempo | no | a `GlobalTempo` READ carries the 25 device tempo parameters, and none of the 23 ATTRIBUTED ones is a tap (indices 23 and 24 are unattributed). MIDI CC#44 is the documented route |
+| Tempo value (per preset) | yes | `set_tempo_param("TEMPO", real=120)` in bpm, or `value=` for the raw 0..1. The catalog range is a placeholder, so the span was measured off the screen instead: three INTERIOR points (59, 111, 120 bpm), each exact to the displayed integer, fitting 40..240. The endpoints are the fit's - neither extreme was driven |
+| Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is `tempo_mode()` / `set_tempo_mode()` - see the row below |
 | Per-beat accents (customizing each beat of the bar) | yes | `set_beat(n, MetronomeBeat.ACCENT)` and `set_beats([...])`; `pyquadcortex.protocol.beats(preset)` reads them back. Tempo parameters 10-22 - the catalog's `STEPSTATE0` to `STEPSTATE12` - are beats 1 to 13, each a four-option list at `option / 3`: normal, off, accented, de-emphasized. Traced by touching cells on the unit; a cell cycles UP by 1/3 and wraps, so four touches return it to where it started. Set the time signature FIRST - changing it rewrites these |
+| Tempo MODE (Global vs Preset) | yes | `tempo_mode()` reads it, `set_tempo_mode()` writes it - the device tempo block's parameter 1, `0.0` PRESET and `1.0` GLOBAL. **Global, not per preset**: it affects every preset and there is nothing to save. The unit emits no change event when the switch moves - which is what three earlier tests measured - but the current value rides the ambient `GlobalTempo` params push. The reader must wait for a reply carrying PARAMETERS, since the type alternates that shape with a clock shape |
 | Per-scene tempo | n/a | `scene_tempo` is ignored and reads back empty, and the unit has no per-scene tempo - its Tempo MODE is global or per preset, nothing finer |
 | Modes: read or set PRESET/SCENE/STOMP/HYBRID | yes | `mode()` / `set_mode(slot)`, plus `mode_cycle()` to read the cycle - `mode()` accepts partial pushes and can report an empty one. `FootswitchMode` names the three base modes and `describe_mode()` names any value |
 | Modes: reorder, merge into HYBRID, remove | yes | `set_mode_cycle([...])`. All six HYBRID pairings are mapped and built with `hybrid_mode(top, bottom)`: a hybrid gives footswitches A-D one mode and E-H another, so 3-8 are the six ORDERED pairs (4 and 7 being the same pair swapped). A cycle holds at most one hybrid and a hybrid cannot be the only slot; value 9 is ACCEPTED by the device but leaves the footswitches dead, so it is refused here |

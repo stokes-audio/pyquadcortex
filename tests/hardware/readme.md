@@ -26,6 +26,39 @@ could not put back, rather than aborting on the first. That message is the list
 to fix by hand. Global settings are the ones worth checking first, since they
 survive a preset recall.
 
+## One connection, and why it records the connect burst
+
+Every test shares one connection, because the unit lets only one process hold the
+HID interface - a test that opened a second one would fail on whatever order it
+happened to run in.
+
+That connection attaches a listener before the handshake and records the type of
+every message the unit pushes. It is attached on every run, not only for the tests
+that read it, because it cannot be attached later: the burst happens during
+`connect()`.
+
+The fixture then waits for the burst to finish before handing the connection to
+the first test, and stops the recorder there. The recording is therefore exactly
+the burst, whatever order the tests run in. The metronome's tempo stream never
+stops, so a recorder left running would hold the whole run's traffic and a test
+asserting on it would really be asserting on whatever other tests provoked first.
+
+The wait costs about 8 seconds once per run and buys more than it costs.
+`connect()` returns roughly 3 seconds before the unit starts streaming several
+hundred messages, so without it every latency measurement below would be taken on
+a link still busy answering the handshake.
+
+The burst test's `assert handshake_burst.closed` and `settled_in is not None` are
+what hold that up. They are not belt-and-braces: they are the only things that
+fail if the fixture stops waiting for the burst, since every other assertion in
+that test is a floor and contamination satisfies a floor. Do not delete them as
+redundant.
+
+What they cannot see is a recorder that sets its flag and keeps recording anyway,
+or one that stops recording but stays attached to the transport. Both read like a
+working recorder from the outside, so both are pinned offline in
+`tests/test_handshake_burst_recorder.py`.
+
 ## Why the control test exists
 
 `test_parameter_echo_latency_is_the_control` measures a write whose latency was

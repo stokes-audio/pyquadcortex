@@ -110,6 +110,10 @@ concurrent:
   gunzips frame-level compressed payloads, parses the protobuf, and dispatches;
 - correlation: `request()` waiters keyed by `request_id`, plus
   `await_broadcast()` waiters keyed by message class and an optional predicate;
+- persistent subscriptions: `add_listener()` registers a callable that sees every
+  decoded message for as long as the connection lasts, including the unsolicited
+  pushes no waiter is expecting. It consumes nothing, so waiters and collectors
+  behave exactly as they do with no listener registered;
 - a keepalive thread;
 - tolerating the device's benign write STALL (see
   [protocol.md](protocol.md#the-benign-write-stall)): write errors are logged at
@@ -120,6 +124,16 @@ The RX thread must never die. Every decode/parse is wrapped, unknown message
 types and non-protobuf pushes are skipped at debug level, and the reassembly
 buffer is reset on anything malformed so one bad frame cannot wedge the stream.
 If you add code to the RX path, preserve that property.
+
+Listeners run on that thread, so the same rule covers them: one that raises is
+logged and skipped, its peers still get the message, and the message still
+reaches its waiter. A listener may also not read from the device -
+`request`, `await_broadcast` and `collect` raise `RuntimeError` when called from
+the RX thread, because the RX thread is the one that would have to deliver the
+answer, so such a call could only ever time out with the read loop stopped behind
+it. A listener applies what a push carries and notes what needs re-reading; the
+caller's thread does the re-reading (see [domain-model.md](domain-model.md)
+section 9, and ADR-0009).
 
 ### registry.py
 
@@ -156,6 +170,14 @@ ready for commands. The client
 remembers what it opened (`_owned_resources`) so `close()` and the context
 manager tear down only what `connect()` created. A client built around a
 caller-supplied transport owns nothing and `close()` is a no-op.
+
+`connect(before_handshake=...)` is the hook for anything that has to be watching
+before the handshake runs. The subscription burst the handshake sends is what
+makes the unit start pushing state, and that state arrives AFTER `connect()` has
+returned (measured: the client comes back at 2 s, the ModelRepo lands at 4.9 s and
+the current preset at 10.1 s - see [protocol.md](protocol.md), "Connect burst,
+measured"). So a listener registered on the returned client has already missed it;
+one registered through this hook has not.
 
 `import hid` lives *inside* `open_device()`. That laziness is a contract, not an
 accident: see [Testing philosophy](#testing-philosophy).
@@ -232,18 +254,22 @@ device.read() -> one 129-byte input report
   -> framing.decode_reports(buffer) -> (message_type, payload)
   -> gunzip payload if it starts 1f 8b
   -> registry.class_for(message_type) -> parse
-  -> _dispatch: a request_id waiter, else a broadcast waiter, else dropped
+  -> _dispatch: every listener, then collectors, then a request_id waiter,
+     else a broadcast waiter, else dropped
 ```
 
 ## send vs request vs await_broadcast
 
-Choosing correctly is most of the work of adding an operation.
+Choosing correctly is most of the work of adding an operation. The first three
+rows serve ONE exchange, which is what an operation needs. The last one is not an
+operation at all: it is how a long-lived caller watches the link.
 
 | Transport method | Use when | Blocking | Correlation |
 |---|---|---|---|
 | `send(msg)` | The device acts on the message and you do not need its answer: scene switch, grid edits, recall, keepalive. | No | None |
 | `request(msg, timeout=)` | The device answers a message of the **same type**: `Version` READ, `ResetCommsBuffers`, the `File` mutations. | Yes | Fresh `request_id` is assigned and registered before the write. Reply is the first inbound message of the same type whose `request_id`, if present on both sides, matches. |
 | `await_broadcast(cls, trigger, timeout=, match=)` | The answer arrives as a **push of a different type**, or as an unsolicited broadcast the device emits in response to an action: the `RecallPreset` push that carries a full preset, the `File` folder listings. | Yes | By message class, plus your optional `match` predicate. A right-type message the predicate rejects is left undelivered so a later one can satisfy the waiter. |
+| `add_listener(fn)` | You want EVERY message for the life of the connection, not the answer to one call: a cache fed by the unit's own pushes, or a log of the link. | No, but `fn` runs on the RX thread | None. Every message, every type, whether or not a waiter also gets it. Removed with the returned callable or `remove_listener(fn)`. |
 
 Two gotchas the current code already encodes, and that new operations must
 respect:
@@ -486,9 +512,11 @@ next, roughly in order of how well the ground is prepared:
   `RecentsFavorites`, `PresetDirty`, `Updater`, `ModelRepo` and others are
   decoded and pushed to us but have no API. These are the cheapest additions:
   the type already exists in the registry, so it is one client method plus
-  tests. (`GlobalTempo` is a special case: it is global rather than per preset and
-  only ever returned a running clock, so the useful per-preset tempo controls live
-  in `tempoProgramData` instead - see `set_tempo_param`.)
+  tests. (`GlobalTempo` is a special case: it is global rather than per preset,
+  and it alternates a clock shape with a 25-parameter shape, so a reader has to
+  match on a reply that actually carries parameters. Its parameter 1 is the Tempo
+  menu's MODE switch - see `tempo_mode`. The per-preset tempo controls live in
+  `tempoProgramData` instead - see `set_tempo_param`.)
 - **Types not in the registry at all.** The schema declares 71 message types.
   Whole feature areas are untouched: `Tuner` / `ShowTuner`, `Looper`,
   `MIDISettings`, `NeuralCapture` / `NeuralCapture2`, `Screenshot`,

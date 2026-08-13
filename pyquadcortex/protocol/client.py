@@ -38,7 +38,7 @@ from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  
                                 MetronomeBeat, MetronomeRouting,
                                 MetronomeSound, MidiOutType,
                                 MidiSource, Output, SceneBypassBehavior, Setlist,
-                                TempoSubdivision, TimeSignature)
+                                TempoMode, TempoSubdivision, TimeSignature)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
@@ -121,6 +121,89 @@ def db_to_lane_level(db: float) -> float:
             f"does not exist (for silence write 0.0, the Off position)"
         )
     return (db + 40.0) / 52.0
+
+
+def _mode_param(message, index: int):
+    """The float at tempo parameter ``index`` in a ``GlobalTempo``, or ``None``.
+
+    ``None`` means "this message does not answer the question" - the clock shape,
+    a params list too short, a param carrying no value, or a value stored as
+    something other than a float. It is deliberately not an exception: this runs
+    as a match predicate, where the right response to a message that cannot
+    answer is to keep waiting for one that can.
+
+    Two things here are not decoration.
+
+    **The explicit ``index`` wins over position.** ``Param.index`` is
+    presence-tracked, the device sets it on every param of a captured push
+    (checked: all 25, and there it equals position), and this library's own writes
+    set it. Reading positionally while the device keys by index is the
+    ``ColBypass.column`` mistake in a new place - it works until the device sends
+    a sparse or reordered list, and then it returns a neighbouring tempo
+    parameter as the answer. The neighbours are 0.0/1.0 floats too, so the wrong
+    answer would round cleanly and look right. Same fallback as
+    ``set_block.echoes_cell``: trust the index when present, use position when not.
+
+    **``ParamValue.value`` is a REAL oneof**, not a synthetic one - ``int_value``,
+    ``float_value``, ``string_value``. Reading ``.float_value`` off a param that
+    holds an int yields 0.0 with no error, which would report PRESET with total
+    confidence. ``tempo_params()`` already guards this; so does this.
+    """
+    by_index = None
+    for position, param in enumerate(message.params):
+        at = param.index if field_present(param, "index") else position
+        if at == index:
+            by_index = param
+            break
+    if by_index is None or not by_index.param_values:
+        return None
+    first = by_index.param_values[0]
+    if not field_present(first, "float_value"):
+        return None
+    return first.float_value
+
+
+def tempo_bpm(value: float) -> float:
+    """Convert a ``TEMPO`` wire value (0..1) to the bpm the unit displays.
+
+    Tempo spans **40 to 240 bpm**, so ``bpm = 40 + 200 * value``. Solved from three
+    screen readings taken against simultaneous wire reads, each landing on the
+    displayed integer exactly: 59 bpm at 0.095, 111 bpm at 0.355, 120 bpm at 0.400.
+    The 59 is what makes the fit worth trusting - a span needs a point away from the
+    others, which is the lesson the lane levels taught (``protocol.md``, "Some
+    catalog ranges are placeholders").
+
+    The ENDPOINTS are the fit's, not separate measurements: neither extreme was
+    driven. They land on 40 and 240, which is the tempo range the unit's manual
+    documents, so the two agree - but if you need the extremes exactly, drive them.
+
+    The catalog publishes ``TEMPO`` as 0..1 with a real-world unit - a placeholder,
+    which is why this helper exists.
+
+    A wire value outside 0..1 is refused rather than converted, for the same reason
+    :func:`bpm_to_tempo` refuses a bpm outside the span: the tempo the caller would
+    read back does not exist on the unit.
+    """
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(
+            f"a tempo wire value runs 0..1; {value} is outside it"
+        )
+    return 40.0 + 200.0 * value
+
+
+def bpm_to_tempo(bpm: float) -> float:
+    """Convert a bpm to the wire value ``TEMPO`` takes.
+
+    Inverse of :func:`tempo_bpm`; see it for how the scale was measured. A bpm
+    outside 40..240 does not exist on the unit and is refused rather than silently
+    clamped.
+    """
+    if not 40.0 <= bpm <= 240.0:
+        raise ValueError(
+            f"the unit's tempo runs 40..240 bpm; {bpm} bpm does not exist"
+        )
+    return (bpm - 40.0) / 200.0
+
 
 #: Where user setlists live. They sit SIDE BY SIDE here rather than nested inside
 #: "My Presets" - a folder created under My Presets is not a setlist and the device
@@ -238,6 +321,33 @@ class QuadCortex:
     def __exit__(self, exc_type, exc, tb):
         self.close()
         return False
+
+    # -- live state pushes -----------------------------------------------------
+
+    def add_listener(self, listener):
+        """Call ``listener(message)`` for every message the device sends.
+
+        A pass-through to
+        :meth:`~pyquadcortex.protocol.transport.Transport.add_listener`, which is
+        where the contract lives and is worth reading before you use this: the
+        listener runs on the transport's RX thread, so it must not block, and it
+        may not read from the device (the transport refuses that outright). It is
+        removed with the returned callable or with :meth:`remove_listener`.
+
+        This is how a long-lived caller sees the state the unit pushes without
+        being asked - a touchscreen edit, a preset recall, the metronome's tempo
+        stream - rather than the one-shot answer to a call it just made. To catch
+        the connect handshake's own burst of state, register before the handshake
+        with ``protocol.connect(before_handshake=...)``.
+        """
+        return self._t.add_listener(listener)
+
+    def remove_listener(self, listener):
+        """Stop calling ``listener``; return True if it had been registered.
+
+        Never raises, so teardown can call it unconditionally.
+        """
+        return self._t.remove_listener(listener)
 
     # -- session -------------------------------------------------------------
 
@@ -1038,8 +1148,13 @@ class QuadCortex:
         ``BinaryPreset.tempoProgramData`` - a REPEATED field with one entry, so read
         it as ``preset.tempoProgramData[0]`` - with 24 parameters, among them ``TEMPO``,
         ``LED LIGHT``, ``VOLUME``, ``TYPE``, ``TIME SIGNATURE`` and ``SOUND``.
-        These are per PRESET, unlike ``GlobalTempo``, which is global and only ever
-        reported a running clock.
+        These are per PRESET. ``GlobalTempo`` carries the DEVICE's copy of the same
+        block - the unit keeps both at once and the Tempo menu's MODE switch decides
+        which one plays (measured: 111 bpm under PRESET, 120 under GLOBAL, on the same
+        unit minutes apart). This method addresses the preset's block by construction,
+        so writing one while MODE is GLOBAL should store a value you will not hear
+        until you switch back. That last step is INFERRED from those two facts rather
+        than measured. See :meth:`tempo_mode`.
 
         Confirmed on hardware: although ``tempoProgramData`` is NOT row or column
         keyed - it sits outside ``chains[]`` - a ``Grid`` UPDATE carrying it is
@@ -1063,9 +1178,15 @@ Two of those names disagree with the catalog, which is why the map
         list-valued ones prefer :meth:`set_tempo_option`, which range-checks an option
         number instead of taking a raw float.
 
-        The menu's MODE control - global or per-preset tempo - broadcasts NOTHING when
-        changed, so it is not reachable here. Index 1, the catalog's TYPE, was not
-        touched by any control in the menu.
+        The menu's MODE control - global or per-preset tempo - is NOT here: it is the
+        DEVICE block's index 1, so :meth:`set_tempo_mode` drives it. The PRESET copy of
+        index 1, the catalog's TYPE, is touched by no control in the menu and held 0.0
+        through every flip and edit measured.
+
+        ``real=`` on index 0 means BPM, over the measured 40..240 span
+        (:func:`tempo_bpm`). The catalog cannot convert it - the range it publishes for
+        ``TEMPO`` is a placeholder - so this is the one index where ``real=`` comes from
+        a measurement rather than from the catalog.
 
         Convenience wrappers: :meth:`set_tempo_led`, :meth:`set_metronome_volume`,
         and :meth:`set_tempo_option` for the lists.
@@ -1088,14 +1209,21 @@ Two of those names disagree with the catalog, which is why the map
             else:
                 index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
         if real is not None:
-            model = self.catalog[self.TEMPO_CONTROL]
-            if index >= len(model.parameters):
-                raise ValueError(
-                    f"the catalog does not describe tempo parameter {index} (it "
-                    f"describes 0 to {len(model.parameters) - 1}), so real= cannot be "
-                    f"converted - pass value= with the normalized 0..1 instead"
-                )
-            value = model.parameters[index].to_normalized(real)
+            if index == 0:
+                # TEMPO's catalog range is a placeholder (0..1 with a real unit), so
+                # the catalog cannot convert it. The span was measured instead -
+                # 40..240 bpm, three screen-vs-wire points - so real= means bpm here
+                # rather than raising. Same shape as lane VOLUME and its dB helper.
+                value = bpm_to_tempo(real)
+            else:
+                model = self.catalog[self.TEMPO_CONTROL]
+                if index >= len(model.parameters):
+                    raise ValueError(
+                        f"the catalog does not describe tempo parameter {index} (it "
+                        f"describes 0 to {len(model.parameters) - 1}), so real= cannot "
+                        f"be converted - pass value= with the normalized 0..1 instead"
+                    )
+                value = model.parameters[index].to_normalized(real)
         if value is None:
             raise TypeError("set_tempo_param needs value= (0..1) or real= (own units)")
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
@@ -1264,6 +1392,116 @@ Two of those names disagree with the catalog, which is why the map
             qc.set_metronome_volume(real=-20.0)      # -20 dB
         """
         return self.set_tempo_param("VOLUME", value=value, real=real)
+
+    #: Index of MODE inside the DEVICE tempo block. It is the catalog's ``TYPE``,
+    #: which no control in the preset's own Tempo page writes - the preset copy of
+    #: parameter 1 sat at 0.0 through every flip measured.
+    TEMPO_MODE_PARAM = 1
+
+    def tempo_mode(self, timeout: float = 30.0) -> "TempoMode":
+        """Whether the unit is running on the PRESET's tempo or the DEVICE's.
+
+        The Tempo and Metronome menu's MODE switch. Returns a
+        :class:`~pyquadcortex.protocol.enums.TempoMode`.
+
+        Confirmed on hardware (2026-08-12) by capturing every field of every
+        message the device answers in each switch position and diffing the two:
+        exactly one field moved, this one. The tempo actually in effect
+        corroborates it from a second direction - the unit displayed 111 bpm in
+        PRESET with the preset block holding 0.355, and 120 bpm in GLOBAL with the
+        device block holding 0.400.
+
+        **The device emits no CHANGE EVENT when the switch moves** - three earlier
+        investigations watched for one and correctly found none. The current VALUE
+        is a different matter: it rides the ambient ``GlobalTempo`` params push,
+        which arrived twice per 14-second window in each of the three captures
+        (against 63 clock-shaped pushes in the same window). So a state tracker CAN
+        follow this field from pushes; what it cannot do is be told the moment it
+        moves.
+
+        That is also why the timeout is generous. ``GlobalTempo`` alternates two
+        shapes and only one carries parameters, so this waits for that shape
+        specifically rather than taking the first ``GlobalTempo`` to arrive - which
+        is how a single earlier READ came back holding only the running clock and
+        got written up as a dead end.
+
+        **A read straight after a write returns the PREVIOUS value, and "a moment"
+        is not long enough.** This type does not echo ``request_id`` - zero of 64
+        captured pushes carried one - so this returns the next AMBIENT params push,
+        which may have been generated before your write. That shape arrives only
+        about every seven seconds, so **wait longer than that interval** - ten
+        seconds is the figure the hardware suite uses. Observed directly: a write
+        followed by a 3-second settle read back the old value, while the write had
+        landed and every read afterwards agreed.
+
+        A caller who needs certainty rather than a settle should discard the first
+        matching push and take the second, which cannot predate the call.
+        """
+        index = self.TEMPO_MODE_PARAM
+        seen = []
+
+        def carries_mode(message):
+            seen.append(message)
+            return _mode_param(message, index) is not None
+
+        try:
+            reply = self._t.await_broadcast(
+                pa.GlobalTempoMessage,
+                lambda: self._t.send(
+                    pa.GlobalTempoMessage(action=pa.MessageAction.READ)),
+                timeout=timeout, match=carries_mode)
+        except TimeoutError:
+            # "No broadcast arrived" and "none of them carried what I asked for"
+            # are different facts, and this project has already spent eight
+            # releases on the difference. Say which one happened.
+            raise TimeoutError(
+                f"no GlobalTempo carrying tempo parameter {index} within "
+                f"{timeout}s. {len(seen)} GlobalTempo push(es) DID arrive - this "
+                f"type alternates a clock shape with a params shape and only the "
+                f"params shape answers, so a longer timeout may be all that is "
+                f"needed. Do not read this as the device being silent."
+            ) from None
+
+        value = _mode_param(reply, index)
+        if value not in (float(TempoMode.PRESET), float(TempoMode.GLOBAL)):
+            # Not rounded into an enum. The same policy as beats(): a value
+            # outside the states we know means the assumption is wrong, and
+            # rounding would convert that signal into a confident answer.
+            raise ValueError(
+                f"tempo parameter {index} holds {value!r}, which is neither "
+                f"{float(TempoMode.PRESET)} (PRESET) nor {float(TempoMode.GLOBAL)} "
+                f"(GLOBAL). The MODE mapping may not hold on this firmware."
+            )
+        return TempoMode(int(value))
+
+    def set_tempo_mode(self, mode: "TempoMode"):
+        """Move the MODE switch: run on the preset's tempo, or the device's.
+
+        Takes a :class:`~pyquadcortex.protocol.enums.TempoMode`. Confirmed on
+        hardware and ON THE UNIT'S OWN SCREEN (2026-08-12): writing GLOBAL moved
+        the menu's switch and changed the tempo in effect from 111 to 120 bpm,
+        writing PRESET moved both back.
+
+        **Global, not per preset**, despite riding a tempo message: there is nothing to
+        save afterwards. Read :meth:`tempo_mode` first if you intend to put it back.
+
+        What was MEASURED is that the write moves the device block and leaves the
+        loaded preset's own copy alone. That it therefore affects EVERY preset
+        follows from the menu being a device setting, and was not tested with a
+        second preset loaded.
+
+        This does NOT move either tempo block. The preset's
+        ``tempoProgramData`` parameter 1 was measured before and after the write
+        and did not move, which is what makes the scope of this write knowable
+        rather than assumed - the device accepts a write it does not understand
+        and says nothing, so a write whose target is guessed is indistinguishable
+        from one that worked.
+        """
+        message = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+        param = message.params.add()
+        param.index = self.TEMPO_MODE_PARAM
+        param.param_values.add().float_value = float(int(TempoMode(mode)))
+        return self._t.send(message)
 
     def set_chain_output(self, row: int, out_portid: int):
         """Point one grid ``row``'s output at ``out_portid`` (row-keyed update).

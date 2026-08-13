@@ -20,6 +20,7 @@ from pyquadcortex.protocol.transport import DeviceLostError
 from pyquadcortex.protocol.client import (SCENE_UNLABELLED, UNITY_LEVEL,
                                           db_to_input_level, db_to_lane_level,
                                           input_level_db, lane_level_db,
+                                          tempo_bpm, bpm_to_tempo,
                                           USER_SETLIST_ROOT, Block,
                                           BlockRefused, Folder, MidiOut, QuadCortex, Split,
                                           StompAssignment, blocks, field_present,
@@ -39,7 +40,8 @@ from pyquadcortex.protocol.enums import (BROKEN_MODE_VALUE, Footswitch, Footswit
                                          MetronomeBeat, MetronomeRouting,
                                          MetronomeSound, MidiSource,
                                          Output, Scene,
-                                         SceneBypassBehavior, Setlist, TempoSubdivision,
+                                         SceneBypassBehavior, Setlist, TempoMode,
+                                         TempoSubdivision,
                                          TimeSignature)
 from pyquadcortex.protocol.session import DeviceNotFoundError, connect, open_device
 from pyquadcortex.protocol import models  # generated factory-block constants
@@ -78,6 +80,7 @@ __all__ = [
     "ExpressionBypassMode",
     "LooperState",
     "GlobalEQFilter",
+    "TempoMode",
     "TempoSubdivision",
     "MetronomeSound",
     "MetronomeBeat",
@@ -102,6 +105,8 @@ __all__ = [
     "db_to_input_level",
     "lane_level_db",
     "db_to_lane_level",
+    "tempo_bpm",
+    "bpm_to_tempo",
     "SCENE_UNLABELLED",
     "field_present",
     "Input",

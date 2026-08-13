@@ -12,7 +12,7 @@ import pytest
 
 from pyquadcortex.protocol import catalog, client
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
-                                Output, SceneBypassBehavior, Setlist)
+                                Output, SceneBypassBehavior, Setlist, TempoMode)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
@@ -25,6 +25,7 @@ class FakeTransport:
         self.canned = canned or {}
         self.broadcast = None
         self.last_match = None  # the match predicate read_preset passed, if any
+        self.listeners = []
         self._ids = itertools.count(1)
 
     def send(self, msg):
@@ -41,6 +42,16 @@ class FakeTransport:
         self.last_match = match
         trigger()
         return self.broadcast
+
+    def add_listener(self, listener):
+        self.listeners.append(listener)
+        return lambda: self.remove_listener(listener)
+
+    def remove_listener(self, listener):
+        if listener in self.listeners:
+            self.listeners.remove(listener)
+            return True
+        return False
 
 
 # -- 5.1 read_current_preset -------------------------------------------------
@@ -2836,6 +2847,214 @@ def test_set_tempo_option_range_checks_against_the_catalogs_step_count():
         qc.set_tempo_option("ROUTING", 5)
 
 
+# -- the TEMPO span ------------------------------------------------------------
+# The catalog publishes TEMPO as 0..1 with a real-world unit - a placeholder - so
+# the span was measured instead: three screen readings taken against simultaneous
+# wire reads on 2026-08-12, each landing on the displayed integer exactly.
+
+
+#: (wire value, bpm on the unit's screen). The 59 is the one that earns the fit:
+#: 111 and 120 sit 9 bpm apart, and two close points cannot distinguish spans -
+#: the lesson the lane levels taught after two releases of a wrong one.
+MEASURED_TEMPO_POINTS = ((0.095, 59.0), (0.355, 111.0), (0.400, 120.0))
+
+
+@pytest.mark.parametrize("value,bpm", MEASURED_TEMPO_POINTS)
+def test_tempo_bpm_matches_every_measured_point(value, bpm):
+    assert client.tempo_bpm(value) == pytest.approx(bpm, abs=0.01)
+    assert client.bpm_to_tempo(bpm) == pytest.approx(value, abs=1e-6)
+
+
+def test_tempo_bpm_refuses_a_tempo_the_unit_does_not_have():
+    with pytest.raises(ValueError, match="40..240"):
+        client.bpm_to_tempo(300.0)
+    with pytest.raises(ValueError, match="40..240"):
+        client.bpm_to_tempo(39.0)
+
+
+def test_set_tempo_param_takes_real_as_bpm_for_index_zero():
+    """The one index where ``real=`` comes from a measurement, not the catalog.
+
+    Every other tempo parameter converts through the catalog, which refuses TEMPO
+    because its published range is a placeholder. No catalog is loaded here, which
+    is the point: if this path went through the catalog it would raise.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_tempo_param("TEMPO", real=111.0)
+    sent = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
+    assert sent.index == 0
+    assert sent.param_values[0].float_value == pytest.approx(0.355, abs=1e-6)
+
+
+# -- the Tempo menu's MODE switch ----------------------------------------------
+# Found 2026-08-12 by capturing every field of every message the device answers in
+# each switch position and diffing: exactly one moved, the DEVICE tempo block's
+# parameter 1. Three earlier investigations watched for a broadcast on commit,
+# correctly found none, and concluded the switch was not on the wire - it is, and
+# only a READ finds it.
+
+
+def _global_tempo_with_mode(value, count=25, keyed=True):
+    """A ``GlobalTempo`` push in the shape that carries parameters.
+
+    ``keyed`` reflects what the DEVICE actually sends, which was checked against
+    the 2026-08-12 captures rather than assumed: every one of the 25 params
+    carries an explicit ``index``, and there it equals position. The first version
+    of this helper built them with ``index`` absent - a shape the unit has never
+    been observed sending - which made the reader look correct for the wrong
+    reason. ``keyed=False`` is kept to prove the positional fallback still works.
+    """
+    message = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    for index in range(count):
+        param = message.params.add()
+        if keyed:
+            param.index = index
+        param.param_values.add(
+            float_value=value if index == client.QuadCortex.TEMPO_MODE_PARAM else 0.0)
+    return message
+
+
+def test_tempo_mode_reads_parameter_one_of_the_device_block():
+    fake = FakeTransport()
+    fake.broadcast = _global_tempo_with_mode(1.0)
+    qc = client.QuadCortex(fake)
+
+    assert qc.tempo_mode() is TempoMode.GLOBAL
+    assert isinstance(fake.sent[-1], pa.GlobalTempoMessage)
+    assert fake.sent[-1].action == pa.MessageAction.READ
+
+
+def test_tempo_mode_predicate_rejects_everything_that_cannot_answer():
+    """The predicate is the whole instrument, so it is pinned here.
+
+    ``GlobalTempo`` alternates two shapes and only one carries parameters. A
+    single earlier READ landed on the clock shape and was written up as a dead
+    end - "returned only a running clock" - and that stood for eight releases
+    (0.33.0 through 0.40.0). A
+    waiter that accepts any ``GlobalTempo`` reproduces it exactly.
+
+    Every case below was chosen because it DISTINGUISHES the real predicate from
+    a weaker one. An earlier version of this test used only the clock shape, an
+    empty push and a full params push - all three separated by "params non-empty"
+    alone - so replacing the predicate with ``len(m.params) > 0`` kept it green.
+    Mutation-checked: each assertion here fails under that weakening.
+    """
+    fake = FakeTransport()
+    fake.broadcast = _global_tempo_with_mode(0.0)
+    qc = client.QuadCortex(fake)
+    qc.tempo_mode()
+    match = fake.last_match
+
+    clock = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    clock.metronome_status.current_beat = 2
+    assert not match(clock), "the clock shape carries no parameters"
+    assert not match(pa.GlobalTempoMessage()), "an empty push is not an answer"
+
+    short = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    short.params.add().param_values.add(float_value=0.4)      # only index 0
+    assert not match(short), "params present, but none of them is the mode"
+
+    no_values = _global_tempo_with_mode(0.0)
+    no_values.params[1].ClearField("param_values")
+    assert not match(no_values), "the mode param carries no value"
+
+    as_int = _global_tempo_with_mode(0.0)
+    as_int.params[1].ClearField("param_values")
+    as_int.params[1].param_values.add(int_value=1)
+    assert not match(as_int), (
+        "ParamValue.value is a REAL oneof - reading .float_value off an "
+        "int-valued param yields 0.0 silently, which would report PRESET")
+
+    assert match(_global_tempo_with_mode(0.0)), "the params shape IS the answer"
+
+
+def test_tempo_mode_reads_by_index_not_by_position():
+    """The device keys these params, so the reader must not count them.
+
+    Checked against the 2026-08-12 captures: every param of the pushed shape
+    carries an explicit ``index``. It happens to equal position on this firmware,
+    so a positional read is right by luck - and a sparse or reordered push would
+    silently return a NEIGHBOURING tempo parameter. The neighbours are 0.0/1.0
+    floats too (LED LIGHT, START), so the wrong answer would look valid.
+    """
+    # Built so the two readings DISAGREE, which is the only way this test can
+    # fail when the fix is removed. Position 1 holds index 2 (LED LIGHT = 1.0);
+    # index 1 - the mode - is last and holds 0.0. A positional read answers
+    # GLOBAL, the correct read answers PRESET.
+    sparse = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    for index, value in ((0, 0.4), (2, 1.0), (1, 0.0)):
+        param = sparse.params.add()
+        param.index = index
+        param.param_values.add(float_value=value)
+
+    fake = FakeTransport()
+    fake.broadcast = sparse
+    assert client.QuadCortex(fake).tempo_mode() is TempoMode.PRESET, (
+        "read position 1 (LED LIGHT) instead of the param keyed index 1")
+
+    # And the positional fallback still applies when the device omits index.
+    fake = FakeTransport()
+    fake.broadcast = _global_tempo_with_mode(1.0, keyed=False)
+    assert client.QuadCortex(fake).tempo_mode() is TempoMode.GLOBAL
+
+
+def test_tempo_mode_refuses_a_value_that_is_not_a_mode():
+    """Rounding would turn "the mapping is wrong" into a confident answer.
+
+    Same policy as ``beats()``, which returns an unrecognised quantized value as
+    a raw float rather than rounding it into an enum. 0.4 is not PRESET.
+    """
+    fake = FakeTransport()
+    fake.broadcast = _global_tempo_with_mode(0.4)
+    with pytest.raises(ValueError, match="0.4"):
+        client.QuadCortex(fake).tempo_mode()
+
+
+def test_tempo_mode_timeout_says_which_silence_it_was():
+    """"No push arrived" and "none of them answered" are different facts.
+
+    Conflating them is what cost this project eight releases, so the error must
+    not assert device silence when it observed predicate silence.
+    """
+    class Silent(FakeTransport):
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            self.last_match = match
+            trigger()
+            for _ in range(3):
+                match(pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE))
+            raise TimeoutError("no GlobalTempoMessage broadcast within 30.0s")
+
+    with pytest.raises(TimeoutError, match="3 GlobalTempo push"):
+        client.QuadCortex(Silent()).tempo_mode()
+
+
+def test_set_tempo_mode_writes_the_device_block_and_not_the_preset():
+    """Scope is the point. ADR-0007 rejected letting a tempo write land in
+    whichever scope the unit happened to be in, because a guess and a success look
+    identical to the caller. Measured on hardware: the preset's own parameter 1 did
+    not move across this write."""
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+
+    qc.set_tempo_mode(TempoMode.GLOBAL)
+    sent = fake.sent[-1]
+    assert isinstance(sent, pa.GlobalTempoMessage), "not a Grid/preset edit"
+    assert sent.action == pa.MessageAction.UPDATE
+    assert len(sent.params) == 1
+    assert sent.params[0].index == 1
+    assert sent.params[0].param_values[0].float_value == 1.0
+
+    qc.set_tempo_mode(TempoMode.PRESET)
+    assert fake.sent[-1].params[0].param_values[0].float_value == 0.0
+
+
+def test_set_tempo_mode_refuses_a_value_that_is_not_a_mode():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError):
+        qc.set_tempo_mode(2)
+    assert qc._t.sent == []
+
+
 # -- per-beat metronome states (STEPSTATE) -------------------------------------
 # Traced on hardware: from a 4/4 preset reading ENNN, one touch on beat 3 wrote
 # index 12 = 0.3333, three touches on beat 4 walked index 13 through 0.3333,
@@ -3130,3 +3349,27 @@ def test_set_master_volume_accepts_both_ends(edge):
     qc = client.QuadCortex(FakeTransport())
     qc.set_master_volume(edge)
     assert qc._t.sent[-1].volume == edge
+
+
+# -- listening to what the device pushes ---------------------------------------
+
+
+def test_add_and_remove_listener_pass_straight_through_to_the_transport():
+    # The client's whole job here is to spare the caller reaching into qc._t. The
+    # contract - RX thread, no blocking, no reads - belongs to the transport and is
+    # tested there.
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    seen = []
+
+    drop = qc.add_listener(seen.append)
+    assert fake.listeners == [seen.append]
+
+    drop()
+    assert fake.listeners == []
+    assert qc.remove_listener(seen.append) is False, \
+        "removing what is not registered reports so rather than raising"
+
+    qc.add_listener(seen.append)
+    assert qc.remove_listener(seen.append) is True
+    assert fake.listeners == []

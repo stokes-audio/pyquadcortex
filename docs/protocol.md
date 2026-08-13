@@ -44,6 +44,7 @@ confirming each finding live against hardware.
   - [7.4 Scenes](#74-scenes)
   - [7.5 Grid edits and the edit path](#75-grid-edits-and-the-edit-path)
   - [Per-preset tempo, LED and metronome](#per-preset-tempo-led-and-metronome)
+    - [MODE is the DEVICE tempo block's parameter 1](#mode-is-the-device-tempo-blocks-parameter-1)
   - [Grid block move](#grid-block-move)
   - [7.6 Per-preset MIDI Out](#76-per-preset-midi-out)
   - [7.6b Moving blocks, and creating a branch](#76b-moving-blocks-and-creating-a-branch)
@@ -975,7 +976,7 @@ named order:
 | index | control on screen | catalog name |
 |---|---|---|
 | 0 | TEMPO | TEMPO |
-| 1 | - | TYPE. NOT written by any control in the menu |
+| 1 | - (in the preset) | TYPE. NOT written by any control in the menu, in the PRESET copy - it stayed 0.0 through every measured flip. In the DEVICE copy carried by `GlobalTempo.params` the same index is **MODE**: `0.0` PRESET, `1.0` GLOBAL. See below |
 | 2 | Tempo LED | LED LIGHT |
 | 3 | Volume | VOLUME |
 | 4 | **The unit's MUTE** (`1.0` = AUDIBLE, `0.0` = muted) | START in the catalog, PLAYBACK in the manual, MUTE on the unit's own Tempo page - one control, three names. TRACED: pressing the unit's MUTE button writes `0.0`, pressing it again writes `1.0`. Note it is INVERTED against the label a player sees. This table said the opposite for two releases, having inferred polarity from the Looper X mirror's NAME (METRONOME MUTE) - and that mirror is inverted too |
@@ -1071,8 +1072,11 @@ so position is the index - the same convention as `models[]`. A host WRITE does 
 `index`; it is only the device's stored form that omits it. `pyquadcortex.protocol.tempo_params()`
 reads them positionally.
 
-**The menu's MODE control (global or per-preset tempo) is NEVER BROADCAST**, established
-three times, the last two with instruments worth trusting.
+**The menu's MODE control emits NO CHANGE EVENT, and is READABLE AND WRITABLE
+ANYWAY.** The silence is real, established three times, the last two with instruments
+worth trusting - and it is a fact about change notification, not about readability.
+The current value rides the ambient tempo stream. Keep this pair together: it is the
+clearest example this project has of a trustworthy negative being over-read.
 
 1. **The first attempt.** Toggling to GLOBAL, pressing OK, toggling back to PRESET,
    pressing OK again and then saving the preset produced no `Grid`, `GlobalTempo` or
@@ -1090,31 +1094,101 @@ three times, the last two with instruments worth trusting.
    `BANK UP` that ends the section, so it repeats the toggle rather than the commit. The
    commit case rests on the two runs above.
 
-**Read that for exactly what it says.** For eight releases - 0.33.0 through 0.40.0 - this
-section said MODE "is NOT on the wire", and the coverage audit and the model design said
-"not on the wire at all". Both are more than the measurement supports: every one of those
-tests LISTENED, and none of them ASKED. A control the device never announces may still
-answer a READ, or ride in one of the two message types the re-test did not decode. So the
-state of knowledge is "we have not found the wire path", which is an open investigation,
-not a closed door. It is still a good illustration of why a negative result needs a
-trustworthy instrument - and now also of the second half of that rule, which is to state
-only what the instrument measured.
+All three are sound as far as they go, and all three answer a narrower question than
+the one that was asked of them. For eight releases - 0.33.0 through 0.40.0 - this
+section said MODE "is NOT on the wire", and the coverage audit and the model design
+said "not on the wire at all". Every one of those tests LISTENED, and none of them
+ASKED. **The switch was on the wire the whole time.**
 
-Untried, for whoever picks this up: a targeted READ of the candidate message types, and
-decoding the two the re-test missed. Cortex Control offers the same switch, so a route
-exists. Until it is found, the model shows the control and refuses it rather than guessing
-which scope a tempo write landed in (ADR-0007); `domain-model.md` §13 carries the same
-entry.
+Worse than that, and worth stating because it is the sharper lesson: **the value was
+in the ambient stream those tests were recording.** The params-shaped `GlobalTempo`
+push carries `params[1]`, and it arrives about twice per 14 seconds regardless of
+whether anyone touches the switch. A 420-second run should have caught it flipping.
+The likeliest reason none did is the noise list - `capture.md`'s own listener recipe
+names `GlobalTempoMessage` first among the types to filter out, because it is the
+heaviest chatter on the link. So the answer was very probably discarded by the
+instrument before it reached the log, three times.
 
-**Ask `GlobalTempo` first.** A single READ of it returned only a running clock
-(`current_beat`, `current_bar`, `current_tick`) with no parameters, and that was written up
-here as a dead end. It should not be read as one. Section 8's broadcast notes record that
-`GlobalTempo` **alternates two shapes** - one push carrying `metronome_status`, one
-carrying the 25 params - and a captured Cortex Control session decodes a `GlobalTempo`
-UPDATE carrying a `params` list in the same `index` / `param_values` shape as
-`tempoProgramData`. One READ reply that happened to come back in the clock shape says
-nothing about the other. It is the only message type this project has seen carrying global
-tempo parameters, which makes it the first place to ask rather than a closed one.
+### MODE is the DEVICE tempo block's parameter 1
+
+Found 2026-08-12. `GlobalTempo.params[1]` is the Tempo menu's MODE switch:
+
+| wire | the menu shows |
+|---|---|
+| `0.0` | PRESET |
+| `1.0` | GLOBAL |
+
+Readable by `GlobalTempo{READ}`, and **writable** by a `GlobalTempo{UPDATE,
+params{index: 1, param_values}}` - the same `index` / `param_values` shape as every other
+tempo write. `QuadCortex.tempo_mode()` and `set_tempo_mode()` are the operations;
+`TempoMode` is the enum.
+
+**The unit keeps two tempo blocks and MODE picks which one plays.** The preset's is
+`BinaryPreset.tempoProgramData` with 24 parameters; the device's rides in
+`GlobalTempo.params` with 25. Neither is touched by the switch. On the unit measured they
+disagreed at indices 2 (`LED LIGHT`), 3 (`VOLUME`) and 9 (`ROUTING`) as well as the
+tempo itself. The tempo difference was heard and seen - 111 bpm against 120 - so
+which block is in effect is not a subtle distinction; the other three were read off
+the wire rather than listened to.
+
+How it was established, because a negative that stood for eight releases deserves a
+method rather than an assertion: **every field of every message the device answers was
+captured in each switch position and diffed**, rather than any field being looked for.
+Twelve state types were READ - `GlobalTempo`, `GeneralSettings`, `Mode`, `IOSettings`,
+`MasterVolume`, `GlobalEQ`, `ShowGigView`, `Tuner`, `Looper`, `SetlistPosition`, `Scene`,
+`PresetDirty` - the RX path was tapped for a 14-second window so everything else the
+device pushed was captured too, and both the named fields and any field number the
+recovered schema does not know were recorded. Across a PRESET -> GLOBAL -> PRESET cycle
+exactly one field moved, and it moved back; the return capture differed from the baseline
+in nothing at all.
+
+**What did NOT differ, since a negative is a result too.** `GeneralSettings` was
+identical in both positions, and no message anywhere carried a field number the schema
+does not know - so the mode is not hiding in the settings bag, which was the leading
+hypothesis given that message's 39 gapless field numbers. `BinaryPreset.tempo` (field 10)
+was ABSENT in both positions, and the preset's whole `tempoProgramData` block was
+identical across the flip, so presence in the preset is not the discriminator either. Of
+the device tempo block's 25 parameters, index 24 - which exists there, does not exist in
+the preset's 24, and is described nowhere - held `0.0` in both positions and is still
+unattributed.
+
+This method is now required rather than optional: ADR-0010 makes a differential
+state capture the thing that happens before a control is recorded as having no wire
+path. The harness is `tests/hardware/state_snapshot.py`, and
+`tests/test_state_snapshot.py` proves offline that it can SEE an unknown field number, a
+presence-tracked field set to zero, and a value appearing in only one of two message
+shapes - the three ways this particular question could have come back falsely negative
+again.
+
+Three independent confirmations, since one flip in one direction is what produced this
+project's last false result:
+
+1. **The wire.** `0.0` -> `1.0` -> `0.0`, nothing else moving either way.
+2. **The unit's own screen.** A host write moved the menu's switch, and the restore
+   moved it back - watched by the owner at the unit.
+3. **The tempo in effect.** The unit displayed 111 bpm in PRESET and 120 in GLOBAL, with
+   the preset block holding `0.355` and the device block `0.400`. Both are exact on a
+   40-240 bpm range, from a direction nobody was looking.
+
+A host write to parameter 1 left the preset's own copy of parameter 1 at `0.0`, measured
+before and after, so the scope of the write is known rather than assumed. That matters
+more than it looks: ADR-0007 rejected letting a tempo write land in whichever scope the
+unit happened to be in, precisely because the device accepts a write it does not
+understand and says nothing, which makes a guess and a success indistinguishable.
+
+**It is the catalog's `TYPE`,** which the table above records as written by no control in
+the menu. That is true of the PRESET copy, which sat at `0.0` throughout. The DEVICE copy
+is the switch.
+
+**Asking `GlobalTempo` was the lead that paid off, and it had been written off.** A single
+READ of it once returned only a running clock (`current_beat`, `current_bar`,
+`current_tick`) with no parameters, and that was recorded here as a dead end. It was not
+one: `GlobalTempo` **alternates two shapes** - one push carrying `metronome_status`, one
+carrying the 25 params - and that READ happened to land on the clock. A reader of this
+message must match on CONTENT, waiting for a reply that actually carries parameters;
+one that takes the first `GlobalTempo` to arrive will usually get the clock and read
+nothing, which is exactly how the dead end was manufactured. The params shape was
+measured arriving about once every seven seconds, so the wait needs to be generous.
 
 One genuine related dead end, for the record: `MetronomeStatusUpdate`
 carries only `is_enabled` and `preroll_enabled`, with no mute or level field at all -
@@ -1707,7 +1781,11 @@ its cache; merge only what is present. (This is the documented reason `settings(
 
 **`GlobalTempo` arrives in pairs because it alternates two shapes** - one push carrying
 `metronome_status`, one carrying the 25 params. Anyone counting messages or diffing
-consecutive pushes should expect the alternation.
+consecutive pushes should expect the alternation. **A reader of this type must match on
+CONTENT**, waiting for the shape it needs: taking the first `GlobalTempo` to arrive is
+how a READ for the tempo parameters once came back holding only the clock and was
+recorded as a dead end for eight releases. In a 14-second window the params shape
+arrived twice, so allow roughly seven seconds per attempt.
 
 ## Two parameters called MUTE, with opposite polarities
 
@@ -1765,6 +1843,14 @@ messages streaming at ~1490 reports/s for ~5 s, then every other subscribed stat
 once - including the seed RecallPreset - at about **9 s after connect**, consistent across
 several sessions on d14e. (Earlier sessions recorded 10-25 s for lazily-serviced pushes;
 keep timeouts generous, but 9 s is the typical seed arrival.)
+
+**`connect()` returns before the burst arrives.** Re-measured 2026-08-12 on d14e with a
+transport listener registered before the handshake: `connect()` handed back its client 2.0 s
+in, having seen only the `ResetCommsBuffers` echo and the unit's own `Version` READ. The
+ModelRepo landed at 4.9 s, the 399 `File` listings and most settings at 5.1 s, and the seed
+`RecallPreset` at 10.1 s - 474 messages of 24 distinct types by 15 s. So a listener attached
+to the client `connect()` returns is about 3 s too late for the ModelRepo and 8 s too late
+for the current preset, which is why `connect(before_handshake=...)` exists.
 
 Two ambient-traffic facts for anyone instrumenting the link: `GlobalTempo` streams one
 pair of messages per BEAT - 1.5 s apart at 40 bpm - so its rate follows the tempo and it
@@ -2312,7 +2398,8 @@ the partial-push warning at the top of this document.
 WITHOUT pressing OK, and the merge broadcast nothing - which had been recorded here as the
 pairing not being on the wire at all. It is; the state simply is not published until
 commit. Note this does NOT generalise: the Tempo menu's MODE control stayed silent through
-an OK press and a save.
+an OK press and a save, and yet answers a READ - "publishes on commit" and "readable" are
+independent properties, and neither predicts the other.
 
 What the composite value encodes is unknown. 7 was Preset+Stomp, by elimination since
 Scene was the slot left standing. Other pairings have not been observed, so read the value
@@ -2494,6 +2581,7 @@ visually on the device's own screen.
 | `set_splitter_param` | `Grid{UPDATE, preset{chains{row, combined_splitter{params{index, param_values}}}}}` | read-back | writes `combined_splitter`, NOT `splitter[]`, which is a read-only view; indices follow the unified model 10004 |
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
+| `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. A DEVICE setting, not a preset one - nothing to save. No change event is emitted when the switch moves, but the value rides the ambient params push; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
 | `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
 | `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
 | `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
@@ -2636,6 +2724,18 @@ Converting against such a range yields a number that means something else, so
 `Parameter.to_real()` and `to_normalized()` raise `ValueError` for them
 (`Parameter.range_is_placeholder` is the test) and `real=` is refused. Pass `value=`
 with the normalized 0..1 instead.
+
+**Two of these spans have since been measured, so the placeholder no longer blocks
+them:** the level parameters below, and `TEMPO`, which is **40 to 240 bpm** -
+`bpm = 40 + 200 * value`. Three screen readings against simultaneous wire reads, each
+landing on the displayed integer exactly: 59 bpm at `0.095`, 111 at `0.355`, 120 at
+`0.400`. `tempo_bpm()` / `bpm_to_tempo()` convert, and `set_tempo_param("TEMPO",
+real=...)` takes bpm - the one index where `real=` comes from a measurement rather
+than from the catalog. The 59 is what makes the fit worth trusting: 111 and 120 are 9
+bpm apart, and the lane-level story below is what happens when a span is fitted from
+points too close together. The endpoints are the fit's rather than separate
+measurements - neither extreme was driven - and they land on the 40-240 range the
+unit's manual documents, so the two agree.
 
 **Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on a -40..+12
 dB span. Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on
@@ -2799,9 +2899,12 @@ Stated explicitly so nobody builds on a guess:
 - **DSP cost per model** is not published anywhere reachable, and `CPULoad` never
   arrives (see [above](#a-placement-can-be-refused-for-want-of-dsp-capacity)), so
   whether a block will fit can only be discovered by placing it.
-- **The true spans behind the placeholder 0..1 ranges** (mixer/splitter/lane levels,
-  `TEMPO`) are not recoverable from the catalog. Unity for the levels is measured;
-  the endpoints are not.
+- **The true spans behind the placeholder 0..1 ranges** are not recoverable from the
+  catalog. Eight parameters are affected; two spans covering seven of them have since
+  been measured off the screen: the mixer/splitter/lane levels at -40..+12 dB, and
+  `TEMPO` at 40..240 bpm (2026-08-12, three points). **Splitter `FREQUENCY` is the one
+  still unrecovered.** In both measured cases the endpoints are the fit's rather than
+  driven, so a caller who needs an extreme exactly should drive it.
 - **Whether a capture id denotes different content on a different unit** is untested
   here, needing a second unit.
 - ~~**Whether a preset's descriptive `tags` can be set at all**~~ - ANSWERED: no. The
