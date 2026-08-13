@@ -14,7 +14,14 @@ is unreliable because a write the device does not understand is **accepted and i
 
 ## The listener
 
-Tap the transport's dispatch and record everything, then perform the action on the unit.
+Subscribe with `add_listener` and record everything, then perform the action on the
+unit. A listener sees every decoded message for the life of the connection, including
+the unsolicited pushes no waiter is expecting, and it consumes nothing (ADR-0009).
+
+Two rules come with it, both enforced rather than merely asked for: **a listener must
+not block** (it spends the RX thread's time), and **a listener may not read from the
+device** - `request`, `await_broadcast` and `collect` raise if called from the RX
+thread. Record what arrives and do the reading from your own thread.
 
 ```python
 import threading, time
@@ -27,26 +34,31 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 # rather than from this list. (CPULoadMessage, for instance, never arrives at
 # all, subscribed or not, so filtering it is harmless but pointless.)
 #
+# WARNING, learned the expensive way: GlobalTempoMessage is heavy because it
+# alternates a running clock with a 25-parameter shape, and the PARAMETERS are
+# real device state - parameter 1 is the Tempo menu's MODE switch. Filtering the
+# whole type discards them. Filter the clock shape, not the type:
+#     m.HasField("metronome_status") and not m.params
+#
 # Note this is a NOISE list, not an allow-list, and pair it with a heartbeat -
-# see "Two ways a listener lies about silence" above.
+# see "Three ways your instrument lies about silence" below.
 NOISE = {"GlobalTempoMessage", "IOMeterMessage", "GridModelMeterMessage",
          "KeepAliveMessage", "ModuleStatsMessage"}
 
 seen, lock = [], threading.Lock()
 
+def tap(message):
+    name = type(message).__name__
+    if name not in NOISE:
+        with lock:
+            seen.append((name, str(message).replace("\n", " ")))
+
 with protocol.connect() as qc:
-    transport = qc._t
-    original = transport._dispatch
-
-    def tap(message, *args, **kwargs):
-        name = type(message).__name__
-        if name not in NOISE:
-            with lock:
-                seen.append((name, str(message).replace("\n", " ")))
-        return original(message, *args, **kwargs)
-
-    transport._dispatch = tap
-    time.sleep(120)          # perform the action on the unit during this window
+    remove = qc.add_listener(tap)
+    try:
+        time.sleep(120)      # perform the action on the unit during this window
+    finally:
+        remove()
 
 with lock:
     for name, body in seen:
@@ -91,7 +103,7 @@ LOG.write(f"-- heartbeat: {suppressed} chatter msgs, "
 ```
 
 A silent log with a beating heart is a finding. A silent log without one is nothing at all.
-The finding that the Tempo menu's MODE control is never broadcast was reached three times:
+The finding that the Tempo menu's MODE control emits no change event was reached three times:
 the first time with neither safeguard, and twice more with both, and only the later two
 were worth anything.
 
@@ -100,6 +112,22 @@ proves only what a listener can prove: **that the device does not ANNOUNCE somet
 eight releases - 0.33.0 through 0.40.0 - that measurement was written up as "MODE is not on
 the wire at all", which is a claim about readability that no amount of listening can
 support. Say what the instrument measured, not what it implies.
+
+And the ending, which is the point: **MODE was on the wire the whole time** - and worse,
+it was in the traffic those very runs were recording. It is the device tempo block's
+parameter 1, carried in the params-shaped `GlobalTempo` push, which arrives about twice
+per 14 seconds whether or not anyone touches the switch.
+
+Look at the NOISE list above. `GlobalTempoMessage` is first in it, because it is the
+heaviest chatter on the link. So the most likely account of all three runs is not that
+the device stayed silent, but that **the listener threw the answer away before it reached
+the log** - three times, using a filter this very document recommends.
+
+So this one example teaches the whole section, and the sharpest part of it last: **a
+noise filter is a claim that a message type cannot carry the answer**, and nobody had
+checked it. Filter a SHAPE, never a whole type. And when a listener comes back silent,
+do not reach for a longer window - ASK, and diff what comes back. See "Diff the whole
+state, do not hunt for a field" below.
 
 **3. A match predicate that tests a field the reply never sets rejects every valid answer.**
 Reading the unit's Favorites list needs `RecentsFavorites{READ, is_favorites: true}`, and
@@ -114,6 +142,48 @@ timed out cleanly and repeatably, and "Favorites cannot be read over USB" went i
 documentation, along with a method that quietly returned the wrong list. Correlate on
 `request_id`, which the device does echo, and when a match predicate times out, log what DID
 arrive before concluding nothing did.
+
+## Diff the whole state, do not hunt for a field
+
+The listener above answers "what does the device SAY when I do this?". When the answer is
+"nothing", the next instrument answers a different question: "what does the device's
+ANSWER look like in each position?" Capture everything readable with the control one way,
+have the operator move it, capture again, and diff.
+
+The discipline that makes it work is refusing to look for the field you expect. TEMPO
+MODE had been hunted for in `GeneralSettings` and in the preset, and it was one index away
+inside a message shape the investigation had already written off. A diff finds it without
+knowing where to look; a search only finds it where someone guessed.
+
+`tests/hardware/state_snapshot.py` is the harness. Four things in it are load-bearing, and
+each is there because of a specific way this kind of capture lies:
+
+- **Record every SET field, flattened to `path -> value`.** `ListFields()` is the
+  presence-correct reading of this schema - a synthetic-`oneof` field appears only if the
+  device sent it - so an absent field shows in the diff as a key appearing rather than as
+  a zero that could mean either thing.
+- **Record field numbers the schema does not know.** The schema is recovered from one
+  Cortex Control build, so a field the firmware sends and that build never had decodes to
+  nothing at all. `GeneralSettingsMessage` uses numbers 1-39 with no gaps, so anything new
+  there would have been invisible. Use `google.protobuf.unknown_fields.UnknownFieldSet` -
+  the upb runtime raises `NotImplementedError` on `msg.UnknownFields()`.
+- **Collect values as a SET per path over a window, not one sample.** `GlobalTempo`
+  alternates two shapes, one push each; sampling one message per type compares a clock
+  reply against a params reply and reports the difference as real.
+- **Label noise, never filter it.** Clocks, meters and request ids move on their own and
+  are printed under their own heading. A filter is how the question got its previous wrong
+  answer, and the answer here turned out to sit in a message the noise list would have
+  been a natural home for.
+
+Two practical notes. This is not merely a suggestion: ADR-0010 makes it the step that has to happen
+before a control is recorded as having no wire path.
+
+Prove the instrument offline first - `tests/test_state_snapshot.py`
+feeds it a message carrying each thing it must not miss and fails if the snapshot comes
+back empty, which is the only cheap way to tell "the device said nothing" from "the
+capture cannot see it". And expect a large, boring diff: the connect burst's `File`
+enumeration arrives in a different order every run, so several thousand lines of it are
+noise around the one line that matters.
 
 ## Check a believed polarity against factory content
 

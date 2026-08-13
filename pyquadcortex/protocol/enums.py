@@ -387,6 +387,25 @@ class MetronomeBeat(IntEnum):
     QUIET = 3         #: De-emphasized - softer than NORMAL, but still audible.
 
 
+class TempoMode(IntEnum):
+    """The Tempo and Metronome menu's MODE switch - which tempo block is in effect.
+
+    The unit keeps TWO tempo blocks. The preset's lives in
+    ``BinaryPreset.tempoProgramData``; the device's rides in ``GlobalTempo.params``.
+    MODE picks which one the unit plays, and neither block is touched by the
+    switch itself.
+
+    Confirmed on hardware 2026-08-12, by reading the device's whole answerable
+    state in each position and diffing: exactly one field differed, the device
+    tempo block's parameter 1. The bpm the unit displayed corroborates it
+    independently - PRESET showed 111 with the preset block holding 0.355, GLOBAL
+    showed 120 with the device block holding 0.400, both exact on a 40-240 range.
+    """
+
+    PRESET = 0        #: The loaded preset's own tempo and metronome settings.
+    GLOBAL = 1        #: The device's, shared by every preset.
+
+
 class TempoSubdivision(IntEnum):
     """Metronome SUBDIVISIONS - the rhythmic pulses per beat.
 

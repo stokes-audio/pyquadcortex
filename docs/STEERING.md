@@ -82,6 +82,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0007 | The model may represent a control whose wire path is still open |
 | ADR-0008 | The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin |
 | ADR-0009 | Persistent listeners run on the RX thread, which may not read from the device |
+| ADR-0010 | A control with no known wire path gets a bounded search before it is modelled as refused |
 
 ## 8. Open Questions
 
@@ -120,6 +121,20 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-12 - TEMPO MODE closes, and ADR-0010
+
+**What changed:**
+- **The Tempo menu's MODE switch is readable and writable.** It is the DEVICE tempo block's parameter 1, carried in `GlobalTempo.params`: `0.0` PRESET, `1.0` GLOBAL. `QuadCortex.tempo_mode()` / `set_tempo_mode()` and the `TempoMode` enum ship at the protocol layer; `docs/protocol.md` gains "MODE is the DEVICE tempo block's parameter 1" and a coverage-table row
+- ADR.md: ADR-0010 - a control with no known wire path gets a differential state capture before it is recorded as having none. ADR-0007's rule is unchanged and now has no instance, which is the healthy state for it
+- `docs/domain-model.md`: `Tempo.mode` stops being refused and becomes an ordinary property; §13's *Genuinely open* loses its first entry and the *Closed* table records where the answer lives; both appendix tempo rows updated. `manual-coverage.md` gains a MODE row and its tally moves to 104 / 65 yes
+- `docs/capture.md` gains "Diff the whole state, do not hunt for a field" - the method that found it, and the four things in the harness that are load-bearing. Its listener chapter, which used this claim as its exemplar, now carries the ending
+- **`TEMPO`'s span fits 40..240 bpm**, from three INTERIOR screen-vs-wire points measured during the same session, exact to the displayed integer at each. The endpoints are the fit's, not driven. `real=` on that parameter now takes bpm, via `tempo_bpm()` / `bpm_to_tempo()`; `protocol.md`'s placeholder-span list now has two of its eight parameters' spans measured and seven covered; splitter `FREQUENCY` is the one still unrecovered
+- `tests/hardware/state_snapshot.py` is the harness, reusable for the next control of this kind. It subscribes through `Transport.add_listener` (ADR-0009), which landed in the same release and is exactly the hook it needs - the first version predated it and monkey-patched `_dispatch`; `tests/test_state_snapshot.py` proves offline that it can see an unknown field number, a presence-tracked zero, and a value in only one of two message shapes
+
+**Why:**
+- The wire path was a named dependency of Epic #8 and a prerequisite of M3's device-settings work. Three earlier tests had established that the unit never BROADCASTS the switch, which had been over-read as "not on the wire"; a READ found it in one session
+- The method is the durable part. Earlier attempts hunted for the field they expected, in the messages they expected; MODE was one index away inside a message shape the investigation had already written off. Diffing the whole answerable state finds a thing without knowing where to look
 
 ### 2026-08-12 - A persistent broadcast subscription at the protocol layer, and ADR-0009
 
