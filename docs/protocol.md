@@ -1152,7 +1152,7 @@ the device tempo block's 25 parameters, index 24 - which exists there, does not 
 the preset's 24, and is described nowhere - held `0.0` in both positions and is still
 unattributed.
 
-This method is now required rather than optional: ADR-0008 makes a differential
+This method is now required rather than optional: ADR-0010 makes a differential
 state capture the thing that happens before a control is recorded as having no wire
 path. The harness is `tests/hardware/state_snapshot.py`, and
 `tests/test_state_snapshot.py` proves offline that it can SEE an unknown field number, a
@@ -1843,6 +1843,14 @@ messages streaming at ~1490 reports/s for ~5 s, then every other subscribed stat
 once - including the seed RecallPreset - at about **9 s after connect**, consistent across
 several sessions on d14e. (Earlier sessions recorded 10-25 s for lazily-serviced pushes;
 keep timeouts generous, but 9 s is the typical seed arrival.)
+
+**`connect()` returns before the burst arrives.** Re-measured 2026-08-12 on d14e with a
+transport listener registered before the handshake: `connect()` handed back its client 2.0 s
+in, having seen only the `ResetCommsBuffers` echo and the unit's own `Version` READ. The
+ModelRepo landed at 4.9 s, the 399 `File` listings and most settings at 5.1 s, and the seed
+`RecallPreset` at 10.1 s - 474 messages of 24 distinct types by 15 s. So a listener attached
+to the client `connect()` returns is about 3 s too late for the ModelRepo and 8 s too late
+for the current preset, which is why `connect(before_handshake=...)` exists.
 
 Two ambient-traffic facts for anyone instrumenting the link: `GlobalTempo` streams one
 pair of messages per BEAT - 1.5 s apart at 40 bpm - so its rate follows the tempo and it

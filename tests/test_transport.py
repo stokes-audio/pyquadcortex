@@ -411,16 +411,11 @@ def test_collect_gathers_every_matching_push_without_consuming_them():
     # One request can provoke hundreds of pushes (a File READ enumerates the
     # device's whole folder tree), so collect() accumulates rather than taking
     # the first, and leaves messages available to waiters.
-    import threading
-    from pyquadcortex.protocol import transport as tmod
-    from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
-
-    t = tmod.Transport.__new__(tmod.Transport)
-    t._lock = threading.RLock()
-    t._pending = {}
-    t._type_waiters = []
-    t._collectors = []
-    t._device_lost = None
+    #
+    # A real Transport, never started: the trigger dispatches on the calling
+    # thread, so no RX thread is needed and none of the transport's state has to
+    # be faked.
+    t = transport.Transport(FakeHid(), keepalive_interval=QUIET_KEEPALIVE)
 
     def trigger():
         for i in range(3):
@@ -434,6 +429,198 @@ def test_collect_gathers_every_matching_push_without_consuming_them():
                     match=lambda m: m.folder.key != "k1")
     assert [m.folder.key for m in got] == ["k0", "k2"]
     assert t._collectors == [], "the collector is removed when done"
+
+
+# -- persistent listeners ------------------------------------------------------
+# add_listener is the only inbound hook that is not scoped to one trigger or one
+# reply, so what these tests protect is mostly what it must NOT do: consume a
+# message, block the read loop, or take its peers down with it.
+
+
+def test_a_listener_sees_an_unsolicited_push_no_waiter_wanted():
+    # The case the other three hooks cannot serve: a push nobody asked for. With
+    # no listener this message reaches _dispatch, matches nothing, and is dropped
+    # at debug level.
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    seen = []
+    t.start()
+    try:
+        t.add_listener(seen.append)
+        fake.inject(*_recall_broadcast("unsolicited", rid=None))
+        assert _wait_until(lambda: len(seen) == 1), "the push never reached the listener"
+    finally:
+        t.stop()
+    assert isinstance(seen[0], pa.RecallPresetMessage)
+    assert seen[0].preset.name == "unsolicited"
+
+
+def test_a_listener_does_not_steal_a_message_from_its_waiter():
+    # A listener is additive: the reply still lands in request()'s hands.
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    seen = []
+    t.start()
+    try:
+        t.add_listener(seen.append)
+        resp = t.request(
+            pa.VersionMessage(action=pa.MessageAction.READ), timeout=REQUEST_TIMEOUT
+        )
+    finally:
+        t.stop()
+    assert resp.request_id == 1, "the waiter did not get its reply"
+    assert [type(m) for m in seen] == [pa.VersionMessage]
+    assert seen[0] is resp, "the listener and the waiter get the same message"
+
+
+def test_a_listener_has_already_run_when_the_blocked_caller_wakes():
+    # The ordering a push-fed cache depends on: listeners are notified before the
+    # waiter's event is set, so a cache fed by a listener is current by the time
+    # the caller that provoked the reply gets it back. No sleeps - if the order
+    # were the other way round, the list would still be empty here.
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    seen = []
+    t.start()
+    try:
+        t.add_listener(seen.append)
+        t.request(
+            pa.VersionMessage(action=pa.MessageAction.READ), timeout=REQUEST_TIMEOUT
+        )
+        assert len(seen) == 1, "the caller woke before the listener had the message"
+    finally:
+        t.stop()
+
+
+def test_a_raising_listener_costs_nobody_else_the_message(caplog):
+    # Wrap and log, like every other decode step in the RX path: the peers still
+    # see the message, the waiter still gets its reply, and the read loop is still
+    # running afterwards.
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    before, after = [], []
+
+    def explodes(message):
+        raise RuntimeError("a listener with a bug in it")
+
+    t.start()
+    try:
+        t.add_listener(before.append)
+        t.add_listener(explodes)
+        t.add_listener(after.append)
+        with caplog.at_level("ERROR", logger="pyquadcortex.protocol.transport"):
+            first = t.request(
+                pa.VersionMessage(action=pa.MessageAction.READ),
+                timeout=REQUEST_TIMEOUT,
+            )
+            # A second round trip through the same RX thread: had the raise killed
+            # it, this would time out rather than answer.
+            second = t.request(
+                pa.VersionMessage(action=pa.MessageAction.READ),
+                timeout=REQUEST_TIMEOUT,
+            )
+    finally:
+        t.stop()
+    assert first is not None and second is not None
+    assert len(before) == 2, "a listener registered before the raiser lost a message"
+    assert len(after) == 2, "a listener registered after the raiser lost a message"
+    assert "a listener with a bug in it" in caplog.text, \
+        "a raising listener must be logged, not silently swallowed"
+
+
+def test_a_listener_raising_outside_exception_still_cannot_kill_the_rx_thread():
+    # The reason this is not covered by the test above: a listener is arbitrary
+    # caller code, and two ordinary things it might do - pytest.fail() and
+    # sys.exit() - raise BaseException subclasses, which a plain `except
+    # Exception` lets through. That kills the read loop, and what the caller then
+    # sees is a TimeoutError with device_lost unset: the connection is dead and
+    # nothing says why. SystemExit stands in for both here.
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    after = []
+
+    def bails_out(message):
+        raise SystemExit("a listener that called sys.exit()")
+
+    t.start()
+    try:
+        t.add_listener(bails_out)
+        t.add_listener(after.append)
+        fake.inject(*_recall_broadcast("push", rid=None))
+        assert _wait_until(lambda: after), "the peer listener lost the message"
+        assert t._rx.is_alive(), "the RX thread died"
+        assert t.request(pa.VersionMessage(action=pa.MessageAction.READ),
+                         timeout=REQUEST_TIMEOUT) is not None
+    finally:
+        t.stop()
+
+
+def test_a_listener_cannot_read_from_the_device_on_the_rx_thread():
+    # The design rule this enforces: the RX thread applies pushes and notes what
+    # needs re-reading, and the caller's thread does the re-reading. All three
+    # correlated waits are refused, and refused with RuntimeError rather than left
+    # to time out - the RX thread is the thread that would have to deliver the
+    # answer, so waiting for one from inside it can only stall the whole link.
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    refusals = {}
+
+    def tries_to_read(message):
+        attempts = {
+            "request": lambda: t.request(
+                pa.VersionMessage(action=pa.MessageAction.READ), timeout=0.1),
+            "await_broadcast": lambda: t.await_broadcast(
+                pa.SceneMessage, lambda: None, timeout=0.1),
+            "collect": lambda: t.collect(pa.SceneMessage, lambda: None, 0.1),
+        }
+        for name, attempt in attempts.items():
+            try:
+                attempt()
+                refusals[name] = None  # allowed through: the guard is not working
+            except Exception as exc:  # noqa: BLE001 - the point is what type it is
+                refusals[name] = exc
+
+    t.start()
+    try:
+        t.add_listener(tries_to_read)
+        fake.inject(*_recall_broadcast("push", rid=None))
+        assert _wait_until(lambda: len(refusals) == 3)
+        # The link still works, which is the whole point of refusing rather than
+        # letting a listener sit in a wait.
+        assert t.request(pa.VersionMessage(action=pa.MessageAction.READ),
+                         timeout=REQUEST_TIMEOUT) is not None
+    finally:
+        t.stop()
+    for name, exc in refusals.items():
+        assert isinstance(exc, RuntimeError), f"{name} was not refused: {exc!r}"
+        assert not isinstance(exc, TimeoutError), f"{name} waited instead of refusing"
+        assert "RX thread" in str(exc)
+
+
+def test_removing_a_listener_actually_removes_it():
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    by_callable, by_identity = [], []
+    t.start()
+    try:
+        drop = t.add_listener(by_callable.append)
+        t.add_listener(by_identity.append)
+        fake.inject(*_recall_broadcast("first", rid=None))
+        assert _wait_until(lambda: len(by_callable) == 1 and len(by_identity) == 1)
+
+        drop()                                   # the handle add_listener returned
+        assert t.remove_listener(by_identity.append) is True   # ... or by equality
+        assert t.remove_listener(by_identity.append) is False, \
+            "removing twice must report that there was nothing to remove"
+
+        fake.inject(*_recall_broadcast("second", rid=None))
+        assert _wait_until(lambda: fake.pending_reads() == 0)
+        assert t.request(pa.VersionMessage(action=pa.MessageAction.READ),
+                         timeout=REQUEST_TIMEOUT) is not None  # the push was handled
+    finally:
+        t.stop()
+    assert [m.preset.name for m in by_callable] == ["first"]
+    assert [m.preset.name for m in by_identity] == ["first"]
 
 
 # -- device loss ---------------------------------------------------------------

@@ -1064,7 +1064,7 @@ tried rather than just what is unknown.
 | I/O device variant | `Version.is_ess`, subject to the caveat above |
 | Capture metadata | `ProductData.instrument` and `.device`, subject to the caveat above |
 | Master volume | writable; the recorded refusal was a stale read |
-| Per-preset tempo MODE | **closed 2026-08-12.** `GlobalTempo.params[1]`: `0.0` PRESET, `1.0` GLOBAL. Readable and writable - `tempo_mode()` / `set_tempo_mode()`. Reopened one release earlier on the argument that three tests proving the unit never BROADCASTS it had been over-read as "not on the wire"; asking found it. It is a DEVICE setting, so `Tempo.mode` is an ordinary property and ADR-0007's refusal no longer applies to it (ADR-0008) |
+| Per-preset tempo MODE | **closed 2026-08-12.** `GlobalTempo.params[1]`: `0.0` PRESET, `1.0` GLOBAL. Readable and writable - `tempo_mode()` / `set_tempo_mode()`. Reopened one release earlier on the argument that three tests proving the unit never BROADCASTS it had been over-read as "not on the wire"; asking found it. It is a DEVICE setting, so `Tempo.mode` is an ordinary property and ADR-0007's refusal no longer applies to it (ADR-0010) |
 
 ### Two method notes this round earned
 
@@ -1304,7 +1304,7 @@ the n/a rows below where they intersect the API at all.
   DEVICE tempo block's parameter 1, carried in `GlobalTempo.params`: `0.0` PRESET, `1.0`
   GLOBAL, readable and writable, confirmed on the wire, on the unit's own screen, and by
   the tempo actually in effect. `Tempo.mode` becomes an ordinary property and ADR-0007
-  loses its only instance (ADR-0008). The method that found it is the one worth keeping:
+  loses its only instance (ADR-0010). The method that found it is the one worth keeping:
   capture every field of every message the device answers in each switch position and
   diff, rather than looking for a field you expect. Still an M3 surface, so still not a
   behaviour change at M1.

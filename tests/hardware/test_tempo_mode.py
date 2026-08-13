@@ -5,7 +5,7 @@ tempo and all seven metronome settings belong to the preset. Cortex Control has
 the same switch, so a route to it exists. Three earlier tests watched for a
 broadcast when the switch moves and saw nothing, and that was written up as "not
 on the wire at all" - which is more than those tests measured. **They listened;
-none of them asked.** See ADR-0008 and ``protocol.md`` "MODE is the DEVICE tempo
+none of them asked.** See ADR-0010 and ``protocol.md`` "MODE is the DEVICE tempo
 block's parameter 1".
 
 **It was asked, and it answered.** MODE is the DEVICE tempo block's parameter 1,
@@ -25,7 +25,7 @@ This module keeps two tests, and they do different jobs:
 * :func:`test_tempo_mode_is_writable` is the REGRESSION test. It drives the
   shipped ``tempo_mode`` / ``set_tempo_mode`` and always runs.
 * :func:`test_capture_tempo_mode_state` is the INSTRUMENT that found the answer,
-  kept because ADR-0008 makes a differential state capture the thing you do
+  kept because ADR-0010 makes a differential state capture the thing you do
   before recording a control as having no wire path. It is read-only, needs an
   operator, and skips unless one asks for a capture.
 

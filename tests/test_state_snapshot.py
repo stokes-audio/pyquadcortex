@@ -118,6 +118,34 @@ def test_an_absent_preset_tempo_is_absent_not_zero(snapshot):
 # -- the recorder: the producer behind every snapshot on disk ------------------
 
 
+class _FakeListenerClient:
+    """The listener half of ``QuadCortex``, and nothing else.
+
+    Mirrors the contract ``Transport.add_listener`` documents: registration
+    returns a zero-argument remover, listeners are notified in order, and a
+    listener consumes nothing. Small enough to be obviously faithful, which is
+    the point - the real one needs a device.
+    """
+
+    def __init__(self):
+        self.listeners = []
+
+    def add_listener(self, listener):
+        self.listeners.append(listener)
+        return lambda: self.remove_listener(listener)
+
+    def remove_listener(self, listener):
+        try:
+            self.listeners.remove(listener)
+        except ValueError:
+            return False
+        return True
+
+    def deliver(self, message):
+        for listener in list(self.listeners):
+            listener(message)
+
+
 def test_the_tap_keeps_two_shapes_apart_and_counts_arrivals(snapshot):
     """``_Tap`` is the producer, and nothing else in the suite touched it.
 
@@ -132,21 +160,18 @@ def test_the_tap_keeps_two_shapes_apart_and_counts_arrivals(snapshot):
     collapsed, noisy types are censused instead of valued, and the real dispatch
     still runs so the transport keeps working while the tap is installed.
     """
-    import types
-
-    delivered = []
-    transport = types.SimpleNamespace(_dispatch=lambda m: delivered.append(m))
-    tap = snapshot._Tap(transport)
+    client = _FakeListenerClient()
+    tap = snapshot._Tap(client)
 
     clock = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
     clock.metronome_status.current_beat = 3
     params = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
     params.params.add().param_values.add(float_value=1.0)
 
-    transport._dispatch(clock)
-    transport._dispatch(params)
-    transport._dispatch(clock)
-    transport._dispatch(pa.CPULoadMessage())
+    client.deliver(clock)
+    client.deliver(params)
+    client.deliver(clock)
+    client.deliver(pa.CPULoadMessage())
     tap.stop()
 
     shapes = tap.shapes["GlobalTempoMessage"]
@@ -154,9 +179,11 @@ def test_the_tap_keeps_two_shapes_apart_and_counts_arrivals(snapshot):
     assert sorted(s["count"] for s in shapes.values()) == [1, 2], "arrivals counted"
     assert "CPULoadMessage" in tap.census, "a noisy type is censused, not valued"
     assert "CPULoadMessage" not in tap.shapes
-    assert len(delivered) == 4, "the real dispatch still ran for every message"
-    assert transport._dispatch is not tap._tap, "the tap was removed"
+    assert client.listeners == [], "stop() unsubscribed"
     assert not tap.errors
+
+    client.deliver(params)                       # nothing arrives after stop()
+    assert sorted(s["count"] for s in shapes.values()) == [1, 2]
 
 
 def test_the_tap_survives_a_message_it_cannot_describe(snapshot):
@@ -167,21 +194,18 @@ def test_the_tap_survives_a_message_it_cannot_describe(snapshot):
     investigation exists to undo - so the swallow-and-count has to be real, and
     the message has to keep flowing.
     """
-    import types
-
-    delivered = []
-    transport = types.SimpleNamespace(_dispatch=lambda m: delivered.append(m))
-    tap = snapshot._Tap(transport)
+    client = _FakeListenerClient()
+    tap = snapshot._Tap(client)
     original = snapshot.describe
     snapshot.describe = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
     try:
-        transport._dispatch(pa.GlobalTempoMessage())
+        client.deliver(pa.GlobalTempoMessage())      # must not propagate
     finally:
         snapshot.describe = original
         tap.stop()
 
-    assert delivered == [pa.GlobalTempoMessage()], "the message still got through"
-    assert len(tap.errors) == 1 and "boom" in tap.errors[0], "and it was RECORDED"
+    assert len(tap.errors) == 1 and "boom" in tap.errors[0], "the failure was RECORDED"
+    assert not tap.shapes, "and nothing half-recorded was kept"
 
 
 # -- diff: what the comparison must not miss ----------------------------------
@@ -272,6 +296,26 @@ def test_a_preset_field_that_moves_is_signal(snapshot):
     signal, _ = snapshot.diff(before, after)
 
     assert signal == ["preset.tempo: <absent> -> 120"]
+
+
+def test_a_type_missing_from_one_capture_is_not_reported_as_a_difference(snapshot):
+    """Coverage varies run to run, and the diff must not dress that as a finding.
+
+    Measured on hardware: two captures of the same window length saw 23 and 12
+    message types, because the connect handshake's reply burst lands lazily (the
+    File enumeration takes 10-25 s) and a fixed window catches a different tail
+    each time. Rendering an uncaptured type field-by-field as "<absent> -> value"
+    manufactures exactly the kind of discovery this harness exists to prevent.
+    """
+    before = _snap("a", {"GlobalTempoMessage": [{"params[1]": 0.0}],
+                         "FileMessage": [{"folder.files[0].name": "Preset"}]})
+    after = _snap("b", {"GlobalTempoMessage": [{"params[1]": 1.0}]})
+
+    signal, noise = snapshot.diff(before, after)
+
+    assert signal == ["GlobalTempoMessage.params[1]: 0.0 -> 1.0"], (
+        "the real difference must still be the only signal")
+    assert len(noise) == 1 and noise[0].startswith("FileMessage: NOT CAPTURED")
 
 
 def test_two_identical_snapshots_diff_to_nothing(snapshot):

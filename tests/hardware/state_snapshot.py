@@ -151,17 +151,34 @@ def preset_fields(binary_preset):
 
 
 class _Tap:
-    """Records every decoded inbound message for the life of the capture."""
+    """Records every decoded inbound message for the life of the capture.
 
-    def __init__(self, transport):
-        self._transport = transport
-        self._inner = transport._dispatch
+    Subscribes through :meth:`Transport.add_listener` (ADR-0009), which is
+    precisely the hook this needs: it sees every decoded message, including the
+    unsolicited pushes no waiter is expecting, and it CONSUMES nothing, so
+    waiters and collectors behave exactly as they would with no capture running.
+
+    The first version of this class predated that API and monkey-patched
+    ``transport._dispatch`` instead. That worked, and it was wrong in two ways
+    worth naming: it reached past the public surface into a private method, and
+    two overlapping taps torn down out of order would have unhooked each other.
+
+    Two rules come with a listener, and both are already satisfied here.
+    **It must not block** - ``_record`` does a dict update and returns.
+    **It may not read from the device** - and the transport now enforces that by
+    raising from ``request``/``await_broadcast``/``collect`` on the RX thread.
+    That enforcement is why :func:`capture` issues its READs from the calling
+    thread and only reads what arrives here.
+    """
+
+    def __init__(self, client):
+        self._client = client
         self.shapes = {}        # type name -> {fingerprint: {"count", "fields"}}
         self.census = {}        # type name -> {"count", "paths"}
         self.errors = []
-        transport._dispatch = self._tap
+        self._remove = client.add_listener(self._record_safely)
 
-    def _tap(self, message, *args, **kwargs):
+    def _record_safely(self, message):
         try:
             self._record(message)
         except Exception as exc:                # noqa: BLE001 - the RX thread never dies
@@ -169,8 +186,11 @@ class _Tap:
             # message type would otherwise read as that type never arriving,
             # which is the exact failure mode this whole investigation exists
             # to undo.
+            #
+            # The transport would log and skip a raising listener anyway, so the
+            # link is safe either way - but "logged somewhere" is not "the
+            # snapshot knows it is incomplete", and the caller asserts on this.
             self.errors.append(f"{type(message).__name__}: {type(exc).__name__}: {exc}")
-        return self._inner(message, *args, **kwargs)
 
     def _record(self, message):
         name = type(message).__name__
@@ -188,12 +208,14 @@ class _Tap:
         shape["count"] += 1
 
     def stop(self):
-        # Restored by assignment, then the instance attribute is DELETED - leaving
-        # it in place shadows nothing useful and makes a second tap stopped out
-        # of order unhook the wrong one. Then a beat for any message already
-        # inside _tap to finish, so the caller can serialize `shapes` without
-        # racing the RX thread mutating it.
-        self._transport._dispatch = self._inner
+        """Unsubscribe, then let any in-flight notification finish.
+
+        ``remove_listener`` is safe to call twice and notification runs over a
+        snapshot taken before the first listener was called, so a message already
+        being delivered can still reach us after this returns. The pause is what
+        lets the caller serialize ``shapes`` without racing the RX thread.
+        """
+        self._remove()
         time.sleep(0.2)
 
 
@@ -211,7 +233,7 @@ def capture(qc, label, window=14.0, spacing=0.15):
     from pyquadcortex.protocol import registry
     from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
-    tap = _Tap(qc._t)
+    tap = _Tap(qc)
     try:
         for name in READ_TYPES:
             cls = registry.class_for(pa.CortexMessageType.Enum.Value(name))
@@ -291,7 +313,23 @@ def diff(before, after):
 
     left, right = _values_by_path(before), _values_by_path(after)
     for name in sorted(set(left) | set(right)):
-        _compare(name, left.get(name, {}), right.get(name, {}), signal, noise)
+        if name not in left or name not in right:
+            # A type CAPTURED in one run and not the other is a fact about the
+            # window, not about the device, and it must not be rendered
+            # field-by-field as "<absent> -> value" - that reads exactly like a
+            # discovery. Measured: coverage varies run to run because the connect
+            # handshake's reply burst lands lazily (File is 10-25 s), so a 14 s
+            # window catches a different tail each time. One line, in the noise
+            # bucket, naming what to do about it.
+            missing = "after" if name in left else "before"
+            fields = len(left.get(name, right.get(name, {})))
+            noise.append(
+                f"{name}: NOT CAPTURED in the {missing} snapshot ({fields} field "
+                f"path(s) seen in the other). Not a difference - the type simply "
+                f"did not arrive in that window. Compare captures of equal coverage "
+                f"before reading anything into it.")
+            continue
+        _compare(name, left[name], right[name], signal, noise)
 
     _compare("preset",
              {p: {json.dumps(v, default=repr)} for p, v in before["preset"].items()},

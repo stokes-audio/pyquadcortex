@@ -322,6 +322,33 @@ class QuadCortex:
         self.close()
         return False
 
+    # -- live state pushes -----------------------------------------------------
+
+    def add_listener(self, listener):
+        """Call ``listener(message)`` for every message the device sends.
+
+        A pass-through to
+        :meth:`~pyquadcortex.protocol.transport.Transport.add_listener`, which is
+        where the contract lives and is worth reading before you use this: the
+        listener runs on the transport's RX thread, so it must not block, and it
+        may not read from the device (the transport refuses that outright). It is
+        removed with the returned callable or with :meth:`remove_listener`.
+
+        This is how a long-lived caller sees the state the unit pushes without
+        being asked - a touchscreen edit, a preset recall, the metronome's tempo
+        stream - rather than the one-shot answer to a call it just made. To catch
+        the connect handshake's own burst of state, register before the handshake
+        with ``protocol.connect(before_handshake=...)``.
+        """
+        return self._t.add_listener(listener)
+
+    def remove_listener(self, listener):
+        """Stop calling ``listener``; return True if it had been registered.
+
+        Never raises, so teardown can call it unconditionally.
+        """
+        return self._t.remove_listener(listener)
+
     # -- session -------------------------------------------------------------
 
     # State types the device only PUSHES to a client that has subscribed by

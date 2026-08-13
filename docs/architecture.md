@@ -106,6 +106,10 @@ concurrent:
   gunzips frame-level compressed payloads, parses the protobuf, and dispatches;
 - correlation: `request()` waiters keyed by `request_id`, plus
   `await_broadcast()` waiters keyed by message class and an optional predicate;
+- persistent subscriptions: `add_listener()` registers a callable that sees every
+  decoded message for as long as the connection lasts, including the unsolicited
+  pushes no waiter is expecting. It consumes nothing, so waiters and collectors
+  behave exactly as they do with no listener registered;
 - a keepalive thread;
 - tolerating the device's benign write STALL (see
   [protocol.md](protocol.md#the-benign-write-stall)): write errors are logged at
@@ -116,6 +120,16 @@ The RX thread must never die. Every decode/parse is wrapped, unknown message
 types and non-protobuf pushes are skipped at debug level, and the reassembly
 buffer is reset on anything malformed so one bad frame cannot wedge the stream.
 If you add code to the RX path, preserve that property.
+
+Listeners run on that thread, so the same rule covers them: one that raises is
+logged and skipped, its peers still get the message, and the message still
+reaches its waiter. A listener may also not read from the device -
+`request`, `await_broadcast` and `collect` raise `RuntimeError` when called from
+the RX thread, because the RX thread is the one that would have to deliver the
+answer, so such a call could only ever time out with the read loop stopped behind
+it. A listener applies what a push carries and notes what needs re-reading; the
+caller's thread does the re-reading (see [domain-model.md](domain-model.md)
+section 9, and ADR-0009).
 
 ### registry.py
 
@@ -152,6 +166,14 @@ ready for commands. The client
 remembers what it opened (`_owned_resources`) so `close()` and the context
 manager tear down only what `connect()` created. A client built around a
 caller-supplied transport owns nothing and `close()` is a no-op.
+
+`connect(before_handshake=...)` is the hook for anything that has to be watching
+before the handshake runs. The subscription burst the handshake sends is what
+makes the unit start pushing state, and that state arrives AFTER `connect()` has
+returned (measured: the client comes back at 2 s, the ModelRepo lands at 4.9 s and
+the current preset at 10.1 s - see [protocol.md](protocol.md), "Connect burst,
+measured"). So a listener registered on the returned client has already missed it;
+one registered through this hook has not.
 
 `import hid` lives *inside* `open_device()`. That laziness is a contract, not an
 accident: see [Testing philosophy](#testing-philosophy).
@@ -200,18 +222,22 @@ device.read() -> one 129-byte input report
   -> framing.decode_reports(buffer) -> (message_type, payload)
   -> gunzip payload if it starts 1f 8b
   -> registry.class_for(message_type) -> parse
-  -> _dispatch: a request_id waiter, else a broadcast waiter, else dropped
+  -> _dispatch: every listener, then collectors, then a request_id waiter,
+     else a broadcast waiter, else dropped
 ```
 
 ## send vs request vs await_broadcast
 
-Choosing correctly is most of the work of adding an operation.
+Choosing correctly is most of the work of adding an operation. The first three
+rows serve ONE exchange, which is what an operation needs. The last one is not an
+operation at all: it is how a long-lived caller watches the link.
 
 | Transport method | Use when | Blocking | Correlation |
 |---|---|---|---|
 | `send(msg)` | The device acts on the message and you do not need its answer: scene switch, grid edits, recall, keepalive. | No | None |
 | `request(msg, timeout=)` | The device answers a message of the **same type**: `Version` READ, `ResetCommsBuffers`, the `File` mutations. | Yes | Fresh `request_id` is assigned and registered before the write. Reply is the first inbound message of the same type whose `request_id`, if present on both sides, matches. |
 | `await_broadcast(cls, trigger, timeout=, match=)` | The answer arrives as a **push of a different type**, or as an unsolicited broadcast the device emits in response to an action: the `RecallPreset` push that carries a full preset, the `File` folder listings. | Yes | By message class, plus your optional `match` predicate. A right-type message the predicate rejects is left undelivered so a later one can satisfy the waiter. |
+| `add_listener(fn)` | You want EVERY message for the life of the connection, not the answer to one call: a cache fed by the unit's own pushes, or a log of the link. | No, but `fn` runs on the RX thread | None. Every message, every type, whether or not a waiter also gets it. Removed with the returned callable or `remove_listener(fn)`. |
 
 Two gotchas the current code already encodes, and that new operations must
 respect:
@@ -347,7 +373,9 @@ scripts/compile_protos.sh
 
 It prefers the version-matched generator from the dev extra
 (`grpcio-tools`, hence `.venv/bin/python -m grpc_tools.protoc`) and falls back
-to a system `protoc`. Output goes to `pyquadcortex/protocol/proto/`.
+to a system `protoc`. It generates into a temporary directory first and copies
+into `pyquadcortex/protocol/proto/` only after the gencode check below passes,
+so a refusal leaves the tree untouched.
 
 **The runtime pin must match the gencode version.** The protobuf runtime
 validates at import time that `runtime >= gencode` (see the
@@ -358,8 +386,34 @@ a newer generator, bump that lower bound to the new gencode version in the same
 commit; if you cross a major version, bump the upper bound too. A mismatch is a
 hard `ImportError` for every user, not a warning.
 
-Commit regenerated bindings together with the `.proto` change and the pyproject
-pin, so the tree is never internally inconsistent.
+**The generator floor moves with it.** `grpcio-tools` bundles its own protoc, so
+whichever version is installed is what decides the gencode. That makes an *older*
+generator the quiet failure: `runtime >= gencode` is still satisfied, so bindings
+regenerated backwards import fine and pass every test while the pin no longer
+describes them. `pyproject.toml`'s dev extra therefore floors `grpcio-tools` at
+the oldest release whose protoc emits the committed gencode - `>=1.83.0` for
+gencode 7.35.1 - and that floor is raised in the same commit as any gencode bump.
+
+The floor cannot be read off package metadata. `grpcio-tools` releases do not
+track `protobuf` releases, and the declared dependency is a runtime floor rather
+than the gencode stamp: 1.82.1 requires `protobuf>=7.35.1` and still emits
+gencode 7.35.0. Find the floor by running candidates and reading the stamp:
+
+```bash
+printf 'syntax = "proto3";\nmessage Ping { int32 n = 1; }\n' > /tmp/ping.proto
+python -m grpc_tools.protoc -I /tmp --python_out=/tmp /tmp/ping.proto
+grep "Protobuf Python Version" /tmp/ping_pb2.py
+```
+
+Two guards keep this honest, and they cover different routes (ADR-0008):
+
+| Guard | Catches | When |
+|---|---|---|
+| `scripts/compile_protos.sh` | a generator that would write older gencode than what is committed - it refuses and writes nothing | at regeneration, before the tree changes |
+| `tests/test_packaging.py` | committed gencode that disagrees with itself or with the pin, however it got there | every PR, no protoc needed |
+
+Commit regenerated bindings together with the `.proto` change, the pyproject
+pin and the generator floor, so the tree is never internally inconsistent.
 
 ## Testing philosophy
 

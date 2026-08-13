@@ -95,6 +95,63 @@ def test_failed_handshake_does_not_leak_the_device(monkeypatch, fake_stack):
     assert fake_stack.closed, "device must be closed when bring-up fails"
 
 
+def test_before_handshake_runs_after_start_and_before_the_handshake(fake_stack):
+    """The hook exists so a listener can catch the handshake's own state burst.
+
+    Registered a moment later - after connect() returns - and the burst is over.
+    So what matters is the ORDER: the transport is started (its RX thread is
+    reading) and nothing of the handshake has been sent yet.
+    """
+    calls = []
+
+    def before(t):
+        calls.append((t, t.started, list(t.sent)))
+
+    qc = session.connect(settle=0, before_handshake=before)
+    t = FakeTransport.instances[0]
+    got, started, sent_by_then = calls[0]
+    assert got is t, "the hook gets the transport a listener registers on"
+    assert started, "the RX thread must already be reading"
+    assert sent_by_then == [], "the hook ran after the handshake had begun"
+    assert type(t.sent[0]).__name__ == "ResetCommsBuffersMessage"
+    qc.close()
+
+
+def test_before_handshake_runs_once_however_many_handshake_attempts_it_takes(
+        monkeypatch, fake_stack):
+    """Registering twice would register the listener twice, and it would then be
+    called twice per message. The device can be openable but silent for ~9-17s
+    after a boot, so a connect taking three handshake attempts is ordinary rather
+    than exotic - and a hook called per attempt would still pass a test where the
+    first attempt succeeds.
+    """
+    attempts = {"n": 0}
+
+    def flaky_hello(self, timeout=5.0, settle=2.0):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise TimeoutError("no response for request_id=1")
+
+    monkeypatch.setattr(client.QuadCortex, "_hello", flaky_hello)
+    calls = []
+    qc = session.connect(settle=0, handshake_patience=30.0,
+                         before_handshake=calls.append)
+    assert attempts["n"] == 3, "the handshake was not actually retried"
+    assert len(calls) == 1, "the hook runs once, not once per handshake attempt"
+    qc.close()
+
+
+def test_a_failing_before_handshake_hook_does_not_leak_the_device(fake_stack):
+    def boom(t):
+        raise RuntimeError("the listener could not be registered")
+
+    with pytest.raises(RuntimeError, match="could not be registered"):
+        session.connect(settle=0, before_handshake=boom)
+    t = FakeTransport.instances[0]
+    assert t.stopped, "transport must be stopped when the hook fails"
+    assert fake_stack.closed, "device must be closed when the hook fails"
+
+
 def test_client_with_caller_supplied_transport_does_not_own_it():
     """A hand-wired QuadCortex must not close a transport it did not open."""
     device = FakeDevice()

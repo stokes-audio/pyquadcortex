@@ -14,7 +14,14 @@ is unreliable because a write the device does not understand is **accepted and i
 
 ## The listener
 
-Tap the transport's dispatch and record everything, then perform the action on the unit.
+Subscribe with `add_listener` and record everything, then perform the action on the
+unit. A listener sees every decoded message for the life of the connection, including
+the unsolicited pushes no waiter is expecting, and it consumes nothing (ADR-0009).
+
+Two rules come with it, both enforced rather than merely asked for: **a listener must
+not block** (it spends the RX thread's time), and **a listener may not read from the
+device** - `request`, `await_broadcast` and `collect` raise if called from the RX
+thread. Record what arrives and do the reading from your own thread.
 
 ```python
 import threading, time
@@ -40,19 +47,18 @@ NOISE = {"GlobalTempoMessage", "IOMeterMessage", "GridModelMeterMessage",
 
 seen, lock = [], threading.Lock()
 
+def tap(message):
+    name = type(message).__name__
+    if name not in NOISE:
+        with lock:
+            seen.append((name, str(message).replace("\n", " ")))
+
 with protocol.connect() as qc:
-    transport = qc._t
-    original = transport._dispatch
-
-    def tap(message, *args, **kwargs):
-        name = type(message).__name__
-        if name not in NOISE:
-            with lock:
-                seen.append((name, str(message).replace("\n", " ")))
-        return original(message, *args, **kwargs)
-
-    transport._dispatch = tap
-    time.sleep(120)          # perform the action on the unit during this window
+    remove = qc.add_listener(tap)
+    try:
+        time.sleep(120)      # perform the action on the unit during this window
+    finally:
+        remove()
 
 with lock:
     for name, body in seen:
@@ -169,7 +175,7 @@ each is there because of a specific way this kind of capture lies:
   answer, and the answer here turned out to sit in a message the noise list would have
   been a natural home for.
 
-Two practical notes. This is not merely a suggestion: ADR-0008 makes it the step that has to happen
+Two practical notes. This is not merely a suggestion: ADR-0010 makes it the step that has to happen
 before a control is recorded as having no wire path.
 
 Prove the instrument offline first - `tests/test_state_snapshot.py`

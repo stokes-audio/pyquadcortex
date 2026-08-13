@@ -85,6 +85,52 @@ To use both layers in one script, wrap a connection you already have with
 `Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
 your connection open.
 
+### New: listen to everything the unit sends
+
+The unit talks without being asked. Turn a knob on its touchscreen, recall a
+preset, let the metronome run, and it pushes messages about it. Until now those
+messages were only reachable if you happened to be waiting for that exact one,
+and anything else was dropped. `add_listener` hands you all of them:
+
+```python
+from pyquadcortex import protocol
+
+def watch(message):
+    print(type(message).__name__)
+
+with protocol.connect() as qc:
+    stop = qc.add_listener(watch)
+    ...
+    stop()                     # or qc.remove_listener(watch)
+```
+
+Your function is called for every message, and it takes nothing away from the
+rest of the library: a call that was waiting for a reply still gets it.
+
+Two rules, because your function runs on the thread that reads from the USB
+device:
+
+- **Do not block in it.** Whatever it does delays the next message being read.
+- **Do not read from the device in it.** That thread is the one that would have to
+  deliver the answer, so the call could never be answered - and the connection
+  would stall behind it for as long as it waited. Rather than let that happen, the
+  library raises `RuntimeError` if you try. Note what you need and read it from
+  your own thread.
+- **Treat the message as read-only.** It is the same object the rest of the
+  library sees, not a copy.
+
+To hear the burst of state the unit sends when a client connects - nearly
+everything it knows, including the preset currently loaded - register before the
+handshake, because it arrives seconds after `connect()` returns:
+
+```python
+with protocol.connect(before_handshake=lambda t: t.add_listener(watch)) as qc:
+    ...
+```
+
+The decision behind the two rules is ADR-0009. This is the groundwork for the
+model keeping itself current without asking twice.
+
 ### Withdrawn: the Tempo menu's MODE is "not on the wire"
 
 The 0.23.0 entry below records, under **Settled**, that the Tempo menu's MODE
@@ -122,7 +168,7 @@ own screen, and by the tempo actually in effect, which switched between the two
 blocks' stored values.
 
 The method that found it - capture the whole readable state in each position
-and diff, rather than looking for the field you expect - is now what ADR-0008
+and diff, rather than looking for the field you expect - is now what ADR-0010
 requires before any control is written down as having no wire path.
 
 Watch out for one thing if you read `GlobalTempo` yourself: it alternates two
@@ -141,6 +187,29 @@ The span was measured off the screen instead: 59 bpm at `0.095`, 111 at `0.355`,
 120 at `0.400`, each exact to the displayed integer. The endpoints are the fit's
 rather than driven, and they land on the 40-240 range the unit's manual
 documents.
+
+### Regenerating the protobuf bindings can no longer walk the pin backwards
+
+Nothing you install changes. This is about the generated bindings that ship in
+the wheel, and it matters to anyone who regenerates them.
+
+`grpcio-tools` carries its own copy of protoc, so whichever version is installed
+decides the gencode written into the bindings. The dev extra's floor was
+`>=1.68`, low enough that `pip install -e ".[dev]"` could resolve to a generator
+emitting gencode 7.35.0 against bindings committed at 7.35.1 - and lower still
+through a venv that picked up `grpcio-tools` some other way, or the script's
+fallback to a system `protoc`, which no floor constrains. So regenerating could
+silently downgrade them. Nothing caught it: the protobuf runtime only checks
+`runtime >= gencode`, so older bindings import cleanly and pass the whole suite
+while `pyproject.toml`'s pin no longer describes them.
+
+The floor is now `grpcio-tools>=1.83.0`, the oldest release whose protoc emits
+gencode 7.35.1, and it moves in the same commit as any gencode bump.
+`scripts/compile_protos.sh` refuses to install bindings older than the committed
+ones and leaves the tree untouched when it does; `tests/test_packaging.py`
+checks on every PR that the committed gencode and the pin floor are the same
+number. The bindings themselves are unchanged - regenerating is its own change
+with its own pin bump (ADR-0001, ADR-0008).
 
 ## 0.40.0 - 2026-08-10
 

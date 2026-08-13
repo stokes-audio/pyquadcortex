@@ -91,7 +91,45 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   - Design principle 3 keeps its meaning and gains a boundary: omission is for behaviour we do not understand, refusal is for behaviour we understand and cannot yet drive. A record that says which one applies is now expected of anything the model leaves out.
   - This does not license modelling controls on a hunch. It applies where the unit's behaviour is confirmed and only the message is missing; a control we have not understood on the hardware is still omitted.
 
-## ADR-0008: A control with no known wire path gets a bounded search before it is modelled as refused
+## ADR-0008: The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin
+
+- **Status:** Decided (2026-08-12)
+- **Decision:** The `grpcio-tools` floor in the dev extra is part of what ADR-0001 calls one unit, alongside the committed bindings and the `protobuf` runtime pin. `scripts/compile_protos.sh` refuses to write bindings whose gencode is older than the ones already in the tree, and `tests/test_packaging.py` asserts on every PR that the committed gencode and the pin floor are the same number.
+- **Context:** ADR-0001 couples the bindings to the runtime pin, but nothing enforced the coupling. The protobuf runtime validates `runtime >= gencode` and nothing else, so bindings written by an older generator import cleanly and pass the whole suite. The generator is `grpcio-tools`, which carries its own protoc, so the installed version silently decides the gencode. With the floor at `>=1.68`, `pip install -e ".[dev]"` resolved at its lowest to grpcio-tools 1.82.1, whose protoc emits gencode 7.35.0 against committed bindings at 7.35.1 - one patch backwards, no failure anywhere. Older generators fall much further (1.68.0 emits 5.28.1) and are reachable through a venv that acquired `grpcio-tools` separately, or through the script's fallback to a system `protoc`, which no floor constrains at all.
+- **Options:**
+  - **(a) Gate in the script and prove the committed state in a test** - chosen. Two guards, two jobs.
+  - **(b) The script gate alone.** It never runs in CI, so nothing polices what lands on main, and it sees only gencode that arrives through the script - not a hand edit, an IDE-run protoc, or a pin bumped without regenerating.
+  - **(c) The test alone.** It fires after the bindings are already overwritten, and it cannot say "your generator is too old" because the offline suite has no generator to ask.
+  - **(d) A test that runs the installed generator and compares.** It would couple the offline suite to `grpcio-tools` and fail for contributors who never regenerate, which teaches people to ignore it.
+  - **(e) Pin `grpcio-tools` exactly.** Over-constrains every dev environment for one file's sake, and still proves nothing about the committed tree.
+- **Open Questions:** None.
+- **Rationale:** Prevention and detection are different jobs and neither covers the other. The script is the only place that can stop the downgrade before it reaches the tree, and it is where the mistake is actually made, so that is where the explanation belongs. The test is the only guard that runs on every PR, needs no toolchain, and holds for gencode that arrived by any route at all. The floor belongs in the same commit as the pin for the same reason the pin belongs with the bindings: all three describe one generated artifact, and the one that is easiest to forget is the one nothing was watching.
+- **Consequences:**
+  - The dev extra's floor moves with the gencode. It is `grpcio-tools>=1.83.0` today, for bindings at gencode 7.35.1.
+  - The floor cannot be read off `grpcio-tools` metadata: 1.82.1 declares `protobuf>=7.35.1` and still emits gencode 7.35.0. Finding the right floor means running candidate versions and reading the stamp they write.
+  - `compile_protos.sh` generates into a temporary directory and installs into the package only after the check passes, so a refusal leaves the tree exactly as it was.
+  - The pin floor and the committed gencode must be equal, not merely compatible. A floor above the gencode still imports for every user, which is precisely the drift ADR-0001 exists to prevent, so the test treats it as a failure rather than a curiosity.
+  - What CI proves is the bindings-to-pin half. Nothing machine-checks the `grpcio-tools` floor itself, because deciding whether a floor is high enough means running that generator, and the offline suite has none. A gencode bump that updates the bindings and the pin but forgets the floor therefore leaves CI green. The script is what catches it, one regeneration later, and its refusal names the stale floor as a cause - so the residual exposure is a delay, not a silent pass.
+
+## ADR-0009: Persistent listeners run on the RX thread, which may not read from the device
+
+- **Status:** Decided (2026-08-12)
+- **Decision:** A persistent inbound subscription (`Transport.add_listener`) is called on the transport's RX thread, synchronously, before the message reaches any collector or waiter. The transport enforces the other half of that bargain: `request`, `await_broadcast` and `collect` raise `RuntimeError` when called from the RX thread, so a listener cannot read from the device. A listener that raises is logged and skipped, costing its peers and the message's waiter nothing.
+- **Context:** The three existing inbound hooks are one-shot and scoped to a trigger, so a message nobody is expecting is dropped. A push-fed cache (`docs/domain-model.md` section 9) needs the opposite: every decoded message, for the life of the connection. Where that callback runs is the whole decision, because the RX thread is the one thread in this library that must never block and never die - a wedged read loop takes the connection with it, and every request outstanding.
+- **Options:**
+  - **(a) Call listeners on the RX thread, and forbid reads from it - chosen.** Cheapest, and it keeps arrival order exact. It also gives the ordering the cache design assumes: a listener has already applied a push before the caller that provoked it wakes up, so no caller can observe a reply that its own cache has not seen.
+  - **(b) A delivery thread with a queue.** The RX thread would be immune to a slow listener, at the cost of a thread, an unbounded queue, and a cache that lags the reply that fed it. It buys immunity from a listener that blocks while making one that blocks harmless enough to survive unnoticed.
+  - **(c) Call listeners on the RX thread and document the rules without enforcing them.** The rule that matters ("do not read from the device here") is invisible when broken: the read appears to work, then times out, having stopped the read loop for the whole timeout. This project's oldest lesson is that a failure which looks like success is the expensive kind.
+- **Open Questions:** Whether a listener should be notified when the device is lost. Today it simply stops receiving, which is enough for a cache whose owner learns about loss from the exception on its next call. Reconnect (issue #15) is where this gets answered.
+- **Rationale:** The design already says the RX thread applies pushes and notes what needs re-reading while the caller's thread does the re-reading. Option (a) is that sentence in code. The enforcement costs one thread-identity comparison per call and converts a silent, connection-wide stall into an immediate error naming the rule - and it can refuse nothing that ever worked, because a wait issued from the thread that delivers replies can never be satisfied. `request` and `await_broadcast` would time out; `collect` would return empty, having stalled the link for its full duration.
+- **Consequences:**
+  - A listener must return promptly. Anything expensive belongs on the caller's thread, reached by noting what needs doing rather than doing it.
+  - Nothing may weaken the refusal to keep a convenience. A future listener that wants a value it did not receive marks it for re-reading; it does not fetch it.
+  - `send` is deliberately not refused: it is fire-and-forget and cannot deadlock. A listener that writes owns the delay it adds to the read loop.
+  - Registering in time for the connect handshake's burst needs `protocol.connect(before_handshake=...)`, because the burst arrives after `connect()` returns.
+  - Existing behaviour is untouched: listeners consume nothing, and `send`/`request`/`collect`/`await_broadcast` answer exactly as they did with no listener registered.
+
+## ADR-0010: A control with no known wire path gets a bounded search before it is modelled as refused
 
 - **Status:** Decided (2026-08-12)
 - **Decision:** ADR-0007's rule stands and is unchanged: a control we understand but cannot drive is modelled and refuses. What changes is what has to happen first. Before a control is recorded as having no wire path, it gets a **differential state capture**: read everything the device will answer, in each position of the control, and diff the two - including field numbers the recovered schema does not know. "No broadcast was observed" is not a finding about a wire path and does not on its own justify the refusal. TEMPO MODE, the case that raised ADR-0007, is no longer an instance of it: `Tempo.mode` is an ordinary readable, writable property.
