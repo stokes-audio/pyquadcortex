@@ -452,7 +452,7 @@ def test_the_tempo_round_trips_through_the_wire_scale(bpm):
 
 @pytest.mark.parametrize("bpm", [39.9, 240.1, 0.0, 1000.0])
 def test_a_tempo_the_unit_has_no_setting_for_is_refused(bpm):
-    with pytest.raises(ValueError, match="40"):
+    with pytest.raises(ValueError, match=r"40\.\.240"):
         translate.bpm_to_tempo(bpm)
 
 
@@ -468,8 +468,12 @@ def test_a_tempo_wire_value_off_the_scale_is_refused(value):
 def test_the_tempo_is_what_the_protocol_write_expects():
     """The same shape as the tuner and hold-timing checks: the model's idea of
     111 bpm has to be the number `set_tempo_param(real=)` puts on the wire.
-    Unlike those two this one CAN pass by delegation, so it is a check that the
-    two paths agree rather than a check on the arithmetic."""
+
+    Weaker than those two, and worth saying so. Both sides of this equality run
+    through `protocol.bpm_to_tempo`, so it does not check the arithmetic. What it
+    fails on is `set_tempo_param` routing `real=` somewhere else - the catalog,
+    whose published range for TEMPO is a placeholder and would send a different
+    number."""
     recorder = Recorder()
     qc = protocol.QuadCortex(recorder)
     qc.set_tempo_param("TEMPO", real=111.0)
@@ -718,7 +722,7 @@ def test_every_name_on_the_allowlist_is_a_real_protocol_name():
     went unwatched. Two lookups because `HOLD_TIMING_MS` hangs off `QuadCortex`
     and the rest are module-level.
     """
-    missing = "not found"
+    missing = object()
     unresolved = sorted(
         name for name in PROTOCOL_CONVERSIONS
         if getattr(protocol, name, missing) is missing
