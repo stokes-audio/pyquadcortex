@@ -323,7 +323,7 @@ def test_the_address_conversion_says_the_naming_depends_on_the_mode():
 
 # -- display units -----------------------------------------------------------
 #
-# **What the equality assertions below do and do not prove.** Two of these four
+# **What the equality assertions below do and do not prove.** Three of these five
 # mappings delegate to a protocol-layer helper, so `translate.input_level_db(v)
 # == protocol.input_level_db(v)` cannot fail today - it is one function calling
 # the other. It is not a check on the arithmetic, and it is not a substitute for
@@ -332,11 +332,12 @@ def test_the_address_conversion_says_the_naming_depends_on_the_mode():
 # fails.
 #
 # The measured numbers themselves are pinned where the measurement lives, in
-# tests/test_client.py: `test_input_level_db_matches_the_four_measured_points`
-# and `test_lane_level_db_matches_the_three_measured_points` check the screen
-# readings taken against simultaneous wire reads. Nothing here restates them,
-# because a second copy of a measured constant drifts and both copies keep
-# returning a plausible number.
+# tests/test_client.py: `test_input_level_db_matches_the_four_measured_points`,
+# `test_lane_level_db_matches_the_three_measured_points` and
+# `test_tempo_bpm_matches_every_measured_point` check the screen readings taken
+# against simultaneous wire reads. Nothing here restates them, because a second
+# copy of a measured constant drifts and both copies keep returning a plausible
+# number.
 #
 # The other two mappings - the tuner and hold timing - have no protocol helper
 # to call, only a documented rule and a shared constant, so they are pinned
@@ -406,12 +407,16 @@ def test_a_lane_level_the_unit_has_no_setting_for_is_refused(db):
 
 
 @pytest.mark.parametrize("converter", ["input_level_db", "db_to_input_level",
-                                       "lane_level_db", "db_to_lane_level"])
+                                       "lane_level_db", "db_to_lane_level",
+                                       "tempo_bpm", "bpm_to_tempo"])
 @pytest.mark.parametrize("wrong", [True, "0.5", None])
-def test_a_level_that_is_not_a_number_is_refused(converter, wrong):
+def test_a_display_value_that_is_not_a_number_is_refused(converter, wrong):
     """`True` is an int, so an unguarded lane level read it as full scale and
-    returned +12 dB. A string reached the protocol layer and came back as a
-    `TypeError` about multiplying a sequence."""
+    returned +12 dB. The tempo has the same shape - `protocol.tempo_bpm(True)`
+    is 240.0, the top of the span - and `bpm_to_tempo(True)` would be a bpm of
+    1, refused for being off the bottom rather than for being a bool. A string
+    reached the protocol layer and came back as a `TypeError` about multiplying
+    a sequence."""
     with pytest.raises(TypeError):
         getattr(translate, converter)(wrong)
 
@@ -420,6 +425,57 @@ def test_the_two_level_scales_are_not_interchangeable():
     """Both are a 0..1 wire value and they mean different dB. Reading a lane
     level with the input mapping is a wrong answer that looks plausible."""
     assert translate.input_level_db(0.5) != translate.lane_level_db(0.5)
+
+
+# -- the tempo: bpm on screen, a 0..1 value on the wire -----------------------
+#
+# The wrapper is here rather than the helper itself. `set_tempo_param(real=)`
+# calls `protocol.bpm_to_tempo` from inside the protocol layer, so moving the
+# helper up to the boundary would make the protocol layer import the model -
+# which `tests/test_namespace.py` refuses. Delegating gets one copy of the
+# measured span either way.
+
+
+TEMPO_WIRE_VALUES = [0.0, 0.095, 0.355, 0.4, 0.5, 1.0]
+
+
+@pytest.mark.parametrize("value", TEMPO_WIRE_VALUES)
+def test_the_tempo_matches_the_protocol_layers_own_conversion(value):
+    assert translate.tempo_bpm(value) == protocol.tempo_bpm(value)
+
+
+@pytest.mark.parametrize("bpm", [40.0, 59.0, 111.0, 120.0, 240.0])
+def test_the_tempo_round_trips_through_the_wire_scale(bpm):
+    assert translate.tempo_bpm(translate.bpm_to_tempo(bpm)) == pytest.approx(bpm)
+    assert translate.bpm_to_tempo(bpm) == protocol.bpm_to_tempo(bpm)
+
+
+@pytest.mark.parametrize("bpm", [39.9, 240.1, 0.0, 1000.0])
+def test_a_tempo_the_unit_has_no_setting_for_is_refused(bpm):
+    with pytest.raises(ValueError, match="40"):
+        translate.bpm_to_tempo(bpm)
+
+
+@pytest.mark.parametrize("value", [-0.01, 1.01, 2.0])
+def test_a_tempo_wire_value_off_the_scale_is_refused(value):
+    """Unlike a level, which converts off the end of its knob. An out-of-span
+    tempo names a bpm the unit has no setting for, so the protocol helper
+    refuses it and this one inherits that."""
+    with pytest.raises(ValueError):
+        translate.tempo_bpm(value)
+
+
+def test_the_tempo_is_what_the_protocol_write_expects():
+    """The same shape as the tuner and hold-timing checks: the model's idea of
+    111 bpm has to be the number `set_tempo_param(real=)` puts on the wire.
+    Unlike those two this one CAN pass by delegation, so it is a check that the
+    two paths agree rather than a check on the arithmetic."""
+    recorder = Recorder()
+    qc = protocol.QuadCortex(recorder)
+    qc.set_tempo_param("TEMPO", real=111.0)
+    sent = recorder.sent[-1].preset.tempoProgramData[0].params[0]
+    assert sent.param_values[0].float_value == \
+        pytest.approx(translate.bpm_to_tempo(111.0))
 
 
 # -- the tuner's reference pitch: absolute Hz on screen, an offset on the wire
@@ -583,6 +639,7 @@ def _index_arithmetic(tree: ast.AST) -> list[str]:
 PROTOCOL_CONVERSIONS = {
     "Footswitch", "Scene", "slot_to_position", "position_to_slot",
     "input_level_db", "db_to_input_level", "lane_level_db", "db_to_lane_level",
+    "tempo_bpm", "bpm_to_tempo",
     "UNITY_LEVEL", "HOLD_TIMING_MS",
 }
 
@@ -651,6 +708,25 @@ def test_the_scan_covers_every_module_that_is_not_the_protocol_layer():
     }
     missed = sorted(str(p) for p in walked - set(MODEL_SOURCES))
     assert not missed, f"the scan does not cover {missed}"
+
+
+def test_every_name_on_the_allowlist_is_a_real_protocol_name():
+    """A misspelled entry protects nothing and says nothing about it.
+
+    The check below only ever compares an attribute name against this set, so
+    `tempo_bmp` in it would sit there looking like a rule while `protocol.tempo_bpm`
+    went unwatched. Two lookups because `HOLD_TIMING_MS` hangs off `QuadCortex`
+    and the rest are module-level.
+    """
+    missing = "not found"
+    unresolved = sorted(
+        name for name in PROTOCOL_CONVERSIONS
+        if getattr(protocol, name, missing) is missing
+        and getattr(protocol.QuadCortex, name, missing) is missing
+    )
+    assert not unresolved, (
+        f"{unresolved} is on the allowlist but is not a name the protocol layer "
+        f"publishes, so nothing is being kept out of the model by it")
 
 
 def test_the_boundary_itself_does_the_arithmetic():

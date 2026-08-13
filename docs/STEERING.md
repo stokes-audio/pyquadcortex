@@ -128,12 +128,12 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 **What changed:**
 - `pyquadcortex/device/translate.py`: the one module where a screen value becomes a wire
   value and back - rows 1-4, slots 1-8, scene and footswitch letters, preset addresses,
-  and four display-unit mappings (input gain dB, lane and mixer dB, tuner reference Hz,
-  hold timing ms). The two level scales call the protocol helper that carries the
-  measurement; the other two have no helper to call, so they are pinned against what the
-  protocol write method expects, and the tuner's docstring says how thin its evidence is -
-  one observed pair. `PresetAddress`, `FootswitchLetter` and `SceneLetter` are its public
-  value types, re-exported from `pyquadcortex`
+  and five display-unit mappings (input gain dB, lane and mixer dB, tempo bpm, tuner
+  reference Hz, hold timing ms). The two level scales and the tempo call the protocol
+  helper that carries the measurement; the other two have no helper to call, so they are
+  pinned against what the protocol write method expects, and the tuner's docstring says
+  how thin its evidence is - one observed pair. `PresetAddress`, `FootswitchLetter` and
+  `SceneLetter` are its public value types, re-exported from `pyquadcortex`
 - Section 5 gained the pattern row; section 4's owned-paths line and CLAUDE.md name the
   new rule. `architecture.md` carries the module in its layer map and a section on it;
   `domain-model.md` marks principle 5, `PresetAddress` and `FootswitchLetter` as built
@@ -186,6 +186,11 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 - The scan is scoped to the whole package rather than to `pyquadcortex/device/`, because
   a rule scoped to a directory is satisfiable by moving the code one directory up - which
   is precisely what a failure message naming a directory invites
+- A protocol conversion can be delegated to and still not be movable. `bpm_to_tempo`
+  (PR #22) is called by `QuadCortex.set_tempo_param` from inside the protocol layer, so
+  the helper stays there and the boundary wraps it, the same way it wraps the level
+  scales. Adding the name to the boundary's allowlist is the half that matters: without
+  it, a model module reaching for `protocol.tempo_bpm` passes the check
 
 ### 2026-08-12 - TEMPO MODE closes, and ADR-0010
 

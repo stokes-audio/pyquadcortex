@@ -1,10 +1,10 @@
 """The one place a screen value becomes a wire value, and back.
 
 The model speaks what the touchscreen shows: rows 1 to 4, slots 1 to 8, scenes
-and footswitches as letters, levels in dB, the tuner in Hz. The wire speaks
-zero-based indexes and raw scales. Every conversion between the two lives here,
-and nowhere else in :mod:`pyquadcortex.device` - design principle 5 in
-``docs/domain-model.md``.
+and footswitches as letters, levels in dB, the tuner in Hz, the tempo in bpm. The
+wire speaks zero-based indexes and raw scales. Every conversion between the two
+lives here, and nowhere else in :mod:`pyquadcortex.device` - design principle 5
+in ``docs/domain-model.md``.
 
 **Why one module rather than a convention.** The protocol layer's own header says
 it plainly: rows are zero-based, "getting this wrong is quiet rather than loud -
@@ -66,6 +66,7 @@ __all__ = [
     "slot_to_position", "position_to_slot",
     "input_level_db", "db_to_input_level",
     "lane_level_db", "db_to_lane_level",
+    "tempo_bpm", "bpm_to_tempo",
     "tuner_reference_hz", "hz_to_tuner_reference",
     "hold_timing_ms", "ms_to_hold_timing",
 ]
@@ -395,12 +396,12 @@ class PresetAddress:
 # -- display units ----------------------------------------------------------
 #
 # Every mapping below was measured on hardware and is written up at the protocol
-# layer. Two of the four - the level scales - have a protocol helper that
-# performs the conversion, and this module calls it rather than restating the
-# arithmetic: two copies of a measured scale drift, and both copies go on
-# returning a plausible number. The other two have no helper to call. The tuner
-# has only a documented rule, and hold timing has the protocol layer's constant
-# tuple, which is the part worth sharing. Both are pinned in
+# layer. Three of the five - the two level scales and the tempo - have a protocol
+# helper that performs the conversion, and this module calls it rather than
+# restating the arithmetic: two copies of a measured scale drift, and both copies
+# go on returning a plausible number. The other two have no helper to call. The
+# tuner has only a documented rule, and hold timing has the protocol layer's
+# constant tuple, which is the part worth sharing. Both are pinned in
 # tests/test_translation.py against what the protocol WRITE method expects.
 #
 # What this module adds either way is the type guard, because the protocol
@@ -459,6 +460,38 @@ def db_to_lane_level(db: float) -> float:
     way to show. For silence, write the wire's 0.0 directly and mean it.
     """
     return protocol.db_to_lane_level(_a_number(db, "a lane level in dB"))
+
+
+def tempo_bpm(value: float) -> float:
+    """A ``TEMPO`` wire value (0..1) as the bpm the unit displays.
+
+    Tempo spans 40 to 240 bpm. Delegates to
+    :func:`pyquadcortex.protocol.tempo_bpm`, which carries the measurement and its
+    limits: three screen-vs-wire points, with the two endpoints coming from the
+    fit rather than from a driven extreme.
+
+    A wire value outside 0..1 is REFUSED, where :func:`input_level_db` and
+    :func:`lane_level_db` convert one. That difference is the protocol helpers'
+    rather than a rule added at this seam - the tempo one refuses because the bpm
+    a caller would read back does not exist on the unit - and this wrapper
+    neither widens it nor narrows it.
+    """
+    return protocol.tempo_bpm(_a_number(value, "a tempo wire value"))
+
+
+def bpm_to_tempo(bpm: float) -> float:
+    """A displayed tempo in bpm as the wire value ``TEMPO`` takes.
+
+    Refuses anything outside 40..240 bpm rather than clamping, because a clamped
+    write lands and reads back as a tempo the caller never asked for.
+
+    This pair is a wrapper and not a home. The protocol layer calls
+    :func:`pyquadcortex.protocol.bpm_to_tempo` itself, inside
+    :meth:`~pyquadcortex.protocol.QuadCortex.set_tempo_param`, so the helper has
+    to stay down there: moving it up here would make the protocol layer import
+    the model, which is the one direction the layering forbids.
+    """
+    return protocol.bpm_to_tempo(_a_number(bpm, "a tempo in bpm"))
 
 
 def tuner_reference_hz(offset: float) -> float:

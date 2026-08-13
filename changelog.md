@@ -133,9 +133,10 @@ model keeping itself current without asking twice.
 
 ### Groundwork: the model will talk in the numbers on your screen
 
-Rows will be 1 to 4, slots 1 to 8, scenes and footswitches letters, and levels the
-dB the unit displays. The wire counts from zero and stores raw scales, and the
-model now converts in exactly one place so nothing else has to remember to.
+Rows will be 1 to 4, slots 1 to 8, scenes and footswitches letters, levels the dB
+the unit displays, and the tempo the bpm it displays. The wire counts from zero
+and stores raw scales, and the model now converts in exactly one place so nothing
+else has to remember to.
 
 **Nothing that reads a row or a level exists yet** - the preset and grid surfaces
 are still being built - so what you can use today is the three value types this

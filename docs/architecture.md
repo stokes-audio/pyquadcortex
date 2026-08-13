@@ -207,7 +207,7 @@ built story by story. Nothing is stubbed out to look finished.
 ### device/translate.py
 
 The model speaks what the touchscreen shows - rows 1 to 4, slots 1 to 8, scenes
-and footswitches as letters, dB, Hz, ms - and the wire speaks zero-based indexes
+and footswitches as letters, dB, Hz, bpm, ms - and the wire speaks zero-based indexes
 and raw scales. Every conversion between the two lives here and nowhere else in
 `pyquadcortex/device/` (design principle 5 in
 [domain-model.md](domain-model.md)).
@@ -221,11 +221,17 @@ does none of it by reading the source, rather than by trusting anyone to
 remember.
 
 Where a protocol-layer helper already performs the conversion - input gain dB,
-lane and mixer dB, the slot-name/position pair - this module calls it instead of
-restating the arithmetic. Two copies of a measured scale drift apart, and both
-copies go on returning a plausible number. The tuner and hold-timing mappings
-have no helper to call, only a documented rule and a shared constant, so their
-tests pin them against what the protocol write method expects.
+lane and mixer dB, tempo bpm, the slot-name/position pair - this module calls it
+instead of restating the arithmetic. Two copies of a measured scale drift apart,
+and both copies go on returning a plausible number. The tuner and hold-timing
+mappings have no helper to call, only a documented rule and a shared constant, so
+their tests pin them against what the protocol write method expects.
+
+Delegating is not always a choice between two homes. `bpm_to_tempo` is called by
+`QuadCortex.set_tempo_param` from inside the protocol layer, so it has to stay
+there: moving it to the boundary would make the protocol layer import the model,
+which `tests/test_namespace.py` refuses. The wrapper here is what gives the model
+one way in without a second copy of the span.
 
 Public value types: `PresetAddress`, `FootswitchLetter`, `SceneLetter`,
 re-exported from `pyquadcortex`. The conversion functions are the module's own
