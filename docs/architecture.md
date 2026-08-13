@@ -426,9 +426,11 @@ next, roughly in order of how well the ground is prepared:
   `RecentsFavorites`, `PresetDirty`, `Updater`, `ModelRepo` and others are
   decoded and pushed to us but have no API. These are the cheapest additions:
   the type already exists in the registry, so it is one client method plus
-  tests. (`GlobalTempo` is a special case: it is global rather than per preset and
-  only ever returned a running clock, so the useful per-preset tempo controls live
-  in `tempoProgramData` instead - see `set_tempo_param`.)
+  tests. (`GlobalTempo` is a special case: it is global rather than per preset,
+  and it alternates a clock shape with a 25-parameter shape, so a reader has to
+  match on a reply that actually carries parameters. Its parameter 1 is the Tempo
+  menu's MODE switch - see `tempo_mode`. The per-preset tempo controls live in
+  `tempoProgramData` instead - see `set_tempo_param`.)
 - **Types not in the registry at all.** The schema declares 71 message types.
   Whole feature areas are untouched: `Tuner` / `ShowTuner`, `Looper`,
   `MIDISettings`, `NeuralCapture` / `NeuralCapture2`, `Screenshot`,

@@ -55,6 +55,7 @@ already read and need no connection; calling them as methods raises
 | **Footswitches** | `set_stomp_assignment(row, column, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
 | **Expression pedals** | `set_expression(row, column, param, pedal, minimum, maximum)` |
 | **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `protocol.midi_out(preset)` |
+| **Tempo MODE** | `tempo_mode()`, `set_tempo_mode(TempoMode.GLOBAL)` - global, and it picks which tempo block plays |
 | **Per-preset tempo** | `set_tempo_param(name, ...)`, `set_tempo_option(name, n)`, `protocol.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
 | **Metronome** | `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()` - all taking full enums |
 | **Per-beat accents** | `set_beat(n, MetronomeBeat.ACCENT)`, `set_beats([...])`, `protocol.beats(preset)` |
@@ -255,13 +256,42 @@ pv = param_state(preset, row=0, column=3, param_index=0)   # .scene_mode, .value
 
 ## Per-preset tempo and the metronome
 
-Each preset carries its own tempo block, separate from the global tempo:
+Each preset carries its own tempo block, separate from the global tempo. **The unit
+holds both at once, and the Tempo menu's MODE switch picks which one plays:**
 
 ```python
-qc.set_tempo_led(False)              # this preset's TEMPO LED off
-qc.set_metronome_muted(True)         # silence the click - the unit's own MUTE
+from pyquadcortex.protocol import TempoMode
+
+qc.tempo_mode()                          # TempoMode.PRESET or TempoMode.GLOBAL
+qc.set_tempo_mode(TempoMode.GLOBAL)      # run every preset on the device's tempo
+```
+
+`set_tempo_mode` is **global**: it affects every preset and there is nothing to save,
+so read it first if you mean to put it back. It moves neither tempo block.
+
+Which block you HEAR follows MODE - measured, on one unit minutes apart: 111 bpm under
+PRESET from the preset's stored `0.355`, 120 under GLOBAL from the device's `0.400`. The
+setters below address the preset's block by construction, since they write
+`tempoProgramData`, so writing one while MODE is GLOBAL should store a value you will not
+hear until you switch back. That last step is inferred from those two facts rather than
+measured, so treat it as a caution and not as a verified behaviour.
+
+The device never broadcasts this switch, so a state tracker cannot learn it from
+pushes - `tempo_mode()` has to ask, and it waits for a `GlobalTempo` reply carrying
+parameters rather than the running clock, which can take a few seconds.
+
+The per-preset controls:
+
+```python
+qc.set_tempo_param("TEMPO", real=120)   # bpm - the span is 40..240, measured
+qc.set_tempo_led(False)                 # this preset's TEMPO LED off
+qc.set_metronome_muted(True)            # silence the click - the unit's own MUTE
 qc.set_tempo_param("TIME SIGNATURE", value=0.1)
 ```
+
+`TEMPO` is the one tempo parameter whose `real=` comes from a measurement rather than
+the catalog, which publishes a placeholder range for it. `tempo_bpm()` and
+`bpm_to_tempo()` convert if you need the numbers directly.
 
 Use `set_metronome_muted` and not the volume to silence a click:
 `set_metronome_volume(0.0)` is **-60 dB, quiet but still audible**, not silence.

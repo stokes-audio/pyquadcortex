@@ -101,6 +101,13 @@ eight releases - 0.33.0 through 0.40.0 - that measurement was written up as "MOD
 the wire at all", which is a claim about readability that no amount of listening can
 support. Say what the instrument measured, not what it implies.
 
+And the ending, which is the point: **MODE was on the wire the whole time.** It is the
+device tempo block's parameter 1, and one READ shows it. The three listener runs were
+correct and correctly reported; the eight releases were lost to the gap between the
+question they answered and the question everyone read them as answering. When a listener
+comes back silent, the next move is to ASK - see "Diff the whole state, do not hunt for a
+field" below.
+
 **3. A match predicate that tests a field the reply never sets rejects every valid answer.**
 Reading the unit's Favorites list needs `RecentsFavorites{READ, is_favorites: true}`, and
 the reply comes back with `is_favorites` ABSENT - the flag selects which list you get, it is
@@ -114,6 +121,45 @@ timed out cleanly and repeatably, and "Favorites cannot be read over USB" went i
 documentation, along with a method that quietly returned the wrong list. Correlate on
 `request_id`, which the device does echo, and when a match predicate times out, log what DID
 arrive before concluding nothing did.
+
+## Diff the whole state, do not hunt for a field
+
+The listener above answers "what does the device SAY when I do this?". When the answer is
+"nothing", the next instrument answers a different question: "what does the device's
+ANSWER look like in each position?" Capture everything readable with the control one way,
+have the operator move it, capture again, and diff.
+
+The discipline that makes it work is refusing to look for the field you expect. TEMPO
+MODE had been hunted for in `GeneralSettings` and in the preset, and it was one index away
+inside a message shape the investigation had already written off. A diff finds it without
+knowing where to look; a search only finds it where someone guessed.
+
+`tests/hardware/state_snapshot.py` is the harness. Four things in it are load-bearing, and
+each is there because of a specific way this kind of capture lies:
+
+- **Record every SET field, flattened to `path -> value`.** `ListFields()` is the
+  presence-correct reading of this schema - a synthetic-`oneof` field appears only if the
+  device sent it - so an absent field shows in the diff as a key appearing rather than as
+  a zero that could mean either thing.
+- **Record field numbers the schema does not know.** The schema is recovered from one
+  Cortex Control build, so a field the firmware sends and that build never had decodes to
+  nothing at all. `GeneralSettingsMessage` uses numbers 1-39 with no gaps, so anything new
+  there would have been invisible. Use `google.protobuf.unknown_fields.UnknownFieldSet` -
+  the upb runtime raises `NotImplementedError` on `msg.UnknownFields()`.
+- **Collect values as a SET per path over a window, not one sample.** `GlobalTempo`
+  alternates two shapes, one push each; sampling one message per type compares a clock
+  reply against a params reply and reports the difference as real.
+- **Label noise, never filter it.** Clocks, meters and request ids move on their own and
+  are printed under their own heading. A filter is how the question got its previous wrong
+  answer, and the answer here turned out to sit in a message the noise list would have
+  been a natural home for.
+
+Two practical notes. Prove the instrument offline first - `tests/test_state_snapshot.py`
+feeds it a message carrying each thing it must not miss and fails if the snapshot comes
+back empty, which is the only cheap way to tell "the device said nothing" from "the
+capture cannot see it". And expect a large, boring diff: the connect burst's `File`
+enumeration arrives in a different order every run, so several thousand lines of it are
+noise around the one line that matters.
 
 ## Check a believed polarity against factory content
 

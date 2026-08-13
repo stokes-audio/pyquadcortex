@@ -49,3 +49,6 @@ desktop.ini
 # NOTE: pyquadcortex/protocol/proto/*_pb2.py are generated but INTENTIONALLY committed,
 # so that installing the package needs no protoc toolchain. Do not ignore them.
 # See docs/architecture.md.
+
+# Hardware-suite working artifacts. The findings go in docs/, not here.
+tests/hardware/captures/
