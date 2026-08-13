@@ -7,8 +7,12 @@ records EVERY set field of every message the device answers with - names it has
 a schema for and field numbers it does not - so the question becomes "what
 differs between the two menu positions" rather than "is it the field I guessed".
 
-Three things here exist because of specific past mistakes:
+Four things here exist because of specific past mistakes:
 
+* **Only fields the device actually SET are recorded** (``ListFields``), so an
+  absent field shows up in a diff as a key appearing rather than as a zero that
+  could mean either thing. Most of this schema sits in synthetic ``oneof``s
+  precisely so absent and zero stay distinguishable (CLAUDE.md).
 * **Unknown field numbers are recorded.** The schema is recovered from Cortex
   Control, so a field the firmware sends and that build never had would decode
   as nothing at all. ``GeneralSettingsMessage`` uses field numbers 1-39 with no
@@ -49,13 +53,23 @@ NOISY_TYPES = frozenset({
 #: and the interesting part of it is small.
 PRESET_TYPES = frozenset({"RecallPresetMessage", "GridMessage"})
 
-#: Substrings marking a path that moves on its own. NOT a filter: the diff
-#: prints these under their own heading, below everything else.
-NOISE_PATHS = (
-    "request_id", "current_beat", "current_bar", "current_tick",
-    "available_disk_space", "cpu", "meter", "timestamp", "session_id",
-    "elapsed", "position",
-)
+#: Leaf field NAMES that move on their own. NOT a filter: the diff prints these
+#: under their own heading, below everything else.
+#:
+#: Matched against whole path SEGMENTS, never as substrings. The first version
+#: matched substrings and it was quietly wrong in the way that matters most here:
+#: ``"meter"`` is inside ``"parameters"``, so every ``GlobalEQ.parameters`` path -
+#: and ``GlobalEQ`` is in :data:`READ_TYPES` - was labelled noise, and
+#: ``"position"`` swallowed ``SetlistPosition.position``, which is the one field
+#: that would reveal the operator changed preset between two captures and
+#: invalidated the whole comparison. An instrument whose thesis is that the label
+#: makes the answer findable cannot bury a device-settings surface under
+#: "known-noisy".
+NOISE_FIELDS = frozenset({
+    "request_id", "current_beat", "current_bar", "current_tick", "current_time",
+    "available_disk_space", "cpu_percent", "timestamp", "session_id",
+    "elapsed", "count_in_beats_remaining", "count_in_bars_remaining",
+})
 
 
 def _scalar(field, value):
@@ -169,7 +183,13 @@ class _Tap:
         shape["count"] += 1
 
     def stop(self):
+        # Restored by assignment, then the instance attribute is DELETED - leaving
+        # it in place shadows nothing useful and makes a second tap stopped out
+        # of order unhook the wrong one. Then a beat for any message already
+        # inside _tap to finish, so the caller can serialize `shapes` without
+        # racing the RX thread mutating it.
         self._transport._dispatch = self._inner
+        time.sleep(0.2)
 
 
 def capture(qc, label, window=14.0, spacing=0.15):
@@ -226,8 +246,16 @@ def _values_by_path(snapshot):
 
 
 def _is_noise(path):
-    lowered = path.lower()
-    return any(marker in lowered for marker in NOISE_PATHS)
+    """Whether every leaf of ``path`` is a field known to move on its own.
+
+    Splits on ``.`` and strips any ``[...]`` subscript, so ``parameters`` and
+    ``position`` are compared whole and cannot be swallowed by a substring.
+    """
+    for segment in path.split("."):
+        name = segment.split("[", 1)[0]
+        if name in NOISE_FIELDS:
+            return True
+    return False
 
 
 def _compare(name, before, after, signal, noise):

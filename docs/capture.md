@@ -27,8 +27,14 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 # rather than from this list. (CPULoadMessage, for instance, never arrives at
 # all, subscribed or not, so filtering it is harmless but pointless.)
 #
+# WARNING, learned the expensive way: GlobalTempoMessage is heavy because it
+# alternates a running clock with a 25-parameter shape, and the PARAMETERS are
+# real device state - parameter 1 is the Tempo menu's MODE switch. Filtering the
+# whole type discards them. Filter the clock shape, not the type:
+#     m.HasField("metronome_status") and not m.params
+#
 # Note this is a NOISE list, not an allow-list, and pair it with a heartbeat -
-# see "Two ways a listener lies about silence" above.
+# see "Three ways your instrument lies about silence" below.
 NOISE = {"GlobalTempoMessage", "IOMeterMessage", "GridModelMeterMessage",
          "KeepAliveMessage", "ModuleStatsMessage"}
 
@@ -91,7 +97,7 @@ LOG.write(f"-- heartbeat: {suppressed} chatter msgs, "
 ```
 
 A silent log with a beating heart is a finding. A silent log without one is nothing at all.
-The finding that the Tempo menu's MODE control is never broadcast was reached three times:
+The finding that the Tempo menu's MODE control emits no change event was reached three times:
 the first time with neither safeguard, and twice more with both, and only the later two
 were worth anything.
 
@@ -101,12 +107,21 @@ eight releases - 0.33.0 through 0.40.0 - that measurement was written up as "MOD
 the wire at all", which is a claim about readability that no amount of listening can
 support. Say what the instrument measured, not what it implies.
 
-And the ending, which is the point: **MODE was on the wire the whole time.** It is the
-device tempo block's parameter 1, and one READ shows it. The three listener runs were
-correct and correctly reported; the eight releases were lost to the gap between the
-question they answered and the question everyone read them as answering. When a listener
-comes back silent, the next move is to ASK - see "Diff the whole state, do not hunt for a
-field" below.
+And the ending, which is the point: **MODE was on the wire the whole time** - and worse,
+it was in the traffic those very runs were recording. It is the device tempo block's
+parameter 1, carried in the params-shaped `GlobalTempo` push, which arrives about twice
+per 14 seconds whether or not anyone touches the switch.
+
+Look at the NOISE list above. `GlobalTempoMessage` is first in it, because it is the
+heaviest chatter on the link. So the most likely account of all three runs is not that
+the device stayed silent, but that **the listener threw the answer away before it reached
+the log** - three times, using a filter this very document recommends.
+
+So this one example teaches the whole section, and the sharpest part of it last: **a
+noise filter is a claim that a message type cannot carry the answer**, and nobody had
+checked it. Filter a SHAPE, never a whole type. And when a listener comes back silent,
+do not reach for a longer window - ASK, and diff what comes back. See "Diff the whole
+state, do not hunt for a field" below.
 
 **3. A match predicate that tests a field the reply never sets rejects every valid answer.**
 Reading the unit's Favorites list needs `RecentsFavorites{READ, is_favorites: true}`, and
@@ -154,7 +169,10 @@ each is there because of a specific way this kind of capture lies:
   answer, and the answer here turned out to sit in a message the noise list would have
   been a natural home for.
 
-Two practical notes. Prove the instrument offline first - `tests/test_state_snapshot.py`
+Two practical notes. This is not merely a suggestion: ADR-0008 makes it the step that has to happen
+before a control is recorded as having no wire path.
+
+Prove the instrument offline first - `tests/test_state_snapshot.py`
 feeds it a message carrying each thing it must not miss and fails if the snapshot comes
 back empty, which is the only cheap way to tell "the device said nothing" from "the
 capture cannot see it". And expect a large, boring diff: the connect burst's `File`

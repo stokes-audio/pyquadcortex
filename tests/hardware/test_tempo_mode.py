@@ -5,31 +5,38 @@ tempo and all seven metronome settings belong to the preset. Cortex Control has
 the same switch, so a route to it exists. Three earlier tests watched for a
 broadcast when the switch moves and saw nothing, and that was written up as "not
 on the wire at all" - which is more than those tests measured. **They listened;
-none of them asked.** See ADR-0007 and ``protocol.md`` "Per-preset tempo, LED
-and metronome".
+none of them asked.** See ADR-0008 and ``protocol.md`` "MODE is the DEVICE tempo
+block's parameter 1".
 
-This asks. It is read-only - every message it sends is a ``READ`` - so it writes
-nothing to the unit and needs no restore.
+**It was asked, and it answered.** MODE is the DEVICE tempo block's parameter 1,
+carried in ``GlobalTempo.params``: ``0.0`` PRESET, ``1.0`` GLOBAL. The winning
+hypothesis was the third of three - the other two were killed by the same
+capture, and both negatives are recorded in ``protocol.md``:
 
-Run it once per MODE position, with the switch moved on the touchscreen in
-between::
+1. ``BinaryPreset.tempo`` (field 10) as the discriminator. **Dead**: absent in
+   both positions, and ``tempoProgramData`` was identical across the flip.
+2. ``GeneralSettings`` carrying it in a field number the recovered schema does
+   not know - its schema uses 1-39 with no gaps. **Dead**: identical in both
+   positions, and no message anywhere carried an unknown field number.
+3. ``GlobalTempo.params`` holding an unmapped index. **This one.**
+
+This module keeps two tests, and they do different jobs:
+
+* :func:`test_tempo_mode_is_writable` is the REGRESSION test. It drives the
+  shipped ``tempo_mode`` / ``set_tempo_mode`` and always runs.
+* :func:`test_capture_tempo_mode_state` is the INSTRUMENT that found the answer,
+  kept because ADR-0008 makes a differential state capture the thing you do
+  before recording a control as having no wire path. It is read-only, needs an
+  operator, and skips unless one asks for a capture.
+
+To use the instrument on some other control, run it once per position with the
+control moved on the touchscreen in between::
 
     QC_SNAPSHOT_LABEL=global  pytest tests/hardware --hardware -s -k tempo_mode
     # flip MODE on the unit, then:
     QC_SNAPSHOT_LABEL=preset  pytest tests/hardware --hardware -s -k tempo_mode
 
 The second run diffs the two. ``-s`` matters: the finding is what it prints.
-
-The three hypotheses it covers at once, cheapest first:
-
-1. ``BinaryPreset.tempo`` (field 10) and ``tempoProgramData`` (field 19) are
-   presence-tracked, and presence may itself be the discriminator - a preset
-   saved under PRESET mode carries them, one saved under GLOBAL does not.
-2. ``GeneralSettings`` carries the mode and never broadcasts it. A READ would
-   show it. Its schema uses field numbers 1-39 with no gaps, so if it is there
-   it is in a number the recovered schema does not know - which is why unknown
-   field numbers are recorded rather than dropped.
-3. ``GlobalTempo.params`` holds an unmapped index.
 
 Nothing here looks for a field it expects. It records every set field of every
 message the device answers with and diffs the two positions, so a difference is
@@ -56,38 +63,48 @@ CAPTURES = Path(__file__).parent / "captures"
 
 
 def test_capture_tempo_mode_state(qc):
-    """READ everything readable and save it under ``QC_SNAPSHOT_LABEL``."""
+    """READ everything readable and save it under ``QC_SNAPSHOT_LABEL``.
+
+    An operator-driven CAPTURE INSTRUMENT, not a regression test - it needs a
+    person to have set the control to a known position and to say which. So it
+    skips rather than fails when unlabelled, and the skip names what to do.
+
+    That is the one skip this directory's no-silent-skips rule tolerates, and
+    only because of what it is: a test that has stopped exercising the device is
+    invisible as a skip, but this one has nothing to exercise until somebody asks
+    for a capture. ``test_tempo_mode_is_writable`` below is the regression test,
+    and it always runs.
+    """
     label = os.environ.get("QC_SNAPSHOT_LABEL")
     if not label:
-        pytest.fail(
-            "set QC_SNAPSHOT_LABEL to the MODE position shown on the unit RIGHT "
-            "NOW, e.g. QC_SNAPSHOT_LABEL=global. The label is what the diff is "
-            "reported against, so a wrong one makes the answer unreadable.")
+        pytest.skip(
+            "no QC_SNAPSHOT_LABEL - this is an operator-driven capture, not a "
+            "regression test. To take one, set the label to the MODE position "
+            "the unit is showing RIGHT NOW: QC_SNAPSHOT_LABEL=global pytest "
+            "tests/hardware --hardware -s -k capture_tempo")
 
     snapshot = state_snapshot.capture(qc, label)
-    CAPTURES.mkdir(exist_ok=True)
-    path = CAPTURES / f"{label}.json"
-    path.write_text(json.dumps(snapshot, indent=2, sort_keys=True, default=repr))
 
     preset = snapshot["preset"]
     tempo_params = sorted(p for p in preset if p.startswith("tempoProgramData"))
     global_tempo = snapshot["shapes"].get("GlobalTempoMessage", [])
     with_params = [s for s in global_tempo
                    if any(p.startswith("params") for p in s["fields"])]
+    arrivals = sum(s["count"] for s in with_params)
     unknown = sorted(
         f"{name}: {path_}"
         for name, shapes in snapshot["shapes"].items()
         for shape in shapes for path_ in shape["fields"] if "UNKNOWN" in path_)
     unknown += sorted(f"preset: {p}" for p in preset if "UNKNOWN" in p)
 
-    print(f"\n=== snapshot '{label}' -> {path} ===")
+    print(f"\n=== snapshot '{label}' ===")
     print(f"message types answered : {len(snapshot['shapes'])}")
     print(f"preset name            : {preset.get('name', '<absent>')}")
     print(f"preset.tempo (field 10): {preset.get('tempo', '<ABSENT>')}")
     print(f"tempoProgramData count : {preset.get('tempoProgramData.<count>', 0)}"
           f" block(s), {len(tempo_params)} field path(s)")
-    print(f"GlobalTempo shapes     : {len(global_tempo)} distinct, "
-          f"{len(with_params)} carrying params")
+    print(f"GlobalTempo            : {len(global_tempo)} distinct shape(s); the "
+          f"params shape arrived {arrivals}x")
     print(f"UNKNOWN field numbers  : {unknown if unknown else 'none'}")
     if snapshot["tap_errors"]:
         # Not decoration. A describe() that raises on one type would otherwise
@@ -95,8 +112,25 @@ def test_capture_tempo_mode_state(qc):
         # whole investigation exists to undo.
         print(f"TAP ERRORS (the snapshot is incomplete): {snapshot['tap_errors']}")
 
+    # Asserted BEFORE the file is written. A snapshot that fails any of these is
+    # not evidence, and writing it anyway is worse than not capturing: the diff
+    # step globs the directory, so a bad file gets compared and reported as a
+    # result. The tap_errors check is the same argument - a type that raised in
+    # describe() is missing from `shapes`, and the diff renders that as
+    # "<absent> -> ...", which reads exactly like a discovery.
     assert snapshot["shapes"], "no device traffic at all - is the link up?"
     assert not snapshot["tap_errors"], snapshot["tap_errors"]
+    assert with_params, (
+        "no GlobalTempo push carrying tempo PARAMETERS arrived in the window. "
+        "That shape is the only one that answers, so this capture cannot see "
+        "MODE at all - and a diff of it would report 'nothing differed', which "
+        "is verbatim the wrong answer this harness exists to overturn. Re-run, "
+        "or lengthen the window.")
+
+    CAPTURES.mkdir(exist_ok=True)
+    path = CAPTURES / f"{label}.json"
+    path.write_text(json.dumps(snapshot, indent=2, sort_keys=True, default=repr))
+    print(f"written                : {path}")
 
 
 #: How long the written value is left in place before the restore puts it back.
@@ -133,7 +167,19 @@ def test_tempo_mode_is_writable(qc, restores):
     target = TempoMode.GLOBAL if before is TempoMode.PRESET else TempoMode.PRESET
     preset_before = _preset_mode_param(qc)
 
-    restores(f"tempo MODE -> {before.name}", lambda: qc.set_tempo_mode(before))
+    # The restore READS BACK. Everywhere else in this suite a restore is a blind
+    # write, which is tolerable for preset state - unsaved and discarded by any
+    # recall. MODE is GLOBAL: it survives a recall, so an unnoticed failed restore
+    # leaves the unit changed for good. And this test's own thesis is that a
+    # guess and a success are indistinguishable on this device.
+    def put_back():
+        qc.set_tempo_mode(before)
+        time.sleep(SETTLE_SECONDS)
+        landed = qc.tempo_mode()
+        assert landed is before, (
+            f"MODE left on {landed.name}, should be {before.name} - set it by hand")
+
+    restores(f"tempo MODE -> {before.name}", put_back)
     qc.set_tempo_mode(target)
 
     time.sleep(SETTLE_SECONDS)
@@ -174,22 +220,61 @@ def _preset_mode_param(qc):
     return values[0].float_value if values else None
 
 
+#: How far apart two captures may be and still be treated as one experiment.
+#: The point of the pair is that ONE thing changed between them - the operator
+#: moving the control. Two files hours apart differ in whatever else happened in
+#: between (a preset recall, an edit, a reboot), and the diff cannot tell those
+#: from the answer. `captures/` is gitignored and nothing prunes it, so without
+#: this an old file silently becomes half of a new comparison.
+PAIR_WINDOW_SECONDS = 3600.0
+
+
 def test_diff_captured_snapshots():
     """Diff every pair of snapshots on disk. Needs no unit; needs two files."""
     files = sorted(CAPTURES.glob("*.json")) if CAPTURES.exists() else []
     if len(files) < 2:
         pytest.skip(f"{len(files)} snapshot(s) in {CAPTURES} - need two to diff")
 
-    snapshots = [json.loads(f.read_text()) for f in files]
-    for index, before in enumerate(snapshots):
-        for after in snapshots[index + 1:]:
+    loaded = [(f, json.loads(f.read_text())) for f in files]
+    compared = 0
+    for index, (left_file, before) in enumerate(loaded):
+        for right_file, after in loaded[index + 1:]:
+            if before["label"] == after["label"]:
+                continue                    # same position; nothing to learn
+            gap = abs(left_file.stat().st_mtime - right_file.stat().st_mtime)
+            if gap > PAIR_WINDOW_SECONDS:
+                print(f"\n=== SKIPPED {before['label']} -> {after['label']}: "
+                      f"{gap / 60:.0f} min apart, outside the pairing window. "
+                      f"Delete the stale one and re-capture. ===")
+                continue
+
+            compared += 1
             signal, noise = state_snapshot.diff(before, after)
             print(f"\n=== {before['label']} -> {after['label']} ===")
             print(f"--- {len(signal)} field(s) moved ---")
             for line in signal:
                 print(f"  {line}")
             if not signal:
-                print("  nothing outside the known-noisy paths differed")
+                print("  nothing outside the known-noisy fields differed")
             print(f"--- {len(noise)} known-noisy path(s), shown for completeness ---")
             for line in noise:
                 print(f"  {line}")
+
+            # The pair has to be diffable at all. Both snapshots must carry the
+            # shape that answers, or "nothing differed" means "the instrument was
+            # blind", not "the device did not move" - the confusion that cost
+            # this project eight releases.
+            for snapshot in (before, after):
+                assert any(
+                    p.startswith("params")
+                    for shape in snapshot["shapes"].get("GlobalTempoMessage", [])
+                    for p in shape["fields"]), (
+                    f"snapshot {snapshot['label']!r} carries no GlobalTempo params "
+                    f"shape, so this diff cannot see MODE")
+                assert not snapshot["tap_errors"], (
+                    f"snapshot {snapshot['label']!r} was captured with tap errors "
+                    f"and is not evidence: {snapshot['tap_errors']}")
+
+    assert compared, (
+        f"{len(files)} snapshot(s) present but no valid pair to diff - they share "
+        f"a label, or are further than {PAIR_WINDOW_SECONDS / 60:.0f} min apart")

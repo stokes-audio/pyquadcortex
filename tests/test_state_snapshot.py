@@ -115,6 +115,75 @@ def test_an_absent_preset_tempo_is_absent_not_zero(snapshot):
     assert "tempo" not in snapshot.preset_fields(preset.BinaryPreset(name="x"))
 
 
+# -- the recorder: the producer behind every snapshot on disk ------------------
+
+
+def test_the_tap_keeps_two_shapes_apart_and_counts_arrivals(snapshot):
+    """``_Tap`` is the producer, and nothing else in the suite touched it.
+
+    The diff tests below hand-build the snapshot shape - ``shapes[name] ->
+    [{count, fields}]`` - so they encode an assumption about this class and could
+    all stay green while it emitted something else entirely. That is the same
+    "instrument nobody had checked" failure the rest of this file guards against,
+    one layer down.
+
+    What must hold: the two ``GlobalTempo`` shapes stay DISTINCT (they are keyed
+    by a fingerprint of their fields), repeat arrivals are COUNTED rather than
+    collapsed, noisy types are censused instead of valued, and the real dispatch
+    still runs so the transport keeps working while the tap is installed.
+    """
+    import types
+
+    delivered = []
+    transport = types.SimpleNamespace(_dispatch=lambda m: delivered.append(m))
+    tap = snapshot._Tap(transport)
+
+    clock = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    clock.metronome_status.current_beat = 3
+    params = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    params.params.add().param_values.add(float_value=1.0)
+
+    transport._dispatch(clock)
+    transport._dispatch(params)
+    transport._dispatch(clock)
+    transport._dispatch(pa.CPULoadMessage())
+    tap.stop()
+
+    shapes = tap.shapes["GlobalTempoMessage"]
+    assert len(shapes) == 2, "the clock and params shapes must not merge"
+    assert sorted(s["count"] for s in shapes.values()) == [1, 2], "arrivals counted"
+    assert "CPULoadMessage" in tap.census, "a noisy type is censused, not valued"
+    assert "CPULoadMessage" not in tap.shapes
+    assert len(delivered) == 4, "the real dispatch still ran for every message"
+    assert transport._dispatch is not tap._tap, "the tap was removed"
+    assert not tap.errors
+
+
+def test_the_tap_survives_a_message_it_cannot_describe(snapshot):
+    """CLAUDE.md: the RX thread never dies. A counted error, not a lost link.
+
+    The class comment says a ``describe()`` that raises would otherwise look
+    exactly like that type never arriving - which is the failure this whole
+    investigation exists to undo - so the swallow-and-count has to be real, and
+    the message has to keep flowing.
+    """
+    import types
+
+    delivered = []
+    transport = types.SimpleNamespace(_dispatch=lambda m: delivered.append(m))
+    tap = snapshot._Tap(transport)
+    original = snapshot.describe
+    snapshot.describe = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+    try:
+        transport._dispatch(pa.GlobalTempoMessage())
+    finally:
+        snapshot.describe = original
+        tap.stop()
+
+    assert delivered == [pa.GlobalTempoMessage()], "the message still got through"
+    assert len(tap.errors) == 1 and "boom" in tap.errors[0], "and it was RECORDED"
+
+
 # -- diff: what the comparison must not miss ----------------------------------
 
 
@@ -175,6 +244,24 @@ def test_the_running_clock_is_named_noise_not_dropped(snapshot):
 
     assert signal == []
     assert noise == ["GlobalTempoMessage.metronome_status.current_beat: 1 -> 3"]
+
+
+@pytest.mark.parametrize("path", [
+    "GlobalEQMessage.parameters[0].gain",       # "meter" is inside "parameters"
+    "SetlistPositionMessage.position",          # the preset-changed confound
+    "TunerMessage.enable_meter",                # a setting, not a moving value
+])
+def test_a_real_field_is_not_swallowed_by_a_noise_substring(snapshot, path):
+    """Noise is matched on whole path SEGMENTS, never as a substring.
+
+    The first version matched substrings, and the collisions were exactly the
+    wrong ones: ``GlobalEQ`` is a type this harness READs and its params field is
+    literally ``parameters``, and ``SetlistPosition.position`` is the field that
+    would reveal the operator changed preset between two captures - the one
+    confound that invalidates the whole comparison. Nothing was dropped, but
+    "known-noisy, shown for completeness" is an invitation to skip.
+    """
+    assert not snapshot._is_noise(path)
 
 
 def test_a_preset_field_that_moves_is_signal(snapshot):

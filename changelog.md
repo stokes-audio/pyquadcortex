@@ -114,11 +114,16 @@ put it back. It does not move either tempo block: the unit keeps the preset's
 settings and the device's at the same time, and MODE only picks which one plays.
 
 The entry above withdrew the claim that this control was not on the wire. It was
-on the wire the whole time, and one READ shows it. The three tests that found
-nothing were sound - the unit genuinely never broadcasts the switch - and the
-mistake was reading "does not announce" as "cannot be asked". Confirmed on the
-wire, on the unit's own screen, and by the tempo actually in effect, which
-switched between the two blocks' stored values.
+on the wire the whole time - though not via a naive READ, see the caveat below. The three tests that found nothing were measuring
+something real and narrower - the unit emits no CHANGE EVENT when the switch moves -
+and the mistake was reading that as "cannot be asked". The current value in fact
+rides the tempo stream the unit sends anyway. Confirmed on the wire, on the unit's
+own screen, and by the tempo actually in effect, which switched between the two
+blocks' stored values.
+
+The method that found it - capture the whole readable state in each position
+and diff, rather than looking for the field you expect - is now what ADR-0008
+requires before any control is written down as having no wire path.
 
 Watch out for one thing if you read `GlobalTempo` yourself: it alternates two
 message shapes, one carrying the running clock and one carrying the 25

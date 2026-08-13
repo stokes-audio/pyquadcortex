@@ -1113,7 +1113,7 @@ the n/a rows below where they intersect the API at all.
 | Live Tuner (streaming needle) | **omitted** | no | the device refuses `enable_meter` from a host; unsupported by decision |
 | Tempo (BPM) | `device.tempo.bpm` | yes | the tempo in effect. Which scope it comes from is the unit's business, and depends on the MODE row below. Both blocks exist at once: measured 111 bpm from the preset's and 120 from the device's on the same unit, minutes apart |
 | Tempo MODE (Global vs Preset) | `device.tempo.mode` | yes | `GlobalTempo.params[1]`, `0.0` PRESET and `1.0` GLOBAL, readable and writable (`tempo_mode()` / `set_tempo_mode()`). A **device** setting despite riding a tempo message: it affects every preset and there is nothing to save. Never broadcast, which is why three earlier tests found nothing and why only a READ finds it. M3 with the rest of `Tempo` |
-| Tap tempo | **omitted** | no | a `GlobalTempo` READ carries the 25 tempo parameters, none of which is a tap; MIDI CC#44 is the documented route |
+| Tap tempo | **omitted** | no | a `GlobalTempo` READ carries the 25 tempo parameters, and none of the 23 attributed ones is a tap; indices 23 and 24 are unattributed, so this is not quite a closed door. MIDI CC#44 is the documented route |
 | Tempo LED | `device.tempo.led` | yes | |
 | Metronome volume/playback/pan/T-sig/subdivisions/sound/routing | `device.tempo.metronome.*` | yes | full enums for all four option lists |
 | Per-scene tempo (Cortex Control's bottom bar claims it) | **omitted** | n/a | the unit has no per-scene tempo; `scene_tempo` is inert on the wire. On-unit presentation wins |

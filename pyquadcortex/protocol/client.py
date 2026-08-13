@@ -122,6 +122,47 @@ def db_to_lane_level(db: float) -> float:
         )
     return (db + 40.0) / 52.0
 
+
+def _mode_param(message, index: int):
+    """The float at tempo parameter ``index`` in a ``GlobalTempo``, or ``None``.
+
+    ``None`` means "this message does not answer the question" - the clock shape,
+    a params list too short, a param carrying no value, or a value stored as
+    something other than a float. It is deliberately not an exception: this runs
+    as a match predicate, where the right response to a message that cannot
+    answer is to keep waiting for one that can.
+
+    Two things here are not decoration.
+
+    **The explicit ``index`` wins over position.** ``Param.index`` is
+    presence-tracked, the device sets it on every param of a captured push
+    (checked: all 25, and there it equals position), and this library's own writes
+    set it. Reading positionally while the device keys by index is the
+    ``ColBypass.column`` mistake in a new place - it works until the device sends
+    a sparse or reordered list, and then it returns a neighbouring tempo
+    parameter as the answer. The neighbours are 0.0/1.0 floats too, so the wrong
+    answer would round cleanly and look right. Same fallback as
+    ``set_block.echoes_cell``: trust the index when present, use position when not.
+
+    **``ParamValue.value`` is a REAL oneof**, not a synthetic one - ``int_value``,
+    ``float_value``, ``string_value``. Reading ``.float_value`` off a param that
+    holds an int yields 0.0 with no error, which would report PRESET with total
+    confidence. ``tempo_params()`` already guards this; so does this.
+    """
+    by_index = None
+    for position, param in enumerate(message.params):
+        at = param.index if field_present(param, "index") else position
+        if at == index:
+            by_index = param
+            break
+    if by_index is None or not by_index.param_values:
+        return None
+    first = by_index.param_values[0]
+    if not field_present(first, "float_value"):
+        return None
+    return first.float_value
+
+
 def tempo_bpm(value: float) -> float:
     """Convert a ``TEMPO`` wire value (0..1) to the bpm the unit displays.
 
@@ -138,7 +179,15 @@ def tempo_bpm(value: float) -> float:
 
     The catalog publishes ``TEMPO`` as 0..1 with a real-world unit - a placeholder,
     which is why this helper exists.
+
+    A wire value outside 0..1 is refused rather than converted, for the same reason
+    :func:`bpm_to_tempo` refuses a bpm outside the span: the tempo the caller would
+    read back does not exist on the unit.
     """
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(
+            f"a tempo wire value runs 0..1; {value} is outside it"
+        )
     return 40.0 + 200.0 * value
 
 
@@ -1335,26 +1384,62 @@ Two of those names disagree with the catalog, which is why the map
         PRESET with the preset block holding 0.355, and 120 bpm in GLOBAL with the
         device block holding 0.400.
 
-        **This is a READ, and the device never volunteers it.** Three earlier
-        investigations watched for a broadcast when the switch moves and correctly
-        found none; the mistake was concluding from that that the switch was not on
-        the wire. It is, and only asking finds it.
+        **The device emits no CHANGE EVENT when the switch moves** - three earlier
+        investigations watched for one and correctly found none. The current VALUE
+        is a different matter: it rides the ambient ``GlobalTempo`` params push,
+        which arrived twice per 14-second window in each of the three captures
+        (against 63 clock-shaped pushes in the same window). So a state tracker CAN
+        follow this field from pushes; what it cannot do is be told the moment it
+        moves.
 
-        The timeout is generous because ``GlobalTempo`` alternates two shapes, one
-        push each, and only one of them carries parameters - measured at roughly
-        one every seven seconds. This waits for that shape specifically rather than
-        taking the first ``GlobalTempo`` to arrive, which is how a single earlier
-        READ came back holding only the running clock and got written up as a dead
-        end.
+        That is also why the timeout is generous. ``GlobalTempo`` alternates two
+        shapes and only one carries parameters, so this waits for that shape
+        specifically rather than taking the first ``GlobalTempo`` to arrive - which
+        is how a single earlier READ came back holding only the running clock and
+        got written up as a dead end.
+
+        **A read straight after a write can return the PREVIOUS value.** This type
+        does not echo ``request_id`` - zero of 64 captured pushes carried one - so
+        there is no way to tell the reply to your READ from an ambient push already
+        in flight. Allow a settle of a second or two after
+        :meth:`set_tempo_mode` before believing the answer.
         """
         index = self.TEMPO_MODE_PARAM
-        reply = self._t.await_broadcast(
-            pa.GlobalTempoMessage,
-            lambda: self._t.send(pa.GlobalTempoMessage(action=pa.MessageAction.READ)),
-            timeout=timeout,
-            match=lambda m: (len(m.params) > index
-                             and len(m.params[index].param_values) > 0))
-        return TempoMode(round(reply.params[index].param_values[0].float_value))
+        seen = []
+
+        def carries_mode(message):
+            seen.append(message)
+            return _mode_param(message, index) is not None
+
+        try:
+            reply = self._t.await_broadcast(
+                pa.GlobalTempoMessage,
+                lambda: self._t.send(
+                    pa.GlobalTempoMessage(action=pa.MessageAction.READ)),
+                timeout=timeout, match=carries_mode)
+        except TimeoutError:
+            # "No broadcast arrived" and "none of them carried what I asked for"
+            # are different facts, and this project has already spent eight
+            # releases on the difference. Say which one happened.
+            raise TimeoutError(
+                f"no GlobalTempo carrying tempo parameter {index} within "
+                f"{timeout}s. {len(seen)} GlobalTempo push(es) DID arrive - this "
+                f"type alternates a clock shape with a params shape and only the "
+                f"params shape answers, so a longer timeout may be all that is "
+                f"needed. Do not read this as the device being silent."
+            ) from None
+
+        value = _mode_param(reply, index)
+        if value not in (float(TempoMode.PRESET), float(TempoMode.GLOBAL)):
+            # Not rounded into an enum. The same policy as beats(): a value
+            # outside the states we know means the assumption is wrong, and
+            # rounding would convert that signal into a confident answer.
+            raise ValueError(
+                f"tempo parameter {index} holds {value!r}, which is neither "
+                f"{float(TempoMode.PRESET)} (PRESET) nor {float(TempoMode.GLOBAL)} "
+                f"(GLOBAL). The MODE mapping may not hold on this firmware."
+            )
+        return TempoMode(int(value))
 
     def set_tempo_mode(self, mode: "TempoMode"):
         """Move the MODE switch: run on the preset's tempo, or the device's.
@@ -1364,9 +1449,13 @@ Two of those names disagree with the catalog, which is why the map
         the menu's switch and changed the tempo in effect from 111 to 120 bpm,
         writing PRESET moved both back.
 
-        **Global, not per preset**, despite riding a tempo message: there is
-        nothing to save afterwards, and every preset is affected. Read
-        :meth:`tempo_mode` first if you intend to put it back.
+        **Global, not per preset**, despite riding a tempo message: there is nothing to
+        save afterwards. Read :meth:`tempo_mode` first if you intend to put it back.
+
+        What was MEASURED is that the write moves the device block and leaves the
+        loaded preset's own copy alone. That it therefore affects EVERY preset
+        follows from the menu being a device setting, and was not tested with a
+        second preset loaded.
 
         This does NOT move either tempo block. The preset's
         ``tempoProgramData`` parameter 1 was measured before and after the write

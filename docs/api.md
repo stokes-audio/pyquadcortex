@@ -276,14 +276,21 @@ setters below address the preset's block by construction, since they write
 hear until you switch back. That last step is inferred from those two facts rather than
 measured, so treat it as a caution and not as a verified behaviour.
 
-The device never broadcasts this switch, so a state tracker cannot learn it from
-pushes - `tempo_mode()` has to ask, and it waits for a `GlobalTempo` reply carrying
-parameters rather than the running clock, which can take a few seconds.
+The device emits no CHANGE EVENT when the switch moves, but the current value
+rides the ambient `GlobalTempo` params push (measured: twice per 14-second window),
+so a state tracker CAN follow it - it just cannot be told the moment it moves.
+`tempo_mode()` waits for a reply carrying parameters rather than the running clock,
+which can take a few seconds.
+
+**A read straight after a write can return the previous value.** This message type
+does not echo `request_id` - zero of 64 captured pushes carried one - so there is no
+way to tell your READ's reply from an ambient push already in flight. Allow a second
+or two to settle after `set_tempo_mode` before believing `tempo_mode()`.
 
 The per-preset controls:
 
 ```python
-qc.set_tempo_param("TEMPO", real=120)   # bpm - the span is 40..240, measured
+qc.set_tempo_param("TEMPO", real=120)   # bpm - three points fit a 40..240 span
 qc.set_tempo_led(False)                 # this preset's TEMPO LED off
 qc.set_metronome_muted(True)            # silence the click - the unit's own MUTE
 qc.set_tempo_param("TIME SIGNATURE", value=0.1)

@@ -1072,11 +1072,11 @@ so position is the index - the same convention as `models[]`. A host WRITE does 
 `index`; it is only the device's stored form that omits it. `pyquadcortex.protocol.tempo_params()`
 reads them positionally.
 
-**The menu's MODE control (global or per-preset tempo) is NEVER BROADCAST, and is
-READABLE AND WRITABLE ANYWAY.** The silence is real, established three times, the last
-two with instruments worth trusting - and it says nothing about whether the switch
-answers a question, which it does. Keep this pair together: it is the clearest example
-this project has of a trustworthy negative being over-read.
+**The menu's MODE control emits NO CHANGE EVENT, and is READABLE AND WRITABLE
+ANYWAY.** The silence is real, established three times, the last two with instruments
+worth trusting - and it is a fact about change notification, not about readability.
+The current value rides the ambient tempo stream. Keep this pair together: it is the
+clearest example this project has of a trustworthy negative being over-read.
 
 1. **The first attempt.** Toggling to GLOBAL, pressing OK, toggling back to PRESET,
    pressing OK again and then saving the preset produced no `Grid`, `GlobalTempo` or
@@ -1094,11 +1094,20 @@ this project has of a trustworthy negative being over-read.
    `BANK UP` that ends the section, so it repeats the toggle rather than the commit. The
    commit case rests on the two runs above.
 
-All three are sound, and all three answer a narrower question than the one that was
-asked of them. For eight releases - 0.33.0 through 0.40.0 - this section said MODE "is
-NOT on the wire", and the coverage audit and the model design said "not on the wire at
-all". Every one of those tests LISTENED, and none of them ASKED. **The switch was on the
-wire the whole time.**
+All three are sound as far as they go, and all three answer a narrower question than
+the one that was asked of them. For eight releases - 0.33.0 through 0.40.0 - this
+section said MODE "is NOT on the wire", and the coverage audit and the model design
+said "not on the wire at all". Every one of those tests LISTENED, and none of them
+ASKED. **The switch was on the wire the whole time.**
+
+Worse than that, and worth stating because it is the sharper lesson: **the value was
+in the ambient stream those tests were recording.** The params-shaped `GlobalTempo`
+push carries `params[1]`, and it arrives about twice per 14 seconds regardless of
+whether anyone touches the switch. A 420-second run should have caught it flipping.
+The likeliest reason none did is the noise list - `capture.md`'s own listener recipe
+names `GlobalTempoMessage` first among the types to filter out, because it is the
+heaviest chatter on the link. So the answer was very probably discarded by the
+instrument before it reached the log, three times.
 
 ### MODE is the DEVICE tempo block's parameter 1
 
@@ -1118,7 +1127,9 @@ tempo write. `QuadCortex.tempo_mode()` and `set_tempo_mode()` are the operations
 `BinaryPreset.tempoProgramData` with 24 parameters; the device's rides in
 `GlobalTempo.params` with 25. Neither is touched by the switch. On the unit measured they
 disagreed at indices 2 (`LED LIGHT`), 3 (`VOLUME`) and 9 (`ROUTING`) as well as the
-tempo itself, so which block is in effect is plainly audible.
+tempo itself. The tempo difference was heard and seen - 111 bpm against 120 - so
+which block is in effect is not a subtle distinction; the other three were read off
+the wire rather than listened to.
 
 How it was established, because a negative that stood for eight releases deserves a
 method rather than an assertion: **every field of every message the device answers was
@@ -1141,7 +1152,9 @@ the device tempo block's 25 parameters, index 24 - which exists there, does not 
 the preset's 24, and is described nowhere - held `0.0` in both positions and is still
 unattributed.
 
-The harness is `tests/hardware/state_snapshot.py`, and
+This method is now required rather than optional: ADR-0008 makes a differential
+state capture the thing that happens before a control is recorded as having no wire
+path. The harness is `tests/hardware/state_snapshot.py`, and
 `tests/test_state_snapshot.py` proves offline that it can SEE an unknown field number, a
 presence-tracked field set to zero, and a value appearing in only one of two message
 shapes - the three ways this particular question could have come back falsely negative
@@ -2560,7 +2573,7 @@ visually on the device's own screen.
 | `set_splitter_param` | `Grid{UPDATE, preset{chains{row, combined_splitter{params{index, param_values}}}}}` | read-back | writes `combined_splitter`, NOT `splitter[]`, which is a read-only view; indices follow the unified model 10004 |
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
-| `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. GLOBAL, not per preset - nothing to save, and every preset is affected. The device never broadcasts this, so a READ is the only way to see it; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
+| `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. A DEVICE setting, not a preset one - nothing to save. No change event is emitted when the switch moves, but the value rides the ambient params push; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
 | `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
 | `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
 | `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
@@ -2879,10 +2892,11 @@ Stated explicitly so nobody builds on a guess:
   arrives (see [above](#a-placement-can-be-refused-for-want-of-dsp-capacity)), so
   whether a block will fit can only be discovered by placing it.
 - **The true spans behind the placeholder 0..1 ranges** are not recoverable from the
-  catalog, and two of the four have been measured off the screen instead: the
-  mixer/splitter/lane levels at -40..+12 dB, and `TEMPO` at 40..240 bpm (2026-08-12,
-  three points). In both cases the endpoints are the fit's rather than driven, so a
-  caller who needs an extreme exactly should drive it.
+  catalog. Eight parameters are affected; two spans covering seven of them have since
+  been measured off the screen: the mixer/splitter/lane levels at -40..+12 dB, and
+  `TEMPO` at 40..240 bpm (2026-08-12, three points). **Splitter `FREQUENCY` is the one
+  still unrecovered.** In both measured cases the endpoints are the fit's rather than
+  driven, so a caller who needs an extreme exactly should drive it.
 - **Whether a capture id denotes different content on a different unit** is untested
   here, needing a second unit.
 - ~~**Whether a preset's descriptive `tags` can be set at all**~~ - ANSWERED: no. The

@@ -2883,11 +2883,22 @@ def test_set_tempo_param_takes_real_as_bpm_for_index_zero():
 # only a READ finds it.
 
 
-def _global_tempo_with_mode(value, count=25):
-    """A ``GlobalTempo`` push in the shape that carries parameters."""
+def _global_tempo_with_mode(value, count=25, keyed=True):
+    """A ``GlobalTempo`` push in the shape that carries parameters.
+
+    ``keyed`` reflects what the DEVICE actually sends, which was checked against
+    the 2026-08-12 captures rather than assumed: every one of the 25 params
+    carries an explicit ``index``, and there it equals position. The first version
+    of this helper built them with ``index`` absent - a shape the unit has never
+    been observed sending - which made the reader look correct for the wrong
+    reason. ``keyed=False`` is kept to prove the positional fallback still works.
+    """
     message = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
     for index in range(count):
-        message.params.add().param_values.add(
+        param = message.params.add()
+        if keyed:
+            param.index = index
+        param.param_values.add(
             float_value=value if index == client.QuadCortex.TEMPO_MODE_PARAM else 0.0)
     return message
 
@@ -2902,15 +2913,20 @@ def test_tempo_mode_reads_parameter_one_of_the_device_block():
     assert fake.sent[-1].action == pa.MessageAction.READ
 
 
-def test_tempo_mode_skips_the_clock_shaped_push():
+def test_tempo_mode_predicate_rejects_everything_that_cannot_answer():
     """The predicate is the whole instrument, so it is pinned here.
 
-    ``GlobalTempo`` alternates two shapes, one push per beat, and only one carries
-    parameters. A single earlier READ of this type happened to land on the clock
-    shape and was written up as a dead end - "returned only a running clock" - which
-    set the investigation back by two releases. A waiter that accepts any
-    ``GlobalTempo`` would reproduce that exactly, and read nothing while the device
-    was answering.
+    ``GlobalTempo`` alternates two shapes and only one carries parameters. A
+    single earlier READ landed on the clock shape and was written up as a dead
+    end - "returned only a running clock" - and that stood for eight releases
+    (0.33.0 through 0.40.0). A
+    waiter that accepts any ``GlobalTempo`` reproduces it exactly.
+
+    Every case below was chosen because it DISTINGUISHES the real predicate from
+    a weaker one. An earlier version of this test used only the clock shape, an
+    empty push and a full params push - all three separated by "params non-empty"
+    alone - so replacing the predicate with ``len(m.params) > 0`` kept it green.
+    Mutation-checked: each assertion here fails under that weakening.
     """
     fake = FakeTransport()
     fake.broadcast = _global_tempo_with_mode(0.0)
@@ -2920,9 +2936,85 @@ def test_tempo_mode_skips_the_clock_shaped_push():
 
     clock = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
     clock.metronome_status.current_beat = 2
-    assert not match(clock), "the clock shape carries no parameters and must be skipped"
+    assert not match(clock), "the clock shape carries no parameters"
     assert not match(pa.GlobalTempoMessage()), "an empty push is not an answer"
+
+    short = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    short.params.add().param_values.add(float_value=0.4)      # only index 0
+    assert not match(short), "params present, but none of them is the mode"
+
+    no_values = _global_tempo_with_mode(0.0)
+    no_values.params[1].ClearField("param_values")
+    assert not match(no_values), "the mode param carries no value"
+
+    as_int = _global_tempo_with_mode(0.0)
+    as_int.params[1].ClearField("param_values")
+    as_int.params[1].param_values.add(int_value=1)
+    assert not match(as_int), (
+        "ParamValue.value is a REAL oneof - reading .float_value off an "
+        "int-valued param yields 0.0 silently, which would report PRESET")
+
     assert match(_global_tempo_with_mode(0.0)), "the params shape IS the answer"
+
+
+def test_tempo_mode_reads_by_index_not_by_position():
+    """The device keys these params, so the reader must not count them.
+
+    Checked against the 2026-08-12 captures: every param of the pushed shape
+    carries an explicit ``index``. It happens to equal position on this firmware,
+    so a positional read is right by luck - and a sparse or reordered push would
+    silently return a NEIGHBOURING tempo parameter. The neighbours are 0.0/1.0
+    floats too (LED LIGHT, START), so the wrong answer would look valid.
+    """
+    # Built so the two readings DISAGREE, which is the only way this test can
+    # fail when the fix is removed. Position 1 holds index 2 (LED LIGHT = 1.0);
+    # index 1 - the mode - is last and holds 0.0. A positional read answers
+    # GLOBAL, the correct read answers PRESET.
+    sparse = pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE)
+    for index, value in ((0, 0.4), (2, 1.0), (1, 0.0)):
+        param = sparse.params.add()
+        param.index = index
+        param.param_values.add(float_value=value)
+
+    fake = FakeTransport()
+    fake.broadcast = sparse
+    assert client.QuadCortex(fake).tempo_mode() is TempoMode.PRESET, (
+        "read position 1 (LED LIGHT) instead of the param keyed index 1")
+
+    # And the positional fallback still applies when the device omits index.
+    fake = FakeTransport()
+    fake.broadcast = _global_tempo_with_mode(1.0, keyed=False)
+    assert client.QuadCortex(fake).tempo_mode() is TempoMode.GLOBAL
+
+
+def test_tempo_mode_refuses_a_value_that_is_not_a_mode():
+    """Rounding would turn "the mapping is wrong" into a confident answer.
+
+    Same policy as ``beats()``, which returns an unrecognised quantized value as
+    a raw float rather than rounding it into an enum. 0.4 is not PRESET.
+    """
+    fake = FakeTransport()
+    fake.broadcast = _global_tempo_with_mode(0.4)
+    with pytest.raises(ValueError, match="0.4"):
+        client.QuadCortex(fake).tempo_mode()
+
+
+def test_tempo_mode_timeout_says_which_silence_it_was():
+    """"No push arrived" and "none of them answered" are different facts.
+
+    Conflating them is what cost this project eight releases, so the error must
+    not assert device silence when it observed predicate silence.
+    """
+    class Silent(FakeTransport):
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            self.last_match = match
+            trigger()
+            for _ in range(3):
+                match(pa.GlobalTempoMessage(action=pa.MessageAction.UPDATE))
+            raise TimeoutError("no GlobalTempoMessage broadcast within 30.0s")
+
+    with pytest.raises(TimeoutError, match="3 GlobalTempo push"):
+        client.QuadCortex(Silent()).tempo_mode()
 
 
 def test_set_tempo_mode_writes_the_device_block_and_not_the_preset():
