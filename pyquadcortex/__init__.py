@@ -33,7 +33,8 @@ from pyquadcortex._version import __version__
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from pyquadcortex import protocol  # noqa: E402
-from pyquadcortex.model import Device, connect  # noqa: E402
+from pyquadcortex.device import (Device, FootswitchLetter,  # noqa: E402
+                                 PresetAddress, SceneLetter, connect)
 from pyquadcortex.protocol import (DeviceLostError,  # noqa: E402
                                    DeviceNotFoundError)
 
@@ -41,6 +42,9 @@ __all__ = [
     "__version__",
     "connect",
     "Device",
+    "FootswitchLetter",
+    "SceneLetter",
+    "PresetAddress",
     "protocol",
     "DeviceNotFoundError",
     "DeviceLostError",

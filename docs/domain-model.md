@@ -39,6 +39,9 @@
 5. **One translation boundary.** The model speaks touchscreen coordinates and display
    units everywhere. Conversion to protocol values (0-based indexes, raw scales) happens
    in exactly one module at the model-to-protocol seam. No `-1`/`+1` anywhere else.
+   **Built:** `pyquadcortex/device/translate.py`, with the rule enforced by a test that
+   reads the source of the whole package outside `protocol/` - not just the model
+   directory - rather than trusting a convention.
 
 ## Namespaces: the model becomes the front door
 
@@ -149,6 +152,14 @@ class PresetAddress:
 > `position` spans "A".."H" normally and "A".."D" there. The sting is that slot NAMES move
 > with the mode - linear position 5 reads "1F" normally and "2B" under the hybrid - so an
 > address is only unambiguous alongside the mode it was read in.
+
+> **`PresetAddress` is built**, in `pyquadcortex/device/translate.py` and exported from
+> `pyquadcortex`. It speaks the non-hybrid naming, "A".."H". `PresetAddress.parse("28C")`
+> refuses a malformed address there and then, rather than at write time, and `.to_wire()`
+> / `.from_wire()` convert through the protocol layer's own `slot_to_position` pair so the
+> two layers cannot drift on what "28C" means. The mode caveat above is on the converting
+> function's docstring, where someone converting will read it. The Directory that hands
+> addresses out is still ahead of the code.
 
 ### Directory items are a type family
 
@@ -675,6 +686,11 @@ class Stomps:                            # preset.stomps
 > `Footswitch` enum already lives. Where a bare `int` can reach a model API, someone
 > eventually passes a column to it and gets a write that silently does nothing, which is
 > precisely the bug that cost a hardware session to find.
+>
+> **`FootswitchLetter` is built**, in `pyquadcortex/device/translate.py` and exported from
+> `pyquadcortex`. It is a `StrEnum`, so `stomps["E"]` and `stomps[FootswitchLetter.E]` are
+> the same key and it prints as the screen labels it. Passing the number 4 raises, with a
+> message naming the column trap. `SceneLetter` is the same type for scenes.
 >
 > **A device-level footswitch object is deferred, deliberately.** There are now two
 > footswitch-keyed collections at different scopes - `preset.stomps` per preset and
@@ -1308,3 +1324,11 @@ the n/a rows below where they intersect the API at all.
   capture every field of every message the device answers in each switch position and
   diff, rather than looking for a field you expect. Still an M3 surface, so still not a
   behaviour change at M1.
+- **2026-08-13** - Design principle 5 is built (M1 story #10): `pyquadcortex/device/translate.py`
+  owns every conversion between a screen value and a wire value - including the tempo's
+  bpm, which arrived from the TEMPO MODE work above - with `PresetAddress`,
+  `FootswitchLetter` and `SceneLetter` landing as part of it. The model package directory
+  is `device/` rather than `model/`, because the protocol layer spells an amp or pedal
+  block `model` in code (`models.py`, `Model`, `ModelCatalog`) and will keep doing so,
+  whatever §5 renamed the concept to in this document. No design changed here; this
+  records what is now code.

@@ -63,8 +63,8 @@ with pyquadcortex.connect() as qc:
     for block in scene.blocks:
         print(block.position, block.enabled)   # effective state, sceneMode absorbed
 
-    scene.blocks[1, 3].enabled = False         # grid coordinates
-    preset.rows[0].input = Input.RETURN_1
+    scene.blocks[1, 3].enabled = False         # grid coordinates, as on screen
+    preset.rows[1].input = Input.RETURN_1      # rows are 1 to 4, like the unit
     preset.save()                              # the recall/edit/save dance is internal
 
     preset.scenes["D"].copy_from(scene, keep_label=True)

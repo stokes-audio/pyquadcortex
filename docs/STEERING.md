@@ -2,7 +2,7 @@
 
 > **What this is:** durable technical context for the pyquadcortex library - what the system is and why it is shaped this way.
 > **What this is not:** coding rules (see the repo-root `CLAUDE.md`) or decision rationale (see [`ADR.md`](ADR.md)).
-> **Last reviewed:** 2026-08-03 by Stokes
+> **Last reviewed:** 2026-08-13 by Stokes
 > **Owners:** Stokes
 
 ## 1. Purpose
@@ -41,7 +41,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 
 ## 4. Owned Paths
 
-- `pyquadcortex/` - the package. Two namespaces: `pyquadcortex/model/` (the model of the unit) and `pyquadcortex/protocol/` (the message-level API, including the committed generated bindings in `pyquadcortex/protocol/proto/`)
+- `pyquadcortex/` - the package. Two namespaces: `pyquadcortex/device/` (the model of the unit) and `pyquadcortex/protocol/` (the message-level API, including the committed generated bindings in `pyquadcortex/protocol/proto/`)
 - `protocol/` - the recovered `.proto` schema and its tooling
 - `tests/` - the fully offline suite and its fixtures
 - `examples/` - runnable scripts, also used as hardware-verification shapes
@@ -57,6 +57,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 | Fake-per-layer offline tests | Each layer has a purpose-built double: golden captured frames for `framing`, `FakeHid` for `transport`, `FakeTransport` for `client` | see ADR-0002 | `FakeTransport` in `tests/test_client.py` | Hardware verification happens manually via `examples/`, outside the suite |
 | Evidence-bearing docstrings | Each operation's docstring states what is confirmed on hardware vs inferred from the schema | The device gives no errors for wrong writes, so recorded evidence is the only trail | `QuadCortex.read_preset` in `pyquadcortex/protocol/client.py` | Non-protocol helpers (pure functions) carry ordinary docstrings |
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
+| One translation boundary | Screen values become wire values in exactly one module, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/` | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate.py` | The protocol layer, which keeps its zero-based indexes and raw scales |
 
 ## 6. Constraints
 
@@ -121,6 +122,108 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-13 - One translation boundary, and the model package is `device/`
+
+**What changed:**
+- `pyquadcortex/device/translate.py`: the one module where a screen value becomes a wire
+  value and back - rows 1-4, slots 1-8, scene and footswitch letters, preset addresses,
+  and five display-unit mappings (input gain dB, lane and mixer dB, tempo bpm, tuner
+  reference Hz, hold timing ms). The two level scales and the tempo call the protocol
+  helper that carries the measurement; the other two have no helper to call, so they are
+  pinned against what the protocol write method expects, and the tuner's docstring says
+  how thin its evidence is - one observed pair. `PresetAddress`, `FootswitchLetter` and
+  `SceneLetter` are its public value types, re-exported from `pyquadcortex`
+- Section 5 gained the pattern row; section 4's owned-paths line and CLAUDE.md name the
+  new rule. `architecture.md` carries the module in its layer map and a section on it;
+  `domain-model.md` marks principle 5, `PresetAddress` and `FootswitchLetter` as built
+- **The model package directory is `pyquadcortex/device/`, renamed from `model/`.** Done
+  as its own commit so the story's diff stays readable
+
+**Why:**
+- M1 Epic (stokes-audio/pyquadcortex#8), Story #10. It ships before the surfaces that use
+  it so no later story invents its own conversion. The Intent Brief names off-by-one as a
+  silent failure mode, and the protocol layer's own header agrees: an edit to the wrong
+  row still succeeds and still reads back correctly, so nothing tells you. A centralized,
+  exhaustively tested boundary is the whole mitigation, which is why two of its tests read
+  the model package's source instead of calling it
+- The rename is an owner decision. In this codebase the identifier `model` means an amp or
+  pedal block - `protocol/models.py`, `catalog.Model`, `ModelCatalog`,
+  `set_block(model=...)`. `domain-model.md` §5 renamed that concept to *virtual device* in
+  the model's vocabulary, because that is what the screen calls it, but the protocol layer
+  still spells it `model` and will keep doing so. A directory named `model/` therefore
+  collides with real code a reader is looking at, whatever the design doc calls the
+  concept
+
+**Scope of impact:**
+- **Updated:** STEERING.md, CLAUDE.md, architecture.md, domain-model.md, roadmap.md,
+  changelog.md, `pyquadcortex/device/`, `pyquadcortex/__init__.py`,
+  `scripts/check_artifacts.py`, `tests/test_translation.py` (new),
+  `tests/test_namespace.py`, `tests/test_import_cleanliness.py`, `tests/test_docs.py`
+- **Not updated (intentionally):** ADR.md - neither change reverses or refines a recorded
+  decision. The boundary IS design principle 5, already written and reviewed in
+  `domain-model.md`; the rename is a directory name, chosen to stop colliding with an
+  identifier the protocol layer uses. README.md and api.md - the new value types have
+  no surface handing them out yet (the Directory is story #12), and the readme tour should
+  show what a caller can do, not what exists. The protocol layer - it keeps its zero-based
+  indexes, its `Footswitch` enum and its measured scales, and nothing below the seam
+  changed
+- **No deprecation shim for the rename.** `pyquadcortex.__all__` lists `protocol` and never
+  listed `model`, and the model namespace has not been released - 0.40.0 predates the flip
+  - so nothing published points at the old path
+
+**Downstream to consider:**
+- Stories #11 through #16 convert through this module rather than doing their own
+  arithmetic, and the source-reading tests will fail them if they do not
+- The conversions M1 does not need yet land here too, with the surface that needs them.
+  A parameter whose display mapping is unverified stays out of the model entirely
+  (principle 3), so no mapping is ever invented in this module
+- The arithmetic check is deliberately blunt and deliberately wide: a literal one in any
+  spelling (`1`, `1.0`, `True`, `-1`), `ord`/`chr`, the literal 65, a letter table as a
+  string, tuple, list or dict, `string.ascii_uppercase`, `divmod`, a one-based
+  `enumerate`, and `.index()` on `ROWS` or `SLOTS` all fail it, anywhere in the package
+  outside the boundary and the protocol layer. If a future module has a genuine counter,
+  narrowing the check is a deliberate edit with a reason, not a quiet one. What it cannot
+  see - a one behind a name, a table built at run time, arithmetic inside somebody else's
+  helper - is pinned as a failing-if-it-changes list in the same file, because a sample
+  table where every case passes reads like a completeness proof and is not one
+- The scan is scoped to the whole package rather than to `pyquadcortex/device/`, because
+  a rule scoped to a directory is satisfiable by moving the code one directory up - which
+  is precisely what a failure message naming a directory invites
+- A protocol conversion can be delegated to and still not be movable. `bpm_to_tempo`
+  (PR #22) is called by `QuadCortex.set_tempo_param` from inside the protocol layer, so
+  the helper stays there and the boundary wraps it, the same way it wraps the level
+  scales. Adding the name to the boundary's allowlist is the half that matters: without
+  it, a model module reaching for `protocol.tempo_bpm` passes the check
+- The allowlist is judgement, and its criterion is what a name HANDS OVER rather than
+  whether it reads like a conversion. `protocol.stomp_assignments` returns three raw wire
+  indexes including the footswitch one, so a model module could key a mapping by it and
+  reintroduce the exact bug `FootswitchLetter` exists to prevent, without writing a `- 1`
+  anywhere. The readers are therefore listed next to the converters
+
+**Also in this branch:**
+- Merged main (PRs #19, #20, #22) up. The three change logs conflicted in the same place
+  and both sides were kept in the order they landed
+- The review found the boundary's own front door open: `translate.slot_to_position`
+  accepted non-ASCII digits, so `"٢٨C"` returned preset 218. Only `PresetAddress.parse`
+  carried the ASCII pattern, while a comment and a test both read as though the module
+  was covered. The two doors now share one pattern, and one list of malformed names is
+  run through both
+- Both source-reading checks were narrower than they read, again. The arithmetic check
+  now sees a letter table in a tuple, list or dict, `string.ascii_uppercase`, the literal
+  65, and `ROWS.index(row)` - a coordinate conversion written with the boundary's own
+  exported table and no arithmetic in it at all. The allowlist gained the protocol
+  readers that hand back wire coordinates. A file doing all of that at once passed both
+  checks before and fails both now
+- The backstop that proves the boundary still converts is anchored to the four converters
+  by name. It had been satisfied by an error-message formatter elsewhere in the file, so
+  the converters could have gone arithmetic-free with nothing failing
+- Each check now pins its KNOWN blind spots as blind spots. A sample table where every
+  "should be caught" case is caught reads like a completeness proof; these fail if a
+  listed gap ever closes, which is the edit where the prose gets corrected too
+- The layering check could not see `from pyquadcortex import PresetAddress`, a hole this
+  story opened by re-exporting the value types at top level. It reads `device.__all__`
+  now, so it follows the code
 
 ### 2026-08-12 - TEMPO MODE closes, and ADR-0010
 

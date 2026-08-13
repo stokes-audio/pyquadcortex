@@ -41,13 +41,13 @@ def test_the_walk_found_both_namespaces():
     """Guards the parametrisation: an empty walk would pass vacuously.
 
     Both sentinels take the trailing dot, so each one needs a real module
-    INSIDE its namespace. Without it, `pyquadcortex.model` - the package entry
+    INSIDE its namespace. Without it, `pyquadcortex.device` - the package entry
     itself - satisfies the check, and a walk that quietly stopped descending
     would still look complete. The dot is also what keeps a future top-level
-    `pyquadcortex/models.py` from standing in for the model namespace.
+    `pyquadcortex/devices.py` from standing in for the model namespace.
     """
     assert any(m.startswith("pyquadcortex.protocol.") for m in MODULES)
-    assert any(m.startswith("pyquadcortex.model.") for m in MODULES)
+    assert any(m.startswith("pyquadcortex.device.") for m in MODULES)
 
 
 @pytest.mark.parametrize("module", ["pyquadcortex"] + MODULES)

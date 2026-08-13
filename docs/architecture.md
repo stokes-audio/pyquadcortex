@@ -36,9 +36,13 @@ only about the layer directly below it.
 
 ```
     pyquadcortex/            THE MODEL - what import pyquadcortex hands back
-      model/device.py        connect(): opens the unit, returns a Device.
+      device/device.py       connect(): opens the unit, returns a Device.
       |                      Speaks the unit's vocabulary, never the wire.
       |                      (Directory, cache and grid land in later stories.)
+      |
+      device/translate.py    Screen values <-> wire values, and the ONLY place
+      |                      either becomes the other: rows, slots, scene and
+      |                      footswitch letters, preset addresses, display units
       |
       |                      -- the model/protocol seam --
       |
@@ -75,7 +79,7 @@ only about the layer directly below it.
 ```
 
 The model calls the protocol layer and never the other way round: nothing under
-`pyquadcortex/protocol/` may import from `pyquadcortex/model/`. A caller can use
+`pyquadcortex/protocol/` may import from `pyquadcortex/device/`. A caller can use
 either namespace, or both - `Device.from_client(qc)` puts a model on a protocol
 connection that is already open.
 
@@ -188,7 +192,7 @@ gate, and the handshake's own version announce would race that READ's reply.
 `pyproject.toml` declares the console script as
 `pyquadcortex.protocol.cli:main`; `qcctl` itself is unchanged.
 
-### model/device.py
+### device/device.py
 
 `pyquadcortex.connect()` opens the unit through `protocol.connect()` and returns
 a `Device`, which carries the unit's identity and owns the connection.
@@ -199,6 +203,43 @@ message level for anything the model does not cover yet.
 The rest of the model - the Directory, the write-through cache, the loaded preset
 and the grid - is designed in [domain-model.md](domain-model.md) and is being
 built story by story. Nothing is stubbed out to look finished.
+
+### device/translate.py
+
+The model speaks what the touchscreen shows - rows 1 to 4, slots 1 to 8, scenes
+and footswitches as letters, dB, Hz, bpm, ms - and the wire speaks zero-based indexes
+and raw scales. Every conversion between the two lives here and nowhere else in
+`pyquadcortex/` outside `protocol/` - the whole package, not just the model
+directory (design principle 5 in [domain-model.md](domain-model.md)).
+
+One module rather than a convention, because the mistake it prevents is silent.
+This document's own layer map sits above a protocol layer whose header says it: a
+write to the wrong row lands on a real row and reads back perfectly, so nothing
+tells the caller. Collecting the arithmetic in one place makes it reviewable in
+one place, and `tests/test_translation.py` proves the rest of the package does
+none of it by reading the source, rather than by trusting anyone to remember.
+Two things it also proves, because neither is obvious: the four converters
+themselves still do the arithmetic (otherwise "nowhere else" passes because
+nowhere converts), and each check's known blind spots are pinned as blind spots,
+so the sample tables cannot read as completeness proofs.
+
+Where a protocol-layer helper already performs the conversion - input gain dB,
+lane and mixer dB, tempo bpm, the slot-name/position pair - this module calls it
+instead of restating the arithmetic. Two copies of a measured scale drift apart,
+and both copies go on returning a plausible number. The tuner and hold-timing
+mappings have no helper to call, only a documented rule and a shared constant, so
+their tests pin them against what the protocol write method expects.
+
+Delegating is not always a choice between two homes. `bpm_to_tempo` is called by
+`QuadCortex.set_tempo_param` from inside the protocol layer, so it has to stay
+there: moving it to the boundary would make the protocol layer import the model,
+which `tests/test_namespace.py` refuses. The wrapper here is what gives the model
+one way in without a second copy of the span.
+
+Public value types: `PresetAddress`, `FootswitchLetter`, `SceneLetter`,
+re-exported from `pyquadcortex`. The conversion functions are the module's own
+surface and are not re-exported: a caller never needs them, and the model reaches
+them as `translate.row_to_wire(...)`.
 
 ## What flows through the layers
 
@@ -326,8 +367,8 @@ record the result: update your docstring and the coverage table in
 An operation whose shape comes only from the schema should say so.
 
 Useful shapes for hardware work live in `examples/` (`switch_scenes.py`,
-`list_presets.py`, `reroute_and_save.py`). `scripts/compile_protos.sh` is the
-only script in the repo.
+`list_presets.py`, `reroute_and_save.py`). `scripts/` holds
+`compile_protos.sh`, `check_artifacts.py` and `generate_models.py`.
 
 ## Capturing the device's traffic
 
@@ -434,6 +475,7 @@ How each layer is faked:
 | `model` | `FakeClient`: answers the calls the model makes on a `QuadCortex`, plus the same monkeypatched device+transport as `session` | `tests/test_device.py` |
 | schema | asserts the enum integers the code relies on and that core messages instantiate | `tests/test_schema_compiles.py` |
 | namespaces | the pre-flip `__all__`, read verbatim from git, must all resolve under `pyquadcortex.protocol` | `tests/test_namespace.py` |
+| the translation boundary | none: it is pure functions, so it is called directly. Two of its tests take the package's SOURCE as their input instead, and read it with `ast` | `tests/test_translation.py` |
 
 ### The import-safety contract
 

@@ -25,7 +25,13 @@ REQUIRED = (
     "pyquadcortex/protocol/proto/ProductionAutomation_pb2.py",
     "pyquadcortex/protocol/cli.py",
     "pyquadcortex/protocol/client.py",
-    "pyquadcortex/model/device.py",
+    "pyquadcortex/device/device.py",
+    "pyquadcortex/device/translate.py",
+    # The two files that DECIDE what `import pyquadcortex` hands back. Ship a
+    # wheel without either and every module above is still present and correct,
+    # while the package exports nothing.
+    "pyquadcortex/device/__init__.py",
+    "pyquadcortex/__init__.py",
     "pyquadcortex/_version.py",
 )
 

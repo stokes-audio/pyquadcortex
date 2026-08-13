@@ -29,7 +29,7 @@ import pathlib
 import pytest
 
 import pyquadcortex
-from pyquadcortex import protocol
+from pyquadcortex import device, protocol
 
 PRE_FLIP_INIT = (pathlib.Path(__file__).resolve().parent
                  / "fixtures" / "surface" / "pre_flip_init.py.txt")
@@ -130,6 +130,7 @@ def test_the_model_is_what_the_top_level_offers():
     assert pyquadcortex.connect is not protocol.connect
     assert set(pyquadcortex.__all__) == {
         "__version__", "connect", "Device", "protocol",
+        "FootswitchLetter", "SceneLetter", "PresetAddress",
         "DeviceNotFoundError", "DeviceLostError",
     }
     for name in pyquadcortex.__all__:
@@ -146,17 +147,32 @@ def test_the_protocol_sources_were_actually_found():
     assert len(PROTOCOL_SOURCES) > 5
 
 
-MODEL_PACKAGE = "pyquadcortex.model"
+#: Read from the package rather than typed here. A hardcoded string survives the
+#: package being renamed or moved, and the check below then looks for imports of
+#: a package that no longer exists - passing for every source file, for ever,
+#: with its own guard test still green.
+MODEL_PACKAGE = device.__name__
+
+#: The model's names as `pyquadcortex` re-exports them, taken from the model
+#: package itself so the set follows the code.
+#:
+#: `from pyquadcortex import PresetAddress` reaches the model without naming the
+#: model package at all - the AST sees `pyquadcortex.PresetAddress`, which is not
+#: a module and does not start with `pyquadcortex.device`. That spelling became
+#: reachable when the boundary re-exported its value types at top level, so the
+#: check has to know which top-level names ARE the model.
+RE_EXPORTED = {f"pyquadcortex.{name}" for name in device.__all__}
 
 
 def _is_the_model(dotted: str) -> bool:
-    """True for the model package and anything inside it, and nothing else.
+    """True for the model package, anything inside it, and its re-exported names.
 
-    The dot boundary matters: a top-level `pyquadcortex/models.py` is a
-    different module, and a prefix test with no boundary would report importing
-    it as a layering violation.
+    The dot boundary matters: a hypothetical top-level `pyquadcortex/devices.py`
+    is a different module, and a prefix test with no boundary would report
+    importing it as a layering violation.
     """
-    return dotted == MODEL_PACKAGE or dotted.startswith(MODEL_PACKAGE + ".")
+    return (dotted == MODEL_PACKAGE or dotted.startswith(MODEL_PACKAGE + ".")
+            or dotted in RE_EXPORTED)
 
 
 def _package_of(source: pathlib.Path) -> str:
@@ -181,9 +197,9 @@ def _imported_modules(tree: ast.AST, package: str) -> list[str]:
     relative imports are resolved against.
 
     Covering all the spellings matters because the house style here is the
-    package-attribute form - `pyquadcortex/model/device.py` opens with
-    `from pyquadcortex import protocol` - so `from pyquadcortex import model` is
-    the spelling a future author is most likely to reach for, and it names no
+    package-attribute form - `pyquadcortex/device/device.py` opens with
+    `from pyquadcortex import protocol` - so `from pyquadcortex import device`
+    is the spelling a future author is most likely to reach for, and it names no
     module at all in the AST. The relative forms need `node.level` resolved for
     the same reason.
     """
@@ -222,14 +238,22 @@ def test_the_protocol_layer_never_imports_the_model(source):
 
 
 IMPORT_SPELLINGS = [
-    ("absolute from", "from pyquadcortex.model import Device", True),
-    ("absolute plain", "import pyquadcortex.model", True),
-    ("package attribute", "from pyquadcortex import model", True),
-    ("relative from", "from ..model import Device", True),
-    ("relative attribute", "from .. import model", True),
+    ("absolute from", "from pyquadcortex.device import Device", True),
+    ("absolute plain", "import pyquadcortex.device", True),
+    ("package attribute", "from pyquadcortex import device", True),
+    ("relative from", "from ..device import Device", True),
+    ("relative attribute", "from .. import device", True),
+    ("the module inside it", "from pyquadcortex.device import device", True),
+    ("a re-exported value type", "from pyquadcortex import PresetAddress", True),
+    ("a re-exported type, renamed",
+     "from pyquadcortex import FootswitchLetter as FS", True),
+    ("two of them at once",
+     "from pyquadcortex import SceneLetter, PresetAddress", True),
     ("a sibling module", "from pyquadcortex.protocol import client", False),
-    ("a top-level models.py", "from pyquadcortex import models", False),
-    ("the model's own package", "from pyquadcortex.models import X", False),
+    ("a hypothetical devices.py", "from pyquadcortex import devices", False),
+    ("a name, not a module", "from pyquadcortex.protocol import open_device",
+     False),
+    ("the package's own version", "from pyquadcortex import __version__", False),
 ]
 
 
@@ -240,7 +264,32 @@ def test_the_layering_check_reads_every_import_spelling(label, source,
     """Guards the check above against the imports it cannot see.
 
     A layering rule enforced by a check with blind spots is enforced only for
-    the spellings someone happened to think of.
+    the spellings someone happened to think of. The re-export cases are the ones
+    this story added: `pyquadcortex` now hands out three model types at top
+    level, and `from pyquadcortex import PresetAddress` names no module.
     """
     found = _imported_modules(ast.parse(source), "pyquadcortex.protocol")
     assert any(_is_the_model(m) for m in found) is is_a_violation
+
+
+IMPORTS_THE_CHECK_CANNOT_SEE = [
+    ("a star import", "from pyquadcortex import *"),
+    ("the package, then an attribute reach",
+     "import pyquadcortex\nx = pyquadcortex.device.translate.row_to_wire(row)"),
+]
+
+
+@pytest.mark.parametrize("label,source", IMPORTS_THE_CHECK_CANNOT_SEE,
+                         ids=[s[0] for s in IMPORTS_THE_CHECK_CANNOT_SEE])
+def test_the_layering_check_says_where_it_stops(label, source):
+    """Written down rather than left to be discovered.
+
+    This reads only import statements, so a name that arrives through `*`, or a
+    module reached by attribute after importing the package, is invisible to it.
+    Neither is house style and neither appears in the tree, but a sample table
+    where every case passes reads like a completeness proof. If one of these
+    starts being caught, move it up into `IMPORT_SPELLINGS`.
+    """
+    found = _imported_modules(ast.parse(source), "pyquadcortex.protocol")
+    assert not any(_is_the_model(m) for m in found), (
+        f"the check now sees {label!r} - move it into IMPORT_SPELLINGS")

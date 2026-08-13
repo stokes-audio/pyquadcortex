@@ -131,6 +131,34 @@ with protocol.connect(before_handshake=lambda t: t.add_listener(watch)) as qc:
 The decision behind the two rules is ADR-0009. This is the groundwork for the
 model keeping itself current without asking twice.
 
+### Groundwork: the model will talk in the numbers on your screen
+
+Rows will be 1 to 4, slots 1 to 8, scenes and footswitches letters, levels the dB
+the unit displays, and the tempo the bpm it displays. The wire counts from zero
+and stores raw scales, and the model now converts in exactly one place so nothing
+else has to remember to.
+
+**Nothing that reads a row or a level exists yet** - the preset and grid surfaces
+are still being built - so what you can use today is the three value types this
+groundwork brought with it, exported from `pyquadcortex`:
+
+```python
+from pyquadcortex import PresetAddress, FootswitchLetter, SceneLetter
+
+PresetAddress.parse("28C")          # bank 28, position C
+PresetAddress.parse("28X")          # ValueError, here rather than at write time
+FootswitchLetter.E                  # a footswitch is a letter, never a number
+```
+
+The footswitch rule is worth the sentence it costs. A footswitch index and a
+block's column are different numbers that agree most of the time, which is how a
+bug hid for months: a block in column 3 assigned to footswitch E is stored under
+key 4. No model API takes a bare footswitch number, so a column cannot be passed
+where a footswitch belongs.
+
+Until the Directory arrives, `PresetAddress` is most useful for checking an
+address before you hand it to the protocol layer.
+
 ### Withdrawn: the Tempo menu's MODE is "not on the wire"
 
 The 0.23.0 entry below records, under **Settled**, that the Tempo menu's MODE
