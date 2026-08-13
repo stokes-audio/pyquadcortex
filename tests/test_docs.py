@@ -62,8 +62,14 @@ def test_the_api_table_carries_no_pre_flip_import_paths():
     it wants a `(`. Before the move that row was the case being checked. A rule
     that silently passes over exactly the rows this change could leave behind is
     worth nothing here, so stale spellings are named instead.
+
+    The two exempt prefixes are the two namespaces that exist: `protocol` and
+    `device`. The exemption said `model` until the model package was renamed,
+    which had it backwards - waving through the dead path and flagging the live
+    one. Nothing failed, because api.md documents the protocol layer and carries
+    no model rows yet; the first one would have tripped it.
     """
-    stale = re.findall(r"`pyquadcortex\.(?!protocol\b|model\b)[a-z_][a-z0-9_.]*\(",
+    stale = re.findall(r"`pyquadcortex\.(?!protocol\b|device\b)[a-z_][a-z0-9_.]*\(",
                        _api_table_rows())
     assert not stale, (
         f"docs/api.md still shows {sorted(set(stale))} - the message-level API "

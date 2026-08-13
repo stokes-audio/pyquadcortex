@@ -284,6 +284,18 @@ def scene_from_wire(index) -> SceneLetter:
 
 # -- preset addresses: "28C" on screen, a linear position on the wire -------
 
+#: What a slot name may look like to the model: ASCII digits, then one letter,
+#: with nothing between them.
+#:
+#: The protocol helper is looser. It checks the bank with ``str.isdigit()``,
+#: which is true for every Unicode digit, and ``int()`` reads those too - so
+#: ``protocol.slot_to_position("٢٨C")`` returns 218. That is a real position for
+#: a name no screen ever shows, which is the shape of mistake this module exists
+#: to stop, so the model checks the name before handing it down. Both of the
+#: boundary's doors use this one pattern; they disagreed when only
+#: :meth:`PresetAddress.parse` had it.
+_SLOT_NAME = re.compile(r"\s*([0-9]+)([A-Za-z])\s*")
+
 
 def slot_to_position(name: str) -> int:
     """A preset's slot name ("28C") as the linear position the wire carries (218).
@@ -297,8 +309,11 @@ def slot_to_position(name: str) -> int:
     the footswitches are doing, which is why it is what goes on the wire and why
     two addresses are best compared as positions.
 
-    Delegates to :func:`pyquadcortex.protocol.slot_to_position`, so the model and
-    the protocol layer cannot drift apart on what "28C" means. A zero-padded bank
+    How big a setlist is, and the arithmetic, are
+    :func:`pyquadcortex.protocol.slot_to_position`'s, so the model and the
+    protocol layer cannot drift apart on what "28C" means. The SHAPE of the name
+    is checked here first, against :data:`_SLOT_NAME`, because the protocol
+    helper accepts non-ASCII digits and the model should not. A zero-padded bank
     ("01A") is accepted; :func:`position_to_slot` renders unpadded by default,
     because that is what the unit displays.
     """
@@ -306,6 +321,10 @@ def slot_to_position(name: str) -> int:
         raise TypeError(
             f"a slot name is text like '28C', not {type(name).__name__} "
             f"({name!r})")
+    if not _SLOT_NAME.fullmatch(name):
+        raise ValueError(
+            f"a slot name is a bank number and a letter A to H, like '28C': "
+            f"{name!r}")
     return protocol.slot_to_position(name)
 
 
@@ -373,10 +392,10 @@ class PresetAddress:
             raise TypeError(
                 f"a preset address is text like '28C', not "
                 f"{type(text).__name__} ({text!r})")
-        # ASCII digits only, and nothing between the bank and the letter.
-        # Python's `\d` spans every Unicode digit, so an unrestricted pattern
-        # read "٢٨C" as bank 28.
-        match = re.fullmatch(r"\s*([0-9]+)([A-Za-z])\s*", text)
+        # The same pattern :func:`slot_to_position` uses. Python's `\d` spans
+        # every Unicode digit, and so does `str.isdigit()`, so an unrestricted
+        # check reads "٢٨C" as bank 28 - see :data:`_SLOT_NAME`.
+        match = _SLOT_NAME.fullmatch(text)
         if not match:
             raise ValueError(
                 f"a preset address is a bank number and a letter A to H, like "

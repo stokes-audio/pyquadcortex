@@ -229,15 +229,39 @@ def test_parsing_normalises_what_a_person_types(written, bank, position):
     assert (address.bank, address.position) == (bank, position)
 
 
-@pytest.mark.parametrize("malformed", [
-    "", " ", "C", "28", "28I", "0A", "33A", "28CC", "-1A", "2.5C", "A28",
-])
+#: Names the unit never shows. One list, because the boundary has TWO public
+#: doors onto this conversion and a name that only one of them refuses is a hole
+#: with a test in front of it - see the two tests below.
+#:
+#: "٢٨C" and "28²C" are the ones that were getting through. Python's `\d` spans
+#: every Unicode digit and so does `str.isdigit()`, which is what the protocol
+#: helper checks the bank with, and `int()` reads those digits too.
+MALFORMED_NAMES = ["", " ", "C", "28", "28I", "0A", "33A", "28CC", "-1A",
+                   "2.5C", "A28", "28 C", "2 8C", "٢٨C", "28²C"]
+
+
+@pytest.mark.parametrize("malformed", MALFORMED_NAMES)
 def test_a_malformed_address_is_refused_when_it_is_parsed(malformed):
     """Not when it is written. A bad address that survives parsing becomes a
     wire position, and a wrong position is a preset that recalls fine and is the
     wrong preset."""
     with pytest.raises(ValueError):
         translate.PresetAddress.parse(malformed)
+
+
+@pytest.mark.parametrize("malformed", MALFORMED_NAMES)
+def test_the_other_door_onto_a_slot_name_refuses_them_too(malformed):
+    """`slot_to_position` is public, converts the same names, and was refusing a
+    different set.
+
+    Only `PresetAddress.parse` had the ASCII-digit pattern, so
+    `translate.slot_to_position("٢٨C")` returned 218 - a real preset, from a name
+    no screen shows, through the front door of the module whose whole job is to
+    stop exactly that. Delegation could not fix it: the protocol helper accepts
+    those digits by design, so the shape check has to be at the boundary.
+    """
+    with pytest.raises(ValueError):
+        translate.slot_to_position(malformed)
 
 
 @pytest.mark.parametrize("wrong_type", [None, 218, ["28C"]])
@@ -303,12 +327,16 @@ def test_a_slot_name_that_is_not_text_is_refused(name):
         translate.slot_to_position(name)
 
 
-@pytest.mark.parametrize("malformed", ["28 C", "٢٨C", "2 8C"])
-def test_an_address_with_stray_characters_is_refused(malformed):
-    """Internal whitespace and non-ASCII digits both parsed before: Python's
-    `\\d` spans every Unicode digit, so "٢٨C" read as bank 28."""
+def test_the_protocol_helper_really_is_looser_about_digits():
+    """The reason the shape check is at the boundary and not left to delegation.
+
+    If this ever starts raising, the protocol layer has tightened and the
+    boundary's own pattern is no longer the thing holding the line - which is
+    worth knowing, because the comment on `_SLOT_NAME` says it is.
+    """
+    assert protocol.slot_to_position("٢٨C") == 218
     with pytest.raises(ValueError):
-        translate.PresetAddress.parse(malformed)
+        translate.slot_to_position("٢٨C")
 
 
 def test_the_address_conversion_says_the_naming_depends_on_the_mode():
@@ -317,6 +345,8 @@ def test_the_address_conversion_says_the_naming_depends_on_the_mode():
     A caller who does not know that will mis-address a preset, so the function
     that converts has to say it."""
     doc = translate.slot_to_position.__doc__
+    if doc is None:                     # python -OO strips docstrings
+        pytest.skip("docstrings are stripped under -OO")
     assert "mode" in doc and "unambiguous" in doc
     assert "HYBRID" in doc or "hybrid" in doc
 
@@ -493,8 +523,16 @@ def test_the_tuner_reference_converts_both_ways(hz, offset):
 
 
 def test_the_tuner_reference_is_what_the_protocol_write_expects():
-    """The reference is the protocol method itself: 442 Hz on screen broadcast
-    `frequency: 1.99999809`, so the wire carries the offset from 440."""
+    """442 Hz on screen broadcast `frequency: 1.99999809`, so the wire carries
+    the offset from 440 and the model has to hand the method that offset.
+
+    `set_tuner_reference` does no arithmetic - it passes its argument through as
+    `frequency=` - so the protocol METHOD is not an independent reference for
+    the number, and this does not check the 440. What it catches is the `+ 440`
+    moving across the seam: if the model started sending absolute Hz, or the
+    method started adding the offset itself, one of the two would double up and
+    this fails.
+    """
     recorder = Recorder()
     qc = protocol.QuadCortex(recorder)
     qc.set_tuner_reference(translate.hz_to_tuner_reference(442.0))
@@ -518,7 +556,17 @@ def test_the_tuner_reference_is_not_rounded_to_a_precision_nobody_has_read():
 
 
 @pytest.mark.parametrize("index", range(6))
-def test_every_hold_timing_index_reads_as_the_screens_milliseconds(index):
+def test_every_hold_timing_index_reads_the_same_way_the_protocol_layer_does(index):
+    """The shared constant is the reference, so this does NOT check the six
+    numbers - `ms_to_hold_timing(reference[index]) == index` reduces to
+    `tuple.index(tuple[i]) == i`, true for any six distinct values. Replace
+    `HOLD_TIMING_MS` with nonsense and this stays green.
+
+    The numbers are pinned as literals where they were read off the unit, in
+    `tests/test_client.py::test_set_hold_timing_writes_the_index_not_the_milliseconds`
+    (500 ms is index 0, 800 is 3, 1000 is 5). What this pins is the pair being
+    inverses of each other over that constant, whatever it holds.
+    """
     reference = protocol.QuadCortex.HOLD_TIMING_MS
     assert translate.hold_timing_ms(index) == reference[index]
     assert translate.ms_to_hold_timing(reference[index]) == index
@@ -584,6 +632,17 @@ MODEL_SOURCES = sorted(p for p in PACKAGE_ROOT.rglob("*.py")
 OTHER_MODEL_SOURCES = [p for p in MODEL_SOURCES if p != BOUNDARY]
 
 
+#: The boundary's own coordinate tables. It publishes them, so a model module
+#: can convert a coordinate with `translate.ROWS.index(row)` and never write a
+#: `- 1` at all. That spelling used the boundary's own names to get around the
+#: boundary, which is why looking one up is treated as arithmetic.
+COORDINATE_TABLES = ("ROWS", "SLOTS")
+
+#: Letters the unit labels a scene or a footswitch with. A table of these, in
+#: any container, is a conversion whether or not any number appears near it.
+UNIT_LETTERS = "ABCDEFGH"
+
+
 def _index_arithmetic(tree: ast.AST) -> list[str]:
     """Every spelling of index arithmetic in `tree`, as "line N: what".
 
@@ -592,7 +651,16 @@ def _index_arithmetic(tree: ast.AST) -> list[str]:
     is called by the time somebody has extracted a helper for it. The calls
     listed here are how a person actually writes the conversions this module
     owns: `ord`/`chr` or a letter table for a scene or footswitch letter,
-    `divmod` for a preset address.
+    `divmod` for a preset address, and `ROWS.index(...)` for a coordinate,
+    which does the job with no arithmetic in it anywhere.
+
+    **What it cannot see**, so that nobody reads this as a proof. A constant
+    with a name (`OFFSET = 1` then `row - OFFSET`) needs the value followed
+    across statements, and a table built at run time (`tuple(range(1, 5))`,
+    a comprehension over `ascii_uppercase`) needs it evaluated. Both are past
+    what an AST pass does, and a check that claimed otherwise would be worse
+    than one that says where it stops. `ARITHMETIC_BLIND_SPOTS` below pins the
+    known ones so the gap is written down rather than discovered.
     """
     def one(node) -> bool:
         """A literal one, however spelled: 1, 1.0, or True - which equals 1."""
@@ -606,15 +674,45 @@ def _index_arithmetic(tree: ast.AST) -> list[str]:
                              and isinstance(node.op, ast.USub)
                              and one(node.operand))
 
+    def letters(values) -> bool:
+        """A run of the unit's letters, as a sequence of one-character strings."""
+        if len(values) < 3 or not all(isinstance(v, str) and len(v) == 1
+                                      for v in values):
+            return False
+        return "".join(values) in UNIT_LETTERS
+
     def letter_table(node) -> bool:
-        """A string literal that is a run of the letters the unit labels with."""
-        return (isinstance(node, ast.Constant) and isinstance(node.value, str)
-                and len(node.value) >= 3 and "ABCDEFGH".startswith(node.value))
+        """A literal table of the letters the unit labels with.
+
+        A string ("ABCDEFGH"), a tuple or list of them, or the keys of a dict -
+        all four are one lookup away from an index, and only the string spelling
+        was caught before. A run that does not start at "A" counts: "BCDEFGH"
+        with an offset is the same conversion with a bug in it.
+        """
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return len(node.value) >= 3 and node.value in UNIT_LETTERS
+        if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+            return letters([e.value for e in node.elts
+                            if isinstance(e, ast.Constant)]
+                           if all(isinstance(e, ast.Constant) for e in node.elts)
+                           else [])
+        if isinstance(node, ast.Dict):
+            return letters([k.value for k in node.keys
+                            if isinstance(k, ast.Constant)]
+                           if all(isinstance(k, ast.Constant)
+                                  for k in node.keys) else [])
+        return False
 
     def called(node):
         if isinstance(node.func, ast.Name):
             return node.func.id
         return node.func.attr if isinstance(node.func, ast.Attribute) else None
+
+    def table_lookup(node) -> bool:
+        """`.index()` on one of the boundary's coordinate tables."""
+        return (isinstance(node.func, ast.Attribute) and node.func.attr == "index"
+                and isinstance(node.func.value, (ast.Name, ast.Attribute))
+                and _rightmost_name(node.func.value) in COORDINATE_TABLES)
 
     found = []
     for node in ast.walk(tree):
@@ -622,6 +720,8 @@ def _index_arithmetic(tree: ast.AST) -> list[str]:
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
             if offset(node.left) or offset(node.right):
                 found.append(f"{where}: adds or subtracts one")
+            elif _ord_of_a(node.left) or _ord_of_a(node.right):
+                found.append(f"{where}: 65, which is ord('A') - letter arithmetic")
         elif isinstance(node, ast.AugAssign) \
                 and isinstance(node.op, (ast.Add, ast.Sub)) and offset(node.value):
             found.append(f"{where}: adds or subtracts one")
@@ -633,31 +733,70 @@ def _index_arithmetic(tree: ast.AST) -> list[str]:
                 found.append(f"{where}: divmod() - splitting a linear position")
             elif name == "enumerate" and len(node.args) > 1:
                 found.append(f"{where}: enumerate() with a start offset")
+            elif table_lookup(node):
+                found.append(f"{where}: .index() on a coordinate table - a "
+                             f"conversion with no arithmetic in it")
+        elif isinstance(node, ast.Attribute) \
+                and node.attr in ("ascii_uppercase", "ascii_letters"):
+            found.append(f"{where}: string.{node.attr} - a letter table")
         elif letter_table(node):
-            found.append(f"{where}: a letter table, {node.value!r}")
+            found.append(f"{where}: a letter table")
     return sorted(set(found))
+
+
+def _rightmost_name(node) -> str | None:
+    """The last name in an attribute chain: `translate.ROWS` gives "ROWS"."""
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return node.id if isinstance(node, ast.Name) else None
+
+
+def _ord_of_a(node) -> bool:
+    """The literal 65, which is `ord("A")` written without saying so."""
+    return (isinstance(node, ast.Constant) and isinstance(node.value, int)
+            and not isinstance(node.value, bool) and node.value == 65)
 
 
 #: Protocol-layer names that carry a coordinate or a raw scale. Reaching for one
 #: of these outside the boundary is how a second conversion gets written.
+#:
+#: **The criterion is what a name HANDS OVER, not whether it looks like a
+#: conversion.** `protocol.stomp_assignments` reads as a plain query and returns
+#: `StompAssignment(row, column, footswitch)` - three raw wire indexes, one of
+#: them the footswitch index whose confusion with a column is the reason
+#: `FootswitchLetter` exists at all. A model module that calls it and keys a
+#: mapping by that footswitch reintroduces the original bug without writing a
+#: single `- 1`, so the readers below are on the list next to the converters.
+#:
+#: Two tests keep this honest, in the two directions it can rot: every name here
+#: must resolve in the protocol layer, and everything the boundary itself
+#: delegates to must be here. Neither can tell whether a name the boundary does
+#: NOT use is missing - that half is judgement, applied when a protocol-layer
+#: name starts handing out a coordinate or a raw scale.
 PROTOCOL_CONVERSIONS = {
+    # conversions
     "Footswitch", "Scene", "slot_to_position", "position_to_slot",
     "input_level_db", "db_to_input_level", "lane_level_db", "db_to_lane_level",
-    "tempo_bpm", "bpm_to_tempo",
+    "tempo_bpm", "bpm_to_tempo", "option_at", "option_value",
     "UNITY_LEVEL", "HOLD_TIMING_MS",
+    # readers that hand back raw wire coordinates
+    "blocks", "Block", "stomp_assignments", "StompAssignment",
+    "free_rows", "row_status", "RowStatus", "input_chain_rows",
+    "splits", "Split",
 }
+#: Deliberately NOT here, having been considered: `beats` (already keyed by the
+#: 1-based BEAT the screen shows, so nothing is left to convert), `param_options`
+#: (option NAMES, no coordinate and no scale) and `describe_mode` (names a mode
+#: for a log line). Listing those would make the check fire on model code that
+#: has no conversion to do, which teaches people to work around it.
 
 
-def _protocol_conversions_used(tree: ast.AST) -> list[str]:
-    """Every protocol-layer conversion name `tree` reaches for.
+def _protocol_aliases(tree: ast.AST) -> set:
+    """The local names that MEAN the protocol layer in `tree`.
 
-    Only through the protocol layer: `translate.slot_to_position(...)` is the
-    boundary doing its job and must not be reported, so a bare attribute name is
-    not enough to accuse on.
-
-    Which local names MEAN the protocol layer is worked out first, because the
-    spellings that reach it are not all `protocol.`: a module can alias the
-    package, import a submodule of it, or reach through two attributes at once
+    Worked out first, because the spellings that reach it are not all
+    `protocol.`: a module can alias the package, import a submodule of it, or
+    reach through two attributes at once
     (`protocol.QuadCortex.HOLD_TIMING_MS`). Each of those was a hole in the
     first version of this check, and each is one a person would write without
     any idea they were evading anything.
@@ -677,9 +816,48 @@ def _protocol_conversions_used(tree: ast.AST) -> list[str]:
                 for alias in node.names:
                     if module != "pyquadcortex" or alias.name == "protocol":
                         aliases.add(alias.asname or alias.name)
+    return aliases
+
+
+def _protocol_names_reached(tree: ast.AST) -> set:
+    """Every protocol-layer name `tree` reaches for, conversion or not.
+
+    The END of each attribute chain, not the pieces of it:
+    `protocol.QuadCortex.HOLD_TIMING_MS` reaches for `HOLD_TIMING_MS`, and
+    counting `QuadCortex` as well would make the allowlist test below demand a
+    class be listed as a conversion.
+    """
+    aliases = _protocol_aliases(tree)
+    stepped_through = {id(node.value) for node in ast.walk(tree)
+                       if isinstance(node, ast.Attribute)}
 
     def root_of(node):
         """The leftmost name in an attribute chain, or None."""
+        while isinstance(node, ast.Attribute):
+            node = node.value
+        return node.id if isinstance(node, ast.Name) else None
+
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and id(node) not in stepped_through \
+                and root_of(node.value) in aliases:
+            found.add(node.attr)
+        elif isinstance(node, ast.ImportFrom) \
+                and (node.module or "").startswith("pyquadcortex.protocol"):
+            found |= {a.name for a in node.names}
+    return found
+
+
+def _protocol_conversions_used(tree: ast.AST) -> list[str]:
+    """Every protocol-layer CONVERSION name `tree` reaches for.
+
+    Only through the protocol layer: `translate.slot_to_position(...)` is the
+    boundary doing its job and must not be reported, so a bare attribute name is
+    not enough to accuse on.
+    """
+    aliases = _protocol_aliases(tree)
+
+    def root_of(node):
         while isinstance(node, ast.Attribute):
             node = node.value
         return node.id if isinstance(node, ast.Name) else None
@@ -733,12 +911,58 @@ def test_every_name_on_the_allowlist_is_a_real_protocol_name():
         f"publishes, so nothing is being kept out of the model by it")
 
 
-def test_the_boundary_itself_does_the_arithmetic():
+def test_the_allowlist_covers_everything_the_boundary_delegates_to():
+    """The direction the list actually rots in.
+
+    A conversion arrives at the protocol layer, the boundary starts calling it,
+    and the allowlist is not updated - so every OTHER module may call it too and
+    nothing says a word. That is not hypothetical: PR #22 added `tempo_bpm` and
+    `bpm_to_tempo`, and they sat unlisted until this branch put them in by hand.
+
+    Derived rather than listed, so it cannot rot the same way: whatever
+    `translate.py` reaches into the protocol layer for is a conversion by
+    definition, because converting is all that module does.
+    """
+    reached = _protocol_names_reached(ast.parse(BOUNDARY.read_text()))
+    assert reached, "the boundary reaches for nothing - this check is vacuous"
+    unlisted = sorted(reached - PROTOCOL_CONVERSIONS)
+    assert not unlisted, (
+        f"{BOUNDARY.name} delegates to the protocol layer's {unlisted}, which "
+        f"is not in PROTOCOL_CONVERSIONS - so every other module in the package "
+        f"may call it directly and this suite will not notice")
+
+
+#: The four functions the exclusion exists for. Named, because "somewhere in
+#: translate.py" is not the thing being protected.
+COORDINATE_CONVERTERS = ("row_to_wire", "row_from_wire",
+                         "slot_to_wire", "slot_from_wire")
+
+
+def test_the_boundary_itself_still_does_the_arithmetic():
     """The exclusion below has to be load-bearing. If the boundary stopped
     converting, the check would pass because nothing anywhere converts - which
-    is the one failure a "no arithmetic elsewhere" test cannot see."""
-    found = _index_arithmetic(ast.parse(BOUNDARY.read_text()))
-    assert found, f"{BOUNDARY.name} does no index arithmetic at all"
+    is the one failure a "no arithmetic elsewhere" test cannot see.
+
+    Anchored to the four converters BY NAME rather than to the file. The
+    file-wide version was satisfied by `_screen_number`'s error-message
+    formatter (`allowed[-1] - allowed[0] + 1 == len(allowed)`), which converts
+    nothing - so all four converters could have been rewritten
+    `ROWS.index(row)`, arithmetic-free, and this backstop would have stayed
+    green on that one line while the "nowhere else" check stayed silent too.
+    """
+    functions = {node.name: node
+                 for node in ast.walk(ast.parse(BOUNDARY.read_text()))
+                 if isinstance(node, ast.FunctionDef)}
+    gone = [name for name in COORDINATE_CONVERTERS if name not in functions]
+    assert not gone, (
+        f"{BOUNDARY.name} no longer defines {gone} - this test names the "
+        f"converters it is protecting, so a rename has to come through here")
+    silent = [name for name in COORDINATE_CONVERTERS
+              if not _index_arithmetic(functions[name])]
+    assert not silent, (
+        f"{silent} in {BOUNDARY.name} do no index arithmetic. If the conversion "
+        f"moved somewhere else, the 'nowhere else' check below is now passing "
+        f"because nothing anywhere converts")
 
 
 @pytest.mark.parametrize("source", OTHER_MODEL_SOURCES, ids=lambda p: p.name)
@@ -777,13 +1001,28 @@ ARITHMETIC_SAMPLES = [
     ("a letter table lookup", "letter = 'ABCDEFGH'[index]", True),
     ("a letter table search", "index = 'ABCDEFGH'.index(letter)", True),
     ("a letter table under any name", "LETTERS = 'ABCDEFGH'", True),
+    ("a letter table as a tuple",
+     "LETTERS = ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H')", True),
+    ("a letter table as a list", "LETTERS = ['A', 'B', 'C']", True),
+    ("a letter table as dict keys", "INDEX = {'A': 0, 'B': 1, 'C': 2}", True),
+    ("a letter table that starts late", "letter = 'BCDEFGH'[index]", True),
+    ("the standard library's letter table",
+     "import string\nletter = string.ascii_uppercase[index]", True),
+    ("ord('A') without ord", "index = letter.encode()[0] - 65", True),
     ("splitting a linear position", "bank, letter = divmod(position, 8)", True),
     ("a one-based enumerate", "[(n, r) for n, r in enumerate(rows, 1)]", True),
+    ("the boundary's own table, looked up",
+     "from pyquadcortex.device import translate\n"
+     "wire_row = translate.ROWS.index(row)", True),
+    ("the same, imported bare", "wire_column = SLOTS.index(slot)", True),
     ("the boundary doing it", "wire_row = translate.row_to_wire(row)", False),
     ("arithmetic that is not off-by-one", "total = a + 2", False),
     ("a plain enumerate", "[(i, r) for i, r in enumerate(rows)]", False),
     ("a string that is not a letter table", "name = 'ABY Splitter'", False),
     ("an ordinary attribute", "name = block.device.name", False),
+    ("a list of names, not letters", "MODELS = ['Amp', 'Bass', 'Cab']", False),
+    ("index() on something that is not a coordinate table",
+     "position = names.index(name)", False),
 ]
 
 
@@ -794,13 +1033,45 @@ def test_the_arithmetic_check_sees_what_it_claims_to(label, source, detected):
     somebody happened to think of, while reading as though it enforced all of
     them.
 
-    The samples that earn their place are the ones the first version of this
-    check missed: letter arithmetic, a letter table, `divmod` on a preset
-    position, and the three ways of writing one that are not the token `1`.
+    The samples that earn their place are the ones a version of this check
+    missed: letter arithmetic, a letter table in any of four containers,
+    `divmod` on a preset position, the three ways of writing one that are not
+    the token `1`, and `ROWS.index(row)` - which converts a coordinate using
+    the boundary's own published table and contains no arithmetic at all.
     None of those is exotic. They are how the conversions this module owns get
     written by somebody writing them somewhere else.
     """
     assert bool(_index_arithmetic(ast.parse(source))) is detected
+
+
+#: Spellings this check CANNOT see, asserted as unseen.
+#:
+#: A table of samples where every "should be caught" case is caught reads like
+#: proof of a complete check. It is not one, and the honest way to say so is to
+#: pin the gap rather than describe it: each of these needs a value followed
+#: across statements or a table evaluated, which is past what an AST pass does.
+#:
+#: This test fails if one of them starts being caught. That is the point - the
+#: entry moves up into `ARITHMETIC_SAMPLES` and the docs saying where the check
+#: stops get corrected in the same edit.
+ARITHMETIC_BLIND_SPOTS = [
+    ("a one with a name", "OFFSET = 1\nwire_row = row - OFFSET"),
+    ("a coordinate table under another name, built at run time",
+     "GRID_ROWS = tuple(range(1, 5))\nwire_row = GRID_ROWS.index(row)"),
+    ("a letter table under another name, sliced out of a longer one",
+     "TAGS = 'ABCDEFGHIJ'[:8]\nletter = TAGS[index]"),
+    ("arithmetic behind a helper somebody else wrote",
+     "from elsewhere import to_wire\nwire_row = to_wire(row)"),
+]
+
+
+@pytest.mark.parametrize("label,source", ARITHMETIC_BLIND_SPOTS,
+                         ids=[s[0] for s in ARITHMETIC_BLIND_SPOTS])
+def test_the_arithmetic_check_says_where_it_stops(label, source):
+    """See `ARITHMETIC_BLIND_SPOTS`. These are the ones known to get through."""
+    assert not _index_arithmetic(ast.parse(source)), (
+        f"the check now catches {label!r} - move it into ARITHMETIC_SAMPLES and "
+        f"correct the 'what it cannot see' paragraph in _index_arithmetic")
 
 
 CONVERSION_SAMPLES = [

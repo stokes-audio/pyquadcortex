@@ -27,6 +27,11 @@ REQUIRED = (
     "pyquadcortex/protocol/client.py",
     "pyquadcortex/device/device.py",
     "pyquadcortex/device/translate.py",
+    # The two files that DECIDE what `import pyquadcortex` hands back. Ship a
+    # wheel without either and every module above is still present and correct,
+    # while the package exports nothing.
+    "pyquadcortex/device/__init__.py",
+    "pyquadcortex/__init__.py",
     "pyquadcortex/_version.py",
 )
 
