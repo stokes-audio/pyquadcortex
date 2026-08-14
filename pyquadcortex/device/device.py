@@ -8,13 +8,19 @@ and hands back a :class:`Device`::
     with pyquadcortex.connect() as device:
         print(device.firmware, device.serial)
 
+Everything a `Device` reports comes through the state layer
+(:mod:`pyquadcortex.device.state`), which listens to what the unit announces and
+asks it directly for the rest. So a value read here is what the unit is doing
+now, not what it was doing when somebody last asked.
+
 The `Device` is deliberately small right now. It carries the unit's identity and
-owns the connection; the Directory, the live cache, the loaded preset and the
-grid arrive in the stories that follow, per ``docs/domain-model.md``. What is
-here is what has been built - nothing is stubbed out to look finished.
+owns the connection; the Directory, the loaded preset and the grid arrive in the
+stories that follow, per ``docs/domain-model.md``. What is here is what has been
+built - nothing is stubbed out to look finished.
 """
 
 from pyquadcortex import protocol
+from pyquadcortex.device.state import DeviceState
 
 
 class Device:
@@ -24,12 +30,19 @@ class Device:
     connection you already hold with :meth:`from_client`.
     """
 
-    def __init__(self, client, *, _owns_client: bool = False):
+    def __init__(self, client, *, _owns_client: bool = False, _state=None):
         """Internal. Use :func:`connect` or :meth:`from_client`."""
         self._client = client
         self._owns_client = _owns_client
         self._closed = False
-        self._version = None
+        # `connect` builds the cache itself so it can subscribe before the
+        # handshake, which is the only moment early enough to hear the burst.
+        # Anything else is joining a connection already up, so it subscribes to
+        # the client and starts cold.
+        self._state = _state if _state is not None else DeviceState()
+        if _state is None:
+            self._state.listen_on(client)
+        self._state.bind(client)
 
     def _check_open(self) -> None:
         """Refuse to answer through a `Device` the caller has finished with.
@@ -77,45 +90,49 @@ class Device:
         return self._client
 
     @property
+    def state(self):
+        """The state layer this `Device` reads through.
+
+        The place to look when you want to know what the model knows - what it
+        has cached, what it is about to re-read - rather than what the unit is
+        doing. Reading a property is the way to ask the unit.
+
+        Raises ``RuntimeError`` once this `Device` is closed.
+        """
+        self._check_open()
+        return self._state
+
+    @property
     def firmware(self) -> str:
-        """The firmware version the unit reports, e.g. ``"d14e"``."""
-        return self._identity().app_fw_version
+        """The firmware version the unit reports, e.g. ``"d14e"``.
+
+        The unit never announces this, so the first read asks it and every read
+        after that is free for as long as this connection lasts. Firmware and
+        serial cannot change while a connection is up: the only thing that
+        changes either is a firmware update, and the firmware `Updater` surface
+        is permanently out of scope for this library (repo-root ``CLAUDE.md``).
+        That is an inference from scope rather than a measurement, which is why
+        the state layer still treats it as ordinary cached state rather than as
+        something read once and settled.
+        """
+        return self._identity("app_fw_version")
 
     @property
     def serial(self) -> str:
         """The unit's serial number."""
-        return self._identity().device_serial_number
+        return self._identity("device_serial_number")
 
-    def _identity(self):
-        """The unit's Version reply, read once per connection.
+    def _identity(self, field: str) -> str:
+        """One field of the unit's identity, through the cache.
 
-        Firmware and serial cannot change while a connection is up, so one read
-        answers both properties for as long as this `Device` is connected. That
-        rests on an inference, not a measurement: the only thing that changes
-        either value is a firmware update, and the firmware `Updater` surface is
-        permanently out of scope for this library (repo-root ``CLAUDE.md``), so
-        the claim cannot be tested here. It is why the reply is only cached once
-        it is known to be complete.
-
-        Both fields sit in a synthetic ``oneof`` in the schema, so protobuf hands
-        back ``""`` for a field the unit never sent rather than complaining. An
-        empty string behind a signature promising a version is a guess, so a
-        reply missing either field raises and is not cached, leaving a retry able
-        to recover.
+        Both fields sit in a synthetic ``oneof`` in the schema, so protobuf
+        hands back ``""`` for a field the unit never sent rather than
+        complaining. An empty string behind a signature promising a version is a
+        guess, so the state layer refuses a field the unit did not send and
+        caches nothing for it, leaving a retry able to recover.
         """
         self._check_open()
-        if self._version is None:
-            reply = self._client.version()
-            missing = [f for f in ("app_fw_version", "device_serial_number")
-                       if not protocol.field_present(reply, f)]
-            if missing:
-                raise RuntimeError(
-                    f"the unit's Version reply did not carry {', '.join(missing)}, "
-                    f"so its firmware and serial cannot be reported. Nothing was "
-                    f"cached, so asking again can still succeed."
-                )
-            self._version = reply
-        return self._version
+        return self._state.value("identity", field)
 
     def close(self) -> None:
         """Finish with this `Device`, releasing the unit if it opened it.
@@ -129,8 +146,13 @@ class Device:
         `close()` defines. A connection that goes away on its own - the cable
         pulled, the unit rebooted - is a different event with its own handling,
         and belongs to the reconnect story (#15).
+
+        The state layer is closed first, so a `Device` built by
+        :meth:`from_client` stops listening on a connection it never owned
+        rather than quietly staying subscribed to somebody else's.
         """
         self._closed = True
+        self._state.close()
         if self._owns_client:
             self._client.close()
 
@@ -173,6 +195,13 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
             while the unit is openable but silent. See
             :func:`pyquadcortex.protocol.connect`, which this passes through to.
 
+    The model subscribes to the unit's pushes BEFORE the handshake runs, which
+    is the only moment early enough to hear the handshake's own burst of state -
+    one message of nearly every state type the unit has, the current preset
+    included, arriving over about nine seconds. That is what makes the cache warm
+    for free: by the time a caller asks for something, the unit has usually
+    already said it.
+
     Returns:
         A connected :class:`Device`.
 
@@ -185,6 +214,8 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
             rather than after it. Raising ``handshake_patience`` is the fix; the
             30 second default already covers the measured window.
     """
+    state = DeviceState()
     client = protocol.connect(timeout=timeout, settle=settle,
-                              handshake_patience=handshake_patience)
-    return Device(client, _owns_client=True)
+                              handshake_patience=handshake_patience,
+                              before_handshake=state.listen_on)
+    return Device(client, _owns_client=True, _state=state)

@@ -38,7 +38,19 @@ only about the layer directly below it.
     pyquadcortex/            THE MODEL - what import pyquadcortex hands back
       device/device.py       connect(): opens the unit, returns a Device.
       |                      Speaks the unit's vocabulary, never the wire.
-      |                      (Directory, cache and grid land in later stories.)
+      |                      (Directory and grid land in later stories.)
+      |
+      device/state.py        The write-through cache every model read goes
+      |                      through: applies what the unit pushes, asks for
+      |                      what it does not push, and knows when to stop
+      |                      trusting its copy
+      |
+      device/entries.py      What the cache tracks, as data: which messages
+      |                      carry each part, which fields the model keeps,
+      |                      and how to read each one
+      |
+      device/watch.py        Whether a write landed: the echo watcher and its
+      |                      three outcomes, plus the one thread that gives up
       |
       device/translate.py    Screen values <-> wire values, and the ONLY place
       |                      either becomes the other: rows, slots, scene and
@@ -200,9 +212,41 @@ a `Device`, which carries the unit's identity and owns the connection.
 does NOT take ownership of it. `Device.client` is the way back down to the
 message level for anything the model does not cover yet.
 
-The rest of the model - the Directory, the write-through cache, the loaded preset
-and the grid - is designed in [domain-model.md](domain-model.md) and is being
-built story by story. Nothing is stubbed out to look finished.
+Every value a `Device` reports comes out of the state layer below, reached as
+`Device.state`. `connect()` builds that cache first and hands its subscription to
+`protocol.connect(before_handshake=...)`, because the handshake's burst of state
+starts seconds after `connect()` returns - a model that subscribed to the client
+it is handed would miss all of it. `Device.from_client` cannot do that and does
+not pretend to: it subscribes to the live connection and starts cold.
+
+The rest of the model - the Directory, the loaded preset and the grid - is
+designed in [domain-model.md](domain-model.md) and is being built story by story.
+Nothing is stubbed out to look finished.
+
+### device/state.py, device/entries.py, device/watch.py
+
+The state layer, designed in [domain-model.md](domain-model.md) sections 9 and 10
+and decided in ADR-0011. Someone turns a knob on the touchscreen while a script
+is connected, and the library should not be wrong about it.
+
+`state.py` holds the cache. It registers one persistent listener (ADR-0009) and,
+for each message, merges the fields the model keeps into its copy. A message that
+sets a field the model does NOT keep marks that part of the cache, and the next
+read of it goes to the unit - on the CALLER's thread. The RX thread never reads,
+which the transport enforces rather than asks for. A message type no entry tracks
+returns immediately, which is what makes the metronome's tempo stream - a pair
+per beat, on every connection, forever - cost nothing.
+
+`entries.py` is the table of what is tracked: per entry, the message types that
+carry it, the fields kept from each, and the read that fetches it. Two entries
+today, `identity` and `dirty`; the rest of section 9's table arrives with the
+surfaces that read it.
+
+`watch.py` is the write side. A write updates the cache immediately and the
+unit's echo confirms it in the background, against one sentence: every field we
+sent must come back with the value we sent. Not "the echo equals what we sent" -
+the unit legitimately changes things nobody asked about. One watchdog thread for
+the whole connection, started on the first write and never before it.
 
 ### device/translate.py
 
@@ -473,6 +517,8 @@ How each layer is faked:
 | `session` | `open_device` and `Transport` monkeypatched | `tests/test_session.py` |
 | `cli` | `build_parser()` exercised directly | `tests/test_cli.py` |
 | `model` | `FakeClient`: answers the calls the model makes on a `QuadCortex`, plus the same monkeypatched device+transport as `session` | `tests/test_device.py` |
+| the state layer | `LoopbackTransport`: canned replies under the REAL `QuadCortex`, notifying listeners before the caller wakes as the real transport does | `tests/test_state.py` |
+| the state layer's threading | none - a real `Transport` over a fake HID link, because "the RX thread never reads" is a claim about a thread and a double cannot test it | `tests/test_state_rx.py` |
 | schema | asserts the enum integers the code relies on and that core messages instantiate | `tests/test_schema_compiles.py` |
 | namespaces | the pre-flip `__all__`, read verbatim from git, must all resolve under `pyquadcortex.protocol` | `tests/test_namespace.py` |
 | the translation boundary | none: it is pure functions, so it is called directly. Two of its tests take the package's SOURCE as their input instead, and read it with `ast` | `tests/test_translation.py` |
