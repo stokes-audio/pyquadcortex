@@ -95,12 +95,19 @@ class WriteWatch:
         cache is already right. It is here so a test, or a caller that wants to
         be sure, can ask.
 
-        When it returns true, everything the outcome causes has already
+        When it returns TRUE, everything the outcome causes has already
         happened: the log line is written and a timed-out write has already
         marked its entry for re-reading. That is why :meth:`publish` is a
         separate step from the two methods that decide the outcome.
+
+        It returns FALSE either because the wait ran out or because the
+        connection closed with this write still in flight - see
+        :meth:`publish`. Nothing can settle a write once the connection that
+        would have echoed it is gone, so the wait ends rather than running to
+        the caller's timeout, which by default is forever.
         """
-        return self._settled.wait(timeout)
+        self._settled.wait(timeout)
+        return self.outcome is not None
 
     def absorb(self, applied: dict):
         """Take one echo into account; return the outcome if this settles it.
@@ -143,7 +150,15 @@ class WriteWatch:
         return True
 
     def publish(self) -> None:
-        """Release anyone waiting in :meth:`settled`. Idempotent."""
+        """Release anyone waiting in :meth:`settled`. Idempotent.
+
+        Called after an outcome's consequences have been applied, so a waiter
+        never wakes ahead of them. Also called with NO outcome when the
+        connection closes on a write still in flight: there is nothing left that
+        could answer it, so the honest thing is to stop the waiting rather than
+        to invent a third party's verdict. :meth:`settled` reports that as
+        false, which is what it says it reports.
+        """
         self._settled.set()
 
     def __repr__(self) -> str:
@@ -171,27 +186,49 @@ class Watchdog:
         self._wake = threading.Condition()
         self._watches = []
         self._running = False
+        self._stopped = False
         self._thread = None
 
     def add(self, watch: WriteWatch) -> None:
-        """Start watching ``watch``, starting the thread if this is the first."""
+        """Start watching ``watch``, starting the thread if this is the first.
+
+        Once :meth:`stop` has run this watches nothing and starts nothing. That
+        is the race a write can lose: ``write_through`` finds the cache open,
+        the connection closes, and only then does the write reach here. Starting
+        a thread for it would leave one waiting out a deadline on a connection
+        nobody can reach, so the write is released with no outcome instead -
+        which is what the connection closing under a write means anyway.
+        """
         with self._wake:
-            self._watches.append(watch)
-            if self._thread is None:
-                self._running = True
-                self._thread = threading.Thread(target=self._loop,
-                                                name=self._name, daemon=True)
-                self._thread.start()
-            self._wake.notify_all()
+            if self._stopped:
+                late = watch
+            else:
+                late = None
+                self._watches.append(watch)
+                if self._thread is None:
+                    self._running = True
+                    self._thread = threading.Thread(target=self._loop,
+                                                    name=self._name, daemon=True)
+                    self._thread.start()
+                self._wake.notify_all()
+        if late is not None:
+            late.publish()          # outside the lock: it wakes other threads
 
     def stop(self, join_timeout: float = 2.0) -> None:
-        """Stop the thread and forget every outstanding write. Idempotent.
+        """Stop the thread for good and forget every outstanding write.
 
-        The watches themselves are left as they are: the connection is going
-        away, so "timed out" would be a claim about the unit rather than a fact.
+        Idempotent, and permanent - a :class:`Watchdog` belongs to one
+        connection and a stopped one never watches again.
+
+        The watches are dropped rather than timed out: the connection is going
+        away, so "the unit never answered" would be a claim about the unit
+        rather than a fact. Releasing whoever is waiting on them is the caller's
+        job, because the caller is the one that knows the connection has gone -
+        see ``DeviceState.close``.
         """
         with self._wake:
             self._running = False
+            self._stopped = True
             self._watches = []
             thread, self._thread = self._thread, None
             self._wake.notify_all()

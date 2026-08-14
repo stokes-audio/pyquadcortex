@@ -40,7 +40,8 @@ import time
 
 from pyquadcortex.device import entries
 from pyquadcortex.device.entries import fields_applied, unkept_fields
-from pyquadcortex.device.watch import WATCH_PATIENCE, Watchdog, WriteWatch
+from pyquadcortex.device.watch import (WATCH_PATIENCE, WatchOutcome, Watchdog,
+                                       WriteWatch)
 
 log = logging.getLogger(__name__)
 
@@ -143,12 +144,22 @@ class DeviceState:
             self._closed = True
             self._slots = {name: _Slot() for name in self._slots}
             self._client = None
+            in_flight = [watch for watches in self._watches.values()
+                         for watch in watches]
+            self._watches = {name: [] for name in self._watches}
         detach, self._detach = self._detach, None
         if detach is not None:
             detach()
         # Outside the lock: the watchdog takes it to mark an entry, and stopping
         # it joins its thread.
         self._watchdog.stop()
+        for watch in in_flight:
+            # Released with no outcome, not timed out. Nothing can settle these
+            # now, so anybody waiting has to be let go - and calling them timed
+            # out would be a claim about the unit rather than a fact.
+            log.debug("watch.abandoned %s %s - the connection closed first",
+                      watch.entry, sorted(watch.sent))
+            watch.publish()
 
     # -- what the unit tells us (RX thread) -----------------------------------
 
@@ -203,9 +214,21 @@ class DeviceState:
             self._watches[entry.name] = [watch for watch, outcome in settled
                                          if outcome is None]
         for watch, outcome in settled:
-            if outcome is not None:
-                self._report(watch)
-                watch.publish()
+            if outcome is None:
+                continue
+            self._report(watch)
+            if outcome is WatchOutcome.DIFFERENT:
+                # The echo we just applied put the unit's own answer in the
+                # cache for the field it disagreed about - but a write the unit
+                # contradicted is a write we did not understand, and any OTHER
+                # field it carried is still sitting there on our say-so, never
+                # confirmed by anything. Section 10 only asks for a log line
+                # here; leaving it at that is how the one path that means "we
+                # have a bug" ends up the one that cleans up least.
+                self.mark_for_reread(
+                    watch.entry,
+                    f"the unit disagreed with a write of {sorted(watch.sent)}")
+            watch.publish()
 
     # -- what we hand back (the caller's thread) ------------------------------
 
@@ -255,12 +278,14 @@ class DeviceState:
                 slot.fields = dict(answer)
                 # Our own answer came back through the listener too - listeners
                 # see a reply before the thread that asked for it wakes (ADR-
-                # 0009) - so one message is expected and anything beyond it is a
-                # push that landed while we waited. Clearing the mark
-                # unconditionally would throw that push away with nothing left
-                # to recover it from.
+                # 0009) - so exactly one message is expected here, every entry's
+                # read being one request and one reply. Anything beyond that is
+                # a push that landed while we waited, and clearing the mark
+                # regardless would throw it away with nothing left to recover it
+                # from. An entry whose read provokes a stream will have to say
+                # how many messages that is; see `StateEntry`.
                 extra = slot.witnessed - witnessed_before
-                slot.needs_read = extra > entry.read_echoes
+                slot.needs_read = extra > 1
                 if slot.needs_read:
                     log.info("push.forced_reread %s - %d message(s) arrived "
                              "while it was being read", entry_name, extra)
@@ -277,18 +302,30 @@ class DeviceState:
         A snapshot for a caller that wants to know what the model knows -
         logging, a health check, a test - rather than what the unit is doing.
         Use :meth:`value` for that.
+
+        Refuses once this cache is closed, like every other read here. An empty
+        mapping is an answer, and "the unit has told us nothing" is not what a
+        connection that has gone away means.
         """
         with self._lock:
+            self._check_open()
             return dict(self._slots[self._entry(entry_name).name].fields)
 
     def needs_read(self, entry_name: str) -> bool:
-        """Whether the next :meth:`value` on this entry will go to the unit."""
+        """Whether the next :meth:`value` on this entry will go to the unit.
+
+        Refuses once closed, for the same reason: on a closed cache every slot
+        is empty, so this would answer "no" - "the next read is free" about a
+        read that raises.
+        """
         with self._lock:
+            self._check_open()
             return self._slots[self._entry(entry_name).name].needs_read
 
     def mark_for_reread(self, entry_name: str, why: str) -> None:
         """Stop trusting this entry's copy; the next read goes to the unit."""
         with self._lock:
+            self._check_open()
             self._slots[self._entry(entry_name).name].needs_read = True
         log.info("cache.forced_reread %s - %s", entry_name, why)
 
@@ -358,8 +395,15 @@ class DeviceState:
         return watch
 
     def _gave_up_on(self, watch: WriteWatch) -> None:
-        """The watchdog's callback: no echo arrived. Runs on ITS thread."""
+        """The watchdog's callback: no echo arrived. Runs on ITS thread.
+
+        Returns quietly if the connection went away while it was deciding.
+        There is no copy left to mark, and raising here would land on a thread
+        with nobody to catch it.
+        """
         with self._lock:
+            if self._closed:
+                return
             self._watches[watch.entry] = [
                 w for w in self._watches[watch.entry] if w is not watch]
         log.warning("watch.timeout %s - the unit never echoed %s", watch.entry,

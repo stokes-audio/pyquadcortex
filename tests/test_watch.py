@@ -126,17 +126,33 @@ def test_a_write_with_no_fields_is_refused():
         a_watch({})
 
 
-def test_a_watch_is_not_settled_until_it_is_published():
+def test_a_waiter_is_released_by_publish_and_not_by_the_outcome():
     """`settled()` returning has to mean the outcome's consequences have already
-    happened - the entry marked, the line logged - or a caller waiting on it
-    races the thread that decided."""
+    happened - the entry marked, the line logged - so what wakes a waiter is the
+    separate publish, not the moment the outcome is decided. Otherwise a caller
+    woken by a timeout races the thread that is still marking the entry."""
     watch = a_watch({"level": 0.5})
+    released = threading.Event()
+    threading.Thread(target=lambda: (watch.settled(timeout=5.0), released.set()),
+                     daemon=True).start()
+
     watch.absorb({"level": 0.5})
-    assert watch.settled(timeout=0) is False
+
+    assert not released.wait(0.2), "the waiter woke on the outcome alone"
+    watch.publish()
+    assert released.wait(2.0), "publish did not release the waiter"
+
+
+def test_a_watch_released_without_an_outcome_reports_that_it_has_none():
+    """What `close()` does to a write still in flight: release whoever is
+    waiting, because nothing can ever answer them now, and say plainly that
+    there is no outcome. `settled()` says it returns whether there is one."""
+    watch = a_watch({"level": 0.5})
 
     watch.publish()
 
-    assert watch.settled(timeout=0) is True
+    assert watch.settled(timeout=0) is False
+    assert watch.outcome is None
 
 
 # -- the watchdog -------------------------------------------------------------
@@ -195,6 +211,30 @@ def test_stopping_the_watchdog_ends_its_thread():
     dog.stop()
 
     assert not _named_threads("pyquadcortex-test-watchdog")
+
+
+def test_a_watchdog_that_has_stopped_does_not_start_again_for_a_late_write():
+    """A write that races a `close()` reaches `add` after `stop`. Starting a
+    thread for it leaves one waiting forever on a connection that is gone."""
+    dog = Watchdog(lambda watch: None, "pyquadcortex-test-watchdog")
+    dog.stop()
+    late = a_watch({"level": 0.5}, patience=30.0)
+
+    dog.add(late)
+
+    assert not _named_threads("pyquadcortex-test-watchdog")
+    assert late.settled(timeout=0) is False, "it should still report no outcome"
+    assert late.outcome is None
+
+
+def test_a_write_added_after_the_watchdog_stopped_does_not_hang_its_caller():
+    dog = Watchdog(lambda watch: None, "pyquadcortex-test-watchdog")
+    dog.stop()
+    late = a_watch({"level": 0.5}, patience=30.0)
+
+    dog.add(late)
+
+    assert late.settled(timeout=1.0) is False   # returns rather than blocking
 
 
 def test_a_watchdog_stopped_before_a_deadline_does_not_report_a_timeout():

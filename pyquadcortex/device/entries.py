@@ -33,12 +33,21 @@ import typing
 from pyquadcortex import protocol
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
-#: Fields that belong to the transport rather than to the unit's state. They are
-#: on nearly every message in this schema, they say nothing about what the unit
-#: is doing, and treating them as unkept state would mark every entry for
-#: re-reading on every push - which is the thrash section 9 exists to avoid.
+#: Fields the per-field check skips, on every entry. They are on nearly every
+#: message in this schema, and treating them as unkept state would mark every
+#: entry for re-reading on every push - the thrash section 9 exists to avoid.
 #: ``tests/test_state.py`` checks both are really on every feeding type, so the
-#: skip cannot quietly forgive a field that does not arrive.
+#: skip cannot quietly forgive a field that never arrives.
+#:
+#: ``request_id`` is the transport's, always. **``action`` is not always.** It
+#: says nothing on the two message types tracked today, which is why it is
+#: skipped globally - but on ``Grid`` it is load-bearing state: an
+#: ``UPDATE`` carrying ``hash: 0`` is transmitted and ignored, while the same
+#: payload with ``action: DELETE`` removes the block
+#: (``QuadCortex.remove_block``). So a ``Grid`` entry - issue #12 - cannot
+#: inherit this skip: two pushes with identical payloads and opposite meanings
+#: would apply identically and mark nothing. Give that entry its own decision
+#: about ``action`` rather than widening this set, and see ADR-0011.
 SCAFFOLDING = frozenset({"action", "request_id"})
 
 
@@ -71,18 +80,18 @@ class StateEntry:
             the unit's whole answer for this entry. Runs on the CALLER's thread,
             never the RX thread.
         feeds: message class -> :class:`FieldPlan`.
-        read_echoes: how many messages of this entry's own types one
-            :attr:`read` puts on the wire. One for a plain request/reply, which
-            is what both of today's entries are. The read path uses it to tell
-            its own answer apart from a push that arrived while it was waiting;
-            an entry whose read provokes a stream (a ``File`` enumeration, a
-            preset dump) sets its own number.
+
+    Every entry's :attr:`read` is one request and one reply, which the read path
+    relies on to tell its own answer apart from a push that arrived while it was
+    waiting. An entry whose read provokes a STREAM instead - a ``File``
+    enumeration, a preset dump - has to say how many messages that is, and this
+    class does not carry that yet because nothing needs it. It lands with the
+    first such entry, along with the test that a number other than one works.
     """
 
     name: str
     read: typing.Callable
     feeds: typing.Mapping
-    read_echoes: int = 1
 
     def fields(self) -> frozenset:
         """Every field name this entry holds, across all the types that feed it."""
@@ -138,11 +147,23 @@ def unkept_fields(message, plan: FieldPlan) -> list:
 def _carries_unknown_fields(message) -> bool:
     """Whether ``message`` decoded with bytes our schema could not place.
 
-    ``UnknownFields()`` is the obvious way to ask and raises
-    ``NotImplementedError`` on the C implementation this project runs on, so we
-    ask by subtraction instead: discard the unknown fields from a copy and see
-    whether the message got smaller. The copy is why the caller does this once
-    per entry, not once per field.
+    Asked by subtraction: discard the unknown fields from a copy and see whether
+    the message got smaller. The copy is why the caller does this once per
+    entry, not once per field.
+
+    **The reason to keep it that way is recursion**, and this paragraph exists
+    because the obvious simplification loses it silently.
+    ``DiscardUnknownFields`` descends into submessages;
+    ``google.protobuf.unknown_fields.UnknownFieldSet`` reports only the top
+    level. Measured on protobuf 7.35.1: for an unknown field nested inside a
+    known submessage, subtraction says yes and ``UnknownFieldSet`` counts zero.
+    Nested is the case that will matter most, because the entries fed by whole
+    preset dumps are the ones with submessages in them.
+
+    (``message.UnknownFields()``, the third way to ask, raises
+    ``NotImplementedError`` outright on the C implementation this project runs
+    on. That is why it is not used, but it is not the reason for the choice
+    between the other two.)
     """
     probe = type(message)()
     probe.CopyFrom(message)

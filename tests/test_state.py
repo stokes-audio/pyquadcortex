@@ -477,6 +477,56 @@ def test_a_kept_field_is_one_the_wire_can_report_absent(entry):
 
 
 @pytest.mark.parametrize("entry", entries.ENTRIES, ids=lambda e: e.name)
+def test_no_field_an_entry_leaves_unkept_is_invisible_on_the_wire(entry):
+    """The one blind spot the per-field check genuinely has, held shut.
+
+    A proto3 scalar with no presence is written only when it differs from its
+    default, so a message that leaves one at its default carries no bytes for it
+    at all - ``PresetDirty{is_dirty: False}`` serialises to two bytes, both of
+    them ``action``. Nothing can see a change to such a field, because there is
+    nothing to see: not ``ListFields``, not the unknown-field weigh-in, not a
+    hand-written parser.
+
+    So a presence-free field has to be KEPT or it can never be noticed, and
+    "does the model keep it?" is a question about our code rather than about the
+    wire - which makes it checkable, which is this test. It fires the day an
+    entry is fed by a type carrying one it does not keep, and the answer then is
+    to keep it with the evidence for what its default means, exactly as
+    ``is_dirty`` is kept.
+    """
+    for message_class, plan in entry.feeds.items():
+        declared = plan.kept | plan.no_presence | entries.SCAFFOLDING
+        invisible = sorted(field.name for field in message_class.DESCRIPTOR.fields
+                           if not field.has_presence and field.name not in declared)
+        assert not invisible, (
+            f"{entry.name} does not keep {message_class.__name__}.{invisible}, "
+            f"which the wire cannot report as absent - so a change to it is "
+            f"undetectable rather than merely unkept")
+
+
+@pytest.mark.parametrize("entry", entries.ENTRIES, ids=lambda e: e.name)
+def test_every_field_an_entry_keeps_is_a_plain_value(entry):
+    """The cache stores what ``getattr`` hands back, and for a message or a
+    repeated field that is a live container INSIDE the message the RX thread
+    just decoded - shared with every other listener and read afterwards from
+    other threads.
+
+    Scalars are copied by value, so today there is nothing to share. This fires
+    the first time an entry keeps something composite, which is when that has to
+    be answered rather than assumed.
+    """
+    for message_class, plan in entry.feeds.items():
+        for name in sorted(plan.kept | plan.no_presence):
+            field = message_class.DESCRIPTOR.fields_by_name[name]
+            assert not field.is_repeated, (
+                f"{message_class.__name__}.{name} is repeated, so the cache "
+                f"would hold a live container from a message the RX thread owns")
+            assert field.type not in (field.TYPE_MESSAGE, field.TYPE_GROUP), (
+                f"{message_class.__name__}.{name} is a submessage, so the cache "
+                f"would hold a live container from a message the RX thread owns")
+
+
+@pytest.mark.parametrize("entry", entries.ENTRIES, ids=lambda e: e.name)
 def test_every_field_an_entry_names_exists_on_the_message_that_feeds_it(entry):
     """A misspelled field name is a field silently never applied."""
     for message_class, plan in entry.feeds.items():
@@ -528,6 +578,28 @@ def test_a_closed_cache_stops_listening(link):
     assert transport.listeners == []
 
 
+def test_a_closed_cache_will_not_say_what_it_remembers(link):
+    """`cached()` is a read too, and a closed one answering `{}` is not a
+    refusal - it reads as "the unit told us nothing"."""
+    transport, cache = link
+    transport.push(dirty_push(True))
+    assert cache.cached("dirty") == {"is_dirty": True}
+    cache.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        cache.cached("dirty")
+
+
+def test_a_closed_cache_will_not_say_what_it_would_do_next(link):
+    """`needs_read` flipped from True to False across `close()`, which is the
+    answer "the next read is free" about a cache whose next read raises."""
+    transport, cache = link
+    cache.mark_for_reread("dirty", "this test")
+    assert cache.needs_read("dirty") is True
+    cache.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        cache.needs_read("dirty")
+
+
 def test_closing_twice_is_harmless(link):
     transport, cache = link
     cache.close()
@@ -565,10 +637,16 @@ def test_an_echo_carrying_every_field_we_sent_confirms_the_write(link):
     assert watch.outcome is WatchOutcome.CONFIRMED
 
 
-def test_an_echo_the_unit_added_to_does_not_cry_wolf(link):
-    """The bar is one sentence: every field we sent came back with the value we
-    sent. NOT "the echo equals what we sent" - the unit legitimately changes
-    things nobody asked about, and section 10 lists four of them."""
+def test_an_echo_carrying_the_units_own_request_id_still_confirms(link):
+    """Narrow on purpose, and worth saying what it does NOT pin.
+
+    The scaffolding fields are stripped before the watcher sees the echo, so
+    this proves the stripping and nothing about the "every field we sent" rule -
+    an implementation demanding the whole echo equal what we sent passes it.
+    That rule needs an echo carrying a KEPT field we did not send, which no
+    entry here is wide enough to produce; ``tests/test_watch.py`` is where it
+    lives, and that is the file's stated reason for existing.
+    """
     transport, cache = link
     watch = cache.write_through("dirty", {"is_dirty": True}, send=lambda: None)
 
@@ -598,7 +676,45 @@ def test_the_unit_winning_a_disagreement_leaves_the_units_value_cached(link):
 
     transport.push(dirty_push(False))
 
-    assert cache.value("dirty", "is_dirty") is False
+    assert cache.cached("dirty")["is_dirty"] is False
+
+
+def test_a_disagreement_forces_a_reread_of_the_entry(link):
+    """A write the unit contradicted is a write we do not understand, so the
+    rest of what it claimed is not to be believed either."""
+    transport, cache = link
+    cache.write_through("dirty", {"is_dirty": True}, send=lambda: None)
+
+    transport.push(dirty_push(False))
+
+    assert cache.needs_read("dirty") is True
+
+
+def test_a_disagreement_does_not_leave_an_unconfirmed_field_behind(link):
+    """The case the mark is really for.
+
+    A write of two fields, an echo carrying only one of them, and that one
+    disagreeing. The other is a value we put in the cache ourselves, that the
+    unit never confirmed, in a write the unit has just demonstrated it disagreed
+    with - the "confidently wrong" state, reached down the one path that used to
+    clear up after itself least.
+
+    ``identity`` is used because it is the only entry today wide enough to have
+    a second field; the rule is about the mechanism, not about that entry, and
+    nothing in the model writes firmware.
+    """
+    transport, cache = link
+    cache.write_through("identity",
+                        {"app_fw_version": "MINE", "device_serial_number": "MINE"},
+                        send=lambda: None)
+
+    transport.push(version_reply(app_fw_version="THEIRS"))
+
+    assert cache.cached("identity")["device_serial_number"] == "MINE"
+    assert cache.needs_read("identity") is True
+    assert cache.value("identity", "device_serial_number") == "QCS0000001", (
+        "the unconfirmed field was never re-read, so the model kept answering "
+        "with a value it made up")
 
 
 def test_an_echo_that_never_comes_times_out_and_forces_a_reread(link):
@@ -694,6 +810,56 @@ def test_the_watchdog_does_not_outlive_the_connection(link):
             return
         time.sleep(0.02)
     pytest.fail("the write watchdog is still running after close()")
+
+
+def test_a_write_still_in_flight_when_the_connection_closes_does_not_hang(link):
+    """Nothing can settle it once the connection is gone, so nobody may wait.
+
+    ``settled()`` with its documented default waits forever, and the watchdog
+    deliberately does NOT call a closed connection's outstanding writes timed
+    out - that would be a claim about the unit rather than a fact. So the
+    waiting has to end without an outcome.
+    """
+    transport, cache = link
+    watch = cache.write_through("dirty", {"is_dirty": True}, send=lambda: None,
+                                patience=30.0)
+
+    cache.close()
+
+    started = time.monotonic()
+    assert watch.settled(timeout=5.0) is False
+    assert time.monotonic() - started < 1.0, (
+        "it waited out the timeout it was given, which with settled()'s "
+        "documented default of None is forever")
+    assert watch.outcome is None
+
+
+def test_a_write_that_races_the_close_leaves_no_thread_behind(link):
+    """The window between `write_through` checking the cache is open and the
+    watchdog starting its thread. A thread started there waits forever on a
+    connection nobody can reach."""
+    transport, cache = link
+    cache.close()
+
+    cache._watchdog.add(_a_watch_for_the_race())
+
+    assert not _watchdog_threads()
+
+
+def _a_watch_for_the_race():
+    from pyquadcortex.device.watch import WriteWatch
+    return WriteWatch("dirty", {"is_dirty": True}, time.monotonic() + 30.0)
+
+
+def test_the_watchdog_firing_as_the_connection_closes_does_not_raise(link):
+    """The watchdog is inside its callback when `close()` lands. Marking a slot
+    that is gone would raise on a thread with nobody to catch it."""
+    transport, cache = link
+    watch = cache.write_through("dirty", {"is_dirty": True}, send=lambda: None,
+                                patience=30.0)
+    cache.close()
+
+    cache._gave_up_on(watch)                   # no exception is the assertion
 
 
 def test_no_watchdog_runs_until_something_is_written(link):
