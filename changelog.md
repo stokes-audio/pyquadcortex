@@ -85,6 +85,41 @@ To use both layers in one script, wrap a connection you already have with
 `Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
 your connection open.
 
+### The model keeps up with the unit on its own
+
+Anything a `Device` tells you is what the unit is doing now, including changes you
+make on its touchscreen while your script is running. You do not have to re-read
+anything, and nothing you read comes with a "this might be out of date" warning.
+
+It works because the unit says when things change, and the model listens from the
+moment it connects. Connecting is also when the unit volunteers most of what it
+knows, in one burst, so the model usually has your answer before you ask for it.
+Where the unit says nothing - its firmware version, for one - the model asks, once,
+the first time you want it.
+
+```python
+import pyquadcortex
+
+with pyquadcortex.connect() as device:
+    print(device.firmware)      # asks the unit
+    print(device.firmware)      # free
+```
+
+Two things it will not do. It will not hand you a value the unit never sent: a
+field the unit left out raises rather than coming back as an empty string, and
+asking again can still succeed. And it will not answer at all once you close the
+`Device` - what it remembers stopped being true of the unit the moment the
+connection went away.
+
+If the unit mentions something the model does not yet understand, the model stops
+trusting that part of what it remembers and asks the unit next time you read it.
+Slower, and right. `device.state` shows you what it currently holds and what it is
+about to re-read.
+
+Presets, the grid and the Directory are not in the cache yet - they arrive with the
+surfaces that read them. Nor is reconnecting after the unit sleeps or the cable
+comes out; that is still your code's job for now.
+
 ### New: listen to everything the unit sends
 
 The unit talks without being asked. Turn a knob on its touchscreen, recall a

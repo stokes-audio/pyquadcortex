@@ -2,7 +2,7 @@
 
 > **What this is:** durable technical context for the pyquadcortex library - what the system is and why it is shaped this way.
 > **What this is not:** coding rules (see the repo-root `CLAUDE.md`) or decision rationale (see [`ADR.md`](ADR.md)).
-> **Last reviewed:** 2026-08-13 by Stokes
+> **Last reviewed:** 2026-08-14 by Stokes
 > **Owners:** Stokes
 
 ## 1. Purpose
@@ -37,7 +37,9 @@ Inside the protocol layer, a strict one-concern-per-file layering: `cli` → `se
 
 ### Data and state
 
-The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. It does carry one hook for a caller who wants to be told rather than to ask - `Transport.add_listener`, a subscription that sees every message the unit pushes for the life of the connection (ADR-0009) - but the transport stores none of it. The model layer (design in [`domain-model.md`](domain-model.md)) introduces a broadcast-fed write-through cache above `protocol/client.py`; at the time of writing the model is a skeleton and that cache is not built, so callers still hold whatever state they need.
+The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. It does carry one hook for a caller who wants to be told rather than to ask - `Transport.add_listener`, a subscription that sees every message the unit pushes for the life of the connection (ADR-0009) - but the transport stores none of it.
+
+The model layer holds the state (design in [`domain-model.md`](domain-model.md) sections 9 and 10, decided in ADR-0011). `pyquadcortex/device/state.py` is a write-through cache above `protocol/client.py`, fed by one persistent listener registered before the connect handshake so it hears the handshake's burst. It applies what the unit pushes as data rather than as an invalidation signal, asks the unit directly for what the unit never announces, and stops trusting a part of its copy when a message names a field the model does not keep. Reads happen on the caller's thread; the RX thread only ever merges and marks. What is tracked is a registry in `device/entries.py` rather than code, and it currently holds two of section 9's rows - the unit's identity and the unsaved-changes flag. The rest arrive with the surfaces that read them, so callers still hold whatever state the model does not yet cover.
 
 ## 4. Owned Paths
 
@@ -58,6 +60,7 @@ The protocol layer is stateless between calls: every read is a live exchange, an
 | Evidence-bearing docstrings | Each operation's docstring states what is confirmed on hardware vs inferred from the schema | The device gives no errors for wrong writes, so recorded evidence is the only trail | `QuadCortex.read_preset` in `pyquadcortex/protocol/client.py` | Non-protocol helpers (pure functions) carry ordinary docstrings |
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
 | One translation boundary | Screen values become wire values in exactly one module, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/` | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate.py` | The protocol layer, which keeps its zero-based indexes and raw scales |
+| Model state goes through the cache | A model property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py`, not an attribute the property fills in itself | One account of what the model believes and how it learned it. A property with its own cached attribute answers from a copy nothing invalidates, and a closed connection cannot take it away (see ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry rather than read from the unit, which compute from `value()` rather than caching alongside it |
 
 ## 6. Constraints
 
@@ -84,6 +87,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0008 | The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin |
 | ADR-0009 | Persistent listeners run on the RX thread, which may not read from the device |
 | ADR-0010 | A control with no known wire path gets a bounded search before it is modelled as refused |
+| ADR-0011 | A push merges, a read replaces, and anything the cache cannot place forces one read |
 
 ## 8. Open Questions
 
@@ -122,6 +126,45 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-14 - The model keeps its own copy of what the unit is doing (ADR-0011)
+
+**What changed:**
+- `pyquadcortex/device/state.py`: the write-through cache every model read now goes
+  through. One persistent listener (ADR-0009), registered before the connect handshake
+  so it hears the burst, applies what the unit pushes into a per-entry copy. Reads
+  happen on the caller's thread; the RX thread only merges and marks.
+- `pyquadcortex/device/entries.py`: what is tracked, as data rather than code - the
+  message types that carry each entry, the fields the model keeps from each, and the
+  read that fetches it. Two of `domain-model.md` section 9's rows so far.
+- `pyquadcortex/device/watch.py`: the write side - a watcher per write with section
+  10's three outcomes, and one watchdog thread per connection that does not start
+  until something is written.
+- `pyquadcortex/device/device.py`: `Device.firmware` and `.serial` read through the
+  cache instead of holding their own reply; `Device.state` exposes the layer;
+  `connect()` subscribes before the handshake and `close()` unsubscribes.
+- `tests/hardware/conftest.py`: the run's connection also carries a `DeviceState`
+  subscribed before the handshake, plus a snapshot of what the burst warmed, taken
+  before any test can read through it.
+
+**Why:** the model has to be right about a change somebody made on the touchscreen
+while a script was connected, and no property may ship with a "might be stale"
+caveat. Story OM-M1.3 (#11), Epic #8.
+
+**What this constrains going forward:**
+- A model property reads through `Device.state`, and what it reads is a `StateEntry`.
+  A property that caches its own answer is a second account of the same fact, with
+  nothing to invalidate it and nothing to take it away when the connection closes.
+- An entry with no read is not an entry. Section 9's table is longer than the
+  registry on purpose; each row lands with the surface that reads it.
+- The RX thread's rule is now load-bearing in the model as well as the transport:
+  push-handling code merges and marks and returns, and never reads.
+- A field with no wire presence needs recorded evidence before the model keeps it,
+  and `tests/test_state.py` holds every such declaration against the schema.
+
+**Not covered here:** reconnect and device loss (#15), the Directory, presets, the
+grid and parameters (#12 and after), and the counters and event taxonomy (#16). The
+log events this code emits are named for #16 to pick up, but nothing reads them yet.
 
 ### 2026-08-13 - One translation boundary, and the model package is `device/`
 

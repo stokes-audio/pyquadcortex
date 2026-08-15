@@ -926,7 +926,16 @@ class QuadCortex:
         2-11 ms across every measured poll (two independent hardware sessions).
         Reads true after an edit and false after a clean save - confirmed by
         watching it flip across a save. Also pushed unsolicited in the connect
-        burst and on edits, so state trackers can subscribe rather than poll.
+        burst, so state trackers can subscribe rather than poll.
+
+        **The push announces a CHANGE of the flag, not an edit.** Measured
+        2026-08-14 as a controlled pair in one connection: the same ``set_param``
+        write produced a ``Grid`` echo AND a ``PresetDirty`` when the preset was
+        clean, and a ``Grid`` echo and nothing else when it was already dirty.
+        So do not wait on this to confirm an edit landed - it will time out on an
+        already-dirty preset, correctly, because the unit said nothing. The
+        ``Grid`` echo is the per-edit signal. See ``protocol.md``,
+        "``PresetDirty`` announces a CHANGE of flag, not an edit".
 
         ``is_dirty`` has no field presence, so absent simply IS false - do not
         try to distinguish them. And like most reads here, the FIRST request

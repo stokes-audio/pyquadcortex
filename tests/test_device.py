@@ -13,13 +13,14 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
 class FakeClient:
-    """The two things the model asks of a protocol client, and no more.
+    """The four things the model asks of a protocol client, and no more.
 
     ``version()`` here decides the shape the model reads. The producer side of
     that agreement is pinned by
     ``test_the_real_client_returns_the_reply_shape_the_model_reads`` below, so
     this fake cannot drift away from what ``QuadCortex.version()`` actually
-    hands back.
+    hands back - and ``test_the_real_client_offers_what_the_model_subscribes_with``
+    does the same job for the subscription.
     """
 
     def __init__(self, firmware="d14e", serial="QCS0000001", omit=()):
@@ -28,15 +29,35 @@ class FakeClient:
         self._omit = set(omit)
         self.version_reads = 0
         self.closed = False
+        self.listeners = []
 
     def version(self, timeout=10.0):
         self.version_reads += 1
+        return self.version_message()
+
+    def version_message(self):
         reply = pa.VersionMessage(action=pa.MessageAction.UPDATE)
         if "app_fw_version" not in self._omit:
             reply.app_fw_version = self._firmware
         if "device_serial_number" not in self._omit:
             reply.device_serial_number = self._serial
         return reply
+
+    def add_listener(self, listener):
+        self.listeners.append(listener)
+        return lambda: self.remove_listener(listener)
+
+    def remove_listener(self, listener):
+        try:
+            self.listeners.remove(listener)
+        except ValueError:
+            return False
+        return True
+
+    def push(self, message):
+        """The unit volunteering something, as the RX thread would deliver it."""
+        for listener in list(self.listeners):
+            listener(message)
 
     def close(self):
         self.closed = True
@@ -51,13 +72,21 @@ class ReplyingTransport:
     def __init__(self, canned):
         self.canned = canned
         self.sent = []
+        self.listeners = []
 
     def send(self, msg):
         self.sent.append(msg)
 
     def request(self, msg, timeout=5.0):
         self.sent.append(msg)
-        return self.canned[type(msg).__name__]
+        reply = self.canned[type(msg).__name__]
+        for listener in list(self.listeners):
+            listener(reply)         # listeners see a reply first (ADR-0009)
+        return reply
+
+    def add_listener(self, listener):
+        self.listeners.append(listener)
+        return lambda: self.listeners.remove(listener)
 
 
 class FakeDevice:
@@ -71,7 +100,11 @@ class FakeDevice:
 
 
 class FakeTransport:
-    """Stands in for Transport: records lifecycle, swallows the handshake."""
+    """Stands in for Transport: records lifecycle, swallows the handshake.
+
+    ``happened`` is the running order of everything the connect path does to it,
+    which is what makes "before the handshake" checkable rather than assumed.
+    """
 
     instances = []
 
@@ -79,19 +112,39 @@ class FakeTransport:
         self.device = device
         self.started = False
         self.stopped = False
+        self.listeners = []
+        self.happened = []
         FakeTransport.instances.append(self)
 
     def start(self):
         self.started = True
+        self.happened.append("start")
 
     def stop(self, join_timeout=1.0):
         self.stopped = True
 
     def send(self, message):
-        pass
+        self.happened.append(f"send {type(message).__name__}")
 
     def request(self, message, timeout=None):
+        self.happened.append(f"request {type(message).__name__}")
         return message  # the handshake only needs *a* reply
+
+    def add_listener(self, listener):
+        self.listeners.append(listener)
+        self.happened.append("add_listener")
+        return lambda: self.remove_listener(listener)
+
+    def remove_listener(self, listener):
+        try:
+            self.listeners.remove(listener)
+        except ValueError:
+            return False
+        return True
+
+    def push(self, message):
+        for listener in list(self.listeners):
+            listener(message)
 
 
 @pytest.fixture
@@ -235,8 +288,11 @@ def test_an_incomplete_version_reply_is_not_cached():
 def test_a_closed_device_refuses_reads_it_could_have_served_from_cache(fake_stack):
     """The cache must not outlive the connection it was read over."""
     device = pyquadcortex.connect(settle=0)
-    device._version = _fake_version_reply()      # as if identity had been read
+    FakeTransport.instances[-1].push(_fake_version_reply())   # as the burst does
+    assert device.firmware == "d14e"
+
     device.close()
+
     for attribute in ("firmware", "serial", "client"):
         with pytest.raises(RuntimeError, match="closed"):
             getattr(device, attribute)
@@ -270,6 +326,20 @@ def test_connect_hands_every_argument_to_the_protocol_layer(monkeypatch):
     seconds of patience instead of 30, inside a documented 9 to 17 second
     openable-but-silent window.
     """
+    seen = _spy_on_protocol_connect(monkeypatch)
+    pyquadcortex.connect(timeout=1.5, settle=0.25, handshake_patience=45.0)
+    assert _without_the_hook(seen) == {
+        "timeout": 1.5, "settle": 0.25, "handshake_patience": 45.0}
+
+
+def test_connect_passes_its_defaults_through_unchanged(monkeypatch):
+    seen = _spy_on_protocol_connect(monkeypatch)
+    pyquadcortex.connect()
+    assert _without_the_hook(seen) == {
+        "timeout": 5.0, "settle": 2.0, "handshake_patience": 30.0}
+
+
+def _spy_on_protocol_connect(monkeypatch):
     seen = {}
 
     def spy(**kwargs):
@@ -277,13 +347,90 @@ def test_connect_hands_every_argument_to_the_protocol_layer(monkeypatch):
         return FakeClient()
 
     monkeypatch.setattr(protocol, "connect", spy)
-    pyquadcortex.connect(timeout=1.5, settle=0.25, handshake_patience=45.0)
-    assert seen == {"timeout": 1.5, "settle": 0.25, "handshake_patience": 45.0}
+    return seen
 
 
-def test_connect_passes_its_defaults_through_unchanged(monkeypatch):
-    seen = {}
-    monkeypatch.setattr(protocol, "connect",
-                        lambda **kw: (seen.update(kw), FakeClient())[1])
-    pyquadcortex.connect()
-    assert seen == {"timeout": 5.0, "settle": 2.0, "handshake_patience": 30.0}
+def _without_the_hook(seen):
+    """The numeric arguments, with the subscription hook checked and removed.
+
+    ``before_handshake`` gets its own tests below, where what matters is when it
+    runs rather than that it was passed.
+    """
+    assert callable(seen.get("before_handshake")), (
+        "the model did not subscribe before the handshake, so the connect "
+        "burst - nearly every state type the unit has - reaches nobody")
+    return {name: value for name, value in seen.items()
+            if name != "before_handshake"}
+
+
+# -- the model is listening before the unit starts talking -------------------
+
+
+def test_the_model_subscribes_before_the_handshake_says_a_word(fake_stack):
+    """The burst is the only moment the unit volunteers nearly everything it
+    knows, and it does not start until seconds after `connect()` returns. A
+    model that subscribed on the client it is handed would miss all of it and
+    read every value back one at a time."""
+    with pyquadcortex.connect(settle=0):
+        happened = FakeTransport.instances[-1].happened
+
+    assert "add_listener" in happened, "the model never subscribed"
+    talking = [step for step in happened
+               if step.startswith("send") or step.startswith("request")]
+    assert talking, "the handshake sent nothing, so ordering proves nothing here"
+    assert happened.index("add_listener") < happened.index(talking[0])
+
+
+def test_a_push_the_burst_delivered_answers_the_first_read_for_free(fake_stack):
+    """The whole point of subscribing that early."""
+    with pyquadcortex.connect(settle=0) as device:
+        FakeTransport.instances[-1].push(_fake_version_reply())
+        before = len(FakeTransport.instances[-1].happened)
+
+        assert device.firmware == "d14e"
+        assert device.serial == "QCS0000001"
+
+        assert len(FakeTransport.instances[-1].happened) == before, (
+            "the unit had already said so, and the model asked again")
+
+
+def test_closing_the_device_stops_the_model_listening(fake_stack):
+    with pyquadcortex.connect(settle=0) as device:
+        transport = FakeTransport.instances[-1]
+        assert transport.listeners
+    assert transport.listeners == []
+
+
+def test_from_client_listens_on_the_connection_it_was_handed(fake_stack):
+    """The burst is long over by then, so this cache starts cold - but an edit
+    made from here on still reaches it without anybody asking."""
+    qc = FakeClient()
+    device = Device.from_client(qc)
+    assert qc.listeners, "the model never subscribed to the connection"
+
+    qc.push(qc.version_message())
+
+    assert device.firmware == "d14e"
+    assert qc.version_reads == 0
+
+
+def test_closing_a_borrowed_device_stops_it_listening(fake_stack):
+    """It does not own the connection, so it has to leave it as it found it."""
+    qc = FakeClient()
+    Device.from_client(qc).close()
+    assert qc.listeners == []
+
+
+def test_the_real_client_offers_what_the_model_subscribes_with(fake_stack):
+    """Pins the producer, not just the fake.
+
+    Every listening test here runs against ``FakeClient.add_listener``. Without
+    this, the real client could rename or lose the method and they would all
+    still pass.
+    """
+    with protocol.connect(settle=0) as qc:
+        device = Device.from_client(qc)
+        transport = FakeTransport.instances[-1]
+        assert transport.listeners, "the model did not reach the transport"
+        device.close()
+        assert transport.listeners == []

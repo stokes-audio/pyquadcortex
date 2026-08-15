@@ -59,6 +59,22 @@ or one that stops recording but stays attached to the transport. Both read like 
 working recorder from the outside, so both are pinned offline in
 `tests/test_handshake_burst_recorder.py`.
 
+## The model's cache rides the same connection
+
+`test_model_state.py` covers the model's state layer, and the connection fixture
+attaches a `DeviceState` before the handshake for the same reason it attaches the
+burst recorder: that is the only moment early enough. It stays attached for the
+whole run and costs the RX thread one small message copy per `Version` or
+`PresetDirty` push - nothing at all for anything else, and orders of magnitude
+under the latencies measured below.
+
+It needs one thing of the unit that nothing else here does: **a loaded preset with
+no unsaved changes**. `PresetDirty` announces a CHANGE of the flag rather than an
+edit, so only the first edit of a run produces an announcement, and the test that
+proves an outside edit reaches the model needs that announcement. It skips with a
+message saying so if the preset arrives already dirty. If you see that skip, save
+or reload the preset on the unit and run again.
+
 ## Why the control test exists
 
 `test_parameter_echo_latency_is_the_control` measures a write whose latency was

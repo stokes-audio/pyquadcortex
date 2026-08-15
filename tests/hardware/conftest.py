@@ -124,9 +124,16 @@ def _connection():
     :mod:`pyquadcortex.protocol` and gets a ``QuadCortex``.
     ``pyquadcortex.connect()`` returns the model's ``Device`` instead (ADR-0006).
 
-    The burst recorder is attached for every run, not just the tests that read
-    it, because it cannot be attached later on demand: the burst happens during
-    ``connect``.
+    Two things are attached before the handshake, and neither can be attached
+    later on demand, because the burst happens during ``connect``:
+
+    * the burst recorder, for every run rather than only the tests that read it;
+    * the model's state layer, which is what ``pyquadcortex.connect()`` does at
+      exactly this point. It stays attached for the whole run, which costs the
+      RX thread one small message copy per ``Version`` or ``PresetDirty`` push
+      and nothing at all for anything else - orders of magnitude under the
+      hundred-millisecond latencies ``test_write_echo.py`` measures. Its own
+      tests are in ``test_model_state.py``.
 
     The fixture then waits for the burst to finish before handing the connection
     over, so the recording is exactly the burst whatever order the tests run in.
@@ -136,10 +143,26 @@ def _connection():
     a link that is still busy answering the handshake.
     """
     from pyquadcortex import protocol
+    from pyquadcortex.device import entries
+    from pyquadcortex.device.state import DeviceState
+
     burst = HandshakeBurst()
-    with protocol.connect(before_handshake=burst.attach) as client:
+    cache = DeviceState()
+
+    def subscribe(transport):
+        burst.attach(transport)
+        cache.listen_on(transport)
+
+    with protocol.connect(before_handshake=subscribe) as client:
+        cache.bind(client)
         burst.record_until("RecallPresetMessage", patience=30.0)
-        yield client, burst
+        # Taken here, before any test can read through the cache, so "the burst
+        # warmed this" cannot later be confused with "some test read it".
+        warmed = {entry.name: cache.cached(entry.name) for entry in entries.ENTRIES}
+        try:
+            yield client, burst, cache, warmed
+        finally:
+            cache.close()
 
 
 @pytest.fixture(scope="session")
@@ -152,6 +175,18 @@ def qc(_connection):
 def handshake_burst(_connection):
     """The :class:`HandshakeBurst` that listened through the connect handshake."""
     return _connection[1]
+
+
+@pytest.fixture(scope="session")
+def model_cache(_connection):
+    """The model's ``DeviceState``, subscribed since before the handshake."""
+    return _connection[2]
+
+
+@pytest.fixture(scope="session")
+def burst_warmed(_connection):
+    """What each cache entry held once the burst finished, before any test ran."""
+    return _connection[3]
 
 
 @pytest.fixture
