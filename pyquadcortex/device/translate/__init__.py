@@ -48,6 +48,12 @@ from pyquadcortex.device.translate.coordinates import (ROWS, SLOTS,
                                                        row_to_wire,
                                                        slot_from_wire,
                                                        slot_to_wire)
+from pyquadcortex.device.translate.grid import (SPLITTABLE_ROWS, Branch,
+                                                PlacedBlock, block_bypassed,
+                                                branches, path_b_of,
+                                                placed_blocks, routes_to_a_row,
+                                                row_input, row_output,
+                                                scene_name)
 from pyquadcortex.device.translate.letters import (FootswitchLetter, SceneLetter,
                                                    footswitch_from_wire,
                                                    footswitch_to_wire,
@@ -77,4 +83,8 @@ __all__ = [
     "tempo_bpm", "bpm_to_tempo",
     "tuner_reference_hz", "hz_to_tuner_reference",
     "hold_timing_ms", "ms_to_hold_timing",
+    "PlacedBlock", "Branch", "SPLITTABLE_ROWS",
+    "placed_blocks", "branches", "path_b_of",
+    "row_input", "row_output", "routes_to_a_row",
+    "block_bypassed", "scene_name",
 ]

@@ -24,6 +24,7 @@ import pytest
 import pyquadcortex
 from pyquadcortex import protocol
 from pyquadcortex.device import translate
+from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
 
 
 # -- rows: 1-4 on screen, 0-3 on the wire ------------------------------------
@@ -648,6 +649,7 @@ BOUNDARY_MODULES = frozenset({
     "letters",       # scene and footswitch letters
     "addresses",     # "28C" and its linear position
     "units",         # dB, Hz, bpm, milliseconds
+    "grid",          # a whole wire preset, renumbered for the screen
 })
 
 
@@ -816,12 +818,74 @@ PROTOCOL_CONVERSIONS = {
     "blocks", "Block", "stomp_assignments", "StompAssignment",
     "free_rows", "row_status", "RowStatus", "input_chain_rows",
     "splits", "Split",
+    # `bypass_state` is here for what it HANDS OVER, not for what it takes:
+    # `BypassState.scenes` is an eight-tuple keyed by the WIRE's scene index, so
+    # a model module reading `scenes[1]` for scene B has done the conversion
+    # this boundary exists to own - with no `- 1` anywhere in sight. That it
+    # also TAKES a wire row and column is the other half.
+    "bypass_state", "BypassState",
 }
 #: Deliberately NOT here, having been considered: `beats` (already keyed by the
 #: 1-based BEAT the screen shows, so nothing is left to convert), `param_options`
 #: (option NAMES, no coordinate and no scale) and `describe_mode` (names a mode
 #: for a log line). Listing those would make the check fire on model code that
 #: has no conversion to do, which teaches people to work around it.
+
+#: Protocol-layer names the BOUNDARY uses that are not conversions, so every
+#: model module may use them too.
+#:
+#: This exists because the derived check below holds the boundary to "everything
+#: you reach for is a conversion, because converting is all you do". That was
+#: true while the boundary converted scalars. It stopped being true when the
+#: boundary started reading whole presets, because reading one needs a presence
+#: check and the port enums, and neither carries a coordinate or a raw scale.
+#: Without this set the check would force `field_present` onto the ban list -
+#: and the root `CLAUDE.md` REQUIRES every model property that reads a device
+#: field to call it, so that is a rule the codebase cannot have.
+#:
+#: The criterion is the one `PROTOCOL_CONVERSIONS` uses: what does the name HAND
+#: OVER? A row, a slot, a scene index, a footswitch index or a raw scale belongs
+#: above. A bool, a port id or a name does not.
+#:
+#: Keep it short and keep a reason on every entry. A real conversion parked here
+#: instead of above is the one way this pair of lists can rot, and no test can
+#: catch that - only a reviewer reading the reason can.
+PROTOCOL_NON_CONVERSIONS = {
+    # Hands over a bool about a field's presence. Every model property that
+    # reads a device field is required to call it, so it could never be banned.
+    "field_present",
+    # Port ids, not coordinates. `row.output.destination` IS one of these, and
+    # a port number is not a row, a slot, a scene or a footswitch.
+    "Input", "Output",
+    # Three members of `Output`, which the scan sees separately. Their NAMES
+    # carry a row number but the values do not - they hand over 16, 17 and 18 -
+    # and `translate.routes_to_a_row` deliberately refuses to report which row
+    # they feed, because that reading is obvious rather than confirmed.
+    "NEXT_ROW_3", "NEXT_ROW_4", "NEXT_ROW_3_4",
+}
+
+
+def test_the_two_protocol_lists_do_not_overlap():
+    """A name on both lists is banned and permitted at once, and which one wins
+    is whichever check runs. That is worse than either answer."""
+    both = sorted(PROTOCOL_CONVERSIONS & PROTOCOL_NON_CONVERSIONS)
+    assert not both, (
+        f"{both} is on the ban list AND on the not-a-conversion list. Decide "
+        f"which it is: does it hand over a coordinate or a raw scale?")
+
+
+def test_every_non_conversion_is_a_real_protocol_name():
+    """Same reason the ban list has this check: a misspelling here silently
+    widens what the boundary is allowed to reach for."""
+    missing = object()
+    unresolved = sorted(
+        name for name in PROTOCOL_NON_CONVERSIONS
+        if getattr(protocol, name, missing) is missing
+        and getattr(protocol.Output, name, missing) is missing
+    )
+    assert not unresolved, (
+        f"{unresolved} is on the not-a-conversion list but is not a name the "
+        f"protocol layer publishes, so it excuses nothing")
 
 
 def _protocol_aliases(tree: ast.AST) -> set:
@@ -952,20 +1016,31 @@ def test_the_allowlist_covers_everything_the_boundary_delegates_to():
     nothing says a word. That is not hypothetical: PR #22 added `tempo_bpm` and
     `bpm_to_tempo`, and they sat unlisted until this branch put them in by hand.
 
-    Derived rather than listed, so it cannot rot the same way: whatever
-    `translate.py` reaches into the protocol layer for is a conversion by
-    definition, because converting is all that module does.
+    Derived rather than listed, so it cannot rot the same way: a name the
+    boundary reaches for has to be ACCOUNTED FOR, in one list or the other,
+    before this passes.
+
+    It used to be stronger than that, and the weakening is worth stating.
+    The rule was "whatever the boundary reaches for IS a conversion, because
+    converting is all it does", with no second list at all. That held while the
+    boundary converted scalars. Reading a whole preset broke it: `field_present`
+    and the port enums are neither conversions nor bannable, so the choice was
+    a second list or a false rule. What is left is still the direction that
+    rots - a new conversion cannot arrive silently - but the reviewer now has to
+    check WHICH list a new name went into. `PROTOCOL_NON_CONVERSIONS` carries a
+    reason per entry for exactly that reading.
     """
     reached = set()
     for source in BOUNDARY_SOURCES:
         reached |= _protocol_names_reached(ast.parse(source.read_text()))
     assert reached, "the boundary reaches for nothing - this check is vacuous"
-    unlisted = sorted(reached - PROTOCOL_CONVERSIONS)
+    unlisted = sorted(reached - PROTOCOL_CONVERSIONS - PROTOCOL_NON_CONVERSIONS)
     assert not unlisted, (
         f"the translation boundary delegates to the protocol layer's "
-        f"{unlisted}, which is not in PROTOCOL_CONVERSIONS - so every other "
-        f"module in the package may call it directly and this suite will not "
-        f"notice")
+        f"{unlisted}, which is on neither list. If it hands over a row, a slot, "
+        f"a scene or footswitch index, or a raw scale, put it in "
+        f"PROTOCOL_CONVERSIONS so no other module may call it. If it does not, "
+        f"put it in PROTOCOL_NON_CONVERSIONS with the reason.")
 
 
 #: The four functions the exclusion exists for. Named, because "somewhere in
@@ -1155,3 +1230,192 @@ def test_the_letter_types_and_the_address_are_public():
     assert pyquadcortex.SceneLetter is translate.SceneLetter
     assert pyquadcortex.PresetAddress is translate.PresetAddress
     assert not hasattr(pyquadcortex, "row_to_wire")
+
+
+# -- a wire preset, read in the numbers the screen shows ----------------------
+#
+# The conversions above are checked one value at a time. These read a REAL
+# preset payload, because the mistakes that survive a unit-value test are the
+# ones about shape: every row reports eight slots whether or not they hold
+# anything, a branch's columns are not on the splitter block, and the bypass
+# table is keyed by wire scene index.
+
+PRESETS = pathlib.Path(__file__).parent / "fixtures" / "presets"
+
+
+def _preset_fixture(name):
+    payload = preset_pb.BinaryPreset()
+    payload.ParseFromString((PRESETS / name).read_bytes())
+    return payload
+
+
+@pytest.fixture
+def structural():
+    return _preset_fixture("structural_preset.bin")
+
+
+@pytest.fixture
+def split():
+    return _preset_fixture("split_preset.bin")
+
+
+def test_placed_blocks_are_numbered_the_way_the_screen_numbers_them(structural):
+    """The fixture's first block is wire row 0 column 0, which is row 1 slot 1."""
+    placed = translate.placed_blocks(structural)
+    assert placed[0].row == 1 and placed[0].slot == 1
+    assert {b.row for b in placed} == {1, 3}, (
+        "the fixture holds blocks on wire rows 0 and 2")
+    assert max(b.slot for b in placed) == 8, "wire column 7 is slot 8"
+    assert min(b.slot for b in placed) == 1
+
+
+def test_every_placed_block_agrees_with_the_protocol_layer(structural):
+    """Same cells, two vocabularies. The only difference must be the numbering."""
+    wire = protocol.blocks(structural)
+    screen = translate.placed_blocks(structural)
+    assert len(screen) == len(wire)
+    for w, s in zip(wire, screen):
+        assert s.row == translate.row_from_wire(w.row)
+        assert s.slot == translate.slot_from_wire(w.column)
+        assert s.device_id == w.model_id
+
+
+def test_only_rows_1_and_3_can_start_a_branch():
+    assert translate.SPLITTABLE_ROWS == (1, 3)
+
+
+def test_path_b_is_the_row_below():
+    assert translate.path_b_of(1) == 2
+    assert translate.path_b_of(3) == 4
+
+
+@pytest.mark.parametrize("row", [2, 4])
+def test_a_row_that_cannot_branch_has_no_path_b(row):
+    with pytest.raises(ValueError, match="1 or 3"):
+        translate.path_b_of(row)
+
+
+def test_a_preset_with_no_branch_reports_none(structural):
+    assert translate.branches(structural) == ()
+
+
+def test_the_split_fixture_still_holds_the_two_shapes_it_is_for(split):
+    """The fixture is DERIVED (see make_split_preset.py). If it were ever
+    regenerated from a serial source, every branch test below would pass by
+    reading nothing, so the fixture's own shape is asserted first."""
+    wire = protocol.splits(split)
+    assert len(wire) == 2, "one branch that rejoins, one that does not"
+    assert [s.rejoins for s in wire] == [False, True]
+
+
+def test_a_branch_is_numbered_the_way_the_screen_numbers_it(split):
+    branch = translate.branches(split)[0]
+    assert branch.row == 1, "wire row 0 is screen row 1"
+    assert branch.at == 3, "wire column 2 is slot 3"
+    assert branch.path_b == 2
+
+
+def test_a_branch_that_never_rejoins_says_so(split):
+    """`mix` is -1 for a lane that never recombines, and -1 is a real column
+    number away from being read as one. It has to come back as None."""
+    assert translate.branches(split)[0].rejoins_at is None
+
+
+def test_a_branch_that_rejoins_reports_where(split):
+    branch = translate.branches(split)[1]
+    assert branch.row == 3
+    assert branch.at == 4, "wire column 3 is slot 4"
+    assert branch.rejoins_at == 5, "wire column 4 is slot 5"
+    assert branch.path_b == 4
+
+
+def test_the_splitter_and_the_mixer_are_not_the_same_slot(split):
+    """A reader that returned `at` for `rejoins_at` would pass a test whose
+    fixture branched and rejoined in the same column."""
+    branch = translate.branches(split)[1]
+    assert branch.at != branch.rejoins_at
+
+
+def test_every_branch_agrees_with_the_protocol_layer(split):
+    wire = protocol.splits(split)
+    screen = translate.branches(split)
+    assert len(screen) == len(wire)
+    for w, s in zip(wire, screen):
+        assert s.row == translate.row_from_wire(w.row)
+        assert s.at == translate.slot_from_wire(w.split_column)
+        assert s.path_b == translate.row_from_wire(w.lane_row)
+        if w.rejoins:
+            assert s.rejoins_at == translate.slot_from_wire(w.mix_column)
+        else:
+            assert s.rejoins_at is None
+
+
+def test_a_wire_column_no_row_has_is_refused_when_a_preset_is_read(structural):
+    """The renumbering VALIDATES rather than just adding one. A preset carrying
+    column 99 is a preset something wrote wrongly, and reporting slot 100 would
+    pass it on as though the screen could show it."""
+    structural.chains[0].models[0].column = 99
+    with pytest.raises(ValueError, match="0 to 7"):
+        translate.placed_blocks(structural)
+
+
+def test_the_row_input_is_the_port_the_unit_reports(structural):
+    assert translate.row_input(structural, 1) == protocol.Input.INPUT_1
+
+
+def test_an_output_that_feeds_another_row_is_recognised(structural):
+    destination = translate.row_output(structural, 1)
+    assert destination == protocol.Output.NEXT_ROW_3
+    assert translate.routes_to_a_row(destination)
+
+
+def test_a_real_destination_is_not_a_row(structural):
+    assert not translate.routes_to_a_row(translate.row_output(structural, 3))
+    assert not translate.routes_to_a_row(protocol.Output.XLR_1_2)
+
+
+def test_a_row_the_screen_does_not_show_has_no_chain(structural):
+    with pytest.raises(ValueError, match="1 to 4"):
+        translate.row_input(structural, 5)
+
+
+def test_bypass_reads_through_the_scene_letter(structural):
+    """The wire keys the eight bypass slots by scene INDEX; the model asks by
+    letter, and this is the only place that mapping happens."""
+    wire = protocol.bypass_state(structural, 0, 0)
+    for letter in LETTERS:
+        assert translate.block_bypassed(structural, 1, 1, letter) is \
+            wire.scenes[protocol.Scene[letter]]
+
+
+def test_bypass_tells_two_scenes_apart(structural):
+    """The fixture stores the same flag in all eight, so drive them apart first
+    - otherwise this test passes on a reader that ignores the scene entirely."""
+    cell = structural.bypass[0].colBypass[0]
+    cell.sceneMode = True
+    cell.sceneBypass[0].bypass = True
+    cell.sceneBypass[1].bypass = False
+    assert translate.block_bypassed(structural, 1, 1, "A") is True
+    assert translate.block_bypassed(structural, 1, 1, "B") is False
+
+
+def test_bypass_refuses_a_bare_scene_number(structural):
+    with pytest.raises(TypeError):
+        translate.block_bypassed(structural, 1, 1, 1)
+
+
+def test_a_scene_name_is_read_by_letter(structural):
+    assert translate.scene_name(structural, "A") == "Scene A"
+    assert translate.scene_name(structural, translate.SceneLetter.H) == "Scene H"
+
+
+def test_an_unlabelled_scene_reads_as_no_name(structural):
+    """The unit stores a single space for "no label" and shows the letter
+    instead, so `label == ""` does not detect it (protocol.SCENE_UNLABELLED)."""
+    structural.scene_labels[1] = protocol.SCENE_UNLABELLED
+    assert translate.scene_name(structural, "B") == ""
+
+
+def test_a_scene_name_refuses_a_bare_number(structural):
+    with pytest.raises(TypeError):
+        translate.scene_name(structural, 1)
