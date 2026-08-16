@@ -448,33 +448,6 @@ SCENE = StateEntry(
 )
 
 
-def covers_the_whole_entry(entry: StateEntry, plan: FieldPlan) -> bool:
-    """Whether a message of this type can be the unit's WHOLE answer for ``entry``.
-
-    A push that carries every field an entry keeps is the same thing a read
-    returns, so it replaces rather than merges - and an entry holding the unit's
-    own complete answer has nothing left to re-read. That is what lets the
-    connect burst leave the cache genuinely warm rather than nominally warm:
-    measured 2026-08-15, the burst delivers ``RecallPreset``,
-    ``SetlistPosition``, ``PresetDirty`` and ``Scene`` in that order inside 10
-    ms, so two of the four entries are marked by a message and then answered in
-    full by the next one.
-
-    Three conditions, and none of them is decoration:
-
-    * the plan's fields have to be the entry's WHOLE field set. Without this a
-      plan that keeps nothing - every ``invalidates`` plan - would qualify
-      vacuously, and a ``Grid`` push would clear the mark it had just set.
-    * the plan must not void the copy, because those types say the entry is
-      wrong whatever they carry.
-    * the message must actually carry them, which the caller checks; a partial
-      push is exactly what this must not clear on.
-    """
-    if plan.voids_the_copy():
-        return False
-    return (plan.kept | plan.no_presence) == entry.fields()
-
-
 #: Everything the cache tracks. Section 9's table still has more rows than this
 #: - the setlists, recents and favourites, and the device-level settings - and
 #: each arrives with the surface that reads it. An entry with no reader would be

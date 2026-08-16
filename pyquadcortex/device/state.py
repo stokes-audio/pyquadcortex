@@ -220,14 +220,20 @@ class DeviceState:
             if moved:
                 announce.append(Changed(entry.name, moved))
             why = self._why_untrusted(plan, unkept, message)
-            if why is None and slot.needs_read and not unkept \
-                    and entries.covers_the_whole_entry(entry, plan) \
-                    and set(applied) == entry.fields():
-                # The unit just told us everything this entry holds, which is
-                # what a read gets - so there is nothing left to ask it. This is
-                # what makes the connect burst warm rather than nominally warm:
-                # it marks two entries and then answers both in full, in that
-                # order, inside ten milliseconds.
+            # The unit telling us everything this entry holds is the same
+            # thing a read returns, so it replaces rather than merges and
+            # there is nothing left to ask about. That is what makes the
+            # connect burst leave the cache warm rather than nominally warm:
+            # measured, it marks two entries and answers both in full, in that
+            # order, inside ten milliseconds.
+            #
+            # Judged on what the MESSAGE carried, not on what its plan could
+            # carry. A plan-level version of this check was written first and
+            # every branch of it turned out to be unreachable - a plan that
+            # voids the copy never gets here, because `why` is not None for it,
+            # and a plan keeping nothing cannot match a non-empty field set.
+            answered = not unkept and set(applied) == entry.fields()
+            if why is None and slot.needs_read and answered:
                 slot.needs_read = False
                 log.debug("cache.answered %s - a %s carried the whole entry",
                           entry.name, type(message).__name__)

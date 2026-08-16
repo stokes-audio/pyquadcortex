@@ -166,3 +166,39 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   - A write the unit CONTRADICTS marks the entry too, which section 10 does not ask for. Section 10 asks for a log line, on the reasoning that a disagreement is a bug in our code rather than a stale cache. That is true of the field the unit named, whose value the echo has just put right. It is not true of the other fields in the same write: those went into the cache on our say-so, the echo did not carry them, and the write they belonged to is one the unit has just demonstrated it disagreed with. Leaving them there makes the one path that means "we have a bug" the one that cleans up after itself least, so it marks - which costs one read on a path that should never run.
   - `action` and `request_id` are skipped on every entry, and only one of them is really the transport's. `request_id` always is. `action` is not: on `Grid` it is load-bearing state, because an `UPDATE` carrying `hash: 0` is transmitted and ignored while the same payload with `action: DELETE` removes the block. It is skipped today because the two tracked message types give it no meaning, and a `Grid` entry (issue #12) therefore cannot inherit the skip - two pushes with identical payloads and opposite meanings would apply identically and mark nothing. That entry gives `action` its own decision rather than widening the shared set.
   - A field the wire gives no presence and the entry does not KEEP is undetectable rather than merely unkept: proto3 writes such a field only when it differs from its default, so a message leaving one at its default carries no bytes for it and no implementation of this check could see it. `tests/test_state.py` asserts no feeding type has one, which turns a limit of the wire into a question about our own code, checkable and checked.
+
+## ADR-0012: A grid push is noted and re-read, not merged, and the model publishes what it noticed
+
+**Status:** Accepted - 2026-08-15
+
+**Context.** An edit on the touchscreen produces about forty `Grid` pushes, each a sparse
+keyed delta into a deeply nested preset payload. Merging one means applying it by key -
+chain by row, model by column, parameter by index - and, to keep ADR-0011's per-field
+honesty, walking that structure recursively to notice anything the model does not
+represent. `Grid` also carries its meaning in `action`, which the wire gives no presence,
+so an `UPDATE` and a `DELETE` with identical payloads are indistinguishable to a
+field-by-field reading; `SceneLabel` is worse, giving `index` and `label` no presence
+either, so renaming a scene to a blank label sets nothing a field check can observe.
+
+**Decision.** A message of those types voids the entry's copy outright, whatever it
+appears to carry, and the next read fetches the whole live preset -
+`RecallPreset{READ}`, which has no side effects. Forty pushes cost one read, because the
+note is a flag rather than a queue. Alongside it, the model publishes `Changed` and
+`Invalidated` on `device.events`, delivered on a thread the model owns so that a
+subscriber may do the obvious thing and read the fresh value itself.
+
+**Consequences.** The first property read after an on-unit edit is a round trip, where a
+merging cache would have answered instantly; a caller who cannot afford that subscribes
+and re-reads eagerly. The recursive check that merging would need - which is where all of
+its risk sits - is deferred rather than written next to the objects three other stories
+depend on, and what it would take is recorded in `domain-model.md` §9 so that deferring it
+is a decision rather than an omission. The event thread is the model's first, and its
+contract is the opposite of the RX thread's: reading from the device is allowed there, and
+expected.
+
+**Alternatives considered.** Merging the deltas, rejected for the reason above. Delivering
+events on the RX thread, rejected because ADR-0009 forbids reading there, which would make
+the feature unusable for the one thing it is for. Treating `action` as scaffolding on
+`Grid` the way it is treated everywhere else, rejected because two pushes with identical
+payloads and opposite meanings would then apply identically and mark nothing.
+

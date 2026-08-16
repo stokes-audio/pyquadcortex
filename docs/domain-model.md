@@ -262,6 +262,27 @@ class Scene:
     def activate(self) -> None: ...     # audible - explicit, like recall
 ```
 
+> **Sections 2 and 3 are built**, less the parts that need the Directory or a write.
+> `device.preset`, `preset.rows`, `row.slots`, `preset.blocks`, `scene.blocks`,
+> `scenes.active`, `scene.name`, `scene.activate()`, splits, routing,
+> `has_unsaved_changes` and `is_current` all read on hardware. Four things named above
+> are deliberately NOT built, and each is an omission rather than a caveat (principle 3):
+>
+> * **`UserPreset` / `FactoryPreset`.** Which one you hold is a Directory fact, and the
+>   only method that separates them - `save()` - is M2. A type split with nothing in it
+>   would be shape without meaning, so `device.preset` is a `Preset` until the split
+>   carries a method.
+> * **`preset.instrument`** lives on the directory listing rather than in the preset, as
+>   §11 says. It arrives with the Directory.
+> * **`preset.address`** needs the Directory to say which setlist a position is in.
+>   `SetlistPosition{READ}` is confirmed and the model tracks the loaded slot already;
+>   what is missing is the setlist, not the read.
+> * **Which row an output feeds.** `Output.NEXT_ROW_3` almost certainly means screen row
+>   3 - the unit has four rows and the names fit - but almost certainly is a guess, and a
+>   wrong row is the silent failure this whole design is arranged against. So
+>   `output.destination` reads as the port it is, and `output.lane` is absent when that
+>   port feeds a row, which is what the screen shows and is the part that can be checked.
+
 **The scene/grid duality.** Blocks are placed once per preset; bypass state and
 scene-following parameter values vary per scene. There is exactly one `Block` object
 per occupied cell, and a `BlockGrid` is a *binding* of the grid to a scene context:
@@ -273,6 +294,13 @@ per occupied cell, and a `BlockGrid` is a *binding* of the grid to a scene conte
 Scene-invariant facts (which device is placed, its position, its non-scene parameters)
 are identical through every binding; scene-varying state differs. The two paths cannot
 disagree because the object underneath is the same.
+
+> **As built, "one object" means one CELL, not one Python object.** Two bindings hand
+> back two handles on the same cell. They have to: a single object could not answer
+> `bypassed` differently for `preset.blocks` and `sceneB.blocks`, which is the whole
+> point of a binding. What the handles share is the payload underneath, so where a block
+> is and which device is in it cannot differ between them. They compare EQUAL, and `is`
+> is not the test - within one binding the same handle does come back.
 
 Writing through a *non-active* scene's binding is **refused**, because the unit has no
 way to do it without switching scenes first - which would change what you hear and leave
@@ -777,6 +805,38 @@ The check is per FIELD, not per message type. Applying the half of a message we
 understand and silently dropping the rest is the one failure mode that leaves the cache
 confidently wrong, so it is the case this rule exists to catch.
 
+**Two message types are handled by type rather than by field, because the per-field
+check cannot see them.** `Grid` carries its meaning in `action`, which the wire gives no
+presence, so an `UPDATE` and a `DELETE` with the same payload look identical to a
+field-by-field reading. `SceneLabel` gives `index` and `label` no presence either, so
+renaming scene A to a blank label sets *nothing at all* that a field check can observe.
+Both are therefore declared as voiding the copy outright: every message of those types
+means the preset moved, whatever it appears to carry. That is each entry's own decision
+about `action`, made per entry and per type; the shared scaffolding skip is not widened.
+
+**A grid push is not merged.** A `Grid` echo is a sparse, keyed delta into a deeply
+nested structure. Rather than apply it, the model notes that the grid moved and re-reads
+the whole live preset on the next access. One edit on the touchscreen produces about
+forty of these and costs exactly one re-read, because the note is a flag rather than a
+queue, and `RecallPreset{READ}` has no side effects.
+
+What merging would take, if it is ever worth doing: each push applied BY KEY into the
+stored payload - chain by row, model by column, parameter by index - and, to stay honest,
+the "did this mention something we do not model" check walking that structure recursively
+instead of reading the top level. The prize is that reads stay instant while somebody is
+editing on the unit. The reason it is not M1 is that the recursive check is where all of
+its risk sits, and it would have sat next to the objects three other stories are blocked
+on. A caller who needs the fresh value sooner subscribes to `device.events` - below - and
+reads it themselves.
+
+**A push carrying every field an entry keeps clears the mark.** It is the same thing a
+read returns, so it replaces rather than merges, and an entry holding the unit's own
+complete answer has nothing left to ask about. This is what makes the connect burst leave
+the cache genuinely warm rather than nominally warm: measured 2026-08-15, the burst
+delivers `RecallPreset`, `SetlistPosition`, `PresetDirty` and `Scene` in that order
+inside ten milliseconds, so two entries are marked by one message and answered in full by
+the next.
+
 **3. When we write, we update our copy immediately.** The unit echoes our own change
 back, and that echo confirms it. Because we already applied it, a matching echo changes
 nothing - one code path, not two. Waiting for the echo before updating would make every
@@ -792,11 +852,11 @@ happens when an echo does disagree.
 
 | What | Where you read it | How we ask | What tells us it changed |
 |---|---|---|---|
-| The preset on the grid now | `device.preset` | `RecallPreset{READ}` | `Grid`, `RecallPreset` |
-| Which scene is active | `preset.scenes.active` | `Scene{READ}` | `Scene` |
+| The preset on the grid now | `device.preset` (**built**) | `RecallPreset{READ}` | `Grid`, `RecallPreset` |
+| Which scene is active | `preset.scenes.active` (**built**) | `Scene{READ}` | `Scene` |
 | Scene names and colors | `scene.name` | comes with the preset | `SceneLabel`, `SceneColor` |
-| Unsaved edits | `preset.has_unsaved_changes` | `PresetDirty{READ}` | `PresetDirty` |
-| Which preset is loaded | `preset.address` | `SetlistPosition{READ}` | `SetlistPosition` |
+| Unsaved edits | `preset.has_unsaved_changes` (**built**) | `PresetDirty{READ}` | `PresetDirty`, and a recall - which pushes NOTHING, so it is re-read |
+| Which preset is loaded | `preset.is_current` (**built**); `preset.address` needs the Directory | `SetlistPosition{READ}` - confirmed 2026-08-15, 3 ms | `SetlistPosition` |
 | What is in a setlist | `setlist` iteration | `File{READ}` | `File` |
 | Recents and favorites | `device.recents`, `.favorites` | `RecentsFavorites{READ}` | `RecentsFavorites` |
 | I/O, settings, EQ, volume, mode | `device.io` and friends | one READ each | one push each |
@@ -806,6 +866,33 @@ happens when an echo does disagree.
 The third column is the safety net. Wherever the fourth turns out to be unreliable, we
 ask instead of remembering, which is what lets the model honour principle 3 and never
 hand back a value with a "might be stale" caveat.
+
+### Telling a caller what we noticed
+
+Re-reading only happens when somebody asks for a value, which is too late for a script
+following the unit closely. So the model publishes what it noticed, and a subscriber can
+fetch the fresh value itself:
+
+```python
+with pyquadcortex.connect() as device:
+    device.events.subscribe(print)
+```
+
+Two events, both about the model's copy rather than about the wire. `Changed(part,
+fields)` when a push moved a value we hold, and `Invalidated(part, why)` when we stopped
+trusting our copy of something. Two rules keep the stream usable: `Invalidated` fires on
+the change from trusted to untrusted, so one edit on the touchscreen produces one event
+rather than forty, and `Changed` fires only when a value really moved, so the unit
+restating what it has already said is silent.
+
+**A subscriber runs on a thread the model owns, and may read from the unit.** That is the
+whole reason the thread exists. Messages arrive on the RX thread, which may not read
+([§9](#9-how-the-model-keeps-its-facts-current) rule 5, ADR-0009), so handing an event
+over there would make the obvious reaction - go and re-read it - raise. The RX thread
+queues; the model's thread delivers. The costs are ordinary and worth stating: an event
+can lag by however long the subscribers ahead of it take, they are served one at a time
+in subscription order, and a subscriber that blocks forever holds up the ones behind it.
+None of that can delay the unit.
 
 ### Smaller decisions
 
@@ -1332,3 +1419,25 @@ the n/a rows below where they intersect the API at all.
   block `model` in code (`models.py`, `Model`, `ModelCatalog`) and will keep doing so,
   whatever §5 renamed the concept to in this document. No design changed here; this
   records what is now code.
+- **2026-08-15** - M1 story #12 lands the preset surface: `device.preset`, the four
+  rows, the eight slots, blocks, splits, routing, the eight scenes and both grid
+  bindings, plus `device.events`. Issue #12 was SPLIT on the way in - the Directory half
+  needs the cache to handle a read that answers with a STREAM of several hundred
+  messages, which `StateEntry` says in as many words it does not carry yet, and that work
+  should not sit beside the objects three other stories are blocked on.
+
+  A hardware session corrected three things this document had implied. The connect burst's
+  seed `RecallPreset` DOES set `reason`, so an entry that drops it is marked stale by the
+  very burst that warmed it. A recall pushes `Grid`, `RecallPreset`, `Scene` and
+  `SetlistPosition` and **no `PresetDirty` at all**, so the unsaved-changes flag has to be
+  re-read after a recall rather than waited for - §9's "recalling resets three things
+  together" is right about the unit and needed spelling out for the model. And
+  `SetlistPosition{READ}` really does answer, in 3 ms, which this document's own table
+  claimed and nobody had checked; the model tracks the loaded slot from it rather than
+  counting recall events, so `is_current` compares a fact the unit stated.
+
+  §9 gains the rules those needed: two message types are handled by type rather than by
+  field because the per-field check cannot see them, a grid push is noted rather than
+  merged with what merging would take written down beside it, and a push carrying every
+  field an entry keeps clears the mark the way a read does. §2 and §3 record what is built
+  and, more usefully, the four things deliberately left out and why.
