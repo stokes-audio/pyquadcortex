@@ -13,14 +13,17 @@ rule can actually be exercised.
 """
 import collections
 import logging
+import pathlib
 import threading
 import time
 
 import pytest
 
-from pyquadcortex.device import entries, state
+from pyquadcortex.device import entries, events, state
+from waiting import stays_quiet, wait_for
 from pyquadcortex.device.watch import WatchOutcome
 from pyquadcortex.protocol import client as protocol_client
+from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
@@ -35,6 +38,7 @@ class LoopbackTransport:
 
     def __init__(self):
         self.replies = {}
+        self.broadcasts = {}
         self.sent = []
         self.reads = collections.Counter()
         self.listeners = []
@@ -58,6 +62,39 @@ class LoopbackTransport:
 
     def next_request_id(self):
         return next(self._ids)
+
+    def await_broadcast(self, message_class, trigger, timeout=5.0, match=None):
+        """The reads that wait for a PUSH rather than for a reply.
+
+        `read_current_preset` and `active_scene` both work this way: they send a
+        READ and wait for the broadcast that echoes its request id. Replies live
+        in :attr:`broadcasts` rather than :attr:`replies`, keyed the same way,
+        and are called with the message that triggered them so a canned answer
+        can echo the id the real one would.
+
+        The reply is held to the caller's own ``match`` before it is handed
+        back. Without that, a test could set an answer the real code would have
+        rejected and never know - which is the failure mode that makes a double
+        worse than no test.
+        """
+        name = message_class.__name__
+        self.reads[name] += 1
+        trigger()
+        try:
+            reply = self.broadcasts[name]
+        except KeyError:                          # pragma: no cover - a test bug
+            raise AssertionError(
+                f"the test asked the unit for a {name} broadcast and set no "
+                f"reply for it")
+        if callable(reply):
+            reply = reply(self.sent[-1] if self.sent else None)
+        if match is not None and not match(reply):
+            raise AssertionError(
+                f"the canned {name} does not satisfy the match the real read "
+                f"uses, so this test is proving something the library would "
+                f"have rejected")
+        self.push(reply)
+        return reply
 
     def request(self, message, timeout=5.0):
         name = type(message).__name__
@@ -111,6 +148,17 @@ def tempo_pair():
     return beat, status
 
 
+def _carrying_something(message, field):
+    """``message`` with ``field`` actually set, so presence reports it.
+
+    A submessage is only present once something in it is touched, and an
+    unset one would make the copy check below pass by applying nothing.
+    """
+    message.ClearField(field)
+    getattr(message, field).SetInParent()
+    return message
+
+
 def with_an_unknown_field(message, number=999, value=7):
     """``message`` re-parsed with a field number the recovered schema lacks.
 
@@ -130,12 +178,58 @@ def with_an_unknown_field(message, number=999, value=7):
     return grown
 
 
+PRESET_FIXTURE = (pathlib.Path(__file__).parent / "fixtures" / "presets"
+                  / "structural_preset.bin")
+
+
+def a_preset():
+    """The structural fixture, read off a real unit, as a `BinaryPreset`."""
+    payload = preset_pb.BinaryPreset()
+    payload.ParseFromString(PRESET_FIXTURE.read_bytes())
+    return payload
+
+
+def recall_push(triggering=None, preset=None):
+    """A `RecallPreset` carrying a whole preset, echoing a read's request id.
+
+    Every one of these carries `reason` as well - a host recall and a plain READ
+    both report OTHER - which is why the preset entry keeps it.
+    """
+    push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE,
+                                  reason=pa.RecallPresetReason.OTHER)
+    push.preset.CopyFrom(a_preset() if preset is None else preset)
+    if triggering is not None and triggering.HasField("request_id"):
+        push.request_id = triggering.request_id
+    return push
+
+
+def scene_push(triggering=None, scene=0):
+    push = pa.SceneMessage(action=pa.MessageAction.UPDATE, selected_scene=scene)
+    if triggering is not None and triggering.HasField("request_id"):
+        push.request_id = triggering.request_id
+    return push
+
+
+def grid_push(action=pa.MessageAction.UPDATE):
+    """What one edit on the touchscreen produces about forty of."""
+    return pa.GridMessage(action=action)
+
+
+def recalled_elsewhere(position=9):
+    """The unit announcing that a DIFFERENT preset is loaded now."""
+    return pa.SetlistPositionMessage(action=pa.MessageAction.UPDATE,
+                                     folder_key="/media/p4/Presets/My Presets",
+                                     position=position, is_factory=False)
+
+
 @pytest.fixture
 def link():
     """A cache listening on a loopback link, over the real protocol client."""
     transport = LoopbackTransport()
     transport.replies["VersionMessage"] = full_version_reply
     transport.replies["PresetDirtyMessage"] = lambda: dirty_push(False)
+    transport.broadcasts["RecallPresetMessage"] = recall_push
+    transport.broadcasts["SceneMessage"] = scene_push
     qc = protocol_client.QuadCortex(transport)
     cache = state.DeviceState()
     cache.listen_on(transport)
@@ -495,25 +589,58 @@ def test_no_field_an_entry_leaves_unkept_is_invisible_on_the_wire(entry):
     ``is_dirty`` is kept.
     """
     for message_class, plan in entry.feeds.items():
+        if plan.voids_the_copy():
+            # This plan has no blind spot, because it does not look. Every
+            # message of this type makes the entry untrusted whatever it
+            # carries, which is a STRONGER answer than keeping the field: it
+            # cannot be fooled by a field the wire renders as nothing. That is
+            # exactly why `Grid` and `SceneLabel` are declared this way - see
+            # `FieldPlan.invalidates`.
+            continue
         declared = plan.kept | plan.no_presence | entries.SCAFFOLDING
         invisible = sorted(field.name for field in message_class.DESCRIPTOR.fields
                            if not field.has_presence and field.name not in declared)
         assert not invisible, (
             f"{entry.name} does not keep {message_class.__name__}.{invisible}, "
             f"which the wire cannot report as absent - so a change to it is "
-            f"undetectable rather than merely unkept")
+            f"undetectable rather than merely unkept. Either keep it with the "
+            f"evidence for what its default means, as `is_dirty` is kept, or "
+            f"declare the whole type as voiding the copy")
 
 
 @pytest.mark.parametrize("entry", entries.ENTRIES, ids=lambda e: e.name)
-def test_every_field_an_entry_keeps_is_a_plain_value(entry):
+def test_a_plan_that_voids_the_copy_really_does_it_unconditionally(entry):
+    """The exemption above has to be load-bearing.
+
+    A plan skipped there is trusted to mark the entry from an EMPTY message,
+    because that is what the types it exists for can look like: a `Grid` UPDATE
+    with nothing but its action, or a `SceneLabel` renaming scene A to a blank
+    label, both of which set nothing in `ListFields()`. If the flag ever stopped
+    doing that, the skip above would be forgiving a real blind spot.
+    """
+    for message_class, plan in entry.feeds.items():
+        if not plan.voids_the_copy():
+            continue
+        assert not entries.fields_applied(message_class(), plan), (
+            f"{entry.name} both voids its copy on {message_class.__name__} and "
+            f"applies fields from it, which is two answers to one question")
+
+
+@pytest.mark.parametrize("entry", entries.ENTRIES, ids=lambda e: e.name)
+def test_nothing_an_entry_keeps_is_a_container_the_rx_thread_owns(entry):
     """The cache stores what ``getattr`` hands back, and for a message or a
     repeated field that is a live container INSIDE the message the RX thread
     just decoded - shared with every other listener and read afterwards from
     other threads.
 
-    Scalars are copied by value, so today there is nothing to share. This fires
-    the first time an entry keeps something composite, which is when that has to
-    be answered rather than assumed.
+    Scalars are copied by value and need nothing. A SUBMESSAGE is copied on the
+    way in (``entries._held``), which is what makes the preset entry safe to
+    hold a whole ``BinaryPreset``. This test proves the copy really happens
+    rather than trusting that it does, by mutating the source afterwards.
+
+    A repeated field is still refused outright. ``_held`` does not copy one, and
+    nothing needs it to yet - the day something does, that is the moment to
+    decide what a repeated field means in a cache rather than to discover it.
     """
     for message_class, plan in entry.feeds.items():
         for name in sorted(plan.kept | plan.no_presence):
@@ -521,9 +648,17 @@ def test_every_field_an_entry_keeps_is_a_plain_value(entry):
             assert not field.is_repeated, (
                 f"{message_class.__name__}.{name} is repeated, so the cache "
                 f"would hold a live container from a message the RX thread owns")
-            assert field.type not in (field.TYPE_MESSAGE, field.TYPE_GROUP), (
-                f"{message_class.__name__}.{name} is a submessage, so the cache "
-                f"would hold a live container from a message the RX thread owns")
+            if field.type not in (field.TYPE_MESSAGE, field.TYPE_GROUP):
+                continue
+            source = message_class()
+            held = entries.fields_applied(_carrying_something(source, name), plan)
+            assert name in held, (
+                f"{message_class.__name__}.{name} did not survive being applied")
+            assert held[name] is not getattr(source, name), (
+                f"{entry.name} holds {message_class.__name__}.{name} BY "
+                f"REFERENCE. That container lives inside a message the RX "
+                f"thread decoded and handed to every other listener, so what "
+                f"the model reports would change when any of them touches it")
 
 
 @pytest.mark.parametrize("entry", entries.ENTRIES, ids=lambda e: e.name)
@@ -872,3 +1007,280 @@ def test_no_watchdog_runs_until_something_is_written(link):
 def _watchdog_threads():
     return [t for t in threading.enumerate()
             if t.name.startswith(state.WATCHDOG_THREAD_NAME)]
+
+
+# -- the preset and the active scene ------------------------------------------
+#
+# These two entries are what the grid, the scenes and `device.preset` read
+# through. Both reads are one request and one reply, which is what `StateEntry`
+# requires - the Directory's listings are the streaming case and they are not
+# here.
+
+
+def test_the_preset_entry_is_registered():
+    assert entries.ENTRY_BY_NAME["preset"].fields() >= {"preset"}
+
+
+def test_the_scene_entry_is_registered():
+    assert entries.ENTRY_BY_NAME["scene"].fields() == {"selected_scene"}
+
+
+def test_the_preset_entry_does_not_keep_the_reason_it_cannot_read_back():
+    """`reason` says why the preset last changed, which is a fact about the
+    MESSAGE rather than about the preset - no read asks for it. Keeping it would
+    break the rule every other entry holds to, that a read answers for every
+    field the entry keeps: once marked, this one could never be recovered.
+
+    The cost is that a `RecallPreset` setting `reason` marks the entry. Our own
+    read clears that mark itself, and a touchscreen recall voids the entry
+    through `SetlistPosition` regardless, so the only case that could cost a
+    round trip is the connect burst's seed - and only if the seed sets `reason`
+    at all, which is unmeasured.
+    """
+    plan = entries.PRESET.feeds[pa.RecallPresetMessage]
+    assert plan.kept == {"preset"}
+    assert "reason" not in entries.PRESET.fields()
+
+
+def test_a_recall_push_that_names_its_reason_marks_the_entry():
+    """The consequence of the decision above, stated rather than left implicit.
+    If this ever stops being acceptable, the fix is a protocol-layer reader that
+    hands back the whole reply - not quietly keeping a field nothing can read."""
+    plan = entries.PRESET.feeds[pa.RecallPresetMessage]
+    push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE,
+                                  reason=pa.RecallPresetReason.OTHER)
+    assert entries.unkept_fields(push, plan) == ["reason"]
+
+
+def test_a_recall_push_does_not_invalidate_the_preset_it_delivers():
+    plan = entries.PRESET.feeds[pa.RecallPresetMessage]
+    assert not plan.voids_the_copy()
+
+
+def test_a_grid_push_invalidates_the_preset_however_empty_it_is():
+    """`action` has no presence and lives in SCAFFOLDING, so a Grid UPDATE and a
+    Grid DELETE with the same payload are indistinguishable to the per-field
+    check - and a Grid message carrying nothing else sets no fields at all. The
+    entry therefore does not rely on that check: every Grid push means the grid
+    moved, and that IS this entry's decision about `action`."""
+    plan = entries.PRESET.feeds[pa.GridMessage]
+    assert plan.invalidates
+    assert not entries.unkept_fields(pa.GridMessage(), plan), (
+        "an empty Grid message names nothing, which is exactly why the flag "
+        "and not the field check has to be what marks this entry")
+
+
+def test_a_scene_label_push_invalidates_the_preset():
+    """`SceneLabelMessage.index` and `.label` have NO presence, so renaming
+    scene A to a blank label sets nothing in `ListFields()` and the per-field
+    check sees an empty message. Scene names live in the preset payload, so our
+    copy of it is now wrong and nothing in the message says so."""
+    plan = entries.PRESET.feeds[pa.SceneLabelMessage]
+    assert plan.invalidates
+    assert not entries.unkept_fields(pa.SceneLabelMessage(), plan)
+
+
+def test_a_scene_colour_push_invalidates_the_preset_too():
+    """The model does not expose scene colours, but it holds the whole preset
+    payload and `scene_colors` is inside it. There is no harmless-field
+    category (root CLAUDE.md), so this marks like everything else."""
+    assert entries.PRESET.feeds[pa.SceneColorMessage].invalidates
+
+
+def test_a_recall_of_something_else_is_a_new_subject_for_all_three():
+    """A recall resets the grid contents, the active scene and the dirty flag
+    together - the unit moves them together, so the model does too (section 9,
+    smaller decision 3). Costs three cheap reads, which is the price of not
+    guessing which pushes follow a recall."""
+    for entry in (entries.PRESET, entries.SCENE, entries.DIRTY):
+        assert entry.feeds[pa.SetlistPositionMessage].voids_the_copy(), entry.name
+    assert entries.PRESET.feeds[pa.SetlistPositionMessage].new_subject
+    assert entries.SCENE.feeds[pa.SetlistPositionMessage].new_subject
+
+
+def test_an_edit_is_not_a_new_subject():
+    """Someone turning a knob is still the same preset. Only a recall makes a
+    Preset object somebody is holding stale."""
+    assert not entries.PRESET.feeds[pa.GridMessage].new_subject
+
+
+def test_a_scene_push_carries_the_active_scene():
+    plan = entries.SCENE.feeds[pa.SceneMessage]
+    assert plan.kept == {"selected_scene"}
+    message = pa.SceneMessage(selected_scene=3)
+    assert entries.fields_applied(message, plan) == {"selected_scene": 3}
+    assert not entries.unkept_fields(message, plan)
+
+
+def test_the_preset_read_asks_for_the_live_grid(link):
+    """`read_current_preset` reads what is on the grid RIGHT NOW, unsaved edits
+    included, with no side effects. `read_preset` would RECALL a stored slot -
+    interrupting the audio every time and resetting the active scene - which is
+    the opposite of a read."""
+    transport, cache = link
+    cache.value("preset", "preset")
+    asked = [m for m in transport.sent if isinstance(m, pa.RecallPresetMessage)]
+    assert asked, "nothing asked the unit for the preset"
+    assert all(m.action == pa.MessageAction.READ for m in asked)
+    assert not any(isinstance(m, pa.SetlistPositionMessage) for m in transport.sent), (
+        "the read recalled a slot, which changes what the unit is playing")
+
+
+def test_a_grid_push_marks_the_preset_without_merging_anything(link):
+    transport, cache = link
+    cache.apply_push(grid_push())
+    assert cache.needs_read("preset")
+    assert cache.cached("preset") == {}
+
+
+def test_forty_grid_pushes_still_cost_one_read(link):
+    """A flag, not a queue. One edit on the touchscreen produces about forty."""
+    transport, cache = link
+    for _ in range(40):
+        cache.apply_push(grid_push())
+    cache.value("preset", "preset")
+    assert transport.reads["RecallPresetMessage"] == 1
+
+
+def test_the_preset_is_kept_as_a_copy_not_as_a_live_container(link):
+    """The cache stores what `getattr` hands back, and for a submessage that is
+    a container INSIDE the message the receiving thread just decoded - shared
+    with every other listener and read afterwards from other threads.
+
+    So it is copied. This is the test that says so, because the structural check
+    below can only see that a submessage IS kept, not whether it was copied.
+    """
+    transport, cache = link
+    push = recall_push()
+    cache.apply_push(push)
+    held = cache.cached("preset")["preset"]
+    assert held.name == "Structural Fixture"
+    push.preset.name = "mutated by somebody else"
+    assert held.name == "Structural Fixture", (
+        "the cache is holding a reference into a message it does not own, so "
+        "anyone else who decoded or mutated it changes what the model reports")
+
+
+def test_the_active_scene_is_read_and_then_free(link):
+    transport, cache = link
+    assert cache.value("scene", "selected_scene") == 0
+    assert cache.value("scene", "selected_scene") == 0
+    assert transport.reads["SceneMessage"] == 1
+
+
+def test_a_scene_switch_on_the_unit_reaches_the_cache(link):
+    transport, cache = link
+    cache.apply_push(scene_push(scene=3))
+    assert cache.cached("scene")["selected_scene"] == 3
+    assert not cache.needs_read("scene")
+
+
+def test_a_recall_elsewhere_moves_the_subject(link):
+    transport, cache = link
+    before = cache.subject("preset")
+    cache.apply_push(recalled_elsewhere())
+    assert cache.subject("preset") != before
+    assert cache.subject("scene") != before
+
+
+def test_an_edit_leaves_the_subject_alone(link):
+    transport, cache = link
+    before = cache.subject("preset")
+    cache.apply_push(grid_push())
+    assert cache.subject("preset") == before
+
+
+def test_the_subject_never_asks_the_unit(link):
+    """`preset.is_current` promises no round trip, and it reads through this."""
+    transport, cache = link
+    cache.mark_for_reread("preset", "this test")
+    cache.subject("preset")
+    assert transport.reads["RecallPresetMessage"] == 0
+
+
+def test_the_subject_refuses_a_closed_cache(link):
+    transport, cache = link
+    cache.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        cache.subject("preset")
+
+
+# -- what the model tells a caller it noticed ---------------------------------
+
+
+def test_forty_grid_pushes_produce_one_invalidated_event(link):
+    """Fired on the change from trusted to untrusted, not on every push."""
+    transport, cache = link
+    seen = []
+    cache.events.subscribe(seen.append)
+    for _ in range(40):
+        cache.apply_push(grid_push())
+    wait_for(seen, 1)
+    assert stays_quiet(seen) == seen
+    assert len(seen) == 1
+    assert isinstance(seen[0], events.Invalidated)
+    assert seen[0].part == "preset"
+
+
+def test_the_next_invalidation_after_a_read_is_announced_again(link):
+    """The mark is cleared by a read, so the caller hears about the NEXT edit
+    rather than being told once per connection."""
+    transport, cache = link
+    seen = []
+    cache.events.subscribe(seen.append)
+    cache.apply_push(grid_push())
+    wait_for(seen, 1)
+    cache.value("preset", "preset")
+    cache.apply_push(grid_push())
+    wait_for(seen, 2)
+
+
+def test_a_push_restating_what_we_already_knew_is_not_a_change(link):
+    """The unit pushes `PresetDirty` on every edit whether or not the answer is
+    new. Reporting those would make the stream useless for what it is for."""
+    transport, cache = link
+    cache.apply_push(dirty_push(True))
+    seen = []
+    cache.events.subscribe(seen.append)
+    cache.apply_push(dirty_push(True))
+    assert stays_quiet(seen) == []
+
+
+def test_a_push_that_moves_a_value_is_a_change(link):
+    transport, cache = link
+    cache.apply_push(dirty_push(True))
+    seen = []
+    cache.events.subscribe(seen.append)
+    cache.apply_push(dirty_push(False))
+    wait_for(seen, 1)
+    assert seen[0] == events.Changed("dirty", ("is_dirty",))
+
+
+def test_the_first_time_a_value_arrives_is_a_change(link):
+    transport, cache = link
+    seen = []
+    cache.events.subscribe(seen.append)
+    cache.apply_push(dirty_push(True))
+    wait_for(seen, 1)
+    assert seen[0] == events.Changed("dirty", ("is_dirty",))
+
+
+def test_an_event_is_never_delivered_on_the_receiving_thread(link):
+    """A subscriber may read from the unit, and the transport refuses a read on
+    the thread that applies pushes (ADR-0009). So delivery cannot be on it."""
+    transport, cache = link
+    seen = []
+    cache.events.subscribe(
+        lambda e: seen.append(threading.current_thread().name))
+    here = threading.current_thread().name
+    cache.apply_push(grid_push())
+    wait_for(seen, 1)
+    assert seen[0] != here
+
+
+def test_closing_the_cache_closes_the_event_stream(link):
+    transport, cache = link
+    cache.events.subscribe(lambda e: None)
+    cache.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        cache.events.subscribe(lambda e: None)
