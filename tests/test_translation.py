@@ -624,12 +624,45 @@ def test_a_hold_timing_index_that_is_not_a_whole_number_is_refused(index):
 # directory up - which is where somebody would put it after reading a failure
 # message that named a directory.
 
-BOUNDARY = pathlib.Path(translate.__file__).resolve()
+#: The boundary is a PACKAGE, so the exemption below covers a directory rather
+#: than a file. That is a bigger hole and it is why `BOUNDARY_MODULES` exists.
+BOUNDARY = pathlib.Path(translate.__file__).resolve().parent
+BOUNDARY_SOURCES = sorted(BOUNDARY.rglob("*.py"))
 PACKAGE_ROOT = pathlib.Path(pyquadcortex.__file__).resolve().parent
 PROTOCOL_ROOT = pathlib.Path(protocol.__file__).resolve().parent
 MODEL_SOURCES = sorted(p for p in PACKAGE_ROOT.rglob("*.py")
                        if not p.is_relative_to(PROTOCOL_ROOT))
-OTHER_MODEL_SOURCES = [p for p in MODEL_SOURCES if p != BOUNDARY]
+OTHER_MODEL_SOURCES = [p for p in MODEL_SOURCES
+                       if not p.is_relative_to(BOUNDARY)]
+
+#: The boundary package's modules, by name. Everything in that directory is
+#: exempt from the two checks at the bottom of this file, so without this list
+#: the exemption is a hole shaped like a directory: somebody adds
+#: `translate/whatever.py`, puts the arithmetic in it, and the scan skips the
+#: file for the same reason it skips the real converters. Naming them means a
+#: new module has to come through here, with a reason, in the same commit.
+BOUNDARY_MODULES = frozenset({
+    "__init__",      # re-exports the whole public surface
+    "guards",        # the shared type checks
+    "coordinates",   # rows 1-4 and slots 1-8
+    "letters",       # scene and footswitch letters
+    "addresses",     # "28C" and its linear position
+    "units",         # dB, Hz, bpm, milliseconds
+})
+
+
+def test_the_boundary_package_holds_only_the_modules_it_names():
+    found = {p.stem for p in BOUNDARY_SOURCES}
+    added = sorted(found - BOUNDARY_MODULES)
+    gone = sorted(BOUNDARY_MODULES - found)
+    assert not added, (
+        f"{added} is inside the translation boundary but is not named in "
+        f"BOUNDARY_MODULES. Every file in that directory is exempt from the "
+        f"index-arithmetic scan, so a module added quietly is a way round the "
+        f"whole rule. Add it here with a reason, or put it outside.")
+    assert not gone, (
+        f"BOUNDARY_MODULES names {gone}, which is not in the package - so this "
+        f"list is guarding a file that does not exist")
 
 
 #: The boundary's own coordinate tables. It publishes them, so a model module
@@ -881,7 +914,7 @@ def test_the_scan_covers_every_module_that_is_not_the_protocol_layer():
     is covered the day it is created rather than the day somebody remembers to
     add it here.
     """
-    assert BOUNDARY in MODEL_SOURCES
+    assert set(BOUNDARY_SOURCES) <= set(MODEL_SOURCES)
     assert len(OTHER_MODEL_SOURCES) >= 2
     walked = {
         pathlib.Path(importlib.import_module(info.name).__file__).resolve()
@@ -923,13 +956,16 @@ def test_the_allowlist_covers_everything_the_boundary_delegates_to():
     `translate.py` reaches into the protocol layer for is a conversion by
     definition, because converting is all that module does.
     """
-    reached = _protocol_names_reached(ast.parse(BOUNDARY.read_text()))
+    reached = set()
+    for source in BOUNDARY_SOURCES:
+        reached |= _protocol_names_reached(ast.parse(source.read_text()))
     assert reached, "the boundary reaches for nothing - this check is vacuous"
     unlisted = sorted(reached - PROTOCOL_CONVERSIONS)
     assert not unlisted, (
-        f"{BOUNDARY.name} delegates to the protocol layer's {unlisted}, which "
-        f"is not in PROTOCOL_CONVERSIONS - so every other module in the package "
-        f"may call it directly and this suite will not notice")
+        f"the translation boundary delegates to the protocol layer's "
+        f"{unlisted}, which is not in PROTOCOL_CONVERSIONS - so every other "
+        f"module in the package may call it directly and this suite will not "
+        f"notice")
 
 
 #: The four functions the exclusion exists for. Named, because "somewhere in
@@ -950,19 +986,21 @@ def test_the_boundary_itself_still_does_the_arithmetic():
     `ROWS.index(row)`, arithmetic-free, and this backstop would have stayed
     green on that one line while the "nowhere else" check stayed silent too.
     """
-    functions = {node.name: node
-                 for node in ast.walk(ast.parse(BOUNDARY.read_text()))
-                 if isinstance(node, ast.FunctionDef)}
+    functions = {}
+    for source in BOUNDARY_SOURCES:
+        for node in ast.walk(ast.parse(source.read_text())):
+            if isinstance(node, ast.FunctionDef):
+                functions[node.name] = node
     gone = [name for name in COORDINATE_CONVERTERS if name not in functions]
     assert not gone, (
-        f"{BOUNDARY.name} no longer defines {gone} - this test names the "
-        f"converters it is protecting, so a rename has to come through here")
+        f"the translation boundary no longer defines {gone} - this test names "
+        f"the converters it is protecting, so a rename has to come through here")
     silent = [name for name in COORDINATE_CONVERTERS
               if not _index_arithmetic(functions[name])]
     assert not silent, (
-        f"{silent} in {BOUNDARY.name} do no index arithmetic. If the conversion "
-        f"moved somewhere else, the 'nowhere else' check below is now passing "
-        f"because nothing anywhere converts")
+        f"{silent} do no index arithmetic. If the conversion moved somewhere "
+        f"else, the 'nowhere else' check below is now passing because nothing "
+        f"anywhere converts")
 
 
 @pytest.mark.parametrize("source", OTHER_MODEL_SOURCES, ids=lambda p: p.name)
