@@ -71,7 +71,7 @@ class _Slot:
         #: Drawn from a counter rather than written `+= 1`, which is the
         #: transport's idiom for the same job (`Transport._ids`). It also keeps
         #: the package's one-translation-boundary check honest: that check
-        #: refuses every spelling of index arithmetic outside `translate.py`
+        #: refuses every spelling of index arithmetic outside `translate/`
         #: precisely because it cannot tell a counter from an off-by-one on a
         #: row, and a rule with an exemption for "but mine is fine" is not a
         #: rule. Do not simplify this back.

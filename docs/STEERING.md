@@ -173,6 +173,7 @@ log events this code emits are named for #16 to pick up, but nothing reads them 
 - domain-model.md: §9 gains the by-type rule, the no-merge decision with what merging would take written beside it, the complete-push rule, and the event surface; §2 and §3 record what is built and the four things deliberately omitted; the §9 table is corrected against hardware
 - CLAUDE.md: the translation boundary is a package with a named module list and a second allowlist for non-conversions; `Grid`'s `action` decision is recorded; submessages are cached by copy
 - STEERING.md: the "One translation boundary" pattern row now says package
+- architecture.md: the module map gains `preset.py`, `grid.py`, `blocks.py`, `events.py` and `errors.py`, and `translate.py` becomes `translate/`
 - protocol.md: `read_current_preset_push` and `loaded_position` added to the coverage table, with the measured shape of a recall and of the connect burst
 
 **Why:**
@@ -180,7 +181,8 @@ log events this code emits are named for #16 to pick up, but nothing reads them 
 
 **Scope of impact:**
 - **Updated:** ADR.md, domain-model.md, CLAUDE.md, STEERING.md, protocol.md
-- **Not updated (intentionally):** architecture.md - the layer map is unchanged, the model still sits on the protocol layer exactly as before; api.md - it documents the protocol layer, whose two additions are in the coverage table, and the model's surface is documented in domain-model.md
+- **Also updated:** architecture.md - the module map gains the five new model modules and `translate/` is a package there too
+- **Not updated (intentionally):** api.md - it documents the protocol layer, whose two additions are in protocol.md's coverage table, and the model's surface is documented in domain-model.md
 
 **Downstream to consider:**
 - The Directory half of issue #12 needs `StateEntry` to carry how many messages a read expects, since a setlist listing answers with several hundred

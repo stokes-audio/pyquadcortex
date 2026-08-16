@@ -52,9 +52,25 @@ only about the layer directly below it.
       device/watch.py        Whether a write landed: the echo watcher and its
       |                      three outcomes, plus the one thread that gives up
       |
-      device/translate.py    Screen values <-> wire values, and the ONLY place
+      device/preset.py       The preset on the grid: its name, its scenes, and
+      |                      whether it is still the loaded one
+      |
+      device/grid.py         Four rows of eight slots, and the two ways to look
+      |                      at them - live-bound to the active scene, or fixed
+      |
+      device/blocks.py       What sits in a cell: a virtual device, the ends of
+      |                      a row, a splitter, a mixer
+      |
+      device/events.py       What the model noticed, for a caller who wants to
+      |                      know as it happens - on a thread of its own
+      |
+      device/errors.py       The refusals that mirror something the unit cannot
+      |                      do
+      |
+      device/translate/      Screen values <-> wire values, and the ONLY place
       |                      either becomes the other: rows, slots, scene and
-      |                      footswitch letters, preset addresses, display units
+      |                      footswitch letters, preset addresses, display
+      |                      units, and a whole preset renumbered for the screen
       |
       |                      -- the model/protocol seam --
       |
@@ -248,7 +264,7 @@ sent must come back with the value we sent. Not "the echo equals what we sent" -
 the unit legitimately changes things nobody asked about. One watchdog thread for
 the whole connection, started on the first write and never before it.
 
-### device/translate.py
+### device/translate/
 
 The model speaks what the touchscreen shows - rows 1 to 4, slots 1 to 8, scenes
 and footswitches as letters, dB, Hz, bpm, ms - and the wire speaks zero-based indexes
@@ -256,7 +272,15 @@ and raw scales. Every conversion between the two lives here and nowhere else in
 `pyquadcortex/` outside `protocol/` - the whole package, not just the model
 directory (design principle 5 in [domain-model.md](domain-model.md)).
 
-One module rather than a convention, because the mistake it prevents is silent.
+A package, split by responsibility: `guards`, `coordinates`, `letters`,
+`addresses`, `units`, and `grid` for reading a whole preset in screen numbers.
+Every public name is re-exported, so `translate.row_to_wire(...)` resolves as it
+always did. Because the source-reading test exempts the whole directory,
+`tests/test_translation.py` names the modules inside it - a new one has to come
+through that list, or the arithmetic scan would skip it for the same reason it
+skips the real converters.
+
+One place rather than a convention, because the mistake it prevents is silent.
 This document's own layer map sits above a protocol layer whose header says it: a
 write to the wrong row lands on a real row and reads back perfectly, so nothing
 tells the caller. Collecting the arithmetic in one place makes it reviewable in

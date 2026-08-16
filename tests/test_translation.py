@@ -1044,7 +1044,8 @@ def test_the_allowlist_covers_everything_the_boundary_delegates_to():
 
 
 #: The four functions the exclusion exists for. Named, because "somewhere in
-#: translate.py" is not the thing being protected.
+#: the translate package" is not the thing being protected - and a package is a
+#: vaguer somewhere than a file was.
 COORDINATE_CONVERTERS = ("row_to_wire", "row_from_wire",
                          "slot_to_wire", "slot_from_wire")
 

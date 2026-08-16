@@ -39,7 +39,7 @@
 5. **One translation boundary.** The model speaks touchscreen coordinates and display
    units everywhere. Conversion to protocol values (0-based indexes, raw scales) happens
    in exactly one module at the model-to-protocol seam. No `-1`/`+1` anywhere else.
-   **Built:** `pyquadcortex/device/translate.py`, with the rule enforced by a test that
+   **Built:** the `pyquadcortex/device/translate/` package, with the rule enforced by a test that
    reads the source of the whole package outside `protocol/` - not just the model
    directory - rather than trusting a convention.
 
@@ -153,7 +153,7 @@ class PresetAddress:
 > with the mode - linear position 5 reads "1F" normally and "2B" under the hybrid - so an
 > address is only unambiguous alongside the mode it was read in.
 
-> **`PresetAddress` is built**, in `pyquadcortex/device/translate.py` and exported from
+> **`PresetAddress` is built**, in `pyquadcortex/device/translate/` and exported from
 > `pyquadcortex`. It speaks the non-hybrid naming, "A".."H". `PresetAddress.parse("28C")`
 > refuses a malformed address there and then, rather than at write time, and `.to_wire()`
 > / `.from_wire()` convert through the protocol layer's own `slot_to_position` pair so the
@@ -715,7 +715,7 @@ class Stomps:                            # preset.stomps
 > eventually passes a column to it and gets a write that silently does nothing, which is
 > precisely the bug that cost a hardware session to find.
 >
-> **`FootswitchLetter` is built**, in `pyquadcortex/device/translate.py` and exported from
+> **`FootswitchLetter` is built**, in `pyquadcortex/device/translate/` and exported from
 > `pyquadcortex`. It is a `StrEnum`, so `stomps["E"]` and `stomps[FootswitchLetter.E]` are
 > the same key and it prints as the screen labels it. Passing the number 4 raises, with a
 > message naming the column trap. `SceneLetter` is the same type for scenes.
