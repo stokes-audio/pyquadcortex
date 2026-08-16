@@ -54,8 +54,7 @@ WATCHDOG_THREAD_NAME = "pyquadcortex-watchdog"
 class _Slot:
     """One entry's copy of the unit's state, and how much we trust it."""
 
-    __slots__ = ("fields", "needs_read", "witnessed", "subject", "_arrivals",
-                 "_subjects")
+    __slots__ = ("fields", "needs_read", "witnessed", "_arrivals")
 
     def __init__(self):
         #: field name -> value, holding only what the unit has actually said.
@@ -78,23 +77,10 @@ class _Slot:
         #: rule. Do not simplify this back.
         self._arrivals = itertools.count(1)
         self.witnessed = 0
-        #: How many DIFFERENT things this entry has been about. Moved when a
-        #: push says the unit loaded another preset. `preset.is_current`
-        #: compares this against the number it was built at, which is why an
-        #: ordinary edit must NOT move it: the preset is still the same preset,
-        #: and only our copy of its contents is behind.
-        #:
-        #: Drawn from a counter for the reason `_arrivals` is - see its comment.
-        self._subjects = itertools.count(1)
-        self.subject = next(self._subjects)
 
     def arrived(self) -> None:
         """Note that one more message for this entry has been handled."""
         self.witnessed = next(self._arrivals)
-
-    def new_subject(self) -> None:
-        """Note that this entry is now about a different thing."""
-        self.subject = next(self._subjects)
 
 
 class DeviceState:
@@ -233,9 +219,18 @@ class DeviceState:
                 log.debug("push.applied %s %s", entry.name, sorted(applied))
             if moved:
                 announce.append(Changed(entry.name, moved))
-            if plan.new_subject:
-                slot.new_subject()
             why = self._why_untrusted(plan, unkept, message)
+            if why is None and slot.needs_read and not unkept \
+                    and entries.covers_the_whole_entry(entry, plan) \
+                    and set(applied) == entry.fields():
+                # The unit just told us everything this entry holds, which is
+                # what a read gets - so there is nothing left to ask it. This is
+                # what makes the connect burst warm rather than nominally warm:
+                # it marks two entries and then answers both in full, in that
+                # order, inside ten milliseconds.
+                slot.needs_read = False
+                log.debug("cache.answered %s - a %s carried the whole entry",
+                          entry.name, type(message).__name__)
             if why is not None:
                 # Announced on the change from trusted to untrusted only. One
                 # edit on the touchscreen produces about forty `Grid` pushes,
@@ -288,8 +283,6 @@ class DeviceState:
         this entry does not keep.
         """
         kind = type(message).__name__
-        if plan.new_subject:
-            return f"a {kind} says the unit loaded a different preset"
         if plan.invalidates:
             return (f"a {kind} changed the preset, and the model re-reads "
                     f"rather than merging one")
@@ -391,22 +384,6 @@ class DeviceState:
         landing on top of the first.
         """
         return self._events
-
-    def subject(self, entry_name: str) -> int:
-        """Which thing this entry is currently about, as a number.
-
-        Moved when a push says the unit loaded a different preset. Compare two
-        readings to learn whether something a caller is holding is still about
-        the thing it was built from - which is all ``preset.is_current`` does.
-
-        A pure cache read: it never goes to the unit, even when the entry is
-        marked for re-reading. That is what lets ``is_current`` promise no round
-        trip. It is also right rather than merely cheap: whether we are looking
-        at a different preset is not a question our copy's freshness affects.
-        """
-        with self._lock:
-            self._check_open()
-            return self._slots[self._entry(entry_name).name].subject
 
     def needs_read(self, entry_name: str) -> bool:
         """Whether the next :meth:`value` on this entry will go to the unit.

@@ -215,8 +215,19 @@ def grid_push(action=pa.MessageAction.UPDATE):
     return pa.GridMessage(action=action)
 
 
+def position_push(triggering=None, position=9):
+    """The loaded slot as an answer to a READ, echoing the request id."""
+    push = recalled_elsewhere(position)
+    if triggering is not None and triggering.HasField("request_id"):
+        push.request_id = triggering.request_id
+    return push
+
+
 def recalled_elsewhere(position=9):
-    """The unit announcing that a DIFFERENT preset is loaded now."""
+    """The unit announcing which preset is loaded.
+
+    The exact shape the connect burst delivers, measured 2026-08-15: action,
+    folder_key, is_factory and position, with no request_id."""
     return pa.SetlistPositionMessage(action=pa.MessageAction.UPDATE,
                                      folder_key="/media/p4/Presets/My Presets",
                                      position=position, is_factory=False)
@@ -230,6 +241,7 @@ def link():
     transport.replies["PresetDirtyMessage"] = lambda: dirty_push(False)
     transport.broadcasts["RecallPresetMessage"] = recall_push
     transport.broadcasts["SceneMessage"] = scene_push
+    transport.broadcasts["SetlistPositionMessage"] = position_push
     qc = protocol_client.QuadCortex(transport)
     cache = state.DeviceState()
     cache.listen_on(transport)
@@ -1025,31 +1037,33 @@ def test_the_scene_entry_is_registered():
     assert entries.ENTRY_BY_NAME["scene"].fields() == {"selected_scene"}
 
 
-def test_the_preset_entry_does_not_keep_the_reason_it_cannot_read_back():
-    """`reason` says why the preset last changed, which is a fact about the
-    MESSAGE rather than about the preset - no read asks for it. Keeping it would
-    break the rule every other entry holds to, that a read answers for every
-    field the entry keeps: once marked, this one could never be recovered.
-
-    The cost is that a `RecallPreset` setting `reason` marks the entry. Our own
-    read clears that mark itself, and a touchscreen recall voids the entry
-    through `SetlistPosition` regardless, so the only case that could cost a
-    round trip is the connect burst's seed - and only if the seed sets `reason`
-    at all, which is unmeasured.
-    """
+def test_the_preset_entry_keeps_the_reason_every_push_carries():
+    """Measured 2026-08-15: the connect burst's seed `RecallPreset` sets action,
+    preset AND reason, and so does the push a recall produces. An entry that did
+    not keep `reason` would be marked for re-reading by the very burst that
+    warmed it."""
     plan = entries.PRESET.feeds[pa.RecallPresetMessage]
-    assert plan.kept == {"preset"}
-    assert "reason" not in entries.PRESET.fields()
+    assert plan.kept == {"preset", "reason"}
 
 
-def test_a_recall_push_that_names_its_reason_marks_the_entry():
-    """The consequence of the decision above, stated rather than left implicit.
-    If this ever stops being acceptable, the fix is a protocol-layer reader that
-    hands back the whole reply - not quietly keeping a field nothing can read."""
+def test_the_seed_push_the_unit_really_sends_leaves_the_entry_trusted():
+    """The shape the burst delivers, field for field, held against the plan."""
     plan = entries.PRESET.feeds[pa.RecallPresetMessage]
-    push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE,
-                                  reason=pa.RecallPresetReason.OTHER)
-    assert entries.unkept_fields(push, plan) == ["reason"]
+    seed = recall_push()
+    assert sorted(f.name for f, _ in seed.ListFields()) == \
+        ["action", "preset", "reason"], "the fixture no longer matches the unit"
+    assert not entries.unkept_fields(seed, plan)
+
+
+def test_the_preset_entry_can_read_back_every_field_it_keeps(link):
+    """The rule that made keeping `reason` cost something: an entry that keeps
+    a field its read cannot answer for loses it the first time it is marked.
+    So the read goes through `read_current_preset_push`, which hands back the
+    whole reply rather than just the preset inside it."""
+    transport, cache = link
+    cache.mark_for_reread("preset", "this test")
+    assert cache.value("preset", "reason") is not None
+    assert cache.value("preset", "preset").name == "Structural Fixture"
 
 
 def test_a_recall_push_does_not_invalidate_the_preset_it_delivers():
@@ -1087,21 +1101,47 @@ def test_a_scene_colour_push_invalidates_the_preset_too():
     assert entries.PRESET.feeds[pa.SceneColorMessage].invalidates
 
 
-def test_a_recall_of_something_else_is_a_new_subject_for_all_three():
-    """A recall resets the grid contents, the active scene and the dirty flag
-    together - the unit moves them together, so the model does too (section 9,
-    smaller decision 3). Costs three cheap reads, which is the price of not
-    guessing which pushes follow a recall."""
-    for entry in (entries.PRESET, entries.SCENE, entries.DIRTY):
-        assert entry.feeds[pa.SetlistPositionMessage].voids_the_copy(), entry.name
-    assert entries.PRESET.feeds[pa.SetlistPositionMessage].new_subject
-    assert entries.SCENE.feeds[pa.SetlistPositionMessage].new_subject
+def test_the_preset_entry_never_hears_about_the_loaded_slot():
+    """`SetlistPosition` says WHICH preset is loaded, not what is in it, so it
+    feeds the `loaded` entry and not this one.
+
+    Measured 2026-08-15: a recall pushes eight to thirteen `Grid` messages, then
+    `RecallPreset` carrying the whole new preset, then `Scene`, then
+    `SetlistPosition` - which arrives about 90 ms LAST. The preset entry is
+    already right by then, twice over. And the connect burst carries no `Grid`
+    pushes at all, because nothing changed there: marking the preset on this
+    message would throw away exactly what the burst had just delivered.
+    """
+    assert pa.SetlistPositionMessage not in entries.PRESET.feeds
 
 
-def test_an_edit_is_not_a_new_subject():
+def test_the_loaded_slot_is_its_own_entry():
+    """It used to be a counter on the preset entry, bumped whenever a recall was
+    seen. It is the unit's own answer now: `SetlistPosition{READ}` really does
+    reply - 3 ms, request id echoed, confirmed 2026-08-15 - so `is_current` can
+    compare a fact the unit stated rather than the model's own bookkeeping."""
+    assert entries.ENTRY_BY_NAME["loaded"].fields() == {
+        "folder_key", "position", "is_factory"}
+
+
+def test_a_recall_voids_the_dirty_flag_because_nothing_else_will():
+    """The measurement that mattered most: a recall pushes NO PresetDirty. It
+    clears the unsaved-changes flag on the unit and says nothing about it, so
+    without this the model would go on reporting edits the recall discarded."""
+    assert entries.DIRTY.feeds[pa.SetlistPositionMessage].invalidates
+
+
+def test_a_recall_voids_the_active_scene_too():
+    """A recall does push a `Scene` carrying the new value, so this mark is
+    cleared as that push lands. It costs nothing when the push arrives and saves
+    a wrong answer if it ever does not."""
+    assert entries.SCENE.feeds[pa.SetlistPositionMessage].invalidates
+
+
+def test_an_edit_does_not_touch_the_loaded_slot():
     """Someone turning a knob is still the same preset. Only a recall makes a
     Preset object somebody is holding stale."""
-    assert not entries.PRESET.feeds[pa.GridMessage].new_subject
+    assert pa.GridMessage not in entries.LOADED.feeds
 
 
 def test_a_scene_push_carries_the_active_scene():
@@ -1175,34 +1215,33 @@ def test_a_scene_switch_on_the_unit_reaches_the_cache(link):
     assert not cache.needs_read("scene")
 
 
-def test_a_recall_elsewhere_moves_the_subject(link):
+def test_a_recall_elsewhere_changes_the_loaded_slot(link):
+    """What `preset.is_current` compares."""
     transport, cache = link
-    before = cache.subject("preset")
+    cache.apply_push(recalled_elsewhere(position=9))
+    was = cache.cached("loaded")
+    cache.apply_push(recalled_elsewhere(position=17))
+    assert cache.cached("loaded") != was
+    assert cache.cached("loaded")["position"] == 17
+
+
+def test_an_edit_leaves_the_loaded_slot_alone(link):
+    """Someone turning a knob is still the same preset - our copy of its
+    contents is merely behind. Only a recall makes a held Preset stale."""
+    transport, cache = link
     cache.apply_push(recalled_elsewhere())
-    assert cache.subject("preset") != before
-    assert cache.subject("scene") != before
-
-
-def test_an_edit_leaves_the_subject_alone(link):
-    transport, cache = link
-    before = cache.subject("preset")
+    was = cache.cached("loaded")
     cache.apply_push(grid_push())
-    assert cache.subject("preset") == before
+    assert cache.cached("loaded") == was
 
 
-def test_the_subject_never_asks_the_unit(link):
+def test_reading_the_loaded_slot_from_the_cache_never_asks_the_unit(link):
     """`preset.is_current` promises no round trip, and it reads through this."""
     transport, cache = link
-    cache.mark_for_reread("preset", "this test")
-    cache.subject("preset")
-    assert transport.reads["RecallPresetMessage"] == 0
-
-
-def test_the_subject_refuses_a_closed_cache(link):
-    transport, cache = link
-    cache.close()
-    with pytest.raises(RuntimeError, match="closed"):
-        cache.subject("preset")
+    cache.apply_push(recalled_elsewhere())
+    cache.mark_for_reread("loaded", "this test")
+    assert cache.cached("loaded")["position"] == 9
+    assert transport.reads["SetlistPositionMessage"] == 0
 
 
 # -- what the model tells a caller it noticed ---------------------------------
@@ -1284,3 +1323,106 @@ def test_closing_the_cache_closes_the_event_stream(link):
     cache.close()
     with pytest.raises(RuntimeError, match="closed"):
         cache.events.subscribe(lambda e: None)
+
+
+# -- the connect burst leaves the cache genuinely warm ------------------------
+#
+# Measured on hardware 2026-08-15. About 3 s of quiet, ~400 File messages, then
+# at 10.04 s these four inside ten milliseconds, in this order:
+#
+#     RecallPreset     ['action', 'preset', 'reason']
+#     SetlistPosition  ['action', 'folder_key', 'is_factory', 'position']
+#     PresetDirty      ['action']            (is_dirty has no presence)
+#     Scene            ['action', 'selected_scene']
+#
+# Two of them mark an entry and the next one answers it in full. Without the
+# rule that a complete push clears the mark, every one of those entries would
+# cost a round trip on first access - which is what "warm for free" is supposed
+# to mean, and what the acceptance criteria ask for by name.
+
+
+def the_connect_burst():
+    """The four state messages the burst delivers, in the measured order."""
+    return [recall_push(), recalled_elsewhere(), dirty_push(False),
+            scene_push(scene=4)]
+
+
+def test_after_the_connect_burst_nothing_needs_re_reading(link):
+    transport, cache = link
+    for message in the_connect_burst():
+        cache.apply_push(message)
+    stale = [name for name in ("preset", "scene", "dirty")
+             if cache.needs_read(name)]
+    assert not stale, (
+        f"{stale} would go to the unit on first access, for values the connect "
+        f"burst already delivered")
+
+
+def test_after_the_connect_burst_reading_costs_nothing(link):
+    """The assertion that cannot be satisfied by looking at a flag."""
+    transport, cache = link
+    for message in the_connect_burst():
+        cache.apply_push(message)
+    before = sum(transport.reads.values())
+    assert cache.value("preset", "preset").name == "Structural Fixture"
+    assert cache.value("scene", "selected_scene") == 4
+    assert cache.value("dirty", "is_dirty") is False
+    assert sum(transport.reads.values()) == before, (
+        "the model asked the unit for something the burst had already given it")
+
+
+def test_a_partial_push_does_not_answer_an_entry(link):
+    """The condition that keeps the rule honest. `identity` keeps two fields,
+    and a Version carrying one of them is not the unit's whole answer - so it
+    must not clear a mark."""
+    transport, cache = link
+    cache.mark_for_reread("identity", "this test")
+    cache.apply_push(version_reply(app_fw_version="d14e"))
+    assert cache.needs_read("identity")
+
+
+def test_a_grid_push_never_answers_the_entry_it_marks(link):
+    """The trap in the rule, and the reason it compares against the ENTRY's
+    field set rather than the plan's. A Grid plan keeps nothing, so "carries
+    every field this plan keeps" is vacuously true of it - and a Grid push would
+    clear the very mark it had just set."""
+    transport, cache = link
+    cache.apply_push(grid_push())
+    assert cache.needs_read("preset")
+    cache.apply_push(grid_push())
+    assert cache.needs_read("preset")
+
+
+def test_a_push_that_names_something_unkept_does_not_answer_the_entry(link):
+    """Complete in its known fields and still not the whole story: a field
+    number the schema has never heard of means something changed that we cannot
+    see, so this cannot be the unit's whole answer."""
+    transport, cache = link
+    cache.mark_for_reread("dirty", "this test")
+    cache.apply_push(with_an_unknown_field(dirty_push(True)))
+    assert cache.needs_read("dirty")
+
+
+def test_a_recall_leaves_the_dirty_flag_needing_a_read(link):
+    """The measured case that makes `SetlistPosition` invalidate `dirty`: a
+    recall pushes no PresetDirty, so nothing answers this entry and it has to
+    ask."""
+    transport, cache = link
+    cache.apply_push(dirty_push(True))
+    assert not cache.needs_read("dirty")
+    for message in [grid_push(), recall_push(), scene_push(scene=0),
+                    recalled_elsewhere()]:
+        cache.apply_push(message)
+    assert cache.needs_read("dirty"), (
+        "a recall discards unsaved edits and says nothing about it, so the "
+        "model would go on reporting changes that no longer exist")
+
+
+def test_a_recall_leaves_the_preset_needing_a_read(link):
+    """Not because of SetlistPosition - the Grid pushes did it, and they arrive
+    about 90 ms first."""
+    transport, cache = link
+    cache.apply_push(recall_push())
+    assert not cache.needs_read("preset")
+    cache.apply_push(grid_push())
+    assert cache.needs_read("preset")

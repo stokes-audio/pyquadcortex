@@ -970,14 +970,54 @@ class QuadCortex:
         scene-targeted writes silently retargets them; use this method for
         inspection during editing.
         """
+        return self.read_current_preset_push(timeout=timeout).preset
+
+    def read_current_preset_push(self, timeout: float = 15.0):
+        """The whole ``RecallPreset`` reply, not just the preset inside it.
+
+        Same request and same match as :meth:`read_current_preset` - this is
+        where that method's work happens and it returns ``.preset`` from here -
+        so everything that method's docstring records about the wire applies
+        unchanged. Nothing new is sent.
+
+        It exists because the reply carries ``reason`` beside the preset, and a
+        caller tracking state needs both from one answer. Confirmed on hardware
+        2026-08-15: the connect burst's seed push sets ``action``, ``preset``
+        and ``reason``, and so does the push a recall produces.
+        """
         request_id = self._t.next_request_id()
         message = pa.RecallPresetMessage(action=pa.MessageAction.READ,
                                          request_id=request_id)
-        reply = self._t.await_broadcast(
+        return self._t.await_broadcast(
             pa.RecallPresetMessage, lambda: self._t.send(message), timeout=timeout,
             match=lambda m: (m.HasField("request_id")
                              and m.request_id == request_id))
-        return reply.preset
+
+    def loaded_position(self, timeout: float = 10.0):
+        """Which preset slot is on the grid right now.
+
+        ``SetlistPosition{READ}`` answers with ``folder_key``, ``position`` and
+        ``is_factory``, and echoes ``request_id``. Returns the whole message, so
+        a caller can compare all three rather than a rendered name - two
+        addresses are best compared as positions, since a slot NAME moves with
+        the footswitch mode.
+
+        Confirmed on hardware 2026-08-15 (d14e): the READ was answered in 3 ms
+        with the id echoed, on the first attempt. The unit also pushes one of
+        these unsolicited in the connect burst and on every recall, so a state
+        tracker can subscribe rather than poll.
+
+        A READ does not recall anything - contrast :meth:`recall_preset`, which
+        is the same message type as an UPDATE and does change what is loaded.
+        """
+        request_id = self._t.next_request_id()
+        message = pa.SetlistPositionMessage(action=pa.MessageAction.READ,
+                                            request_id=request_id)
+        return self._t.await_broadcast(
+            pa.SetlistPositionMessage, lambda: self._t.send(message),
+            timeout=timeout,
+            match=lambda m: (m.HasField("request_id")
+                             and m.request_id == request_id))
 
     def active_scene(self, timeout: float = 10.0):
         """Which scene the unit is on right now, as a :class:`~pyquadcortex.protocol.Scene`.

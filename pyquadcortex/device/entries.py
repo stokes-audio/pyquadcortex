@@ -77,16 +77,11 @@ class FieldPlan:
             either has to decide for itself, and this flag is that decision
             written down. It does not widen :data:`SCAFFOLDING`, and it is set
             per entry and per message type rather than globally.
-        new_subject: this entry is now about a DIFFERENT thing - another preset
-            is loaded. Implies ``invalidates``, and additionally retires
-            anything a caller is still holding that was built from the old one,
-            which is what ``preset.is_current`` reports.
     """
 
     kept: frozenset = frozenset()
     no_presence: frozenset = frozenset()
     invalidates: bool = False
-    new_subject: bool = False
 
     def voids_the_copy(self) -> bool:
         """Whether a message of this type makes the entry untrusted on its own.
@@ -95,7 +90,7 @@ class FieldPlan:
         not depend on what the message carried, because for these types what it
         carried cannot be seen.
         """
-        return self.invalidates or self.new_subject
+        return self.invalidates
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -282,16 +277,61 @@ def _read_dirty(client) -> dict:
     return {"is_dirty": client.preset_dirty()}
 
 
-#: A different preset is loaded now. Recalling resets the grid contents, the
-#: active scene and the unsaved-changes flag together, because the unit moves
-#: them together (``docs/domain-model.md`` section 9, smaller decision 3). So
-#: this plan feeds three entries and voids all three.
+#: What a recall really pushes, measured on hardware 2026-08-15 across two host
+#: recalls. Within about 120 ms of the request::
 #:
-#: The alternative was to work out which pushes accompany a recall and trust
-#: those instead. That is a guess until somebody measures it, and being wrong
-#: about it means reporting unsaved changes that no longer exist, or a scene
-#: the unit left. Three cheap reads is the price of not guessing.
-_RECALLED_SOMETHING_ELSE = FieldPlan(new_subject=True)
+#:     Grid x 8-13      the new grid, block by block
+#:     RecallPreset     the whole new preset
+#:     Scene            the new active scene
+#:     SetlistPosition  which slot is loaded now
+#:
+#: and **no PresetDirty at all**. Each of the three plans below follows from
+#: that list rather than from the same guess applied three times, which is what
+#: this was before somebody measured it.
+#:
+#: WHICH preset is loaded, which is a different question from what is in it.
+#: The two used to be one entry, with an invented counter standing in for the
+#: unit's own answer. They are separate now because the unit reports this
+#: directly and ``SetlistPosition{READ}`` really does answer - confirmed on
+#: hardware 2026-08-15, in 3 ms, echoing the request id. Section 9's table said
+#: so and nobody had checked.
+#:
+#: ``preset.is_current`` compares this rather than counting events, so it is
+#: answering with a fact the unit stated rather than with the model's own
+#: bookkeeping.
+#:
+#: The PRESET entry is deliberately not fed by this type at all. A recall
+#: pushes the whole new preset in a ``RecallPreset``, which replaces our copy
+#: outright, and eight to thirteen ``Grid`` pushes about 90 ms before this one
+#: arrives. Marking the preset here would throw away what the connect burst had
+#: just delivered, for a message that says nothing about contents.
+_LOADED = FieldPlan(kept=frozenset({"folder_key", "position", "is_factory"}))
+
+
+def _read_loaded(client) -> dict:
+    """``SetlistPosition{READ}``: 3 ms, measured."""
+    return fields_applied(client.loaded_position(), _LOADED)
+
+
+LOADED = StateEntry(
+    name="loaded",
+    read=_read_loaded,
+    feeds={pa.SetlistPositionMessage: _LOADED},
+)
+
+
+#: ``SetlistPosition`` on the DIRTY entry invalidates, and this is the one that
+#: had to. A recall clears the unsaved-changes flag on the unit and the unit
+#: says nothing about it - no ``PresetDirty`` follows a recall. Without this the
+#: model would go on reporting unsaved changes that the recall discarded.
+_RECALL_CLEARS_DIRTY = FieldPlan(invalidates=True)
+
+#: ``SetlistPosition`` on the SCENE entry invalidates too, although the recall
+#: does push a ``Scene`` carrying the new value. That push is what actually
+#: refreshes the entry - and because it is the unit's whole answer for this
+#: entry, it clears this mark as it lands. So the mark costs nothing when the
+#: push arrives and saves a wrong answer if it ever does not.
+_RECALL_MOVES_THE_SCENE = FieldPlan(invalidates=True)
 
 
 DIRTY = StateEntry(
@@ -299,7 +339,7 @@ DIRTY = StateEntry(
     read=_read_dirty,
     feeds={
         pa.PresetDirtyMessage: _PRESET_DIRTY,
-        pa.SetlistPositionMessage: FieldPlan(invalidates=True),
+        pa.SetlistPositionMessage: _RECALL_CLEARS_DIRTY,
     },
 )
 
@@ -311,26 +351,19 @@ DIRTY = StateEntry(
 #: scene and interrupts the audio every time, including when it recalls the
 #: preset already loaded.
 #:
-#: ``reason`` is NOT kept, and that was decided rather than overlooked. It says
-#: why the preset last changed, which is a fact about the MESSAGE rather than
-#: about the preset: there is no read that asks "what was the last reason", so
-#: an entry keeping it could never recover it once marked. Every entry's read
-#: has to answer for every field it keeps, and this one cannot answer for that.
+#: ``reason`` is kept, and the read below answers for it, because every
+#: ``RecallPreset`` carries it. Measured on hardware 2026-08-15: the connect
+#: burst's seed push sets ``action``, ``preset`` and ``reason``, and so does the
+#: push a recall produces. An entry that did not keep it would therefore be
+#: marked for re-reading by the very burst that warmed it, and the first read of
+#: ``device.preset`` would pay for a round trip the unit had already made.
 #:
-#: The price is that a ``RecallPreset`` setting ``reason`` marks this entry.
-#: Three cases, and two of them cost nothing:
-#:
-#: * our own read - the mark is cleared by that same read, which counts the
-#:   messages it saw rather than looking at unkept fields;
-#: * a recall on the touchscreen - ``SetlistPosition`` voids this entry anyway;
-#: * **the connect burst's seed push** - this is the one that could cost a read,
-#:   and only if the seed sets ``reason`` at all. Unmeasured. The field has
-#:   presence, so if the unit leaves it off the seed there is no mark and no
-#:   cost. The hardware test that counts reads between the handshake and the
-#:   first property access is what settles it; if it does cost a read, the fix
-#:   is to give the protocol layer a reader that hands back the whole reply so
-#:   this entry can keep ``reason`` AND answer for it.
-_RECALL_FOR_PRESET = FieldPlan(kept=frozenset({"preset"}))
+#: This was tried the other way first. Keeping a field an entry cannot read back
+#: is worse than paying for the read - once marked, it would be gone for good -
+#: so the answer was to make it readable, which is what
+#: ``QuadCortex.read_current_preset_push`` is for. Nothing reads ``reason`` yet;
+#: it gets a property when the Directory story gives it one to hang off.
+_RECALL_FOR_PRESET = FieldPlan(kept=frozenset({"preset", "reason"}))
 
 #: A ``Grid`` push is a sparse, keyed delta into a deeply nested structure. The
 #: model does NOT merge it: it notes that the grid moved and re-reads the whole
@@ -369,8 +402,12 @@ def _read_preset(client) -> dict:
 
     One request and one reply, like every entry's read. The reply is the unit's
     whole answer, so it REPLACES what we hold rather than merging into it.
+
+    Goes through ``read_current_preset_push`` rather than ``read_current_preset``
+    so that ``reason`` comes back with the preset. Same request, same match, same
+    wire - that method is where ``read_current_preset`` does its work.
     """
-    return {"preset": client.read_current_preset()}
+    return fields_applied(client.read_current_preset_push(), _RECALL_FOR_PRESET)
 
 
 PRESET = StateEntry(
@@ -381,7 +418,6 @@ PRESET = StateEntry(
         pa.GridMessage: _GRID_MOVED,
         pa.SceneLabelMessage: _SCENE_TEXT_CHANGED,
         pa.SceneColorMessage: _SCENE_TEXT_CHANGED,
-        pa.SetlistPositionMessage: _RECALLED_SOMETHING_ELSE,
     },
 )
 
@@ -407,9 +443,36 @@ SCENE = StateEntry(
     read=_read_scene,
     feeds={
         pa.SceneMessage: _SCENE,
-        pa.SetlistPositionMessage: _RECALLED_SOMETHING_ELSE,
+        pa.SetlistPositionMessage: _RECALL_MOVES_THE_SCENE,
     },
 )
+
+
+def covers_the_whole_entry(entry: StateEntry, plan: FieldPlan) -> bool:
+    """Whether a message of this type can be the unit's WHOLE answer for ``entry``.
+
+    A push that carries every field an entry keeps is the same thing a read
+    returns, so it replaces rather than merges - and an entry holding the unit's
+    own complete answer has nothing left to re-read. That is what lets the
+    connect burst leave the cache genuinely warm rather than nominally warm:
+    measured 2026-08-15, the burst delivers ``RecallPreset``,
+    ``SetlistPosition``, ``PresetDirty`` and ``Scene`` in that order inside 10
+    ms, so two of the four entries are marked by a message and then answered in
+    full by the next one.
+
+    Three conditions, and none of them is decoration:
+
+    * the plan's fields have to be the entry's WHOLE field set. Without this a
+      plan that keeps nothing - every ``invalidates`` plan - would qualify
+      vacuously, and a ``Grid`` push would clear the mark it had just set.
+    * the plan must not void the copy, because those types say the entry is
+      wrong whatever they carry.
+    * the message must actually carry them, which the caller checks; a partial
+      push is exactly what this must not clear on.
+    """
+    if plan.voids_the_copy():
+        return False
+    return (plan.kept | plan.no_presence) == entry.fields()
 
 
 #: Everything the cache tracks. Section 9's table still has more rows than this
@@ -425,7 +488,7 @@ SCENE = StateEntry(
 #: whole tree, several hundred messages over about fifteen seconds - so those
 #: entries land with the change to `StateEntry` that lets a read say how many
 #: messages it expects.
-ENTRIES = (IDENTITY, DIRTY, PRESET, SCENE)
+ENTRIES = (IDENTITY, DIRTY, PRESET, SCENE, LOADED)
 
 ENTRY_BY_NAME = {entry.name: entry for entry in ENTRIES}
 
