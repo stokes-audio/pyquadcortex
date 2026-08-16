@@ -633,9 +633,22 @@ def test_a_plan_that_voids_the_copy_really_does_it_unconditionally(entry):
     for message_class, plan in entry.feeds.items():
         if not plan.voids_the_copy():
             continue
-        assert not entries.fields_applied(message_class(), plan), (
+        # Asserted on the PLAN, not on a message. An earlier version built an
+        # empty message and checked `fields_applied` was empty - which it is for
+        # any presence-bearing field regardless of what the plan declares, so
+        # the assertion held for a plan keeping two fields and proved nothing.
+        assert not (plan.kept | plan.no_presence), (
             f"{entry.name} both voids its copy on {message_class.__name__} and "
-            f"applies fields from it, which is two answers to one question")
+            f"keeps {sorted(plan.kept | plan.no_presence)} from it, which is "
+            f"two answers to one question")
+        # And the property the exemption actually rests on: an empty message of
+        # this type still marks the entry. That is what the per-field check
+        # cannot do, and why these types are declared by type at all.
+        assert entries.unkept_fields(message_class(), plan) == []
+        assert plan.voids_the_copy(), (
+            f"nothing would mark {entry.name} from an empty "
+            f"{message_class.__name__}, so the skip above forgives a real "
+            f"blind spot")
 
 
 @pytest.mark.parametrize("entry", entries.ENTRIES, ids=lambda e: e.name)
@@ -1124,18 +1137,47 @@ def test_the_loaded_slot_is_its_own_entry():
         "folder_key", "position", "is_factory"}
 
 
-def test_a_recall_voids_the_dirty_flag_because_nothing_else_will():
+def test_a_change_of_loaded_slot_resets_the_dirty_flag_and_the_scene():
     """The measurement that mattered most: a recall pushes NO PresetDirty. It
     clears the unsaved-changes flag on the unit and says nothing about it, so
-    without this the model would go on reporting edits the recall discarded."""
-    assert entries.DIRTY.feeds[pa.SetlistPositionMessage].invalidates
+    without this the model would go on reporting edits the recall discarded.
+
+    Declared on the `loaded` entry rather than as a plan on each of the other
+    two, because it must fire on a CHANGE of slot and not on every message of
+    that type - the model's own read of the loaded slot is one of those.
+    """
+    assert entries.LOADED.resets == ("dirty", "scene")
+    assert pa.SetlistPositionMessage not in entries.DIRTY.feeds
+    assert pa.SetlistPositionMessage not in entries.SCENE.feeds
 
 
-def test_a_recall_voids_the_active_scene_too():
-    """A recall does push a `Scene` carrying the new value, so this mark is
-    cleared as that push lands. It costs nothing when the push arrives and saves
-    a wrong answer if it ever does not."""
-    assert entries.SCENE.feeds[pa.SetlistPositionMessage].invalidates
+def test_a_recall_really_does_reset_them(link):
+    transport, cache = link
+    cache.apply_push(dirty_push(True))
+    cache.apply_push(scene_push(scene=2))
+    cache.apply_push(recalled_elsewhere(position=9))
+    assert not cache.needs_read("dirty") and not cache.needs_read("scene"), (
+        "the first sighting of a slot is not a change - there was nothing to "
+        "reset yet")
+    cache.apply_push(recalled_elsewhere(position=17))
+    assert cache.needs_read("dirty")
+    assert cache.needs_read("scene")
+
+
+def test_the_models_own_read_of_the_loaded_slot_resets_nothing(link):
+    """Asking which preset is loaded is a question, not news. An earlier version
+    put `invalidates` on both entries, so one `device.preset` on a cold cache
+    marked them and published two Invalidated events - the model reporting its
+    own question as something the unit had done."""
+    transport, cache = link
+    cache.apply_push(dirty_push(True))
+    cache.apply_push(scene_push(scene=2))
+    seen = []
+    cache.events.subscribe(seen.append)
+    cache.value("loaded", "position")
+    assert not cache.needs_read("dirty")
+    assert not cache.needs_read("scene")
+    assert [e for e in stays_quiet(seen) if isinstance(e, events.Invalidated)] == []
 
 
 def test_an_edit_does_not_touch_the_loaded_slot():
@@ -1404,25 +1446,50 @@ def test_a_push_that_names_something_unkept_does_not_answer_the_entry(link):
 
 
 def test_a_recall_leaves_the_dirty_flag_needing_a_read(link):
-    """The measured case that makes `SetlistPosition` invalidate `dirty`: a
+    """The measured case that makes a change of loaded slot reset `dirty`: a
     recall pushes no PresetDirty, so nothing answers this entry and it has to
-    ask."""
+    ask.
+
+    The burst runs first, because it always does - the recall has to be a change
+    of slot, and there is no such thing as a connection where the first
+    SetlistPosition anyone sees is a recall.
+    """
     transport, cache = link
+    for message in the_connect_burst():
+        cache.apply_push(message)
     cache.apply_push(dirty_push(True))
     assert not cache.needs_read("dirty")
+    # the measured order of a real recall, to a different slot
     for message in [grid_push(), recall_push(), scene_push(scene=0),
-                    recalled_elsewhere()]:
+                    recalled_elsewhere(position=17)]:
         cache.apply_push(message)
     assert cache.needs_read("dirty"), (
         "a recall discards unsaved edits and says nothing about it, so the "
         "model would go on reporting changes that no longer exist")
 
 
-def test_a_recall_leaves_the_preset_needing_a_read(link):
-    """Not because of SetlistPosition - the Grid pushes did it, and they arrive
-    about 90 ms first."""
+def test_a_recall_in_the_order_the_unit_sends_it_leaves_the_preset_trusted(link):
+    """The measured order is Grid FIRST, then RecallPreset about 90 ms later.
+
+    Replayed that way round, the RecallPreset carries the whole entry and clears
+    the mark the Grid pushes set - so a recall does NOT leave the preset needing
+    a read, which is the desirable behaviour and the whole reason `reason` is
+    kept. An earlier version of this test applied the two backwards and asserted
+    the opposite, which the real ordering contradicts.
+    """
     transport, cache = link
-    cache.apply_push(recall_push())
+    for message in the_connect_burst():
+        cache.apply_push(message)
+    for message in [grid_push(), grid_push(), recall_push()]:
+        cache.apply_push(message)
+    assert not cache.needs_read("preset")
+
+
+def test_an_edit_on_the_unit_does_leave_the_preset_needing_a_read(link):
+    """The case the Grid pushes exist for, with no RecallPreset behind them."""
+    transport, cache = link
+    for message in the_connect_burst():
+        cache.apply_push(message)
     assert not cache.needs_read("preset")
     cache.apply_push(grid_push())
     assert cache.needs_read("preset")

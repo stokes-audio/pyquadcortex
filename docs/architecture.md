@@ -38,7 +38,7 @@ only about the layer directly below it.
     pyquadcortex/            THE MODEL - what import pyquadcortex hands back
       device/device.py       connect(): opens the unit, returns a Device.
       |                      Speaks the unit's vocabulary, never the wire.
-      |                      (Directory and grid land in later stories.)
+      |                      (The Directory lands in a later story.)
       |
       device/state.py        The write-through cache every model read goes
       |                      through: applies what the unit pushes, asks for

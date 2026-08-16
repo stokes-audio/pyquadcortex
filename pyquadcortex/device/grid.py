@@ -35,14 +35,26 @@ class BlockGrid:
 
     def __init__(self, preset, scene=None):
         self._preset = preset
+        # Round-tripped through the boundary so a plain "B" and a SceneLetter
+        # both land as the same type, and so the refusals live in one place. An
+        # earlier version took `.name` off the wire enum here, which is what
+        # `scene_from_wire` is FOR - a conversion sitting outside the boundary,
+        # and one neither structural scan could see: there is no arithmetic in
+        # it, and the protocol enum is reached through a call rather than
+        # through a protocol alias.
         self._scene = (None if scene is None
-                       else translate.SceneLetter(translate.scene_to_wire(scene).name))
+                       else translate.scene_from_wire(translate.scene_to_wire(scene)))
         #: Handles already built, keyed by cell. Dropped whenever the payload
         #: underneath changes - see :meth:`_cells`.
         self._handles = {}
         self._built_from = None
 
     # -- what a block reads through -------------------------------------------
+
+    @property
+    def preset(self):
+        """The preset this grid is a view of. What block equality is keyed on."""
+        return self._preset
 
     @property
     def wire(self):

@@ -372,3 +372,15 @@ def test_activating_the_scene_makes_it_writable(structural):
     preset.active_scene = SceneLetter.B
     assert fixed.writable
     fixed.check_writable()
+
+
+def test_a_row_whose_routing_the_preset_never_stated_refuses_to_guess(structural):
+    """`None` from `lane` means "this row feeds another row, so the screen shows
+    no lane output". A row whose out_portid the preset never carried is a
+    different thing, and answering None for it would turn "we do not know" into
+    a positive claim."""
+    structural.chains[1].ClearField("out_portid")
+    row = rows_of(structural)[2]
+    assert row.output.destination is None
+    with pytest.raises(RuntimeError, match="does not say where row 2 goes"):
+        row.output.lane

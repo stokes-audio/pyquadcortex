@@ -2,10 +2,12 @@
 
 Small on purpose. The model raises the protocol layer's ``DeviceLostError``
 rather than inventing a second name for the device going away, and it prevents
-what it can with types instead of exceptions - a factory preset has no
-``save()`` at all, a row that cannot branch has no ``splitter``
-(``docs/domain-model.md`` section 8). What is left is the handful of refusals
-that mirror something the unit itself cannot do.
+what it can with types instead of exceptions - a row that cannot branch has no
+``splitter`` at all, so ``rows[2].create_split()`` is something an editor
+rejects (``docs/domain-model.md`` section 8). The factory-versus-user preset
+split is the same idea and is NOT built yet: nothing separates the two types
+until ``save()`` exists in M2, so the model has one ``Preset``. What is left is
+the handful of refusals that mirror something the unit itself cannot do.
 """
 
 

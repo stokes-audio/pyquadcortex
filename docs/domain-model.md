@@ -265,7 +265,10 @@ class Scene:
 > **Sections 2 and 3 are built**, less the parts that need the Directory or a write.
 > `device.preset`, `preset.rows`, `row.slots`, `preset.blocks`, `scene.blocks`,
 > `scenes.active`, `scene.name`, `scene.activate()`, splits, routing,
-> `has_unsaved_changes` and `is_current` all read on hardware. Four things named above
+> `has_unsaved_changes` and `is_current` all read on hardware - with one gap
+> stated rather than glossed: the loaded preset routes no row into another row,
+> so the rule that such a row shows no LANE OUTPUT CONTROL is covered offline
+> against a recorded payload that does, and the hardware test skips it aloud. Four things named above
 > are deliberately NOT built, and each is an omission rather than a caveat (principle 3):
 >
 > * **`UserPreset` / `FactoryPreset`.** Which one you hold is a Directory fact, and the

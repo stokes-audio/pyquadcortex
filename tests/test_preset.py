@@ -468,3 +468,124 @@ def test_an_edit_reaches_a_subscriber(warm):
     client.push(pa.GridMessage(action=pa.MessageAction.UPDATE))
     wait_for(seen, 1)
     assert seen[0].part == "preset"
+
+
+# -- a preset that is no longer loaded answers nothing ------------------------
+#
+# The failure this closes: `is_current` went False while `name`, `blocks` and
+# the rest went on reading live state - so a held Preset reported the NEW
+# preset's contents. Worse than reporting the old ones, and the exact shape
+# `Device._check_open` refuses for a closed connection.
+
+
+def recall_elsewhere(client, name="SOMETHING ELSE", position=99):
+    """The unit loading a different preset, as it really announces it."""
+    other = load()
+    other.name = name
+    client._preset = other
+    client.push(pa.SetlistPositionMessage(
+        action=pa.MessageAction.UPDATE, position=position,
+        folder_key="/media/p4/Presets/My Presets", is_factory=False))
+    recall = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE,
+                                    reason=pa.RecallPresetReason.OTHER)
+    recall.preset.CopyFrom(other)
+    client.push(recall)
+
+
+def test_a_stale_preset_does_not_report_the_new_presets_name(warm):
+    device, client = warm
+    held = device.preset
+    assert held.name == "Structural Fixture"
+    recall_elsewhere(client)
+    assert not held.is_current
+    with pytest.raises(RuntimeError, match="no longer the one on the grid"):
+        held.name
+
+
+@pytest.mark.parametrize("read", [
+    lambda p: p.name,
+    lambda p: p.wire,
+    lambda p: p.has_unsaved_changes,
+    lambda p: p.active_scene,
+    lambda p: p.blocks[1, 1],
+    lambda p: list(p.blocks),
+    lambda p: p.rows[1].slots[1],
+    lambda p: p.rows[1].input.source,
+    lambda p: p.scenes["B"].name,
+    lambda p: p.scenes.active,
+    lambda p: p.scenes["B"].blocks[1, 1],
+], ids=["name", "wire", "has_unsaved_changes", "active_scene", "blocks",
+        "iterate blocks", "slot", "row input", "scene name", "active scene",
+        "scene blocks"])
+def test_every_read_through_a_stale_preset_refuses(warm, read):
+    device, client = warm
+    held = device.preset
+    recall_elsewhere(client)
+    with pytest.raises(RuntimeError, match="no longer the one on the grid"):
+        read(held)
+
+
+def test_a_stale_preset_still_answers_is_current(warm):
+    """The one property that must not raise - asking whether an object is
+    still good is how a caller avoids every error above."""
+    device, client = warm
+    held = device.preset
+    recall_elsewhere(client)
+    assert held.is_current is False
+
+
+def test_a_stale_preset_still_has_a_repr(warm):
+    """repr() is called by debuggers and logging, so it must never raise."""
+    device, client = warm
+    held = device.preset
+    recall_elsewhere(client)
+    assert "Preset" in repr(held)
+
+
+def test_activating_a_scene_through_a_stale_preset_is_refused(warm):
+    """The audible half. Without this, a Scene reached through a held Preset
+    switches the scene of whatever is loaded NOW."""
+    device, client = warm
+    scene = device.preset.scenes["B"]
+    recall_elsewhere(client)
+    with pytest.raises(RuntimeError, match="no longer the one on the grid"):
+        scene.activate()
+    assert client.switched == [], "the unit was told to switch anyway"
+
+
+def test_the_device_hands_back_a_working_preset_after_the_recall(warm):
+    """The refusal has to leave the caller somewhere to go."""
+    device, client = warm
+    device.preset
+    recall_elsewhere(client)
+    assert device.preset.name == "SOMETHING ELSE"
+    assert device.preset.is_current
+
+
+# -- block identity survives what the model does to the payload ---------------
+
+
+def test_two_handles_on_a_cell_stay_equal_across_a_re_read(warm):
+    """Keyed on the preset, not on the payload. The model replaces the payload
+    on every re-read, so keying on it meant a Block put in a set was silently
+    lost the moment somebody touched the unit."""
+    device, client = warm
+    preset = device.preset
+    before = preset.blocks[1, 1]
+    held = {before}
+    client.push(pa.GridMessage(action=pa.MessageAction.UPDATE))
+    after = preset.blocks[1, 1]
+    assert after == before
+    assert after in held
+
+
+def test_hashing_a_block_never_asks_the_unit(warm):
+    """`hash()` reaching through to the cache could issue a 21 KB read with a
+    fifteen-second timeout, and raise on a closed device."""
+    device, client = warm
+    block = device.preset.blocks[1, 1]
+    device.state.mark_for_reread("preset", "this test")
+    client.asked.clear()
+    hash(block)
+    block == block
+    assert client.asked == []

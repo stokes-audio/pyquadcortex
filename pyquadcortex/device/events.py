@@ -59,10 +59,13 @@ class ModelEvent:
 class Changed(ModelEvent):
     """A push moved a value the model holds.
 
-    Only when the value really moved. The unit restates things it has already
-    said - a ``PresetDirty`` arrives on every edit whether or not the answer is
-    new - and reporting those as changes would make the stream useless for the
-    thing it is for.
+    Only when the value really moved. The unit does restate things it has
+    already said, so reporting every push as a change would make the stream
+    useless for the thing it is for. (``PresetDirty`` is not the example it
+    looks like: measured 2026-08-14, the unit sends one when the flag CHANGES
+    and stays quiet on an edit that leaves it true - see ``docs/protocol.md``,
+    "`PresetDirty` announces a CHANGE of flag, not an edit". The rule here is
+    cheap and holds whatever the unit does.)
     """
 
     part: str            #: which part of the model's copy, e.g. ``"preset"``
@@ -76,6 +79,15 @@ class Invalidated(ModelEvent):
     The next read of it goes to the unit. Fired on the change from trusted to
     untrusted only, so one edit on the touchscreen - which produces about forty
     ``Grid`` pushes - produces one of these rather than forty.
+
+    **A subscriber that does not read goes quiet.** The entry stays untrusted
+    until something reads it or the unit answers it in full, and this fires on
+    the TRANSITION - so three separate edits with no read between them produce
+    one event, not three. That is the right shape for the intended use, which is
+    "hear this, go and read it", and the wrong shape for a subscriber that only
+    logs. If you want to know about every edit rather than about your own copy
+    going stale, read the value when you hear this; the next edit will announce
+    itself again.
     """
 
     part: str
@@ -163,6 +175,19 @@ class EventStream:
             thread, self._thread = self._thread, None
         if thread is not None:
             self._queue.put(_STOP)
+            if thread is threading.current_thread():
+                # Closing from inside a subscriber, which is an ordinary thing
+                # to do on a disconnect - `Device.events` invites a subscriber
+                # to act on what it hears. Joining here would raise
+                # `RuntimeError: cannot join current thread`, and that would
+                # abort `DeviceState.close` before it released the in-flight
+                # write watches and `Device.close` before it released the USB
+                # interface, locking out Cortex Control and the next connect.
+                # The sentinel is already queued, so the loop stops as soon as
+                # this subscriber returns.
+                log.debug("events.close_from_subscriber - the delivery thread "
+                          "stops when this event finishes")
+                return
             thread.join(timeout=CLOSE_PATIENCE)
             if thread.is_alive():
                 log.warning(
@@ -206,8 +231,13 @@ class EventStream:
             for listener in listeners:
                 try:
                     listener(event)
-                except Exception:
-                    # Logged, not raised. There is nobody to raise to here, and
-                    # one subscriber's bug must not cost the others their event
-                    # or stop the stream for good.
+                except BaseException:
+                    # BaseException, not Exception, for the reason
+                    # `Transport._notify_listeners` gives about the RX thread: a
+                    # subscriber is arbitrary caller code, and the ways it can
+                    # raise outside Exception are ordinary rather than exotic -
+                    # `pytest.fail()` and `sys.exit()` both do. Letting one
+                    # through would end this thread for good, and the failure a
+                    # caller sees is every other subscriber going quiet with no
+                    # error anywhere.
                     log.exception("events.subscriber_failed on %r", event)

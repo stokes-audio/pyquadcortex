@@ -88,18 +88,26 @@ def test_every_row_reports_the_routing_the_protocol_layer_does(device, wire):
 
 
 def test_a_row_routed_into_another_row_shows_no_lane_output(device, wire):
-    """As on screen. Skipped rather than faked if this preset has no such row."""
-    routed = [row for row in device.preset.rows
-              if row.output.destination in (protocol.Output.NEXT_ROW_3,
-                                            protocol.Output.NEXT_ROW_4,
-                                            protocol.Output.NEXT_ROW_3_4)]
+    """As on screen. Skipped rather than faked if this preset has no such row.
+
+    Rows are compared by NUMBER. `Row` defines no equality and `preset.rows`
+    rebuilds its objects on every access, so `row in some_list_of_rows` compares
+    identity across two different `Rows` instances and is always False - which
+    is how the first version of this test asserted the opposite of itself in its
+    second loop and never noticed, because the preset it ran against took the
+    skip above.
+    """
+    into_a_row = (protocol.Output.NEXT_ROW_3, protocol.Output.NEXT_ROW_4,
+                  protocol.Output.NEXT_ROW_3_4)
+    routed = {row.number for row in device.preset.rows
+              if row.output.destination in into_a_row}
     if not routed:
         pytest.skip("the loaded preset routes no row into another row")
-    for row in routed:
-        assert row.output.lane is None
     for row in device.preset.rows:
-        if row not in routed and row.output.destination is not None:
-            assert row.output.lane is not None
+        if row.number in routed:
+            assert row.output.lane is None, f"row {row.number} feeds a row"
+        elif row.output.destination is not None:
+            assert row.output.lane is not None, f"row {row.number} feeds a jack"
 
 
 def test_every_split_matches_the_protocol_layer(device, wire):
@@ -204,13 +212,35 @@ def test_reading_the_preset_surface_costs_no_round_trip(device, model_cache):
     Counted at the transport, wrapping all three ways the model can ask, and the
     counter is proved able to see a read at the end of this file.
     """
-    preset = device.preset
     with counting(device) as asked:
+        # device.preset is INSIDE the block. It is the only path that reads the
+        # loaded slot, and that entry is the one where warmth is a real
+        # assumption rather than a measurement: SetlistPosition has seven
+        # presence-bearing fields and the entry keeps three, so if the burst's
+        # push carries any of the other four the entry is marked on arrival and
+        # every device.preset costs a round trip. An earlier version built the
+        # preset outside the block and could not have seen that.
+        preset = device.preset
         preset.has_unsaved_changes
         preset.is_current
         preset.name
         preset.scenes.active
     assert asked == [], f"the model asked the unit for {asked}"
+
+
+def test_the_burst_push_carries_only_fields_the_loaded_entry_keeps(handshake_burst,
+                                                                  model_cache):
+    """The assumption the test above rests on, checked directly.
+
+    If the unit's unsolicited SetlistPosition carried `is_downloads` or any of
+    the other fields `_LOADED` does not keep, the entry would be marked the
+    moment it arrived and the warmth claim would be false - so this asserts the
+    entry came out of the burst trusted rather than merely populated.
+    """
+    assert model_cache.cached("loaded"), "the burst delivered no loaded slot"
+    assert not model_cache.needs_read("loaded"), (
+        "the burst's SetlistPosition named a field the loaded entry does not "
+        "keep, so device.preset costs a round trip on every connection")
 
 
 def test_the_read_counter_can_see_a_read(device, model_cache):

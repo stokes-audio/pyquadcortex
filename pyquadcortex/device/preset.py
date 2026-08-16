@@ -65,6 +65,11 @@ class Scene:
             The write's watch. Ignoring it is fine and normal - the outcomes are
             logged either way - but a caller who wants to know can wait on it.
         """
+        # The check `is_current` describes. Without it, a Scene reached through
+        # a Preset somebody held across a recall would switch the scene of
+        # whatever is loaded NOW - audibly, and on a preset the caller never
+        # opened.
+        self._preset._check_current()
         index = translate.scene_to_wire(self._letter)
         state = self._preset.state
         client = self._preset.client
@@ -147,6 +152,27 @@ class Preset:
         """The protocol connection. Raises once the `Device` is closed."""
         return self._device.client
 
+    def _check_current(self) -> None:
+        """Refuse to answer once this is not the preset on the grid.
+
+        A `Preset` reads live state, so without this it would go on answering
+        after the unit loaded something else - and answering with the NEW
+        preset's contents, which is worse than answering with the old ones. That
+        is the failure the whole layer exists to avoid, and it is the same one
+        `Device._check_open` refuses for a closed connection.
+
+        :attr:`is_current` and ``__repr__`` deliberately do not call this: asking
+        whether an object is still good must not raise, and neither must a
+        debugger.
+        """
+        if self.is_current:
+            return
+        raise RuntimeError(
+            "this Preset is no longer the one on the grid - the unit has "
+            "loaded another since it was read, so nothing it could report "
+            "would be about the preset you opened. Ask the device for the "
+            "current one with device.preset, or check preset.is_current first.")
+
     @property
     def wire(self):
         """The preset payload the unit sent, read through the cache.
@@ -154,7 +180,16 @@ class Preset:
         Fetched on every access, so an edit somebody made on the touchscreen is
         picked up rather than remembered wrongly. The cache answers from its
         copy when it has one and asks the unit when it does not.
+
+        **This is the cache's own object, not a copy, and mutating it corrupts
+        the model.** It is the seam the grid and the blocks read through rather
+        than something a caller is meant to hold - the way down to the wire is
+        ``device.client``, which says the same thing about itself. It is not
+        copied on the way out because the grid memoizes its handles against this
+        object's identity, and a fresh copy per access would defeat that and
+        make every block property re-derive the whole grid.
         """
+        self._check_current()
         return self.state.value("preset", "preset")
 
     @property
@@ -168,7 +203,13 @@ class Preset:
 
     @property
     def active_scene(self) -> translate.SceneLetter:
-        """Which scene the unit is on, as a letter."""
+        """Which scene the unit is on, as a letter.
+
+        Refuses once this is no longer the loaded preset, for the same reason
+        `has_unsaved_changes` does: the unit's answer would be about a preset
+        this object is not.
+        """
+        self._check_current()
         return translate.scene_from_wire(
             self.state.value("scene", "selected_scene"))
 
@@ -190,13 +231,21 @@ class Preset:
         """Whether the grid holds edits nobody has saved.
 
         The italic name on screen. Answered from the model's copy, which the
-        unit keeps current by pushing this on the connect burst and on every
-        edit - so it costs no round trip once the connection is warm.
+        unit keeps current by pushing this in the connect burst and whenever the
+        flag CHANGES - so it costs no round trip once the connection is warm.
+        (Not on every edit: an edit to an already-dirty preset sends nothing,
+        measured 2026-08-14. That is why this is a cached fact rather than
+        something counted from edit notifications.)
 
         A recall clears this, and the unit says nothing about it when it does
         (measured), so the model re-reads after a recall rather than waiting to
         be told.
+
+        Refuses once this is no longer the loaded preset: the flag the unit
+        holds is about whatever is on the grid now, which by then is something
+        else.
         """
+        self._check_current()
         return self.state.value("dirty", "is_dirty")
 
     @property
@@ -204,9 +253,13 @@ class Preset:
         """Whether this is still the preset on the grid.
 
         Hold a `Preset` while somebody taps a different slot on the touchscreen
-        and this object now points at something else. Every mutating call will
-        check this before writing, so an edit cannot land on a preset the caller
-        never opened (``docs/domain-model.md`` section 12).
+        and this object is about something the unit is no longer showing. Every
+        other property here checks this first and refuses, and so does
+        `Scene.activate` - so neither a read nor a write can quietly land on a
+        preset the caller never opened (``docs/domain-model.md`` section 12).
+
+        This property is the one that does NOT refuse, because asking whether an
+        object is still good must not raise.
 
         Costs no round trip: it compares the loaded slot the unit last reported
         against the one this object was built at, both from the model's copy. An

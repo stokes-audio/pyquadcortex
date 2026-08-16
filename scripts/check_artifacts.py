@@ -26,7 +26,16 @@ REQUIRED = (
     "pyquadcortex/protocol/cli.py",
     "pyquadcortex/protocol/client.py",
     "pyquadcortex/device/device.py",
-    "pyquadcortex/device/translate.py",
+    "pyquadcortex/device/preset.py",
+    "pyquadcortex/device/grid.py",
+    "pyquadcortex/device/blocks.py",
+    # The translation boundary is a PACKAGE, so its `__init__` alone proves
+    # nothing: a packaging rule that took the directory but dropped its modules
+    # would ship a boundary that re-exports names it no longer has. So a real
+    # converter module is named beside it.
+    "pyquadcortex/device/translate/__init__.py",
+    "pyquadcortex/device/translate/coordinates.py",
+    "pyquadcortex/device/translate/grid.py",
     # The two files that DECIDE what `import pyquadcortex` hands back. Ship a
     # wheel without either and every module above is still present and correct,
     # while the package exports nothing.

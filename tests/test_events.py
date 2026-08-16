@@ -175,3 +175,49 @@ def test_an_event_says_what_it_is_in_its_repr():
     text = repr(events.Invalidated("preset", "a Grid push changed the grid"))
     assert "Invalidated" in text
     assert "a Grid push changed the grid" in text
+
+
+def test_a_subscriber_raising_outside_exception_does_not_kill_the_thread():
+    """`pytest.fail()` and `sys.exit()` both raise outside Exception, and a
+    subscriber is arbitrary caller code - the same reasoning the transport
+    records for the RX thread. Letting one through ends delivery for good, and
+    what the caller sees is every other subscriber going quiet with no error."""
+    made = events.EventStream()
+    try:
+        def exits(event):
+            raise SystemExit("a subscriber called sys.exit()")
+
+        seen = []
+        made.subscribe(exits)
+        made.subscribe(seen.append)
+        made.publish(events.Changed("dirty", ("first",)))
+        made.publish(events.Changed("dirty", ("second",)))
+        wait_for(seen, 2)
+        assert [e.fields[0] for e in seen] == ["first", "second"]
+        assert events.EVENT_THREAD_NAME in {t.name for t in threading.enumerate()}
+    finally:
+        made.close()
+
+
+def test_closing_from_inside_a_subscriber_does_not_raise():
+    """Closing on a disconnect is an ordinary reaction, and `device.events`
+    invites a subscriber to act. Joining its own thread would raise, and that
+    exception would abort the rest of the shutdown - including releasing the
+    USB interface."""
+    made = events.EventStream()
+    failures = []
+
+    def closes(event):
+        try:
+            made.close()
+        except BaseException as exc:      # noqa: BLE001 - recorded, not swallowed
+            failures.append(exc)
+
+    made.subscribe(closes)
+    made.publish(events.Changed("dirty", ("is_dirty",)))
+    for _ in range(200):
+        if events.EVENT_THREAD_NAME not in {t.name for t in threading.enumerate()}:
+            break
+        threading.Event().wait(0.01)
+    assert failures == [], f"close() from a subscriber raised {failures}"
+    assert events.EVENT_THREAD_NAME not in {t.name for t in threading.enumerate()}

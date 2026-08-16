@@ -40,7 +40,8 @@ from pyquadcortex.device import (Block, BlockGrid, Changed,  # noqa: E402
                                  ModelEvent, OutputBlock, OutputDestination,
                                  Preset, PresetAddress, Row, Rows, Scene,
                                  SceneLetter, Scenes, Slots, SplittableRow,
-                                 SplitterBlock, VirtualDevice, connect)
+                                 SplitterBlock, VirtualDevice,
+                                 WatchOutcome, WriteWatch, connect)
 from pyquadcortex.protocol import (DeviceLostError,  # noqa: E402
                                    DeviceNotFoundError)
 
@@ -73,6 +74,8 @@ __all__ = [
     "Changed",
     "Invalidated",
     "InactiveSceneError",
+    "WriteWatch",
+    "WatchOutcome",
     "protocol",
     "DeviceNotFoundError",
     "DeviceLostError",

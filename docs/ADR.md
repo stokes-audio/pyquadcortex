@@ -169,36 +169,36 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
 
 ## ADR-0012: A grid push is noted and re-read, not merged, and the model publishes what it noticed
 
-**Status:** Accepted - 2026-08-15
+- **Status:** Decided (2026-08-15)
+- **Decision:** A `Grid`, `SceneLabel` or `SceneColor` push makes the preset entry's copy untrusted **whatever the message carries**, and the next read fetches the whole live preset with `RecallPreset{READ}`. The model does not merge those deltas. Alongside it, the model publishes two events on `device.events` - `Changed` when a push moved a value it holds, `Invalidated` when it stopped trusting part of its copy - delivered on a thread the model owns, so a subscriber may read from the unit in response.
+- **Context:** One edit on the touchscreen produces about forty `Grid` pushes, each a sparse keyed delta into a deeply nested preset payload. ADR-0011 requires the model to notice anything a message names that it does not represent, and for a delta that means walking the payload recursively rather than reading `ListFields()` at the top level. Two of these types also defeat the per-field check outright: `Grid` carries its meaning in `action`, which the wire gives no presence, so an `UPDATE` and a `DELETE` with identical payloads are indistinguishable; `SceneLabel` gives `index` and `label` no presence either, so renaming a scene to a blank label sets nothing observable at all. Without merging, a caller who needs a fresh value promptly has no way to learn that it went stale, because re-reading only happens when somebody reads a property.
+- **Options:**
+  - **(a) Note it and re-read the whole preset, and publish what was noticed - chosen.** Forty pushes cost one read, because the note is a flag rather than a queue, and `RecallPreset{READ}` has no side effects on the grid, the active scene or the audio. A caller who cannot wait subscribes.
+  - **(b) Merge each delta by key.** Chain by row, model by column, parameter by index, plus the recursive version of ADR-0011's check to stay honest. Reads stay instant while somebody edits on the unit. Rejected for M1 because the recursive check is where all of the risk sits, and it would have landed beside the objects three other stories are blocked on. What it would take is recorded in `domain-model.md` section 9 so this stays a decision rather than an omission.
+  - **(c) Treat `action` as scaffolding on `Grid` like everywhere else.** Two pushes with identical payloads and opposite meanings would apply identically and mark nothing. This is the failure ADR-0011's consequences already name.
+  - **(d) Deliver events on the RX thread.** No new thread, and the same contract as `Transport.add_listener`. Rejected because ADR-0009 forbids reading from that thread, which makes the feature unusable for the thing it exists for: a subscriber's obvious reaction is to go and read the value.
+- **Open Questions:** Whether merging is worth doing once parameters land (#13), since a caller stepping through parameter values during an on-unit edit pays a whole-preset read per step. Measurable rather than arguable: the forced re-reads are logged with the entry that caused them. Also whether `Invalidated` firing only on the trusted-to-untrusted transition is the right shape for a subscriber that never reads - today the stream goes quiet until somebody does, which is documented but not hedged.
+- **Rationale:** The two halves answer the same question from opposite ends. Not merging means the model never has to understand a delta to stay correct, which is what makes the conservative rule affordable; publishing means the cost of not merging - a round trip on first access after an edit - is one a caller can choose to pay eagerly instead. The thread is not a convenience: it is the difference between an event a caller can act on and one that raises when they try.
+- **Consequences:**
+  - The first property read after an on-unit edit is a round trip. A merging cache would have answered instantly.
+  - A push that carries every field an entry keeps clears the mark, because that is exactly what a read returns. This is what makes the connect burst leave the cache genuinely warm: measured, it marks two entries and answers both in full a millisecond later. The check is on what the MESSAGE carried, not on what its plan could carry - a plan-level version was written first and every branch of it was unreachable.
+  - The model owns a thread whose contract is the opposite of the RX thread's: reading from the device is allowed there and expected. It is started on the first subscriber and stopped by `Device.close`, and it catches `BaseException` around a subscriber for the reason `Transport._notify_listeners` records.
+  - "A recall resets three things together" is declared once, on the entry that knows which slot is loaded, and fires only when that slot really changes. Declaring it as a plan on each dependent entry instead made the model's own read of the loaded slot look like a recall, and publish two events saying the unit had changed.
 
-**Context.** An edit on the touchscreen produces about forty `Grid` pushes, each a sparse
-keyed delta into a deeply nested preset payload. Merging one means applying it by key -
-chain by row, model by column, parameter by index - and, to keep ADR-0011's per-field
-honesty, walking that structure recursively to notice anything the model does not
-represent. `Grid` also carries its meaning in `action`, which the wire gives no presence,
-so an `UPDATE` and a `DELETE` with identical payloads are indistinguishable to a
-field-by-field reading; `SceneLabel` is worse, giving `index` and `label` no presence
-either, so renaming a scene to a blank label sets nothing a field check can observe.
+## ADR-0013: The translation boundary is a package, and what it may reach for is two lists
 
-**Decision.** A message of those types voids the entry's copy outright, whatever it
-appears to carry, and the next read fetches the whole live preset -
-`RecallPreset{READ}`, which has no side effects. Forty pushes cost one read, because the
-note is a flag rather than a queue. Alongside it, the model publishes `Changed` and
-`Invalidated` on `device.events`, delivered on a thread the model owns so that a
-subscriber may do the obvious thing and read the fresh value itself.
-
-**Consequences.** The first property read after an on-unit edit is a round trip, where a
-merging cache would have answered instantly; a caller who cannot afford that subscribes
-and re-reads eagerly. The recursive check that merging would need - which is where all of
-its risk sits - is deferred rather than written next to the objects three other stories
-depend on, and what it would take is recorded in `domain-model.md` §9 so that deferring it
-is a decision rather than an omission. The event thread is the model's first, and its
-contract is the opposite of the RX thread's: reading from the device is allowed there, and
-expected.
-
-**Alternatives considered.** Merging the deltas, rejected for the reason above. Delivering
-events on the RX thread, rejected because ADR-0009 forbids reading there, which would make
-the feature unusable for the one thing it is for. Treating `action` as scaffolding on
-`Grid` the way it is treated everywhere else, rejected because two pushes with identical
-payloads and opposite meanings would then apply identically and mark nothing.
+- **Status:** Decided (2026-08-15)
+- **Decision:** `pyquadcortex/device/translate.py` becomes a package, split by responsibility, with every public name re-exported so no caller changes. The structural test that proves no other module converts now exempts a DIRECTORY, so it names the package's modules and keys that list on the path within the package. The derived check that kept the protocol-conversion allowlist current is **weakened**: a protocol-layer name the boundary uses must appear on one of two lists - `PROTOCOL_CONVERSIONS`, which no other module may use, or `PROTOCOL_NON_CONVERSIONS`, which carries a written reason per entry.
+- **Context:** Reading a whole preset in screen coordinates is boundary work: the protocol helpers it needs (`blocks`, `splits`, `bypass_state`) hand back raw wire coordinates, so only the boundary may call them. Adding that to the existing module took it past 800 lines. The derived check said "whatever the boundary reaches for IS a conversion, because converting is all it does", which needed no list to maintain. That premise held while the boundary converted single values and stopped holding the moment it read messages: reading needs `field_present`, which the root `CLAUDE.md` REQUIRES every model property to call, and the `Input`/`Output` port enums, which are public model API. Under the old rule both would have been banned.
+- **Options:**
+  - **(a) Two lists, one derived check over their union - chosen.** The direction that actually rots is preserved: a new conversion the boundary starts calling cannot arrive silently, because it must be accounted for before the suite goes green.
+  - **(b) Keep the single derived rule and ban `field_present`.** Directly contradicts a root `CLAUDE.md` rule. Rejected.
+  - **(c) Put the grid readers outside the boundary and exempt them.** That is the guard-narrower-than-it-reads mistake this project keeps catching, and it would have exempted exactly the code most worth watching.
+  - **(d) Keep one file.** Rejected on size, and it would not have helped: the two-list problem is caused by what the boundary now DOES, not by where it lives.
+- **Open Questions:** Whether `PROTOCOL_NON_CONVERSIONS` should be scoped to the boundary rather than package-wide. Its only effect today is absence from the ban list, so every model module may use those names - including `Output.NEXT_ROW_3`, whose row number is precisely the inference `translate.routes_to_a_row` refuses to make on the record. Nothing in the model does this, and no test would catch it.
+- **Rationale:** A rule that contradicts another rule is not a stronger rule, it is a broken one, and the honest fix was to say what the second category is rather than to bend the first. The residual risk is named where a reviewer will meet it: a real conversion parked on the wrong list is the one failure no test can catch, so the criterion - what does the name HAND OVER? - is written beside both lists.
+- **Consequences:**
+  - Adding a module to `translate/` requires adding it to `BOUNDARY_MODULES` with a reason, in the same commit. The list is keyed on the path within the package, because a filename-keyed version let `translate/legacy/grid.py` pass as "grid" while the arithmetic scan skipped it.
+  - A reviewer now has judgement to apply where previously there was none: when a name appears, which list it belongs on.
+  - `scripts/check_artifacts.py` names the package's `__init__` AND a real converter module, because a packaging rule that took the directory but dropped its contents would ship a boundary that re-exports names it no longer has.
 

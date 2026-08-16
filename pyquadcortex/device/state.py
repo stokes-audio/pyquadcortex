@@ -204,13 +204,22 @@ class DeviceState:
             slot = self._slots[entry.name]
             slot.arrived()
             was_empty = not slot.fields
-            # Worked out BEFORE the update, and against the value we held: the
-            # unit restates things it has already said - a `PresetDirty` on
-            # every edit whether or not the answer is new - and a caller
-            # tracking changes wants the ones that are changes.
+            # Worked out BEFORE the update, and against the values we held,
+            # because a caller tracking changes wants the ones that are
+            # changes. The unit does restate things it has already said - a
+            # read's own reply is applied through this path too, and so is
+            # every echo of a write we made.
             moved = tuple(sorted(name for name, value in applied.items()
                                  if name not in slot.fields
                                  or slot.fields[name] != value))
+            # A CHANGE needs something to have changed from. The first sighting
+            # of a value is news worth publishing, but it is not the unit having
+            # done something - and the entries that reset off this one must only
+            # reset on the unit really loading a different preset. Without the
+            # distinction, one `device.preset` on a cold cache resets the dirty
+            # flag and the active scene and publishes two Invalidated events,
+            # which is the model reporting its own question as news.
+            changed_from_known = bool(moved) and not was_empty
             slot.fields.update(applied)
             if was_empty and slot.fields:
                 log.debug("cache.filled %s from a %s", entry.name,
@@ -255,6 +264,11 @@ class DeviceState:
         # holding two is how a deadlock gets written.
         for event in announce:
             self._events.publish(event)
+        if changed_from_known:
+            for name in entry.resets:
+                self.mark_for_reread(
+                    name, f"the unit loaded a different preset, and a recall "
+                          f"resets this along with the grid")
         for watch, outcome in settled:
             if outcome is None:
                 continue
@@ -279,19 +293,26 @@ class DeviceState:
         Two reasons, and the second is not a special case of the first.
 
         A plan that VOIDS the copy says so whatever the message carried, because
-        for the types it is set on, what the message carried cannot be seen:
-        ``Grid`` carries its meaning in ``action``, which has no presence and is
-        skipped globally, and ``SceneLabel`` gives ``index`` and ``label`` no
-        presence either, so a blank rename sets nothing at all. Asking the
-        per-field check about those would get "nothing here" every time.
+        for the types it is set on, what the message carried cannot be seen.
+        Three types are declared that way today, all of them on the preset
+        entry: ``Grid`` carries its meaning in ``action``, which has no presence
+        and is skipped globally, and ``SceneLabel`` and ``SceneColor`` give
+        ``index`` and their value field no presence either, so a blank rename
+        sets nothing at all. Asking the per-field check about those would get
+        "nothing here" every time.
 
         Otherwise it is the ordinary per-field answer: the push named something
         this entry does not keep.
         """
         kind = type(message).__name__
-        if plan.invalidates:
-            return (f"a {kind} changed the preset, and the model re-reads "
-                    f"rather than merging one")
+        if plan.voids_the_copy():
+            # Deliberately says what happened rather than naming a message
+            # type's usual meaning: this reaches a caller as `Invalidated.why`
+            # and an operator as a log line, and an earlier version told both
+            # that a SetlistPosition "changed the preset" while marking the
+            # dirty flag, which is two wrong things in one sentence.
+            return (f"a {kind} carries a change the model does not merge, so "
+                    f"its copy is re-read rather than patched")
         if unkept:
             return (f"a {kind} named {', '.join(unkept)}, which the model does "
                     f"not keep")
@@ -352,10 +373,21 @@ class DeviceState:
                 # from. An entry whose read provokes a stream will have to say
                 # how many messages that is; see `StateEntry`.
                 extra = slot.witnessed - witnessed_before
+                retracted = slot.needs_read and extra <= 1
                 slot.needs_read = extra > 1
                 if slot.needs_read:
                     log.info("push.forced_reread %s - %d message(s) arrived "
                              "while it was being read", entry_name, extra)
+                elif retracted:
+                    # The read consumed a mark, which is ADR-0011's rule. Said
+                    # out loud because the mark may have been ANNOUNCED to a
+                    # caller as `Invalidated`, and a subscriber acting on it
+                    # then gets a cached value and no round trip - which reads
+                    # as the event having been wrong. It was not: the read that
+                    # answered it is this one.
+                    log.debug("cache.mark_consumed %s - the read that cleared "
+                              "it is the one a subscriber would have made",
+                              entry_name)
                 if field in slot.fields:
                     return slot.fields[field]
         raise RuntimeError(
@@ -383,11 +415,15 @@ class DeviceState:
         """Where a caller subscribes to :class:`~pyquadcortex.device.events.Changed`
         and :class:`~pyquadcortex.device.events.Invalidated`.
 
-        Reached as ``device.events``. Deliberately not gated on
-        :meth:`_check_open`: subscribing to a closed stream raises its own error
-        saying exactly that, and a caller unwinding after a disconnect should be
-        able to ask how many subscribers are left without a second exception
-        landing on top of the first.
+        Not gated on :meth:`_check_open` HERE, because subscribing to a closed
+        stream raises its own error saying exactly that, and a caller unwinding
+        after a disconnect should be able to ask how many subscribers are left
+        without a second exception landing on top of the first.
+
+        ``Device.events`` does gate on the `Device` being open, so a caller
+        reaching it the ordinary way gets the ordinary "this Device is closed"
+        message. This property is the way in for anything already holding the
+        state layer, which is where the unwinding happens.
         """
         return self._events
 

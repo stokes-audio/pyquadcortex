@@ -654,14 +654,19 @@ BOUNDARY_MODULES = frozenset({
 
 
 def test_the_boundary_package_holds_only_the_modules_it_names():
-    found = {p.stem for p in BOUNDARY_SOURCES}
+    # Keyed on the path within the package, not on the filename. `rglob` is
+    # recursive, so a stem-keyed check let `translate/legacy/grid.py` pass as
+    # "grid" - and everything under the boundary is exempt from the arithmetic
+    # scan, so that was the directory-shaped hole this test exists to close,
+    # still open one level down.
+    found = {str(p.relative_to(BOUNDARY).with_suffix("")) for p in BOUNDARY_SOURCES}
     added = sorted(found - BOUNDARY_MODULES)
     gone = sorted(BOUNDARY_MODULES - found)
     assert not added, (
         f"{added} is inside the translation boundary but is not named in "
-        f"BOUNDARY_MODULES. Every file in that directory is exempt from the "
-        f"index-arithmetic scan, so a module added quietly is a way round the "
-        f"whole rule. Add it here with a reason, or put it outside.")
+        f"BOUNDARY_MODULES. Every file in that directory TREE is exempt from "
+        f"the index-arithmetic scan, so a module added quietly is a way round "
+        f"the whole rule. Add it here with a reason, or put it outside.")
     assert not gone, (
         f"BOUNDARY_MODULES names {gone}, which is not in the package - so this "
         f"list is guarding a file that does not exist")
@@ -863,6 +868,29 @@ PROTOCOL_NON_CONVERSIONS = {
     # they feed, because that reading is obvious rather than confirmed.
     "NEXT_ROW_3", "NEXT_ROW_4", "NEXT_ROW_3_4",
 }
+
+
+def test_a_module_hidden_in_a_subdirectory_is_caught_too():
+    """The check above is only as good as the key it compares on.
+
+    A stem-keyed version passed `translate/legacy/grid.py` as "grid", which is
+    the exemption's own shape used against it. Proved rather than asserted,
+    because the failure is silent: the arithmetic scan skips the file for
+    exactly the reason it skips the real converters.
+    """
+    nested = BOUNDARY / "legacy" / "grid.py"
+    nested.parent.mkdir(parents=True, exist_ok=True)
+    nested.write_text("X = 1 - 1\n")
+    try:
+        found = {str(p.relative_to(BOUNDARY).with_suffix(""))
+                 for p in sorted(BOUNDARY.rglob("*.py"))}
+        assert not found <= BOUNDARY_MODULES, (
+            "a module one directory down is invisible to the module list, so "
+            "the arithmetic scan can be escaped by putting the conversion in "
+            "translate/anything/")
+    finally:
+        nested.unlink()
+        nested.parent.rmdir()
 
 
 def test_the_two_protocol_lists_do_not_overlap():
@@ -1420,3 +1448,33 @@ def test_an_unlabelled_scene_reads_as_no_name(structural):
 def test_a_scene_name_refuses_a_bare_number(structural):
     with pytest.raises(TypeError):
         translate.scene_name(structural, 1)
+
+
+def test_a_scene_letter_does_not_equal_a_footswitch_letter():
+    """The module header says a scene letter reaching a footswitch API has to be
+    a type error. The converters enforced that at their doors; the VALUE TYPES
+    did not, so `SceneLetter.A == FootswitchLetter.A` was True and a mapping
+    keyed by one answered to the other - and `preset.stomps` is documented as
+    exactly such a mapping."""
+    assert translate.SceneLetter.A != translate.FootswitchLetter.A
+    assert translate.FootswitchLetter.E != translate.SceneLetter.E
+    assert {translate.FootswitchLetter.E: "vibe"}.get(translate.SceneLetter.E) is None
+    assert translate.SceneLetter.B not in {translate.FootswitchLetter.B}
+
+
+def test_a_letter_still_behaves_like_the_string_it_prints_as():
+    """The whole reason these are strings. Telling the two enums apart must not
+    cost `scenes["B"]`, printing, or keying a plain dict by the letter."""
+    for letter in (translate.SceneLetter.E, translate.FootswitchLetter.E):
+        assert letter == "E"
+        assert "E" == letter
+        assert str(letter) == "E"
+        assert {letter: "x"}["E"] == "x"
+        assert {"E": "x"}[letter] == "x"
+        assert letter in ("E", "F")
+
+
+def test_a_letter_still_equals_itself():
+    assert translate.SceneLetter.A == translate.SceneLetter.A
+    assert translate.SceneLetter("A") == translate.SceneLetter.A
+    assert len({translate.SceneLetter.A, translate.SceneLetter("A")}) == 1

@@ -115,6 +115,13 @@ class StateEntry:
     name: str
     read: typing.Callable
     feeds: typing.Mapping
+    #: Entries whose copies stop being true when THIS entry's value moves.
+    #: Applied only on a real change, which is what makes it different from
+    #: listing the same message type on each of them: the model's own READ of
+    #: this entry reports the slot that is already loaded, and telling three
+    #: other entries the unit had changed would be the model reporting its own
+    #: question as news.
+    resets: tuple = ()
 
     def fields(self) -> frozenset:
         """Every field name this entry holds, across all the types that feed it."""
@@ -277,6 +284,24 @@ def _read_dirty(client) -> dict:
     return {"is_dirty": client.preset_dirty()}
 
 
+#: What a change of loaded slot resets, and why each one is here.
+#:
+#: ``dirty`` is the one that had to be. A recall clears the unsaved-changes flag
+#: on the unit and the unit says NOTHING about it - measured 2026-08-15, no
+#: ``PresetDirty`` follows a recall. Without this the model would go on
+#: reporting edits the recall discarded.
+#:
+#: ``scene`` is belt and braces. A recall does push a ``Scene`` carrying the new
+#: value, so this mark is usually cleared moments later by the push that answers
+#: it. It costs nothing when that arrives and saves a wrong answer if it ever
+#: does not.
+#:
+#: ``preset`` is deliberately absent. A recall pushes eight to thirteen ``Grid``
+#: messages and a whole ``RecallPreset``, either of which puts the preset entry
+#: right on its own.
+_A_RECALL_RESETS = ("dirty", "scene")
+
+
 #: What a recall really pushes, measured on hardware 2026-08-15 across two host
 #: recalls. Within about 120 ms of the request::
 #:
@@ -317,21 +342,8 @@ LOADED = StateEntry(
     name="loaded",
     read=_read_loaded,
     feeds={pa.SetlistPositionMessage: _LOADED},
+    resets=_A_RECALL_RESETS,
 )
-
-
-#: ``SetlistPosition`` on the DIRTY entry invalidates, and this is the one that
-#: had to. A recall clears the unsaved-changes flag on the unit and the unit
-#: says nothing about it - no ``PresetDirty`` follows a recall. Without this the
-#: model would go on reporting unsaved changes that the recall discarded.
-_RECALL_CLEARS_DIRTY = FieldPlan(invalidates=True)
-
-#: ``SetlistPosition`` on the SCENE entry invalidates too, although the recall
-#: does push a ``Scene`` carrying the new value. That push is what actually
-#: refreshes the entry - and because it is the unit's whole answer for this
-#: entry, it clears this mark as it lands. So the mark costs nothing when the
-#: push arrives and saves a wrong answer if it ever does not.
-_RECALL_MOVES_THE_SCENE = FieldPlan(invalidates=True)
 
 
 DIRTY = StateEntry(
@@ -339,7 +351,6 @@ DIRTY = StateEntry(
     read=_read_dirty,
     feeds={
         pa.PresetDirtyMessage: _PRESET_DIRTY,
-        pa.SetlistPositionMessage: _RECALL_CLEARS_DIRTY,
     },
 )
 
@@ -443,7 +454,6 @@ SCENE = StateEntry(
     read=_read_scene,
     feeds={
         pa.SceneMessage: _SCENE,
-        pa.SetlistPositionMessage: _RECALL_MOVES_THE_SCENE,
     },
 )
 

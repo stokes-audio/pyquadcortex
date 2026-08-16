@@ -25,6 +25,7 @@ from pyquadcortex.device.errors import InactiveSceneError
 from pyquadcortex.device.events import Changed, Invalidated, ModelEvent
 from pyquadcortex.device.grid import BlockGrid, Row, Rows, Slots, SplittableRow
 from pyquadcortex.device.preset import Preset, Scene, Scenes
+from pyquadcortex.device.watch import WatchOutcome, WriteWatch
 from pyquadcortex.device.translate import (FootswitchLetter, PresetAddress,
                                            SceneLetter)
 
@@ -38,4 +39,5 @@ __all__ = [
     "VirtualDevice", "InputSource", "OutputDestination",
     "ModelEvent", "Changed", "Invalidated",
     "InactiveSceneError",
+    "WriteWatch", "WatchOutcome",
 ]

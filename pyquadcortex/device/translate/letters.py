@@ -11,7 +11,39 @@ from pyquadcortex import protocol
 from pyquadcortex.device.translate.guards import _a_whole_number
 
 
-class FootswitchLetter(enum.StrEnum):
+class _UnitLetter(enum.StrEnum):
+    """A letter A to H that labels one KIND of thing on the unit.
+
+    Two subclasses, and they must not be interchangeable. Both are `StrEnum`
+    over the same eight letters, so without this every check that could tell
+    them apart - `==`, `in`, a dict lookup - says they are the same. Scene E
+    reaching a footswitch API is the mistake these types exist to prevent, and
+    the converters refusing it is not enough when `preset.stomps` is documented
+    as an ordinary mapping a caller keys by letter.
+
+    Comparison with a plain `str` is kept, because that is the point of the
+    types being strings: `scenes["B"]`, `str(letter)` and printing all work.
+    """
+
+    def __eq__(self, other):
+        if isinstance(other, _UnitLetter) and type(other) is not type(self):
+            return False
+        return str.__eq__(self, other)
+
+    def __ne__(self, other):
+        result = self.__eq__(other)
+        return result if result is NotImplemented else not result
+
+    #: Hashed as the plain letter, deliberately. Defining `__eq__` would
+    #: otherwise make these unhashable, and hashing by type would break the
+    #: thing the string-ness is FOR - `preset.stomps["E"]`, which the class
+    #: docstring below advertises. A dict lookup needs the hash to match AND the
+    #: keys to compare equal, so a mapping keyed by `FootswitchLetter.E` still
+    #: answers to `"E"` and still raises `KeyError` for `SceneLetter.E`.
+    __hash__ = str.__hash__
+
+
+class FootswitchLetter(_UnitLetter):
     """A footswitch, as the unit labels it: A to H.
 
     **The model's only public footswitch key.** A footswitch index is not a
@@ -41,9 +73,9 @@ class FootswitchLetter(enum.StrEnum):
     H = "H"
 
 
-class SceneLetter(enum.StrEnum):
+class SceneLetter(_UnitLetter):
     """A scene, as the unit labels it: A to H. A ``str``, like
-    :class:`FootswitchLetter`."""
+    :class:`FootswitchLetter` - and deliberately NOT equal to one."""
 
     A = "A"
     B = "B"

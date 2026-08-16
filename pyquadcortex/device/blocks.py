@@ -79,18 +79,29 @@ class Block:
         **``is`` is deliberately not the test.** ``preset.blocks[1, 3]`` and
         ``scene.blocks[1, 3]`` are two BINDINGS of one cell, and the whole point
         of a binding is that the scene-varying answers may differ - so they
-        cannot be one object. What they share is the cell, which is what this
-        compares. Within a single grid the same handle does come back, so
-        ``preset.blocks[1, 3] is preset.blocks[1, 3]`` holds.
+        cannot be one object. What they share is the cell of one preset, which
+        is what this compares. Within ONE grid the same handle comes back, so
+        ``grid = preset.blocks`` then ``grid[1, 3] is grid[1, 3]`` holds -
+        but ``preset.blocks[1, 3] is preset.blocks[1, 3]`` does NOT, because
+        ``preset.blocks`` builds a fresh grid every time it is read.
         """
         if type(other) is not type(self):
             return NotImplemented
-        return (self._row, self._slot, id(self._grid.wire)) == \
-            (other._row, other._slot, id(other._grid.wire))
+        return self._key() == other._key()
 
     def __hash__(self) -> int:
-        return hash((type(self).__name__, self._row, self._slot,
-                     id(self._grid.wire)))
+        return hash(self._key())
+
+    def _key(self):
+        """What makes two handles the same cell.
+
+        The PRESET, not the payload. An earlier version keyed on the identity of
+        the wire payload, which the model replaces on every re-read - so a block
+        put in a set was silently lost the moment somebody touched the unit, and
+        `hash()` reached through to the cache and could issue a device read with
+        a fifteen-second timeout. Neither belongs in an equality check.
+        """
+        return (type(self).__name__, id(self._grid.preset), self._row, self._slot)
 
     def __repr__(self) -> str:
         where = f"row {self._row}"
@@ -198,9 +209,22 @@ class OutputBlock(Block):
         Absent rather than empty, because that is what the screen does: a row
         routed into another row has no lane output to show. Mirroring it keeps
         the caller from reading a volume that does not exist.
+
+        Raises if the preset did not say where the row goes at all. ``None``
+        there would mean "no lane output", which is a positive claim about a row
+        whose routing the unit never stated.
         """
         destination = self.destination
-        if destination is None or translate.routes_to_a_row(destination):
+        if destination is None:
+            # Not the same thing as feeding a row, and it must not read as it.
+            # The preset carried no out_portid at all, so what this row does is
+            # unknown rather than known-to-have-no-lane. `row_output` is careful
+            # to keep the two apart and this would have thrown that away.
+            raise RuntimeError(
+                f"this preset does not say where row {self._row} goes, so "
+                f"whether it has a lane output cannot be answered. Read "
+                f"output.destination to see that the unit said nothing.")
+        if translate.routes_to_a_row(destination):
             return None
         return LaneOutput(self._grid, row=self._row)
 
