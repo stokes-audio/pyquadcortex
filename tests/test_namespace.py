@@ -132,6 +132,17 @@ def test_the_model_is_what_the_top_level_offers():
         "__version__", "connect", "Device", "protocol",
         "FootswitchLetter", "SceneLetter", "PresetAddress",
         "DeviceNotFoundError", "DeviceLostError",
+        # the preset surface
+        "Preset", "Scene", "Scenes",
+        # the grid
+        "Rows", "Row", "SplittableRow", "Slots", "BlockGrid",
+        # what sits in a cell
+        "Block", "DeviceBlock", "InputBlock", "OutputBlock",
+        "SplitterBlock", "MixerBlock", "LaneOutput",
+        "VirtualDevice", "InputSource", "OutputDestination",
+        # what the model noticed
+        "ModelEvent", "Changed", "Invalidated",
+        "InactiveSceneError",
     }
     for name in pyquadcortex.__all__:
         assert getattr(pyquadcortex, name, None) is not None, (

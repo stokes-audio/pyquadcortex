@@ -20,6 +20,7 @@ built - nothing is stubbed out to look finished.
 """
 
 from pyquadcortex import protocol
+from pyquadcortex.device.preset import Preset
 from pyquadcortex.device.state import DeviceState
 
 
@@ -43,6 +44,7 @@ class Device:
         if _state is None:
             self._state.listen_on(client)
         self._state.bind(client)
+        self._preset = None
 
     def _check_open(self) -> None:
         """Refuse to answer through a `Device` the caller has finished with.
@@ -103,6 +105,57 @@ class Device:
         return self._state
 
     @property
+    def preset(self) -> Preset:
+        """The preset on the grid right now.
+
+        Never ``None`` on a connected device: the unit always has one loaded.
+
+        The object is rebuilt when the unit loads a DIFFERENT preset, so this
+        always hands back the current one - and a `Preset` somebody held across
+        that recall reports `is_current` False rather than quietly describing the
+        preset that used to be there (``docs/domain-model.md`` section 12).
+
+        An EDIT does not rebuild it. The preset is still the same preset; only
+        the model's copy of its contents is behind, and putting that right is
+        the state layer's job rather than this object's.
+
+        The first access on a connection this `Device` did not open may read the
+        loaded slot from the unit, which takes about 3 ms. On one opened by
+        `connect` the handshake's burst has already delivered it.
+        """
+        self._check_open()
+        # Read through `value` first so a cold cache asks the unit, then take
+        # the whole entry: `is_current` compares the slot as a whole, and a
+        # Preset built from an empty one would call itself current forever.
+        self._state.value("loaded", "position")
+        loaded = self._state.cached("loaded")
+        if self._preset is None or self._preset._loaded != loaded:
+            self._preset = Preset(self, loaded)
+        return self._preset
+
+    @property
+    def events(self):
+        """Subscribe here to hear what the model noticed.
+
+        :class:`~pyquadcortex.device.events.Changed` when a push moves a value
+        the model holds, and
+        :class:`~pyquadcortex.device.events.Invalidated` when it stops trusting
+        part of its copy - which is how a script following the unit closely
+        learns that the grid moved without waiting for somebody to read a
+        property::
+
+            def watch(event):
+                print(event)
+
+            device.events.subscribe(watch)
+
+        A subscriber runs on a thread the model owns and MAY read from the
+        device, which is the whole reason that thread exists.
+        """
+        self._check_open()
+        return self._state.events
+
+    @property
     def firmware(self) -> str:
         """The firmware version the unit reports, e.g. ``"d14e"``.
 
@@ -152,6 +205,10 @@ class Device:
         rather than quietly staying subscribed to somebody else's.
         """
         self._closed = True
+        # Dropped rather than left in place: a closed Device holding a Preset
+        # whose every property raises is a live-looking object with nothing
+        # behind it.
+        self._preset = None
         self._state.close()
         if self._owns_client:
             self._client.close()
