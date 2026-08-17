@@ -30,6 +30,8 @@ schema really gives it no presence, and every field named has to exist.
 import dataclasses
 import typing
 
+from google.protobuf.message import Message
+
 from pyquadcortex import protocol
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
@@ -64,10 +66,31 @@ class FieldPlan:
             default value and "unset" are the same bytes and there is nothing to
             check - which means each of these needs recorded evidence for what
             the default MEANS, on the entry that declares it. Empty for most.
+        invalidates: every message of this type makes the entry untrusted,
+            whatever it carries, and the next read goes to the unit. For a type
+            the model does not merge - and for one the per-field check CANNOT
+            see. ``Grid`` carries its meaning in ``action``, which has no
+            presence and is skipped globally, so an ``UPDATE`` and a ``DELETE``
+            with the same payload look identical to it; ``SceneLabel`` gives
+            ``index`` and ``label`` no presence either, so renaming scene A to a
+            blank label sets nothing at all in ``ListFields()``. An entry fed by
+            either has to decide for itself, and this flag is that decision
+            written down. It does not widen :data:`SCAFFOLDING`, and it is set
+            per entry and per message type rather than globally.
     """
 
     kept: frozenset = frozenset()
     no_presence: frozenset = frozenset()
+    invalidates: bool = False
+
+    def voids_the_copy(self) -> bool:
+        """Whether a message of this type makes the entry untrusted on its own.
+
+        Separate from the per-field check, and deliberately so: this answer does
+        not depend on what the message carried, because for these types what it
+        carried cannot be seen.
+        """
+        return self.invalidates
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -92,6 +115,13 @@ class StateEntry:
     name: str
     read: typing.Callable
     feeds: typing.Mapping
+    #: Entries whose copies stop being true when THIS entry's value moves.
+    #: Applied only on a real change, which is what makes it different from
+    #: listing the same message type on each of them: the model's own READ of
+    #: this entry reports the slot that is already loaded, and telling three
+    #: other entries the unit had changed would be the model reporting its own
+    #: question as news.
+    resets: tuple = ()
 
     def fields(self) -> frozenset:
         """Every field name this entry holds, across all the types that feed it."""
@@ -101,6 +131,27 @@ class StateEntry:
         return frozenset(found)
 
 
+def _held(value):
+    """A value the cache can still trust after the RX thread has moved on.
+
+    A scalar is copied by value and needs nothing. A SUBMESSAGE does: ``getattr``
+    hands back a container living inside the message the RX thread just decoded,
+    which every other listener was handed too. Storing that reference means the
+    model reports whatever anyone else does to it afterwards, from a thread the
+    model does not control - and a preset payload is exactly the kind of thing a
+    caller pokes at.
+
+    So it is copied once, on the way in. The preset entry is the only thing this
+    costs anything for, and it costs it on a `RecallPreset` push, which arrives
+    on a recall or a read rather than continuously.
+    """
+    if isinstance(value, Message):
+        copy = type(value)()
+        copy.CopyFrom(value)
+        return copy
+    return value
+
+
 def fields_applied(message, plan: FieldPlan) -> dict:
     """The fields of ``message`` this plan keeps, as a mapping.
 
@@ -108,13 +159,15 @@ def fields_applied(message, plan: FieldPlan) -> dict:
     result leaves everything the push did not mention alone. A presence-free
     field always appears, because there is no such thing as a message of its
     type that does not carry it.
+
+    A submessage is copied rather than referenced - see :func:`_held`.
     """
     found = {}
     for name in plan.kept:
         if protocol.field_present(message, name):
-            found[name] = getattr(message, name)
+            found[name] = _held(getattr(message, name))
     for name in plan.no_presence:
-        found[name] = getattr(message, name)
+        found[name] = _held(getattr(message, name))
     return found
 
 
@@ -231,20 +284,194 @@ def _read_dirty(client) -> dict:
     return {"is_dirty": client.preset_dirty()}
 
 
-DIRTY = StateEntry(
-    name="dirty",
-    read=_read_dirty,
-    feeds={pa.PresetDirtyMessage: _PRESET_DIRTY},
+#: What a change of loaded slot resets, and why each one is here.
+#:
+#: ``dirty`` is the one that had to be. A recall clears the unsaved-changes flag
+#: on the unit and the unit says NOTHING about it - measured 2026-08-15, no
+#: ``PresetDirty`` follows a recall. Without this the model would go on
+#: reporting edits the recall discarded.
+#:
+#: ``scene`` is belt and braces. A recall does push a ``Scene`` carrying the new
+#: value, so this mark is usually cleared moments later by the push that answers
+#: it. It costs nothing when that arrives and saves a wrong answer if it ever
+#: does not.
+#:
+#: ``preset`` is deliberately absent. A recall pushes eight to thirteen ``Grid``
+#: messages and a whole ``RecallPreset``, either of which puts the preset entry
+#: right on its own.
+_A_RECALL_RESETS = ("dirty", "scene")
+
+
+#: What a recall really pushes, measured on hardware 2026-08-15 across two host
+#: recalls. Within about 120 ms of the request::
+#:
+#:     Grid x 8-13      the new grid, block by block
+#:     RecallPreset     the whole new preset
+#:     Scene            the new active scene
+#:     SetlistPosition  which slot is loaded now
+#:
+#: and **no PresetDirty at all**. Each of the three plans below follows from
+#: that list rather than from the same guess applied three times, which is what
+#: this was before somebody measured it.
+#:
+#: WHICH preset is loaded, which is a different question from what is in it.
+#: The two used to be one entry, with an invented counter standing in for the
+#: unit's own answer. They are separate now because the unit reports this
+#: directly and ``SetlistPosition{READ}`` really does answer - confirmed on
+#: hardware 2026-08-15, in 3 ms, echoing the request id. Section 9's table said
+#: so and nobody had checked.
+#:
+#: ``preset.is_current`` compares this rather than counting events, so it is
+#: answering with a fact the unit stated rather than with the model's own
+#: bookkeeping.
+#:
+#: The PRESET entry is deliberately not fed by this type at all. A recall
+#: pushes the whole new preset in a ``RecallPreset``, which replaces our copy
+#: outright, and eight to thirteen ``Grid`` pushes about 90 ms before this one
+#: arrives. Marking the preset here would throw away what the connect burst had
+#: just delivered, for a message that says nothing about contents.
+_LOADED = FieldPlan(kept=frozenset({"folder_key", "position", "is_factory"}))
+
+
+def _read_loaded(client) -> dict:
+    """``SetlistPosition{READ}``: 3 ms, measured."""
+    return fields_applied(client.loaded_position(), _LOADED)
+
+
+LOADED = StateEntry(
+    name="loaded",
+    read=_read_loaded,
+    feeds={pa.SetlistPositionMessage: _LOADED},
+    resets=_A_RECALL_RESETS,
 )
 
 
-#: Everything the cache tracks. Section 9's table has more rows than this - the
-#: preset on the grid, the active scene, the setlists, recents and favourites,
-#: the device-level settings - and each arrives with the surface that reads it
-#: (#12 and after). An entry with no reader would be a plan, not a fact, and
-#: every push mentioning a field it did not keep would mark it for a read nobody
-#: had asked for.
-ENTRIES = (IDENTITY, DIRTY)
+DIRTY = StateEntry(
+    name="dirty",
+    read=_read_dirty,
+    feeds={
+        pa.PresetDirtyMessage: _PRESET_DIRTY,
+    },
+)
+
+
+#: The preset on the grid right now. Read from the LIVE grid rather than from a
+#: stored slot: ``RecallPreset{READ}`` answers with what is on the grid including
+#: unsaved edits, has no side effects, and leaves the active scene alone - where
+#: ``read_preset`` RECALLS a slot, discards unsaved edits, resets the active
+#: scene and interrupts the audio every time, including when it recalls the
+#: preset already loaded.
+#:
+#: ``reason`` is kept, and the read below answers for it, because every
+#: ``RecallPreset`` carries it. Measured on hardware 2026-08-15: the connect
+#: burst's seed push sets ``action``, ``preset`` and ``reason``, and so does the
+#: push a recall produces. An entry that did not keep it would therefore be
+#: marked for re-reading by the very burst that warmed it, and the first read of
+#: ``device.preset`` would pay for a round trip the unit had already made.
+#:
+#: This was tried the other way first. Keeping a field an entry cannot read back
+#: is worse than paying for the read - once marked, it would be gone for good -
+#: so the answer was to make it readable, which is what
+#: ``QuadCortex.read_current_preset_push`` is for. Nothing reads ``reason`` yet;
+#: it gets a property when the Directory story gives it one to hang off.
+_RECALL_FOR_PRESET = FieldPlan(kept=frozenset({"preset", "reason"}))
+
+#: A ``Grid`` push is a sparse, keyed delta into a deeply nested structure. The
+#: model does NOT merge it: it notes that the grid moved and re-reads the whole
+#: live preset on the next access. One edit on the touchscreen produces about
+#: forty of these and costs exactly one re-read, because this is a flag rather
+#: than a queue, and the read has no side effects.
+#:
+#: **What merging would take, if it is ever worth doing.** Each push would have
+#: to be applied BY KEY into the stored ``BinaryPreset`` - chain by row, model by
+#: column, parameter by index - and, to stay honest, the per-field "did this
+#: mention something we do not model" check would have to walk that structure
+#: recursively rather than reading ``ListFields()`` at the top level. The prize
+#: is that reads stay instant while somebody is editing on the unit. The reason
+#: it is not here is that the recursive check is where the whole risk of it sits,
+#: and it would have sat next to the objects three other stories are blocked on.
+#: A caller who needs the fresh value sooner subscribes to ``device.events`` and
+#: reads it themselves, which is what that surface is for.
+#:
+#: ``action`` is deliberately not consulted, and that IS this entry's own
+#: decision about it (see :data:`SCAFFOLDING`): an ``UPDATE`` and a ``DELETE``
+#: mean opposite things, and both of them mean the grid moved, which is all this
+#: entry needs to know.
+_GRID_MOVED = FieldPlan(invalidates=True)
+
+#: Scene labels and colours live inside the preset payload, so a change to
+#: either makes our copy of it wrong. Neither message can be read by the
+#: per-field check: ``index`` and ``label`` have no presence, so renaming scene A
+#: to a blank label sets nothing in ``ListFields()`` at all. Colours are not
+#: modelled, and that is not a reason to ignore them - ``scene_colors`` is in the
+#: payload we hold, and there is no harmless-field category.
+_SCENE_TEXT_CHANGED = FieldPlan(invalidates=True)
+
+
+def _read_preset(client) -> dict:
+    """``RecallPreset{READ}``: the live grid, unsaved edits included.
+
+    One request and one reply, like every entry's read. The reply is the unit's
+    whole answer, so it REPLACES what we hold rather than merging into it.
+
+    Goes through ``read_current_preset_push`` rather than ``read_current_preset``
+    so that ``reason`` comes back with the preset. Same request, same match, same
+    wire - that method is where ``read_current_preset`` does its work.
+    """
+    return fields_applied(client.read_current_preset_push(), _RECALL_FOR_PRESET)
+
+
+PRESET = StateEntry(
+    name="preset",
+    read=_read_preset,
+    feeds={
+        pa.RecallPresetMessage: _RECALL_FOR_PRESET,
+        pa.GridMessage: _GRID_MOVED,
+        pa.SceneLabelMessage: _SCENE_TEXT_CHANGED,
+        pa.SceneColorMessage: _SCENE_TEXT_CHANGED,
+    },
+)
+
+
+#: Which scene is active. ``Scene{READ}`` answers with ``selected_scene`` and
+#: echoes the request id; confirmed live by switching scenes between reads.
+_SCENE = FieldPlan(kept=frozenset({"selected_scene"}))
+
+
+def _read_scene(client) -> dict:
+    """``Scene{READ}``: the active scene, as a ``protocol.Scene``.
+
+    Goes through ``QuadCortex.active_scene``, which unwraps the reply to the
+    enum, so this builds the mapping by hand rather than through
+    :func:`fields_applied` - the same shape :func:`_read_dirty` uses, and for the
+    same reason: using the published reader keeps the model off the transport.
+    """
+    return {"selected_scene": client.active_scene()}
+
+
+SCENE = StateEntry(
+    name="scene",
+    read=_read_scene,
+    feeds={
+        pa.SceneMessage: _SCENE,
+    },
+)
+
+
+#: Everything the cache tracks. Section 9's table still has more rows than this
+#: - the setlists, recents and favourites, and the device-level settings - and
+#: each arrives with the surface that reads it. An entry with no reader would be
+#: a plan, not a fact, and every push mentioning a field it did not keep would
+#: mark it for a read nobody had asked for.
+#:
+#: The Directory's rows are the ones that need something this class does not
+#: have. Every read here is one request and one reply, which is how the read path
+#: tells its own answer apart from a push that arrived while it was waiting. A
+#: setlist listing is a STREAM - one `File` READ makes the unit enumerate its
+#: whole tree, several hundred messages over about fifteen seconds - so those
+#: entries land with the change to `StateEntry` that lets a read say how many
+#: messages it expects.
+ENTRIES = (IDENTITY, DIRTY, PRESET, SCENE, LOADED)
 
 ENTRY_BY_NAME = {entry.name: entry for entry in ENTRIES}
 

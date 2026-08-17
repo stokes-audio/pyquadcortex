@@ -40,6 +40,7 @@ import time
 
 from pyquadcortex.device import entries
 from pyquadcortex.device.entries import fields_applied, unkept_fields
+from pyquadcortex.device.events import Changed, EventStream, Invalidated
 from pyquadcortex.device.watch import (WATCH_PATIENCE, WatchOutcome, Watchdog,
                                        WriteWatch)
 
@@ -70,7 +71,7 @@ class _Slot:
         #: Drawn from a counter rather than written `+= 1`, which is the
         #: transport's idiom for the same job (`Transport._ids`). It also keeps
         #: the package's one-translation-boundary check honest: that check
-        #: refuses every spelling of index arithmetic outside `translate.py`
+        #: refuses every spelling of index arithmetic outside `translate/`
         #: precisely because it cannot tell a counter from an off-by-one on a
         #: row, and a rule with an exemption for "but mine is fine" is not a
         #: rule. Do not simplify this back.
@@ -109,6 +110,7 @@ class DeviceState:
         self._closed = False
         self._watches = {entry.name: [] for entry in entries.ENTRIES}
         self._watchdog = Watchdog(self._gave_up_on, WATCHDOG_THREAD_NAME)
+        self._events = EventStream()
 
     # -- wiring ---------------------------------------------------------------
 
@@ -153,6 +155,9 @@ class DeviceState:
         # Outside the lock: the watchdog takes it to mark an entry, and stopping
         # it joins its thread.
         self._watchdog.stop()
+        # After the watchdog, so a subscriber cannot be handed an event about a
+        # cache that is already half torn down.
+        self._events.close()
         for watch in in_flight:
             # Released with no outcome, not timed out. Nothing can settle these
             # now, so anybody waiting has to be let go - and calling them timed
@@ -192,27 +197,78 @@ class DeviceState:
     def _apply_one(self, entry, plan, message) -> None:
         applied = fields_applied(message, plan)
         unkept = unkept_fields(message, plan)
+        announce = []
         with self._lock:
             if self._closed:
                 return
             slot = self._slots[entry.name]
             slot.arrived()
             was_empty = not slot.fields
+            # Worked out BEFORE the update, and against the values we held,
+            # because a caller tracking changes wants the ones that are
+            # changes. The unit does restate things it has already said - a
+            # read's own reply is applied through this path too, and so is
+            # every echo of a write we made.
+            moved = tuple(sorted(name for name, value in applied.items()
+                                 if name not in slot.fields
+                                 or slot.fields[name] != value))
+            # A CHANGE needs something to have changed from. The first sighting
+            # of a value is news worth publishing, but it is not the unit having
+            # done something - and the entries that reset off this one must only
+            # reset on the unit really loading a different preset. Without the
+            # distinction, one `device.preset` on a cold cache resets the dirty
+            # flag and the active scene and publishes two Invalidated events,
+            # which is the model reporting its own question as news.
+            changed_from_known = bool(moved) and not was_empty
             slot.fields.update(applied)
             if was_empty and slot.fields:
                 log.debug("cache.filled %s from a %s", entry.name,
                           type(message).__name__)
             if applied:
                 log.debug("push.applied %s %s", entry.name, sorted(applied))
-            if unkept:
+            if moved:
+                announce.append(Changed(entry.name, moved))
+            why = self._why_untrusted(plan, unkept, message)
+            # The unit telling us everything this entry holds is the same
+            # thing a read returns, so it replaces rather than merges and
+            # there is nothing left to ask about. That is what makes the
+            # connect burst leave the cache warm rather than nominally warm:
+            # measured, it marks two entries and answers both in full, in that
+            # order, inside ten milliseconds.
+            #
+            # Judged on what the MESSAGE carried, not on what its plan could
+            # carry. A plan-level version of this check was written first and
+            # every branch of it turned out to be unreachable - a plan that
+            # voids the copy never gets here, because `why` is not None for it,
+            # and a plan keeping nothing cannot match a non-empty field set.
+            answered = not unkept and set(applied) == entry.fields()
+            if why is None and slot.needs_read and answered:
+                slot.needs_read = False
+                log.debug("cache.answered %s - a %s carried the whole entry",
+                          entry.name, type(message).__name__)
+            if why is not None:
+                # Announced on the change from trusted to untrusted only. One
+                # edit on the touchscreen produces about forty `Grid` pushes,
+                # and forty identical events would make the stream unusable for
+                # the thing it exists for.
+                if not slot.needs_read:
+                    announce.append(Invalidated(entry.name, why))
                 slot.needs_read = True
-                log.info("push.forced_reread %s - a %s named %s, which the "
-                         "model does not keep", entry.name,
-                         type(message).__name__, ", ".join(unkept))
+                log.info("push.forced_reread %s - %s", entry.name, why)
             settled = [(watch, watch.absorb(applied))
                        for watch in self._watches[entry.name]]
             self._watches[entry.name] = [watch for watch, outcome in settled
                                          if outcome is None]
+        # Outside the lock. A subscriber runs on the event stream's own thread
+        # rather than this one, but publishing takes that stream's lock, and
+        # holding two is how a deadlock gets written.
+        for event in announce:
+            self._events.publish(event)
+        if changed_from_known:
+            for name in entry.resets:
+                self.mark_for_reread(
+                    name, f"the unit loaded a different preset, and a recall "
+                          f"resets this along with the grid")
         for watch, outcome in settled:
             if outcome is None:
                 continue
@@ -229,6 +285,38 @@ class DeviceState:
                     watch.entry,
                     f"the unit disagreed with a write of {sorted(watch.sent)}")
             watch.publish()
+
+    @staticmethod
+    def _why_untrusted(plan, unkept, message):
+        """Why this push means the entry's copy cannot be trusted, or ``None``.
+
+        Two reasons, and the second is not a special case of the first.
+
+        A plan that VOIDS the copy says so whatever the message carried, because
+        for the types it is set on, what the message carried cannot be seen.
+        Three types are declared that way today, all of them on the preset
+        entry: ``Grid`` carries its meaning in ``action``, which has no presence
+        and is skipped globally, and ``SceneLabel`` and ``SceneColor`` give
+        ``index`` and their value field no presence either, so a blank rename
+        sets nothing at all. Asking the per-field check about those would get
+        "nothing here" every time.
+
+        Otherwise it is the ordinary per-field answer: the push named something
+        this entry does not keep.
+        """
+        kind = type(message).__name__
+        if plan.voids_the_copy():
+            # Deliberately says what happened rather than naming a message
+            # type's usual meaning: this reaches a caller as `Invalidated.why`
+            # and an operator as a log line, and an earlier version told both
+            # that a SetlistPosition "changed the preset" while marking the
+            # dirty flag, which is two wrong things in one sentence.
+            return (f"a {kind} carries a change the model does not merge, so "
+                    f"its copy is re-read rather than patched")
+        if unkept:
+            return (f"a {kind} named {', '.join(unkept)}, which the model does "
+                    f"not keep")
+        return None
 
     # -- what we hand back (the caller's thread) ------------------------------
 
@@ -285,10 +373,21 @@ class DeviceState:
                 # from. An entry whose read provokes a stream will have to say
                 # how many messages that is; see `StateEntry`.
                 extra = slot.witnessed - witnessed_before
+                retracted = slot.needs_read and extra <= 1
                 slot.needs_read = extra > 1
                 if slot.needs_read:
                     log.info("push.forced_reread %s - %d message(s) arrived "
                              "while it was being read", entry_name, extra)
+                elif retracted:
+                    # The read consumed a mark, which is ADR-0011's rule. Said
+                    # out loud because the mark may have been ANNOUNCED to a
+                    # caller as `Invalidated`, and a subscriber acting on it
+                    # then gets a cached value and no round trip - which reads
+                    # as the event having been wrong. It was not: the read that
+                    # answered it is this one.
+                    log.debug("cache.mark_consumed %s - the read that cleared "
+                              "it is the one a subscriber would have made",
+                              entry_name)
                 if field in slot.fields:
                     return slot.fields[field]
         raise RuntimeError(
@@ -310,6 +409,23 @@ class DeviceState:
         with self._lock:
             self._check_open()
             return dict(self._slots[self._entry(entry_name).name].fields)
+
+    @property
+    def events(self):
+        """Where a caller subscribes to :class:`~pyquadcortex.device.events.Changed`
+        and :class:`~pyquadcortex.device.events.Invalidated`.
+
+        Not gated on :meth:`_check_open` HERE, because subscribing to a closed
+        stream raises its own error saying exactly that, and a caller unwinding
+        after a disconnect should be able to ask how many subscribers are left
+        without a second exception landing on top of the first.
+
+        ``Device.events`` does gate on the `Device` being open, so a caller
+        reaching it the ordinary way gets the ordinary "this Device is closed"
+        message. This property is the way in for anything already holding the
+        state layer, which is where the unwinding happens.
+        """
+        return self._events
 
     def needs_read(self, entry_name: str) -> bool:
         """Whether the next :meth:`value` on this entry will go to the unit.

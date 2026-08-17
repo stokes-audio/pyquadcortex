@@ -18,3 +18,4 @@ def pytest_addoption(parser):
         help="run the hardware-in-the-loop suite against a connected Quad Cortex "
              "(ADR-0005). Requires Cortex Control to be quit. Never used in CI.",
     )
+

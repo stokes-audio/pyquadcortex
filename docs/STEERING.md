@@ -59,7 +59,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 | Fake-per-layer offline tests | Each layer has a purpose-built double: golden captured frames for `framing`, `FakeHid` for `transport`, `FakeTransport` for `client` | see ADR-0002 | `FakeTransport` in `tests/test_client.py` | Hardware verification happens manually via `examples/`, outside the suite |
 | Evidence-bearing docstrings | Each operation's docstring states what is confirmed on hardware vs inferred from the schema | The device gives no errors for wrong writes, so recorded evidence is the only trail | `QuadCortex.read_preset` in `pyquadcortex/protocol/client.py` | Non-protocol helpers (pure functions) carry ordinary docstrings |
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
-| One translation boundary | Screen values become wire values in exactly one module, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/` | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate.py` | The protocol layer, which keeps its zero-based indexes and raw scales |
+| One translation boundary | Screen values become wire values in exactly one PACKAGE, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/`. The exemption covers a directory, so a test names the package's modules and a new one has to come through that list | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate/` | The protocol layer, which keeps its zero-based indexes and raw scales |
 | Model state goes through the cache | A model property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py`, not an attribute the property fills in itself | One account of what the model believes and how it learned it. A property with its own cached attribute answers from a copy nothing invalidates, and a closed connection cannot take it away (see ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry rather than read from the unit, which compute from `value()` rather than caching alongside it |
 
 ## 6. Constraints
@@ -165,6 +165,28 @@ caveat. Story OM-M1.3 (#11), Epic #8.
 **Not covered here:** reconnect and device loss (#15), the Directory, presets, the
 grid and parameters (#12 and after), and the counters and event taxonomy (#16). The
 log events this code emits are named for #16 to pick up, but nothing reads them yet.
+
+### 2026-08-15 - ADR-0012: a grid push is re-read, not merged; the model publishes what it noticed
+
+**What changed:**
+- ADR.md: added ADR-0012 (a `Grid` or `SceneLabel` push voids the entry's copy and the next read fetches the whole live preset; `device.events` carries `Changed` and `Invalidated` on a thread the model owns)
+- domain-model.md: §9 gains the by-type rule, the no-merge decision with what merging would take written beside it, the complete-push rule, and the event surface; §2 and §3 record what is built and the four things deliberately omitted; the §9 table is corrected against hardware
+- CLAUDE.md: the translation boundary is a package with a named module list and a second allowlist for non-conversions; `Grid`'s `action` decision is recorded; submessages are cached by copy
+- STEERING.md: the "One translation boundary" pattern row now says package
+- architecture.md: the module map gains `preset.py`, `grid.py`, `blocks.py`, `events.py` and `errors.py`, and `translate.py` becomes `translate/`
+- protocol.md: `read_current_preset_push` and `loaded_position` added to the coverage table, with the measured shape of a recall and of the connect burst
+
+**Why:**
+- A hardware session contradicted three assumptions this work had been built on - the burst's seed preset push carries `reason`, a recall pushes no `PresetDirty`, and `SetlistPosition{READ}` really does answer - and the corrections belong where the next person meets them rather than in a commit message
+
+**Scope of impact:**
+- **Updated:** ADR.md, domain-model.md, CLAUDE.md, STEERING.md, protocol.md
+- **Also updated:** architecture.md - the module map gains the five new model modules and `translate/` is a package there too
+- **Not updated (intentionally):** api.md - it documents the protocol layer, whose two additions are in protocol.md's coverage table, and the model's surface is documented in domain-model.md
+
+**Downstream to consider:**
+- The Directory half of issue #12 needs `StateEntry` to carry how many messages a read expects, since a setlist listing answers with several hundred
+- Whether merging grid deltas is worth doing is now a recorded question rather than an omission; #13's parameter work is the first thing that would feel the cost
 
 ### 2026-08-13 - One translation boundary, and the model package is `device/`
 

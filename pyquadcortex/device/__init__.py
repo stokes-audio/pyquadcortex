@@ -16,9 +16,28 @@ Its public names are re-exported from :mod:`pyquadcortex`, which is where caller
 should import them from. The design is in ``docs/domain-model.md``.
 """
 
+from pyquadcortex.device.blocks import (Block, DeviceBlock, InputBlock,
+                                        InputSource, LaneOutput, MixerBlock,
+                                        OutputBlock, OutputDestination,
+                                        SplitterBlock, VirtualDevice)
 from pyquadcortex.device.device import Device, connect
+from pyquadcortex.device.errors import InactiveSceneError
+from pyquadcortex.device.events import Changed, Invalidated, ModelEvent
+from pyquadcortex.device.grid import BlockGrid, Row, Rows, Slots, SplittableRow
+from pyquadcortex.device.preset import Preset, Scene, Scenes
+from pyquadcortex.device.watch import WatchOutcome, WriteWatch
 from pyquadcortex.device.translate import (FootswitchLetter, PresetAddress,
                                            SceneLetter)
 
-__all__ = ["Device", "connect", "FootswitchLetter", "SceneLetter",
-           "PresetAddress"]
+__all__ = [
+    "Device", "connect",
+    "FootswitchLetter", "SceneLetter", "PresetAddress",
+    "Preset", "Scene", "Scenes",
+    "Rows", "Row", "SplittableRow", "Slots", "BlockGrid",
+    "Block", "DeviceBlock", "InputBlock", "OutputBlock",
+    "SplitterBlock", "MixerBlock", "LaneOutput",
+    "VirtualDevice", "InputSource", "OutputDestination",
+    "ModelEvent", "Changed", "Invalidated",
+    "InactiveSceneError",
+    "WriteWatch", "WatchOutcome",
+]

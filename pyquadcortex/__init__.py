@@ -33,8 +33,15 @@ from pyquadcortex._version import __version__
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from pyquadcortex import protocol  # noqa: E402
-from pyquadcortex.device import (Device, FootswitchLetter,  # noqa: E402
-                                 PresetAddress, SceneLetter, connect)
+from pyquadcortex.device import (Block, BlockGrid, Changed,  # noqa: E402
+                                 Device, DeviceBlock, FootswitchLetter,
+                                 InactiveSceneError, InputBlock, InputSource,
+                                 Invalidated, LaneOutput, MixerBlock,
+                                 ModelEvent, OutputBlock, OutputDestination,
+                                 Preset, PresetAddress, Row, Rows, Scene,
+                                 SceneLetter, Scenes, Slots, SplittableRow,
+                                 SplitterBlock, VirtualDevice,
+                                 WatchOutcome, WriteWatch, connect)
 from pyquadcortex.protocol import (DeviceLostError,  # noqa: E402
                                    DeviceNotFoundError)
 
@@ -45,6 +52,30 @@ __all__ = [
     "FootswitchLetter",
     "SceneLetter",
     "PresetAddress",
+    "Preset",
+    "Scene",
+    "Scenes",
+    "Rows",
+    "Row",
+    "SplittableRow",
+    "Slots",
+    "BlockGrid",
+    "Block",
+    "DeviceBlock",
+    "InputBlock",
+    "OutputBlock",
+    "SplitterBlock",
+    "MixerBlock",
+    "LaneOutput",
+    "VirtualDevice",
+    "InputSource",
+    "OutputDestination",
+    "ModelEvent",
+    "Changed",
+    "Invalidated",
+    "InactiveSceneError",
+    "WriteWatch",
+    "WatchOutcome",
     "protocol",
     "DeviceNotFoundError",
     "DeviceLostError",

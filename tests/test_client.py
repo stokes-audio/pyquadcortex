@@ -1263,6 +1263,53 @@ def test_read_current_preset_uses_recallpreset_read_and_request_id():
     assert match(pa.RecallPresetMessage()) is False
 
 
+def test_read_current_preset_push_hands_back_the_whole_reply():
+    """`read_current_preset` returns the preset inside the reply; the state
+    layer needs `reason` beside it, and both come from one answer. Same request
+    and same match either way - this is where that method does its work."""
+    push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE, request_id=1,
+                                  reason=pa.RecallPresetReason.OTHER)
+    push.preset.name = "live state"
+    qc = client.QuadCortex(StateTransport(push))
+    got = qc.read_current_preset_push()
+    assert got.preset.name == "live state"
+    assert got.reason == pa.RecallPresetReason.OTHER
+    asked = qc._t.sent[-1]
+    assert isinstance(asked, pa.RecallPresetMessage)
+    assert asked.action == pa.MessageAction.READ
+    assert asked.HasField("request_id")
+
+
+def test_loaded_position_reads_the_slot_without_recalling_it():
+    """`SetlistPosition{READ}`. The same message type as a recall, and the
+    action is the whole difference between asking and loading - so the wire
+    shape is asserted rather than assumed.
+
+    Confirmed on hardware 2026-08-15 (d14e): answered in 3 ms with the request
+    id echoed, on the first attempt.
+    """
+    push = pa.SetlistPositionMessage(action=pa.MessageAction.UPDATE, request_id=1,
+                                     folder_key="/media/p4/Presets/My Presets",
+                                     position=218, is_factory=False)
+    qc = client.QuadCortex(StateTransport(push))
+    got = qc.loaded_position()
+    assert got.position == 218
+    assert got.folder_key == "/media/p4/Presets/My Presets"
+    asked = qc._t.sent[-1]
+    assert isinstance(asked, pa.SetlistPositionMessage)
+    assert asked.action == pa.MessageAction.READ, (
+        "an UPDATE here would RECALL the slot rather than ask about it")
+    assert not asked.HasField("folder_key"), (
+        "a READ names no slot - it asks which one is loaded")
+    assert not asked.HasField("position")
+    match = qc._t.matches[-1]
+    assert match(push) is True
+    assert match(pa.SetlistPositionMessage(request_id=999)) is False
+    assert match(pa.SetlistPositionMessage()) is False, (
+        "the burst pushes one of these with no request_id at all, and taking "
+        "that for our answer is how a read returns somebody else's news")
+
+
 def test_active_scene_reads_and_returns_the_enum():
     from pyquadcortex.protocol.enums import Scene
     push = pa.SceneMessage(action=pa.MessageAction.UPDATE, request_id=1,

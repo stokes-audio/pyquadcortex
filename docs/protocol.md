@@ -1898,6 +1898,35 @@ a write that applied and was later reset.
 **`Scene{READ, request_id}` answers with `selected_scene`**, echoing the request id.
 Confirmed live by switching scenes between reads. `active_scene()` wraps it.
 
+**`SetlistPosition{READ, request_id}` answers with `folder_key`, `position` and
+`is_factory`**, echoing the request id. Measured 2026-08-15 on d14e: answered in 3 ms on
+the first attempt. `loaded_position()` wraps it. Note this is the same message type as a
+recall and the action is the whole difference between asking which slot is loaded and
+loading one, so a READ here must never carry a slot.
+
+The unit also pushes one unsolicited in the connect burst and one on every recall, so a
+state tracker can subscribe rather than poll. **The burst's push carries no `request_id`**,
+which is why a read has to correlate on the id rather than take the first one that arrives.
+
+**What a recall really pushes**, measured 2026-08-15 across two host recalls, all within
+about 120 ms of the request and in this order:
+
+| | |
+|---|---|
+| `Grid` x 8 to 13 | the new grid, block by block |
+| `RecallPreset` | the whole new preset, with `reason` |
+| `Scene` | the new active scene |
+| `SetlistPosition` | which slot is loaded now |
+
+and **no `PresetDirty` at all**. A recall discards unsaved edits and the unit says nothing
+about it, so anything tracking the dirty flag has to re-read it after a recall rather than
+wait to be told.
+
+**The connect burst delivers the same four**, at about 10.0 s, inside ten milliseconds, in
+the order `RecallPreset`, `SetlistPosition`, `PresetDirty`, `Scene` - and with no `Grid`
+pushes, because nothing changed. The seed `RecallPreset` sets `action`, `preset` and
+`reason`.
+
 **`read_preset()` RECALLS the slot it reads** - that was already documented - and the
 recall **resets the active scene to the preset's default, discards unsaved edits, and
 interrupts the audio**.
@@ -2590,6 +2619,8 @@ visually on the device's own screen.
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
 | version read | `Version{action: READ}` | read-back | serial and firmware returned |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
+| `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply, which carries `reason` beside the preset |
+| `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured. A READ names no slot - an UPDATE that did would recall it |
 | `list_presets` | `File{action: READ}` then `File{folder{files[] = ProductData}}` | read-back | factory listing gzipped; 256 slots; listings lag a few seconds after a `File` mutation |
 | `switch_scene` | `Scene{UPDATE, selected_scene}` | on-unit | zero-based |
 | `set_chain_input` / `reroute_grid_input` | `Grid{UPDATE, preset{chains{row, in_portid}}}` | read-back + on-unit | row-keyed; the only shape that persists input routing |
