@@ -267,6 +267,8 @@ qcctl dump-preset --slot 28C
   the object model of the device that should eventually hide the protocol's rough
   edges entirely.
 - **[changelog.md](https://github.com/stokes-audio/pyquadcortex/blob/main/changelog.md)** - what changed between released versions.
+- **[docs/migration.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/migration.md)** - what to change in your own code
+  when a release renames or removes something, one section per version pair.
 - **[docs/releasing.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/releasing.md)** - the release checklist, and why each
   step exists.
 - **[docs/troubleshooting.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/troubleshooting.md)** - when the device stops

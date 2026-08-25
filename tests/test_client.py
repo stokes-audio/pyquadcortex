@@ -1667,6 +1667,176 @@ def test_set_expression_is_row_column_keyed_with_a_range():
     assert prm.expression_max == pytest.approx(0.9)
 
 
+def test_clear_expression_is_row_column_keyed_and_resets_the_range():
+    qc = client.QuadCortex(FakeTransport())
+    qc.clear_expression(row=1, column=3, param=4)
+    chain = qc._t.sent[-1].preset.chains[0]
+    assert chain.row == 1
+    prm = chain.models[0].params[0]
+    assert chain.models[0].column == 3
+    assert prm.index == 4
+    assert prm.expression == 0
+    assert prm.expression_min == pytest.approx(0.0)
+    assert prm.expression_max == pytest.approx(1.0)
+
+
+# -- expression pedal on a Lane Output Control --------------------------------
+#
+# The Lane Output Control has no column, so set_expression cannot reach it -
+# the same reason set_param cannot and set_lane_output exists. The parameter
+# types below are the live catalog's, read off the device: VOLUME and PAN are
+# floats, MUTE and SOLO are switches, and that distinction is load-bearing.
+
+LANE_OUTPUT_CATEGORY = """
+<Category id="23" name="Lane Output">
+  <Model blob="loc" id="23000" name="LaneOutputControl" internal="true">
+    <Parameter defaultValue="0.769" max="1" min="0" name="VOLUME" type="float" units="dB"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="PAN" type="float" units=""/>
+    <Parameter defaultValue="0" max="1" min="0" name="MUTE" type="switch"/>
+    <Parameter defaultValue="0" max="1" min="0" name="SOLO" type="switch"/>
+  </Model>
+</Category>
+"""
+
+
+def _lane_client():
+    """A client whose catalog carries the Lane Output Control and the Mixer."""
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    xml = SAMPLE_XML.replace("</Models>", LANE_OUTPUT_CATEGORY + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    return qc
+
+
+def test_set_lane_output_expression_writes_into_output_control_not_models():
+    qc = _lane_client()
+    qc.set_lane_output_expression(row=0, param="VOLUME", pedal=1,
+                                  minimum=0.0, maximum=0.830769)
+    chain = qc._t.sent[-1].preset.chains[0]
+    assert chain.row == 0
+    assert not chain.models, "must not touch models[]"
+    oc = chain.output_control[0]
+    assert oc.hash == qc.LANE_OUTPUT_CONTROL == 23000
+    prm = oc.params[0]
+    assert prm.index == 0
+    assert prm.expression == 1
+    assert prm.expression_min == pytest.approx(0.0)
+    assert prm.expression_max == pytest.approx(0.830769)
+
+
+def test_set_lane_output_expression_does_not_send_scene_mode():
+    """The unit does not set it when IT assigns a pedal, so neither do we.
+
+    An early hand-built probe carried scene_mode: true and worked, which made it
+    look required. Assigning on the touchscreen and reading back settled it: the
+    unit leaves the flag alone. The manual also excludes an expression-assigned
+    parameter from scene data, so forcing it is at best inert.
+    """
+    qc = _lane_client()
+    qc.set_lane_output_expression(row=0, param="VOLUME")
+    prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    assert not prm.HasField("scene_mode")
+
+
+def test_set_lane_output_expression_takes_pedal_two_and_a_reversed_sweep():
+    qc = _lane_client()
+    qc.set_lane_output_expression(row=2, param="PAN", pedal=2,
+                                  minimum=0.8, maximum=0.2)
+    prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    assert prm.index == 1
+    assert prm.expression == 2
+    assert prm.expression_min == pytest.approx(0.8)
+    assert prm.expression_max == pytest.approx(0.2)
+
+
+def test_clear_lane_output_expression_writes_zero_and_the_unassigned_range():
+    qc = _lane_client()
+    qc.clear_lane_output_expression(row=3, param="VOLUME")
+    oc = qc._t.sent[-1].preset.chains[0].output_control[0]
+    assert oc.hash == 23000
+    prm = oc.params[0]
+    assert prm.index == 0
+    assert prm.expression == 0
+    assert prm.expression_min == pytest.approx(0.0)
+    assert prm.expression_max == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("param", ["MUTE", "SOLO", 2, 3])
+def test_lane_output_expression_refuses_the_two_the_device_refuses(param):
+    """The device silently drops these; the library refuses them out loud.
+
+    Tested on hardware with four message shapes - bare, with scene_mode, with
+    expression_min/max, and the byte-identical message VOLUME accepted in the
+    same session - plus a Grid DELETE. None landed, in either direction. The
+    unit's own touchscreen writes the very same field, so this is ADR-0007's
+    case: modelled and refused, not omitted and not silently broken.
+    """
+    qc = _lane_client()
+    with pytest.raises(client.ControlNotDrivable) as refused:
+        qc.set_lane_output_expression(row=0, param=param)
+    with pytest.raises(client.ControlNotDrivable):
+        qc.clear_lane_output_expression(row=0, param=param)
+    assert not qc._t.sent, "a refused call must send nothing"
+
+    # ADR-0007 settled: a refusal carries what, why and what to do instead, so a
+    # caller can branch on it rather than parse the message.
+    assert isinstance(refused.value, ValueError), "except ValueError must keep working"
+    assert refused.value.control.endswith(("MUTE", "SOLO"))
+    assert "silently refuses" in refused.value.evidence
+    assert "touchscreen" in refused.value.workaround
+
+
+def test_the_refusal_is_a_measured_list_and_not_a_rule_about_switches():
+    """Being a `switch` is NOT what makes a parameter unassignable.
+
+    Three rules were tried against hardware and all three are false - the
+    reasoning is recorded beside LANE_OUTPUT_UNASSIGNABLE. This pins the one
+    that is most tempting to reintroduce: every OTHER collection accepts an
+    assignment on a switch-typed parameter, so a `type == "switch"` check would
+    refuse writes the device demonstrably takes.
+    """
+    assert client.LANE_OUTPUT_UNASSIGNABLE == ("MUTE", "SOLO")
+
+    qc = _lane_client()
+    switch = qc.catalog[25000].parameter("TYPE")
+    assert switch.type == "switch", "the fixture's TYPE must stay a switch"
+
+    # Resolved by NAME through the catalog, so the type is right there to be
+    # checked - and must not be. Jewel HIGH CUT, Mixer PHASE and Splitter TYPE
+    # are all switches and all took an assignment on hardware.
+    qc.set_expression(row=0, column=1, param="TYPE", pedal=1, model=25000)
+    prm = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert prm.index == switch.index
+    assert prm.expression == 1, "set_expression must not care about parameter type"
+
+
+# -- the lane VOLUME is the one placeholder whose true span is measured --------
+
+
+def test_set_lane_output_real_converts_volume_through_the_measured_db_scale():
+    qc = _lane_client()
+    qc.set_lane_output(row=0, param="VOLUME", real=-3.1)
+    prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    assert prm.param_values[0].float_value == pytest.approx(
+        client.db_to_lane_level(-3.1))
+    assert prm.param_values[0].float_value == pytest.approx(0.7096, abs=1e-4)
+
+
+def test_set_lane_output_real_puts_unity_at_the_documented_value():
+    qc = _lane_client()
+    qc.set_lane_output(row=0, param="VOLUME", real=0.0)
+    prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    assert prm.param_values[0].float_value == pytest.approx(client.UNITY_LEVEL)
+
+
+def test_other_placeholder_ranges_still_refuse_real():
+    """Only the lane VOLUME was measured. Nothing else got quietly loosened."""
+    qc = _lane_client()
+    with pytest.raises(ValueError, match="placeholder"):
+        qc.set_mixer_param(row=0, param="MIXER LEVEL", real=-3.0)
+
+
 # -- per-preset MIDI out ------------------------------------------------------
 # Not a Grid write: the preset stores these, but a Grid update carrying the
 # field is ignored. MIDISettings applies them.
@@ -2641,13 +2811,13 @@ def test_looper_state_enum_omits_the_value_never_observed():
 def test_expression_bypass_mode_numbering_is_not_the_manual_order():
     # Each set deliberately on the unit with a scene change fencing them apart:
     # Heel-Toe stored 2, Switch 1, Stop 0. An earlier release had this reversed.
-    from pyquadcortex.protocol.enums import ExpressionBypassMode as M
+    from pyquadcortex.protocol.enums import ExpressionSwitchMode as M
     assert (int(M.STOP), int(M.SWITCH), int(M.HEEL_TOE)) == (0, 1, 2)
 
 
 def test_set_expression_bypass_accepts_the_enum():
     qc = client.QuadCortex(FakeTransport())
-    from pyquadcortex.protocol.enums import ExpressionBypassMode as M
+    from pyquadcortex.protocol.enums import ExpressionSwitchMode as M
     qc.set_expression_bypass(row=0, column=1, pedal=1, mode=M.HEEL_TOE)
     assert qc._t.sent[-1].preset.chains[0].models[0].expression_bypass_info[0].type == 2
 

@@ -41,6 +41,24 @@ PRE_FLIP_INIT_SHA256 = (
 #: The package exported exactly this many names at 0.40.0.
 PRE_FLIP_EXPORT_COUNT = 70
 
+#: Pre-flip names DELIBERATELY renamed since, mapped to what they are called now.
+#:
+#: The parity check below exists so a name cannot vanish by ACCIDENT during the
+#: move. A rename decided on purpose is a different event, and erasing the old
+#: name from the yardstick would hide it - which is the failure the module
+#: docstring warns about. So a rename is recorded here instead, with its reason,
+#: and the checks follow the pointer. Adding an entry is a deliberate act a
+#: reviewer sees; deleting a name outright still fails.
+#:
+#: `ExpressionBypassMode` -> `ExpressionSwitchMode`: the enum is the unit's
+#: SWITCH ON control, and it governs every switch-like target a pedal drives -
+#: a block's bypass, and a Lane Output Control's MUTE and SOLO. Only one of the
+#: three is a bypass. Renamed with no alias, per the 0.x contract in
+#: `changelog.md` that anything may change while the major number is 0.
+DELIBERATE_RENAMES = {
+    "ExpressionBypassMode": "ExpressionSwitchMode",
+}
+
 
 def _pre_flip_exports() -> list[str]:
     """The `__all__` of the package as it was before the flip."""
@@ -86,9 +104,11 @@ def test_every_pre_flip_name_resolves_under_protocol(name):
     loses the class. Eleven of these names appear nowhere else in the suite, so
     for those this is the whole of their coverage.
     """
+    name = DELIBERATE_RENAMES.get(name, name)
     assert hasattr(protocol, name), (
         f"{name} was exported by pyquadcortex before the flip and must be "
-        f"reachable as pyquadcortex.protocol.{name}"
+        f"reachable as pyquadcortex.protocol.{name} (or be recorded in "
+        f"DELIBERATE_RENAMES as having been renamed on purpose)"
     )
     value = getattr(protocol, name)
     assert value is not None, (
@@ -112,7 +132,27 @@ def test_every_pre_flip_name_resolves_under_protocol(name):
 
 def test_protocol_still_declares_the_whole_pre_flip_surface():
     """Reachable is not enough - it has to stay the documented surface."""
-    assert set(PRE_FLIP_EXPORTS) <= set(protocol.__all__)
+    expected = {DELIBERATE_RENAMES.get(n, n) for n in PRE_FLIP_EXPORTS}
+    assert expected <= set(protocol.__all__)
+
+
+def test_deliberate_renames_are_real_renames():
+    """A rename entry has to point somewhere, and the old name has to be GONE.
+
+    Without this, DELIBERATE_RENAMES degrades into the checklist the module
+    docstring warns about: a place to park a name so the parity check stops
+    asking about it. Both halves matter - the new name must exist, and the old
+    one must not, because a rename that left the old name behind is an alias,
+    and an alias needs no entry here.
+    """
+    for old, new in DELIBERATE_RENAMES.items():
+        assert old in PRE_FLIP_EXPORTS, (
+            f"{old} is recorded as a rename but was never a pre-flip export")
+        assert hasattr(protocol, new), (
+            f"{old} is recorded as renamed to {new}, which does not exist")
+        assert not hasattr(protocol, old), (
+            f"{old} still exists, so it was aliased rather than renamed - "
+            f"remove its DELIBERATE_RENAMES entry")
 
 
 def test_top_level_no_longer_re_exports_the_protocol_surface():

@@ -2639,10 +2639,10 @@ visually on the device's own screen.
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. A DEVICE setting, not a preset one - nothing to save. No change event is emitted when the switch moves, but the value rides the ambient params push; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
-| `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back |
+| `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, through the measured -40..+12 span rather than the catalog's placeholder - the only placeholder parameter that converts |
 | `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
 | `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
-| `set_expression_bypass` | `Grid{UPDATE, ..., models{bypass_expression, expression_bypass_info}}` | read-back | `type` numbering unestablished |
+| `set_expression_bypass` | `Grid{UPDATE, ..., models{bypass_expression, expression_bypass_info}}` | read-back + on-unit | `type` is `ExpressionSwitchMode`, all three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2. The mode decides which other controls exist - SWITCH greys out the delay, HEEL_TOE greys out latch emulation |
 | `list_folders` | `File{READ}`, collecting every push | read-back | 399 folders on the observed unit, including a 2062-entry Captures Library |
 | `favorites` | `RecentsFavorites{READ}` | read-back | read-only |
 | `tuner` / `show_tuner` / `set_tuner_input` | `Tuner{READ}` / `ShowTuner{UPDATE, show}` / `Tuner{UPDATE, input_port_id}` | read-back | `frequency` is a readout, not the reference pitch |
@@ -2661,6 +2661,9 @@ visually on the device's own screen.
 | `set_stomp_momentary` | `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}` | read-back + on-unit | keyed by footswitch, not column. **Only lands on a switch driving exactly one block** - the device refuses multi-block switches silently, as its own toggle does |
 | `set_stomp_label` | `Grid{UPDATE, preset{stomp_labels` or `single_stomp_labels{key, value}}}` | read-back + on-unit | `single_stomp_labels` is the one the unit writes when the switch drives a single block; it clears both on unassign |
 | `set_expression` | `Grid{UPDATE, preset{chains{row, models{column, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit | pedal 1 or 2 with a normalized sweep range |
+| `clear_expression` | same shape with `expression: 0` and the sweep back to `0.0..1.0` | read-back | unassigns a block parameter; confirmed clearing a pedal-2 assignment |
+| `set_lane_output_expression` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit + by ear | `set_lane_output`'s shape with the three expression fields. **VOLUME and PAN only** - the device SILENTLY DROPS the same message aimed at MUTE or SOLO, in both directions, so those refuse rather than lying. `scene_mode` is NOT sent: the unit does not set it when it assigns a pedal |
+| `clear_lane_output_expression` | same shape with `expression: 0` and the sweep back to `0.0..1.0` | read-back | unassigns; refuses MUTE and SOLO for the same reason |
 | `set_midi_out` / `set_preset_load_midi_out` | `MIDISettings{UPDATE, general_midi_messages` or `preset_load_messages{messages{source, msg}}}` | read-back | per-preset MIDI Out. A `Grid` update carrying the preset's own midi fields does nothing |
 | `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
 | `param_options` | reads `Param.dynamic_steps` | read-back | the option names of a list parameter, which the catalog does not carry |
@@ -2684,6 +2687,41 @@ visually on the device's own screen.
 | `remove_block` | `Grid{action: DELETE, preset{chains{row, models{column, hash: 0}}}}` | read-back + on-unit | the ACTION marks the removal; an UPDATE carrying `hash: 0` is transmitted but ignored |
 | `catalog` | `ModelRepo{READ}` then `ModelRepo{model_repo_payload}` | read-back | payload is gzip(tar(ModelRepo.xml)): the unit's full block catalog |
 | `GridMove` | `GridMove{move{from_col, to_col, is_drop}, grid{rows{modelIds} x4}}` | captured only | observed in a Cortex Control session; no client method, not driven host-to-device by this library. Its `grid` snapshot is ADVISORY - replaying it with a cell zeroed does NOT delete a block, and the device echoes back only the `move` element |
+
+### What a host can assign an expression pedal to
+
+Every `Model`-shaped collection was tested directly, one write per target, read
+back after a settle and restored. The result is that **one shape works
+everywhere and there are exactly two exceptions**:
+
+| collection | parameters tested | host assignment |
+|---|---|---|
+| `models` (a block) | Jewel `HIGH CUT` (`switch`) | yes |
+| `models` bypass | via `bypass_expression` | yes - `set_expression_bypass` |
+| `input_control` (input gate) | `NOISE REDUCTION`, `INPUT GAIN` (`float`), `BYPASS` (`switch`) | yes, all three, and `BYPASS` clears too |
+| `mixer` | `LEVEL A` (`float`), `PHASE` (`switch`) | yes |
+| `combined_splitter` | `LEVEL TO A` (`float`), `TYPE` (`switch`) | yes |
+| `output_control` | `VOLUME`, `PAN` (`float`) | yes |
+| `output_control` | **`MUTE`, `SOLO`** (`switch`) | **NO - silently dropped, both directions** |
+
+The MUTE/SOLO refusal is a measured fact and not an instance of any rule. Three
+were tried and all are false:
+
+* **"switch parameters are refused"** - `HIGH CUT`, `PHASE` and `TYPE` are all
+  `switch` and all accept an assignment.
+* **"bypass-like parameters are refused"** - the input gate's `BYPASS` is
+  bypass-like, accepts an assignment, and accepts a clear.
+* **"`output_control` rejects `expression`"** - `VOLUME` and `PAN` live in the
+  same block and accept one.
+
+`output_control.bypass_expression` is not a back door to it either: a write there
+is ignored and `params[2].expression` does not move. The unit's own touchscreen
+writes `params[].expression` directly, and that write is what a host cannot
+reproduce. Note also that the unit **broadcasts nothing** when a lane output is
+edited - 180 seconds of listening while an assignment was made on the screen
+produced no `Grid` push carrying `output_control` - so this shape cannot be
+learned by watching, only by writing and reading back.
+
 
 ## Grid blocks
 

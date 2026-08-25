@@ -22,6 +22,9 @@ correction.
 
 ### BREAKING: the protocol API moved to `pyquadcortex.protocol`
 
+> Every breaking change in this release is listed side by side in
+> [docs/migration.md](docs/migration.md), if a table is what you want.
+
 **Change one import line.** `from pyquadcortex import X` becomes
 `from pyquadcortex.protocol import X`, and `pyquadcortex.connect()` becomes
 `protocol.connect()`:
@@ -38,6 +41,11 @@ is reachable under `pyquadcortex.protocol`, with the same behaviour - same
 classes, same methods, same arguments, same results. Nothing about the protocol
 API changed except where it is imported from. A test enumerates the old export
 list and proves it.
+
+One name has since been renamed on purpose, in this same unreleased window:
+`ExpressionBypassMode` is now `ExpressionSwitchMode` (below). That is a separate
+break from the move, and the test records it as a deliberate rename rather than
+letting the name quietly vanish.
 
 **Submodule paths took the same step**, and no test can prove that part for you
 because those were never top-level exports. If you import a submodule directly,
@@ -57,6 +65,90 @@ ProductionAutomation_pb2 as pa`.
 
 `qcctl` is unchanged. If you installed the package in editable mode before this
 change, reinstall it so the console script points at the new module path.
+
+### BREAKING: `ExpressionBypassMode` is now `ExpressionSwitchMode`
+
+Rename the import; nothing else changes. Same values, same numbering, same
+meaning:
+
+```python
+from pyquadcortex.protocol import ExpressionSwitchMode   # was ExpressionBypassMode
+```
+
+There is deliberately **no alias**. The old name described one of the three
+things this enum governs. It is the unit's **SWITCH ON** control, and it applies
+to a block's bypass *and* to a Lane Output Control's MUTE and SOLO, which store
+their settings in the same `expression_bypass_info`. Only the bypass is a bypass.
+
+While renaming it, two behaviours of the unit got written down that were not
+recorded before: the mode decides which of the other controls exist, and the two
+are mutually exclusive in the modes measured. `SWITCH` greys out SWITCH DELAY;
+`HEEL_TOE` greys out LATCH EMULATION. The library still lets you send either, so
+a combination the touchscreen cannot produce is reachable from the host and has
+never been tested - worth knowing before you rely on one.
+
+### An expression pedal can be assigned to a Lane Output Control
+
+- **`set_lane_output_expression(row, param, pedal, minimum, maximum)`** assigns a
+  pedal to a lane's VOLUME or PAN, and **`clear_lane_output_expression(row,
+  param)`** unassigns it. `set_expression` never could: the Lane Output Control
+  has no column, which is the same reason `set_param` cannot reach it and
+  `set_lane_output` exists.
+
+  A pedal used as a volume and mute control, silent at the heel:
+
+  ```python
+  qc.set_lane_output_expression(row=0, param="VOLUME", pedal=1,
+                                minimum=0.0, maximum=db_to_lane_level(3.2))
+  ```
+
+  The sweep ends are the normalized 0..1 the wire carries, which the unit
+  displays as a percentage - 0.830769 shows as 83.08%.
+
+- **`clear_expression(row, column, param)`** does the same for a block parameter.
+  `set_expression` has never had a counterpart.
+
+- **MUTE and SOLO refuse, and that is the device's doing.** They are the ONLY
+  two parameters in the library a host cannot assign a pedal to. Measured with
+  four message shapes, including the byte-identical message VOLUME accepts in
+  the same session, plus a `Grid` DELETE - none landed, in either direction.
+  The touchscreen writes the very same field, so the control is understood and
+  not drivable, and these methods raise rather than failing quietly the way the
+  device does (ADR-0007). Assign it on the unit; the library reads it back.
+
+  It is a **measured list, not a rule**, and three tempting rules are false:
+  switch-typed parameters are not refused (the Jewel's HIGH CUT, the Mixer's
+  PHASE and the Splitter's TYPE all take one), bypass-like parameters are not
+  refused (the input gate's BYPASS takes one, and takes a clear), and
+  `output_control` does not reject `expression` in general (VOLUME and PAN, in
+  the same block, take one).
+
+- **Expression assignment is confirmed on every other collection.** Blocks, the
+  input gate, the mixer and the splitter all accept one, on both float and
+  switch parameters - so a pedal can now drive a noise gate's INPUT GAIN or a
+  mixer's LEVEL A, neither of which had ever been tried. The coverage table
+  records what was measured.
+
+- **`scene_mode` is not sent.** An early probe carried it and worked, which made
+  it look required. Assigning on the touchscreen settled it: the unit leaves the
+  flag alone, and the manual excludes an expression-assigned parameter from Scene
+  data anyway.
+
+### `set_lane_output(real=)` now speaks dB for VOLUME
+
+```python
+qc.set_lane_output(row=0, param="VOLUME", real=-3.1)     # was: raises
+```
+
+The lane VOLUME publishes the placeholder range `0..1 "dB"`, so `real=` used to
+refuse it. Its TRUE span is measured at both ends - -40..+12 dB, unity at 10/13 -
+so the conversion now goes through that instead of through the catalog.
+
+It is **the only** placeholder parameter that converts. The other 51 across 23
+models - EQ band gains, cab levels, send/return and FX loop levels, mixer and
+splitter levels - still refuse, because their spans have never been measured and
+they are demonstrably not all the same scale. Recovering them is tracked
+separately.
 
 **Why now.** `import pyquadcortex` should hand you the Quad Cortex, not the wire.
 The model of the unit is being built, and it takes the top-level name; the protocol

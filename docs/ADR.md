@@ -83,13 +83,25 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   - **(a) Model the switch, refuse what cannot be driven - chosen.** The player sees a switch, so the model has one. Reading it, or writing it, raises with a message saying the wire path is not known yet.
   - **(b) Omit tempo from the model entirely.** Throws away a control we do understand - the BPM and the whole metronome are confirmed writable - to avoid one field we do not.
   - **(c) Let a tempo write through and work out the scope afterwards.** A guess behind a clean API. The write lands in whichever scope the unit happens to be in, and the caller is told nothing. This is the "the model lies" failure the Intent names, and it is the worst of the three because it looks like it worked.
-- **Open Questions:** How the refusal reads in practice - one exception type for "no wire path known", or a per-feature message. Settled when the first such control ships, which is M3 at the earliest.
+- **Open Questions:** SETTLED (2026-08-25) by the first control to ship one. It is a **typed exception carrying structured evidence**, not a per-feature message: `protocol.ControlNotDrivable(control, evidence, workaround)`, subclassing `ValueError` so existing `except ValueError` around a rig-building script keeps working, while catching it specifically tells a caller the request was well formed and the DEVICE is what refused. All three fields are required, because a refusal with no recorded evidence is the guess this ADR exists to prevent. The instance is the Lane Output Control's MUTE and SOLO (see below); it arrived at the protocol layer rather than at M3, which is why it settled earlier than expected.
 - **Rationale:** The model's job is to look like the unit. A switch the player can see, missing from the model with no explanation, is its own kind of lie. Refusing is honest in both directions: it tells the caller the control is real and tells them we cannot drive it. It also keeps the door open, because a model with a `mode` on it has somewhere to put the answer the day the wire path turns up. Option (c) is rejected on the project's oldest rule: the device accepts a write it does not understand and says nothing, so a guess and a success are indistinguishable to the caller.
 - **Consequences:**
   - The design doc's `Tempo` gains `mode`, and the appendix's "Tempo MODE" row changes from a permanent omission to an open protocol investigation. `docs/domain-model.md` §13 says the same.
   - Finding the MODE wire path becomes a prerequisite of M3's device-settings Epic, not of M1. **No tempo surface ships at M1**, so nothing in this record is user-visible yet.
   - Design principle 3 keeps its meaning and gains a boundary: omission is for behaviour we do not understand, refusal is for behaviour we understand and cannot yet drive. A record that says which one applies is now expected of anything the model leaves out.
   - This does not license modelling controls on a hunch. It applies where the unit's behaviour is confirmed and only the message is missing; a control we have not understood on the hardware is still omitted.
+  - **First instance, 2026-08-25: the Lane Output Control's MUTE and SOLO.** The
+    unit assigns an expression pedal to them from its own touchscreen and stores
+    it in `output_control.params[].expression`. A host write of that same field
+    is silently dropped, in both directions. Four message shapes were tried,
+    including the byte-identical message VOLUME accepts in the same session, plus
+    a `Grid` DELETE and a write to `bypass_expression`. Every other collection -
+    blocks, the input gate, the mixer, the splitter - accepts an assignment on
+    every parameter kind, so this is a measured pair and not an instance of any
+    rule; three candidate rules were tried and disproved (`docs/protocol.md`,
+    "What a host can assign an expression pedal to"). The unit broadcasts nothing
+    when a lane output is edited, so ADR-0010's "diff, do not hunt" applies and
+    the differential capture is what licenses the refusal.
 
 ## ADR-0008: The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin
 
