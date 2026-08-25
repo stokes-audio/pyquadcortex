@@ -101,7 +101,12 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
     rule; three candidate rules were tried and disproved (`docs/protocol.md`,
     "What a host can assign an expression pedal to"). The unit broadcasts nothing
     when a lane output is edited, so ADR-0010's "diff, do not hunt" applies and
-    the differential capture is what licenses the refusal.
+    the differential capture is what licenses the refusal. That capture was run:
+    between the two positions of the control, the only device state that moved
+    was `PresetDirty.is_dirty` and the free-storage counter - both the save - and
+    the running metronome clock, which the harness labels rather than drops. No
+    unknown field number moved in either direction. ADR-0010's bar is met, and
+    the refusal rests on a diff rather than on a listener that heard nothing.
 
 ## ADR-0008: The generator floor joins the bindings/pin unit, with a gate at regeneration and a CI check on the pin
 

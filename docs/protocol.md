@@ -2722,6 +2722,18 @@ edited - 180 seconds of listening while an assignment was made on the screen
 produced no `Grid` push carrying `output_control` - so this shape cannot be
 learned by watching, only by writing and reading back.
 
+**The differential capture (ADR-0010).** Because the unit broadcasts nothing
+here, "no broadcast was observed" is not on its own grounds for the refusal, so
+the state was captured in both positions of the control and diffed - every type
+the device answers a READ for, every set field, and every field number the
+recovered schema does not know. Between MUTE assigned and MUTE unassigned, the
+only device state that moved was `PresetDirty.is_dirty` and the free-storage
+counter (the save), plus the running metronome clock, which the harness labels
+as noise rather than dropping. Nothing carries this control but the field the
+touchscreen writes. On the preset side, assigning MUTE on the unit changed
+exactly two lines across all four rows' `output_control`, `input_control` and
+`models`: `params[2].expression` and `expression_bypass_info[0]`.
+
 
 ## Grid blocks
 
