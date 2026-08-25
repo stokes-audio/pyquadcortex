@@ -21,9 +21,9 @@ import sys
 import time
 
 from pyquadcortex import protocol
-from pyquadcortex.protocol import (BlockRefused, Input, Instrument, Output, Scene,
-                                   Setlist, UNITY_LEVEL, blocks, field_present,
-                                   free_rows, models)
+from pyquadcortex.protocol import (Block, BlockRefused, Input, Instrument, LaneOutput,
+                                   Output, Scene, Setlist, UNITY_LEVEL, blocks,
+                                   field_present, free_rows, models)
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Brit 2203"        # any factory preset (see inspect_preset.py)
@@ -70,7 +70,7 @@ def main():
         #    A placement can be refused when the preset has no DSP capacity left
         #    for it; set_block checks and says so rather than failing quietly.
         try:
-            qc.set_block(row=row, column=0, model=AMP)
+            qc.set_block(Block(row, 0, AMP))
         except BlockRefused as refused:
             print(f"\n{refused}")
             return 1
@@ -80,14 +80,14 @@ def main():
         # 2. A parameter in its own units rather than a 0..1 fraction. Naming the
         #    parameter is safer than an index, since indices are positional and not
         #    every one is a knob you can see.
-        qc.set_param(row=row, column=0, param="MASTER", real=5.0, model=amp)
+        qc.set_param(Block(row, 0, amp), param="MASTER", real=5.0)
 
         # 3. The row's own level, then one scene that silences it. Lane VOLUME is
         #    one of the parameters whose catalog range is a placeholder, so it takes
         #    the wire's 0..1 - UNITY_LEVEL is the value meaning "no attenuation".
         #    Naming a scene leaves the unit sitting on it.
-        qc.set_lane_output(row=row, param="VOLUME", value=UNITY_LEVEL)
-        qc.set_lane_output(row=row, param="VOLUME", value=0.0,
+        qc.set_param(LaneOutput(row), param="VOLUME", value=UNITY_LEVEL)
+        qc.set_param(LaneOutput(row), param="VOLUME", value=0.0,
                            scene=SILENT_SCENE)
 
         time.sleep(2.0)

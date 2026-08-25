@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 106 features audited: **66 yes**, **9 partly**, **20 no**, **11 n/a**.
+Of 105 features audited: **65 yes**, **8 partly**, **21 no**, **11 n/a**.
 
 Of the 93 features a host could plausibly drive - everything above except the 11 marked
 n/a - **65 are fully covered** and 8 more are partly covered, which here means the state
@@ -65,8 +65,8 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | Tuner: reference pitch, input source, mute | yes | `set_tuner_input()`, `set_tuner_reference()` and `set_tuner_mute()` all confirmed. Reference is an OFFSET in Hz from 440. Input accepts both inputs, both returns, INPUT_1_2 and USB 5/6; `RETURN_1_2` is refused by the DEVICE, so combined-returns tuning does not exist |
 | Tuner: Live Tuner (the needle) | no | UNSUPPORTED by decision. `enable_meter` refuses a host write - it stays false and `meter` stays 0.0 - so the needle never streams. Not worth chasing for an instrument you have to be holding; see `docs/roadmap.md` |
 | Tap tempo | no | a `GlobalTempo` READ carries the 25 device tempo parameters, and none of the 23 ATTRIBUTED ones is a tap (indices 23 and 24 are unattributed). MIDI CC#44 is the documented route |
-| Tempo value (per preset) | yes | `set_tempo_param("TEMPO", real=120)` in bpm, or `value=` for the raw 0..1. The catalog range is a placeholder, so the span was measured off the screen instead: three INTERIOR points (59, 111, 120 bpm), each exact to the displayed integer, fitting 40..240. The endpoints are the fit's - neither extreme was driven |
-| Metronome level, LED, time signature, note length | yes | `set_tempo_param()` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is `tempo_mode()` / `set_tempo_mode()` - see the row below |
+| Tempo value (per preset) | yes | `set_param(Tempo(), "TEMPO", real=120)` in bpm, or `value=` for the raw 0..1. The catalog range is a placeholder, so the span was measured off the screen instead: three INTERIOR points (59, 111, 120 bpm), each exact to the displayed integer, fitting 40..240. The endpoints are the fit's - neither extreme was driven |
+| Metronome level, LED, time signature, note length | yes | `set_param(Tempo(), ...)` by screen name, `set_tempo_option()` by option number, and typed setters with full enums: `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()`. The menu's MODE is `tempo_mode()` / `set_tempo_mode()` - see the row below |
 | Per-beat accents (customizing each beat of the bar) | yes | `set_beat(n, MetronomeBeat.ACCENT)` and `set_beats([...])`; `pyquadcortex.protocol.beats(preset)` reads them back. Tempo parameters 10-22 - the catalog's `STEPSTATE0` to `STEPSTATE12` - are beats 1 to 13, each a four-option list at `option / 3`: normal, off, accented, de-emphasized. Traced by touching cells on the unit; a cell cycles UP by 1/3 and wraps, so four touches return it to where it started. Set the time signature FIRST - changing it rewrites these |
 | Tempo MODE (Global vs Preset) | yes | `tempo_mode()` reads it, `set_tempo_mode()` writes it - the device tempo block's parameter 1, `0.0` PRESET and `1.0` GLOBAL. **Global, not per preset**: it affects every preset and there is nothing to save. The unit emits no change event when the switch moves - which is what three earlier tests measured - but the current value rides the ambient `GlobalTempo` params push. The reader must wait for a reply carrying PARAMETERS, since the type alternates that shape with a clock shape |
 | Per-scene tempo | n/a | `scene_tempo` is ignored and reads back empty, and the unit has no per-scene tempo - its Tempo MODE is global or per preset, nothing finer |
@@ -95,22 +95,21 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | Global EQ / Input Gate auto-disable under load | partly | `CompilerInhibitedModules{global_gate, global_eq}` is decoded and arrives on grid edits. The manual confirms this is the documented behaviour when a preset exceeds resources. Not surfaced in the API |
 | Input blocks: assign a physical input | yes | `set_chain_input()` |
 | Output blocks: assign a destination | yes | `set_chain_output()`. 16-18 are internal row-to-row; 19 (MULTIPLE) is the Multi-Out |
-| Input Gate Control | yes | `set_input_gate()` - NOISE REDUCTION, BYPASS, INPUT GAIN, per scene. GAIN REDUCTION is a meter |
-| Lane Output Control | yes | `set_lane_output()` - VOLUME, PAN, MUTE, SOLO, per scene |
+| Input Gate Control | yes | `set_param(LaneInput(row), ...)` - NOISE REDUCTION, BYPASS, INPUT GAIN, per scene. GAIN REDUCTION is a meter |
+| Lane Output Control | yes | `set_param(LaneOutput(row), ...)` - VOLUME, PAN, MUTE, SOLO, per scene |
 | Block bypass | yes | `set_bypass()`, per scene |
 | Per-parameter values | yes | `set_param()` by name or index, `real=` where the range is genuine, `text=` for string-valued ones such as a cab's microphone |
 | Promote a parameter to follow scenes | yes | `set_param_scene_mode()` (the flag must travel alone) |
 | comboBox option names | yes | `param_options()`, reading `Param.dynamic_steps` from the preset |
 | Read where a row branches and rejoins | yes | `splits()`, including branches that never rejoin |
 | Create a splitter or mixer | yes | `set_split(row, split_column, mix_column)` / `clear_split(row)`. Every even row already has the splitter; the branch is what gets activated |
-| Splitter parameters | yes | `set_splitter_param()` via `combined_splitter`; indices follow unified model 10004 |
-| Mixer parameters | yes | `set_mixer_param()` |
+| Splitter parameters | yes | `set_param(Splitter(row), ...)` via `combined_splitter`; indices follow unified model 10004 |
+| Mixer parameters | yes | `set_param(Mixer(row), ...)` |
 | Splitter / Mixer MUTE | yes | `set_split_mute()`. It is ONE control, not two; the write goes to `splitBypass` and the device reports it in `mixBypass` |
 | Side-chaining: set a block's SOURCE/TRIGGER | yes | `set_param_option(row, column, param="SOURCE", option=...)`. It is an ordinary comboBox parameter; `sidechain_source_flag` is bookkeeping and ignores writes |
 | Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()`. Momentary is keyed by footswitch, not column, and only lands on a switch driving ONE block - the device refuses multi-block switches silently, as its own toggle does. The manual never mentions stomp momentary; the touchscreen's Assign footswitch modal has it |
-| Expression pedal assignment to a block parameter | yes | `set_expression(row, column, param, pedal, minimum, maximum)`, and `clear_expression()` to unassign |
-| Expression pedal on an input gate, mixer or splitter parameter | yes | `set_expression()` reaches these through the same row/column keying where they are column-keyed; the input gate's NOISE REDUCTION, INPUT GAIN and BYPASS, the mixer's LEVEL A and PHASE, and the splitter's LEVEL TO A and TYPE all confirmed. Parameter TYPE is irrelevant - `switch` parameters take an ordinary MIN/MAX sweep, as the manual describes |
-| Expression pedal assignment to a Lane Output Control | partly | `set_lane_output_expression()` / `clear_lane_output_expression()` reach VOLUME and PAN, which `set_expression` cannot - the Lane Output Control has no column. **MUTE and SOLO refuse**: the device silently drops a host assignment on a lane SWITCH parameter, in both directions, while accepting the byte-identical message on VOLUME. The touchscreen writes the same field, so the control is understood and not drivable (ADR-0007) |
+| Expression pedal assignment to a parameter | yes | `set_expression(target, param, pedal, minimum, maximum)` and `clear_expression(target, param)`, against ANY target - a block, the lane output or input, the mixer, the splitter. Confirmed on all of them, on float AND `switch`-typed parameters: parameter type is irrelevant, and the manual gives every assignable parameter a MIN/MAX sweep |
+| Expression pedal on a Lane Output MUTE or SOLO | no | the ONLY refusal in the library. The device silently drops a host write of those two in both directions while accepting the byte-identical message on VOLUME, so they raise `ControlNotDrivable` (ADR-0007). The touchscreen writes the same field and the library reads it back |
 | Expression bypass (heel-toe / switch / stop) | yes | `set_expression_bypass()` with `ExpressionSwitchMode`. All three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2 - not the manual's listed order. The unit labels the control SWITCH ON, and the mode decides which of the other two exist: SWITCH greys out SWITCH DELAY, HEEL_TOE greys out LATCH EMULATION. The same `expression_bypass_info` carries a lane MUTE's and SOLO's settings, one slot per switch parameter |
 | Expression pedal calibration | partly | the flow IS `IOSettings`, as guessed: calibrating a pedal on the unit broadcasts `exp_port{exp_port_id, calibrating: true}` and `false` on completion, for EXP 1 and EXP 2 alike. Observed, never driven from the host |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |

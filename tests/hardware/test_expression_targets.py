@@ -1,4 +1,4 @@
-"""Assigning an expression pedal to a Lane Output Control, on the real unit.
+"""Assigning an expression pedal to each kind of target, on the real unit.
 
 The Lane Output Control has no column - it lives in ``chain.output_control[]``
 rather than ``chain.models[]`` - so `set_expression` cannot reach it, which is
@@ -19,8 +19,11 @@ import time
 
 import pytest
 
-from pyquadcortex.protocol.client import (UNITY_LEVEL, ControlNotDrivable,
-                                          db_to_lane_level)
+from pyquadcortex.protocol.client import blocks
+from pyquadcortex.protocol.errors import ControlNotDrivable
+from pyquadcortex.protocol.targets import (Block, LaneInput, LaneOutput,
+                                           Mixer, Splitter)
+from pyquadcortex.protocol.units import UNITY_LEVEL, db_to_lane_level
 
 #: A read straight after a write returns the PREVIOUS value on this firmware.
 #: This trap has produced two wrong conclusions in this project, one of which
@@ -61,13 +64,13 @@ def _snapshot(qc, row=ROW):
 
 def _restore(qc, was, row=ROW):
     if was["expression"]:
-        qc.set_lane_output_expression(
+        qc.set_expression(
             row=row, param="VOLUME", pedal=was["expression"],
             minimum=was["minimum"], maximum=was["maximum"])
     else:
-        qc.clear_lane_output_expression(row=row, param="VOLUME")
+        qc.clear_expression(LaneOutput(row), param="VOLUME")
     time.sleep(0.3)
-    qc.set_lane_output(row=row, param="VOLUME", value=was["value"])
+    qc.set_param(LaneOutput(row), param="VOLUME", value=was["value"])
 
 
 def test_reads_and_writes_agree_on_which_row(qc, restores):
@@ -82,7 +85,7 @@ def test_reads_and_writes_agree_on_which_row(qc, restores):
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
     landmark = 0.3125                       # not a default, not unity, not 0.71
-    qc.set_lane_output(row=ROW, param="VOLUME", value=landmark)
+    qc.set_param(LaneOutput(ROW), param="VOLUME", value=landmark)
     time.sleep(SETTLE)
 
     chains = qc.read_current_preset().chains
@@ -101,7 +104,7 @@ def test_a_pedal_assigns_to_the_lane_volume_and_clears_again(qc, restores):
     was = _snapshot(qc)
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
-    qc.set_lane_output_expression(row=ROW, param="VOLUME", pedal=1,
+    qc.set_expression(LaneOutput(ROW), param="VOLUME", pedal=1,
                                   minimum=0.0, maximum=0.6)
     time.sleep(SETTLE)
     p = _volume(qc)
@@ -109,7 +112,7 @@ def test_a_pedal_assigns_to_the_lane_volume_and_clears_again(qc, restores):
     assert p.expression_min == pytest.approx(0.0, abs=1e-4)
     assert p.expression_max == pytest.approx(0.6, abs=1e-4)
 
-    qc.clear_lane_output_expression(row=ROW, param="VOLUME")
+    qc.clear_expression(LaneOutput(ROW), param="VOLUME")
     time.sleep(SETTLE)
     p = _volume(qc)
     assert p.expression == 0, "the assignment did not clear"
@@ -128,7 +131,7 @@ def test_the_assignment_leaves_scene_mode_alone(qc, restores):
     before = _volume(qc).scene_mode
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
-    qc.set_lane_output_expression(row=ROW, param="VOLUME", pedal=1)
+    qc.set_expression(LaneOutput(ROW), param="VOLUME", pedal=1)
     time.sleep(SETTLE)
     assert _volume(qc).scene_mode == before, "the assignment moved scene_mode"
 
@@ -141,9 +144,9 @@ def test_the_two_unassignable_parameters_refuse_rather_than_failing_silently(qc,
     that reached the wire would be the bug.
     """
     with pytest.raises(ControlNotDrivable):
-        qc.set_lane_output_expression(row=ROW, param=param)
+        qc.set_expression(LaneOutput(ROW), param=param)
     with pytest.raises(ControlNotDrivable):
-        qc.clear_lane_output_expression(row=ROW, param=param)
+        qc.clear_expression(LaneOutput(ROW), param=param)
 
 
 def test_the_lane_volume_speaks_dB_through_real(qc, restores):
@@ -157,12 +160,101 @@ def test_the_lane_volume_speaks_dB_through_real(qc, restores):
     was = _snapshot(qc)
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
-    qc.set_lane_output(row=ROW, param="VOLUME", real=-3.1)
+    qc.set_param(LaneOutput(ROW), param="VOLUME", real=-3.1)
     time.sleep(SETTLE)
     assert _volume(qc).param_values[0].float_value == pytest.approx(
         db_to_lane_level(-3.1), abs=2e-4)
 
-    qc.set_lane_output(row=ROW, param="VOLUME", real=0.0)
+    qc.set_param(LaneOutput(ROW), param="VOLUME", real=0.0)
     time.sleep(SETTLE)
     assert _volume(qc).param_values[0].float_value == pytest.approx(
         UNITY_LEVEL, abs=2e-4), "0 dB is not unity"
+
+
+# -- every target takes a pedal, and only two parameters refuse ---------------
+#
+# Measured one write per target and read back: blocks, the input gate, the
+# mixer, the splitter and the lane output all accept an assignment, on float
+# AND switch-typed parameters. Parameter type is irrelevant - the manual gives
+# every assignable parameter a MIN/MAX sweep. These cases keep that true.
+#
+# Row 1 is the scratch lane. The mixer and splitter live on even rows only and
+# are dormant in any serial preset, so writing their parameters is inaudible.
+
+ASSIGNABLE = [
+    ("lane input, float", LaneInput(1), "NOISE REDUCTION"),
+    ("lane input, switch", LaneInput(1), "BYPASS"),
+    ("lane output, float", LaneOutput(1), "VOLUME"),
+    ("mixer, float", Mixer(0), "LEVEL A"),
+    ("mixer, switch", Mixer(0), "PHASE"),
+    ("splitter, float", Splitter(0), "LEVEL TO A"),
+    ("splitter, switch", Splitter(0), "TYPE"),
+]
+
+
+def _params(qc, target):
+    """The target's parameters as the unit currently reports them."""
+    chain = qc.read_current_preset().chains[target.row]
+    return getattr(chain, target.collection)[0].params
+
+
+@pytest.mark.parametrize("label,target,name", ASSIGNABLE,
+                         ids=[c[0] for c in ASSIGNABLE])
+def test_every_target_takes_an_expression_pedal(qc, restores, label, target, name):
+    index = qc.catalog[target.model_id].parameter(name).index
+    was = _params(qc, target)[index]
+    before = (was.expression, was.expression_min, was.expression_max)
+
+    def restore():
+        if before[0]:
+            qc.set_expression(target, index, pedal=before[0],
+                              minimum=before[1], maximum=before[2])
+        else:
+            qc.clear_expression(target, index)
+
+    restores(f"{label} {name} expression", restore)
+
+    qc.set_expression(target, name, pedal=1, minimum=0.15, maximum=0.85)
+    time.sleep(SETTLE)
+    now = _params(qc, target)[index]
+    assert now.expression == 1, f"{label}: {name} did not take the pedal"
+    assert now.expression_max == pytest.approx(0.85, abs=1e-3)
+
+    qc.clear_expression(target, name)
+    time.sleep(SETTLE)
+    assert _params(qc, target)[index].expression == 0, (
+        f"{label}: {name} did not clear")
+
+
+def test_a_block_switch_parameter_takes_one_too(qc, restores):
+    """The case that disproved "switch parameters are refused".
+
+    Finds a real block with a `switch`-typed parameter rather than naming one,
+    because which blocks are on the grid depends on the loaded preset.
+    """
+    grid = qc.read_current_preset()
+    found = None
+    for block in blocks(grid):
+        spec = next((p for p in qc.catalog[block.model_id].parameters
+                     if p.type == "switch"), None)
+        if spec is not None:
+            found = (block, spec)
+            break
+    if found is None:
+        pytest.skip("no block on this preset has a switch-typed parameter")
+    block, spec = found
+
+    was = qc.read_current_preset().chains[block.row].models[block.column] \
+            .params[spec.index]
+    before = was.expression
+    restores(f"{block.describe()} {spec.name} expression",
+             lambda: qc.clear_expression(block, spec.index))
+
+    assert before == 0, "pick a preset where this parameter is unassigned"
+    qc.set_expression(block, spec.name, pedal=1, minimum=0.2, maximum=0.7)
+    time.sleep(SETTLE)
+    now = qc.read_current_preset().chains[block.row].models[block.column] \
+            .params[spec.index]
+    assert now.expression == 1, (
+        f"{spec.name} is a {spec.type} and the device took the assignment - "
+        f"being a switch is NOT what makes a parameter unassignable")

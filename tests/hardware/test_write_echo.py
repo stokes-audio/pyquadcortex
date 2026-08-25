@@ -16,6 +16,7 @@ import pytest
 
 from pyquadcortex.protocol.client import QuadCortex, field_present
 from pyquadcortex.protocol.enums import Input
+from pyquadcortex.protocol.targets import Block
 
 #: Generous by design. The point is to MEASURE the echo, so a test that waits
 #: three seconds and reports 400 ms is useful, while one that times out at the
@@ -204,11 +205,11 @@ def test_parameter_echo_latency_is_the_control(qc, probe, restores, record_prope
     column = next(c for c, m in enumerate(preset.chains[0].models) if m.hash)
     was = next(p.param_values[0].float_value
                for p in preset.chains[0].models[column].params if p.index == 0)
-    restores("row 1 first block, parameter 0", lambda: qc.set_param(0, column, 0, was))
+    restores("row 1 first block, parameter 0", lambda: qc.set_param(Block(0, column), 0, was))
 
     target = 0.75 if abs(was - 0.75) > 0.05 else 0.25
     ms = probe.measure(
-        lambda: qc.set_param(0, column, 0, target),
+        lambda: qc.set_param(Block(0, column), 0, target),
         lambda m: _named(m, "GridMessage") and any(
             mo.column == column and any(
                 p.index == 0 and abs(p.param_values[0].float_value - target) < 1e-6
@@ -251,13 +252,13 @@ def test_bypass_echo_latency(qc, probe, restores, record_property):
             f"block has been bypassed at least once")
 
     original = entry.sceneBypass[0].bypass
-    restores("block bypass", lambda: qc.set_bypass(row, column, original))
+    restores("block bypass", lambda: qc.set_bypass(Block(row, column), original))
 
     # Content-matched, not just "a GridMessage arrived": every structural edit
     # triggers a sidechain-bookkeeping burst of GridMessages that a loose
     # predicate happily matches, which would measure the burst and not the echo.
     ms = probe.measure(
-        lambda: qc.set_bypass(row, column, not original),
+        lambda: qc.set_bypass(Block(row, column), not original),
         lambda m: _named(m, "GridMessage") and any(
             cb.column == column and any(
                 sb.bypass == (not original) for sb in cb.sceneBypass)

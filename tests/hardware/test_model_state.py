@@ -44,6 +44,7 @@ import pytest
 
 from pyquadcortex.device import entries
 from pyquadcortex.device.watch import WatchOutcome
+from pyquadcortex.protocol.targets import Block
 
 #: The metronome clock always runs, so the unit pushes GlobalTempo in pairs, one
 #: pair per beat - 1.5 s apart at the slowest tempo the unit offers (40 bpm).
@@ -223,14 +224,14 @@ def test_an_edit_the_model_did_not_make_reaches_its_cache(qc, model_cache,
             "model nothing and this test could not say anything. Save or reload "
             "the preset on the unit and run this again.")
     column, was = _first_occupied_block(qc)
-    restores("row 1 first block, parameter 0", lambda: qc.set_param(0, column, 0, was))
+    restores("row 1 first block, parameter 0", lambda: qc.set_param(Block(0, column), 0, was))
 
     announcements = Pushes("PresetDirtyMessage")
     everything = Pushes()
     qc.add_listener(announcements)
     qc.add_listener(everything)
     try:
-        qc.set_param(0, column, 0, 0.75 if abs(was - 0.75) > 0.05 else 0.25)
+        qc.set_param(Block(0, column), 0, 0.75 if abs(was - 0.75) > 0.05 else 0.25)
         assert _wait_until(lambda: announcements.seen()), (
             f"the unit said nothing about unsaved changes for an edit it "
             f"accepted. It sent {everything.tally()} during the window, so read "
@@ -267,7 +268,7 @@ def test_a_write_through_the_cache_is_settled_by_what_the_unit_says(
     ``different`` stays an offline test: it is by definition a bug in our code.
     """
     column, was = _first_occupied_block(qc)
-    restores("row 1 first block, parameter 0", lambda: qc.set_param(0, column, 0, was))
+    restores("row 1 first block, parameter 0", lambda: qc.set_param(Block(0, column), 0, was))
     target = 0.75 if abs(was - 0.75) > 0.05 else 0.25
     already_dirty = qc.preset_dirty()
     record_property("preset_was_already_dirty", already_dirty)
@@ -278,7 +279,7 @@ def test_a_write_through_the_cache_is_settled_by_what_the_unit_says(
         started = time.monotonic()
         watch = model_cache.write_through(
             "dirty", {"is_dirty": True},
-            send=lambda: qc.set_param(0, column, 0, target))
+            send=lambda: qc.set_param(Block(0, column), 0, target))
 
         assert model_cache.cached("dirty")["is_dirty"] is True, (
             "the cache was not updated until the echo arrived, which is the "

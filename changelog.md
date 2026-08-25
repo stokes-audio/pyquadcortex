@@ -20,6 +20,105 @@ correction.
 
 ## Unreleased
 
+### BREAKING: one `set_param` for everything, addressed by a target
+
+Six ways to set a parameter became one. Say WHERE it lives:
+
+```python
+from pyquadcortex.protocol import Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo
+
+qc.set_param(Block(0, 2, model_id), "GAIN", real=-6.0)
+qc.set_param(LaneOutput(0), "VOLUME", real=-3.1)
+qc.set_param(LaneInput(0), "INPUT GAIN", real=12.0)
+qc.set_param(Mixer(0), "LEVEL A", value=UNITY_LEVEL)
+qc.set_param(Splitter(0), "LEVEL TO B", value=0.25)
+qc.set_param(Tempo(), "TEMPO", real=120)
+```
+
+`set_lane_output`, `set_input_gate`, `set_mixer_param`, `set_splitter_param`,
+`set_tempo_param` and `set_lane_output_scene_mode` are gone, and so are
+`set_lane_output_expression` / `clear_lane_output_expression`, which existed
+only in this same unreleased window. Every grid operation now names its cell
+with a `Block`. **[docs/migration.md](docs/migration.md) has the full before /
+after table.**
+
+`blocks()` already returned `Block(row, column, model_id)`, so what you read is
+now what you write to:
+
+```python
+for block in protocol.blocks(preset):
+    qc.set_param(block, "GAIN", real=-6.0)      # model_id is already on it
+```
+
+### Parameter names are constants now, not string literals
+
+`pyquadcortex.protocol.params` is generated from the device catalog, as
+`models.py` already was, with one `IntEnum` per model:
+
+```python
+from pyquadcortex.protocol import params
+
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, real=-3.1)
+qc.set_param(Tempo(), params.TempoParam.TEMPO, real=120)
+qc.set_param(LaneInput(0), params.LaneInputParam.INPUT_GAIN, real=12.0)
+```
+
+A member IS its wire index, so passing one **skips the catalog fetch a name
+needs** - the typed route is also the cheapest. Names still work; nothing is
+forced.
+
+Two things the catalog could not have told you, both measured:
+
+- **A cab's repeated parameters are two MICROPHONES**, not IR slots or channels,
+  so they are `MIC_1_DISTANCE` / `MIC_2_DISTANCE`. Confirmed against the unit's
+  own editor: mic 1 showed POSITION 2.9 / DIST 3.0 against wire 0.29 / 0.30, and
+  mic 2 showed 5.6 / 3.3 against 0.56 / 0.33.
+- **The catalog UNDER-DESCRIBES cabs** - it lists 2 parameters where the wire
+  carries 22. All 140 cab models share the one `Default Cabsim` layout, measured
+  across Bass/Guitar and mono/stereo, so a cab is chosen by its `models.*` id and
+  driven through `params.Cabsim`:
+
+  ```python
+  qc.set_block(Block(0, 5, models.CabsimBassM.N212_DARKGLASS_NEO))
+  qc.set_param(Block(0, 5), params.Cabsim.MIC_1_DISTANCE, real=3.0)
+  ```
+
+An IR Loader's repeated block genuinely IS two IR slots, so those read `IR_1_PATH`
+/ `IR_2_PATH` - and they agree with the `IR_PATH_PARAMS` that `set_ir(slot=)` was
+already using. Where a name repeats, BOTH occurrences are numbered: an unnumbered
+first member would read like the real one and hide that it is one of a pair.
+
+A hardware test regenerates from the connected unit and fails if the committed
+file has drifted, since a generated-and-committed file is otherwise its own
+yardstick.
+
+### An expression pedal reaches every parameter, not just a block's
+
+`set_expression(target, param, ...)` and `clear_expression(target, param)` work
+against any target. Measured on hardware one write at a time: blocks, the input
+gate, the mixer, the splitter and the lane output all accept an assignment, on
+float **and** `switch`-typed parameters. So a pedal can now drive a noise gate's
+INPUT GAIN or a mixer's LEVEL A, neither of which had ever been tried.
+
+Parameter TYPE turned out to be irrelevant - the manual gives every assignable
+parameter a MIN/MAX sweep, and a block's BYPASS is the separate feature
+`set_expression_bypass` drives.
+
+**Two parameters still refuse**, and they are the only refusal in the library: a
+Lane Output Control's MUTE and SOLO raise `ControlNotDrivable`.
+
+### Also
+
+- **`ControlNotDrivable`, `BlockRefused`** now live in `protocol.errors`, the
+  unit converters and `UNITY_LEVEL` in `protocol.units`, and the targets in
+  `protocol.targets`. Public import paths are unchanged -
+  `from pyquadcortex.protocol import X` still works for all of them.
+- **`Block` is a frozen dataclass**, not a `NamedTuple`, so it no longer unpacks
+  as a tuple. Attribute access is unchanged.
+- **`QuadCortex.TEMPO_PARAMS`** is now `targets.Tempo.NAMES`.
+- **`set_param` no longer defaults `value` to 0.0.** A call that names no value
+  raises instead of silently writing zero.
+
 ### BREAKING: the protocol API moved to `pyquadcortex.protocol`
 
 > Every breaking change in this release is listed side by side in

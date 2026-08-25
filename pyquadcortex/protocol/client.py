@@ -33,7 +33,7 @@ import uuid
 import warnings
 from typing import NamedTuple
 
-from pyquadcortex.protocol import catalog, enums, registry
+from pyquadcortex.protocol import catalog, enums, registry, targets
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
                                 MetronomeSound, MidiOutType,
@@ -42,105 +42,16 @@ from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
-#: The wire value the mixer, splitter and lane-output LEVEL parameters hold when
-#: nothing is attenuated - 10/13, which is 0 dB on the -40..+12 dB span those
-#: controls cover. The catalog publishes them as 0..1 "dB" (see
-#: :attr:`~pyquadcortex.protocol.catalog.Parameter.range_is_placeholder`), so this is the
-#: reference point for reading and writing them. Measured on every row carrying
-#: one across 17 factory presets.
-#:
-#: Two releases said -100..+30 dB here, and the mistake is instructive: both spans
-#: put 0 dB at exactly 10/13 (100/130 = 40/52), so unity - the only point the
-#: original measurement had - cannot tell them apart. The true span comes from
-#: reading the screen against the wire at three more points: -3.1 dB at 0.71,
-#: +12.0 dB at 1.0, and -39.5 dB at 0.01, the lowest numeric step before the
-#: screen reads "Off". :func:`lane_level_db` / :func:`db_to_lane_level` convert.
-UNITY_LEVEL = 0.76923077
-
-#: Lane Output Control parameters a host cannot assign an expression pedal to.
-#:
-#: This is a MEASURED LIST, not a rule, and the distinction cost a session. Three
-#: plausible rules were tried and all three are false:
-#:
-#: * "switch-typed parameters are refused" - no. The Jewel's HIGH CUT, the
-#:   Mixer's PHASE and the Splitter's TYPE are all ``switch`` and all accept one.
-#: * "bypass-like parameters are refused" - no. The Input Gate Control's BYPASS is
-#:   bypass-like and accepts one, and accepts a clear.
-#: * "``output_control`` params reject ``expression``" - no. VOLUME and PAN, in
-#:   the same block, accept one.
-#:
-#: Every other collection tested - blocks, the input gate, the mixer, the
-#: splitter - accepts an assignment on every parameter kind. These two are the
-#: only refusal known in the library, so they are named rather than derived.
-#: The unit's own touchscreen writes them into ``params[].expression``, the very
-#: field a host write is dropped from, so the control is understood and not
-#: drivable (ADR-0007).
-LANE_OUTPUT_UNASSIGNABLE = ("MUTE", "SOLO")
+from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
+                                          ControlNotDrivable)
+from pyquadcortex.protocol.targets import (  # noqa: F401
+    LANE_OUTPUT_UNASSIGNABLE, Block, LaneInput, LaneOutput, Mixer, ParamTarget,
+    Splitter, Tempo, _require_even_row)
+from pyquadcortex.protocol.units import (UNITY_LEVEL, bpm_to_tempo,  # noqa: F401
+                                         db_to_input_level, db_to_lane_level,
+                                         input_level_db, lane_level_db, tempo_bpm)
 
 
-def input_level_db(level: float) -> float:
-    """Convert an input port's wire ``level`` (0..1) to the dB the unit displays.
-
-    An input port's gain spans **-12 to +60 dB**, so ``dB = -12 + 72 * level``.
-    Solved from four owner-set trims read simultaneously on screen and on the wire
-    (screen +17.2/+16.8/+24.0/0.0 against wire 0.40556/0.40043/0.50009/0.16667 -
-    every point lands within display rounding, and 0 dB is exactly 1/6). It also
-    matches the hardware spec sheet's "MAX INPUT GAIN: +60dB".
-
-    INPUT ports only. Lane and mixer levels run -40..+12 dB instead -
-    :func:`lane_level_db` converts those.
-    """
-    return -12.0 + 72.0 * level
-
-
-def db_to_input_level(db: float) -> float:
-    """Convert displayed input-gain dB to the wire ``level`` an input port takes.
-
-    Inverse of :func:`input_level_db`; see it for how the scale was measured.
-    Values outside -12..+60 dB do not exist on the unit and are refused rather
-    than silently clamped.
-    """
-    if not -12.0 <= db <= 60.0:
-        raise ValueError(
-            f"input gain runs -12..+60 dB on the unit; {db} dB does not exist"
-        )
-    return (db + 12.0) / 72.0
-
-
-def lane_level_db(value: float) -> float:
-    """Convert a lane/mixer/splitter LEVEL wire ``value`` (0..1) to displayed dB.
-
-    These controls span **-40 to +12 dB**, so ``dB = -40 + 52 * value``, with 0 dB
-    at :data:`UNITY_LEVEL` (10/13 exactly). Solved from three screen readings taken
-    against simultaneous wire reads of a row's VOLUME: -3.1 dB at 0.71, +12.0 dB at
-    1.0, -39.5 dB at 0.01 (least squares over the three: -40.02..+11.99).
-
-    The bottom of the knob is special: -39.5 dB (wire 0.01) is the lowest NUMERIC
-    step, and below it the screen reads "Off" - so wire 0.0 is an Off position,
-    not -40 dB. A caller wanting silence writes 0.0, not the bottom of the dB
-    scale. This function still maps 0.0 to -40.0 because it converts the scale;
-    it does not model the Off detent.
-
-    The catalog publishes these parameters as 0..1 "dB" - a placeholder, which is
-    why ``real=`` raises for them and this helper exists.
-    """
-    return -40.0 + 52.0 * value
-
-
-def db_to_lane_level(db: float) -> float:
-    """Convert displayed dB to the wire value a lane/mixer/splitter LEVEL takes.
-
-    Inverse of :func:`lane_level_db`; see it for how the scale was measured.
-    Values outside -40..+12 dB do not exist on the unit and are refused rather
-    than silently clamped. The knob's numeric floor is -39.5 dB; for silence
-    write 0.0 directly (the Off position) instead of converting a dB value.
-    """
-    if not -40.0 <= db <= 12.0:
-        raise ValueError(
-            f"lane and mixer levels run -40..+12 dB on the unit; {db} dB "
-            f"does not exist (for silence write 0.0, the Off position)"
-        )
-    return (db + 40.0) / 52.0
 
 
 def _mode_param(message, index: int):
@@ -183,48 +94,6 @@ def _mode_param(message, index: int):
     return first.float_value
 
 
-def tempo_bpm(value: float) -> float:
-    """Convert a ``TEMPO`` wire value (0..1) to the bpm the unit displays.
-
-    Tempo spans **40 to 240 bpm**, so ``bpm = 40 + 200 * value``. Solved from three
-    screen readings taken against simultaneous wire reads, each landing on the
-    displayed integer exactly: 59 bpm at 0.095, 111 bpm at 0.355, 120 bpm at 0.400.
-    The 59 is what makes the fit worth trusting - a span needs a point away from the
-    others, which is the lesson the lane levels taught (``protocol.md``, "Some
-    catalog ranges are placeholders").
-
-    The ENDPOINTS are the fit's, not separate measurements: neither extreme was
-    driven. They land on 40 and 240, which is the tempo range the unit's manual
-    documents, so the two agree - but if you need the extremes exactly, drive them.
-
-    The catalog publishes ``TEMPO`` as 0..1 with a real-world unit - a placeholder,
-    which is why this helper exists.
-
-    A wire value outside 0..1 is refused rather than converted, for the same reason
-    :func:`bpm_to_tempo` refuses a bpm outside the span: the tempo the caller would
-    read back does not exist on the unit.
-    """
-    if not 0.0 <= value <= 1.0:
-        raise ValueError(
-            f"a tempo wire value runs 0..1; {value} is outside it"
-        )
-    return 40.0 + 200.0 * value
-
-
-def bpm_to_tempo(bpm: float) -> float:
-    """Convert a bpm to the wire value ``TEMPO`` takes.
-
-    Inverse of :func:`tempo_bpm`; see it for how the scale was measured. A bpm
-    outside 40..240 does not exist on the unit and is refused rather than silently
-    clamped.
-    """
-    if not 40.0 <= bpm <= 240.0:
-        raise ValueError(
-            f"the unit's tempo runs 40..240 bpm; {bpm} bpm does not exist"
-        )
-    return (bpm - 40.0) / 200.0
-
-
 #: Where user setlists live. They sit SIDE BY SIDE here rather than nested inside
 #: "My Presets" - a folder created under My Presets is not a setlist and the device
 #: ignores it. :meth:`QuadCortex.create_setlist` builds a key from this.
@@ -234,58 +103,6 @@ USER_SETLIST_ROOT = "/media/p4/Presets"
 #: string. So ``label.strip()`` detects a blank scene and ``label == ""`` does not.
 #: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
 SCENE_UNLABELLED = " "
-
-
-class BlockRefused(RuntimeError):
-    """The device did not accept a block placement.
-
-    Raised by :meth:`QuadCortex.set_block` when no echo confirms the cell. The
-    known cause is the preset having no DSP capacity left for that model.
-    """
-
-
-class ControlNotDrivable(ValueError):
-    """A control the unit has, that the unit itself drives, and a host cannot.
-
-    ADR-0007 decided that such a control is REPRESENTED and REFUSES rather than
-    being omitted or guessed at, and left one question open: how the refusal
-    reads in practice, to be settled by the first control that ships one. This
-    is it - the Lane Output Control's MUTE and SOLO.
-
-    It subclasses ``ValueError`` because it is raised on an argument the caller
-    chose, so ``except ValueError`` around a rig-building script keeps working.
-    Catching this instead tells you the specific thing: the request was well
-    formed and the DEVICE is what refuses.
-
-    The three attributes exist so a caller can branch rather than parse a
-    string - a script assigning pedals across a rig wants to skip these two and
-    report them, not die on the first one::
-
-        try:
-            qc.set_lane_output_expression(row=r, param=name, pedal=1)
-        except ControlNotDrivable as refusal:
-            print(f"do this on the unit: {refusal.workaround}")
-
-    ``control`` is what was addressed, ``evidence`` is why we believe it cannot
-    be driven, and ``workaround`` is what to do instead. All three are required:
-    a refusal with no evidence is the guess this ADR exists to prevent.
-    """
-
-    def __init__(self, control: str, evidence: str, workaround: str):
-        super().__init__(f"{control}: {evidence} {workaround}")
-        self.control = control
-        self.evidence = evidence
-        self.workaround = workaround
-
-
-def _require_even_row(row: int, what: str):
-    """Splitters and mixers exist only on rows 0 and 2 - see :func:`splits`."""
-    if row % 2:
-        raise ValueError(
-            f"row {row} has no {what}: a branch can only originate on row 0 or "
-            f"row 2, whose parallel lane is the row below it. Rows 1 and 3 report "
-            f"an empty {what} collection, and a write addressed there does nothing."
-        )
 
 
 class QuadCortex:
@@ -757,145 +574,206 @@ class QuadCortex:
         chain.in_portid = in_portid
         return self._t.send(msg)
 
-    def set_param(self, row: int, column: int, param_index=None,
-                  value: float = 0.0, scene=None, param=None, model=None,
-                  real=None, promote: bool = True, text: str = None):
-        """Set one block parameter on the grid (row/column-keyed sparse update).
+    def _get_catalog(self):
+        """The catalog, fetched lazily - see `ParamTarget.model`."""
+        return self.catalog
 
-        Confirmed shape: a knob change streams
-        ``Grid{UPDATE, preset{chains{row, models{column, params{index,
-        param_values[scene]{float_value}}}}}}``. This is the ONLY way an edit
-        persists - a full-preset write is dropped (chains carry no row). Save
-        the grid afterwards to keep it. ``value`` is the normalized 0..1 float
-        the device expects.
+    def set_param(self, target, param, value: float = None, real=None,
+                  text: str = None, scene=None, promote: bool = True):
+        """Set one parameter, wherever on the unit it lives.
 
-        The parameter may be given as a wire ``param_index``, or by NAME via
-        ``param`` together with ``model`` (the block's model id, or a
-        :class:`~pyquadcortex.protocol.catalog.Model`), which resolves the index through
-        the device catalog. Naming is the safer route: indices are positional
-        and not every one is a visible knob - a cab's parameters are internal
-        ``ir selector`` entries, so writing index 0 changes stored data and
-        moves nothing on screen.
+        ``target`` says WHERE, and is one of the addresses in
+        :mod:`pyquadcortex.protocol.targets`::
 
-        ``value`` is the normalized 0..1 the wire carries. Pass ``real=``
-        instead to give the value in the parameter's OWN units (dB, ms, Hz...)
-        and have it converted using the catalog's range - that needs ``param``
-        and ``model`` so the range is known::
+            qc.set_param(Block(0, 2, model=5011), "GAIN", real=-6.0)
+            qc.set_param(LaneOutput(0), "VOLUME", real=-3.1)
+            qc.set_param(LaneInput(0), "INPUT GAIN", real=12.0)
+            qc.set_param(Mixer(0), "LEVEL A", value=UNITY_LEVEL)
+            qc.set_param(Splitter(0), "LEVEL TO B", value=0.25)
+            qc.set_param(Tempo(), "TEMPO", real=120)
 
-            qc.set_param(row=0, column=1, param="THRESHOLD", real=-20, model=comp)
+        :func:`blocks` hands back :class:`~pyquadcortex.protocol.targets.Block` values
+        with ``model_id`` already filled in, so reading a preset gives you
+        addresses you can write to directly.
+
+        Confirmed shape: a knob change streams ``Grid{UPDATE, preset{chains{row,
+        <collection>{<key>, params{index, param_values[scene]{float_value}}}}}}``,
+        where the collection and the key come from the target - a block keys by
+        ``column``, the lane output, input gate and mixer by ``hash``, the
+        splitter by neither, and tempo hangs off the preset rather than a chain.
+        A keyed sparse update is the ONLY way an edit persists; a full-preset
+        write is dropped. Save the grid afterwards to keep it.
+
+        ``param`` is a NAME or a wire index. Naming is the safer route - indices
+        are positional and not every one is a visible knob, so a cab's index 0 is
+        an internal ``ir selector`` that changes stored data and moves nothing on
+        screen. Naming a parameter on a :class:`Block` needs its ``model_id``,
+        because what is in a cell is whatever the player put there; every other
+        target knows its own model.
+
+        Give the value as ``value=`` (the normalized 0..1 the wire carries),
+        ``real=`` (the parameter's own units - dB, ms, Hz, bpm), or ``text=``
+        for a string-valued parameter such as a cab's microphone. ``real=``
+        converts through the catalog's range, except where the catalog publishes
+        a placeholder and the true span has been MEASURED instead: the lane
+        VOLUME in dB and the tempo TEMPO in bpm. The other 51 placeholder
+        parameters still refuse, because their spans are not known.
 
         **Per-scene values.** Name a ``scene`` to change that scene alone::
 
-            qc.set_param(row=2, column=5, param_index=0, value=0.8, scene=Scene.D)
+            qc.set_param(Block(2, 5), 0, value=0.8, scene=Scene.D)
 
         Three things had to line up for this, all confirmed on hardware:
 
         1. The device honours ``param_values[0]`` against whichever scene is
-           **active** - the index is not a scene selector, so nothing is ever
-           padded.
+           **active** - the index is not a scene selector, so nothing is padded.
         2. It only keeps per-scene values for a parameter whose ``scene_mode`` is
            set, so naming a scene promotes the parameter first (pass
            ``promote=False`` to skip that if you know it is already set).
         3. The device accepts **either** the flag **or** a value in one message,
-           never both: sent together, the flag is silently dropped. So this issues
-           the promotion, the scene switch, and the write as three messages.
+           never both: sent together, the flag is silently dropped. So this
+           issues the promotion, the scene switch and the write as three
+           messages, and leaves the unit sitting on that scene - a visible side
+           effect.
 
-        Ordering over the pipe is enough; no settle delay is needed. Naming a
-        scene leaves the unit sitting on it, which is a visible side effect.
-
-        Without ``scene``, the write lands on the active scene - which for a
-        parameter that is not scene-following is its single global value, and so
-        appears in all eight scenes.
-
-        **Not every parameter is a number.** A ``ParamValue`` can carry a
-        ``string_value`` instead, which is how a cab's microphone selection is
-        stored - the unit broadcasts ``string_value: "NG_212 DG Neo_Condenser
-        U47"`` when a mic is chosen. Pass ``text=`` for those; confirmed to
-        survive a save and read-back. The readable option list for a parameter
-        that has one is in ``Param.dynamic_steps`` on the preset, not in the
-        catalog (see :meth:`param_options`).
+        Without ``scene``, the write lands on the active scene, which for a
+        parameter that is not scene-following is its single global value and so
+        appears in all eight.
         """
         if text is not None and real is not None:
             raise TypeError("pass text= or real=, not both")
+        index, spec = target.index_of(param, self._get_catalog)
         if real is not None:
-            if param is None or model is None:
-                raise TypeError(
-                    "real= needs param= and model= so the parameter's range is "
-                    "known; pass value= for a normalized 0..1 float"
-                )
-            resolved = model if hasattr(model, "parameter") else self.catalog[int(model)]
-            spec = (resolved.parameter(param) if isinstance(param, str)
-                    else resolved.parameters[param])
-            param_index = spec.index
-            value = spec.to_normalized(real)
-        elif param is not None:
-            param_index = self._resolve_param_index(param, model)
-        if param_index is None:
-            raise TypeError("set_param needs either param_index or param=<name> with model=")
+            value = target.normalize(index, real, self._get_catalog, spec)
+        if value is None and text is None:
+            raise TypeError(
+                "set_param needs value= (the normalized 0..1 the wire carries), "
+                "real= (the parameter's own units) or text= (a string-valued "
+                "parameter)"
+            )
         if scene is not None:
+            if not target.supports_scenes:
+                raise TypeError(
+                    f"{target.describe()} has no per-scene values - scenes live "
+                    f"on the grid, and this is not on it"
+                )
             if promote:
-                self.set_param_scene_mode(row, column, param_index, True)
+                self.set_param_scene_mode(target, index, True)
             self.switch_scene(scene)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        model_msg = chain.models.add()
-        model_msg.column = column
-        p = model_msg.params.add()
-        p.index = param_index
+        prm = target.container(msg).params.add()
+        prm.index = index
         if text is not None:
-            p.param_values.add().string_value = text
+            prm.param_values.add().string_value = text
         else:
-            p.param_values.add().float_value = value
+            prm.param_values.add().float_value = value
         return self._t.send(msg)
 
-    def set_param_scene_mode(self, row: int, column: int, param_index: int,
-                             enabled: bool = True):
-        """Make a block parameter follow scenes, or stop it following them.
+    def set_param_scene_mode(self, target, param, enabled: bool = True):
+        """Make a parameter follow scenes, or stop it following them.
 
-        A parameter only keeps per-scene values while ``scene_mode`` is set; until
-        then it has one global value. On the unit this is the long-press
-        assignment.
+        A parameter only keeps per-scene values while ``scene_mode`` is set;
+        until then it has one value shared by all eight scenes, and a per-scene
+        write is not kept. :meth:`set_param` sequences this for you when you name
+        a scene.
 
-        The flag must travel ALONE. A ``Grid`` update carrying both
-        ``scene_mode`` and a ``param_values`` entry is treated as a plain value
-        write and the flag is dropped.
-        :meth:`set_param` sequences that for you when you name a scene.
-
-        Save the grid afterwards to keep it.
-
-        Rows and columns are zero-based; the unit displays rows 1 to 4.
+        **The flag must travel ALONE.** A message carrying both the flag and a
+        value is treated as a plain value write and the flag is dropped -
+        confirmed on hardware, and the reason this is a separate message rather
+        than a field on the write.
         """
+        index, _ = target.index_of(param, self._get_catalog)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        model_msg = chain.models.add()
-        model_msg.column = column
-        prm = model_msg.params.add()
-        prm.index = param_index
+        prm = target.container(msg).params.add()
+        prm.index = index
         prm.scene_mode = enabled
         return self._t.send(msg)
 
-    def _resolve_param_index(self, param, model) -> int:
-        """Turn a parameter name into its wire index using the catalog."""
-        if isinstance(param, int):
-            return param
-        if model is None:
-            raise TypeError(
-                "naming a parameter needs model=<model id or catalog Model> so "
-                "the index can be resolved from the catalog"
-            )
-        resolved = model if hasattr(model, "parameter") else self.catalog[int(model)]
-        return resolved.parameter(param).index
+    def set_expression(self, target, param, pedal: int = 1,
+                       minimum: float = 0.0, maximum: float = 1.0):
+        """Assign an expression pedal to one parameter, wherever it lives.
+
+        ``pedal`` is 1 or 2, matching EXP 1 and EXP 2 on the back panel.
+        ``minimum`` and ``maximum`` are the normalized 0..1 ends of the sweep;
+        setting minimum above maximum reverses the pedal, which is how the manual
+        describes inverting a parameter. The unit DISPLAYS them as percentages -
+        0.830769 shows as 83.08%.
+
+        A volume pedal on a row that reaches a physical output::
+
+            qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
+                              minimum=0.0, maximum=db_to_lane_level(3.2))
+
+        Confirmed on hardware against every container the unit has - blocks, the
+        input gate, the mixer, the splitter and the lane output - on both float
+        and ``switch``-typed parameters. Parameter TYPE does not matter: the
+        manual gives every assignable parameter a MIN/MAX sweep, and a block's
+        BYPASS is the separate feature :meth:`set_expression_bypass` drives.
+
+        **Two parameters refuse**: a Lane Output Control's MUTE and SOLO raise
+        :class:`ControlNotDrivable`, because the device silently drops a host
+        write of those in both directions while accepting the byte-identical
+        message aimed at VOLUME. See
+        :data:`~pyquadcortex.protocol.targets.LANE_OUTPUT_UNASSIGNABLE`, which records
+        the three candidate rules that were tried and disproved.
+
+        Note the manual's warning: a parameter assigned to an expression pedal is
+        excluded from Scene data and will not change when switching scenes.
+        """
+        index, spec = target.index_of(param, self._get_catalog)
+        if target.unassignable:
+            # Only these targets can refuse, so only they pay for a catalog.
+            spec = spec or target.spec_at(index, self._get_catalog)
+        if spec is not None:
+            target.refuse_if_unassignable(spec)
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        prm = target.container(msg).params.add()
+        prm.index = index
+        prm.expression = int(pedal)
+        prm.expression_min = minimum
+        prm.expression_max = maximum
+        return self._t.send(msg)
+
+    def clear_expression(self, target, param):
+        """Unassign the expression pedal from a parameter.
+
+        Writes ``expression: 0`` with the sweep back to the ``0.0..1.0`` every
+        unassigned parameter reads. Refuses the same two as
+        :meth:`set_expression`, for the same reason - the device will not take a
+        host clear on them either.
+        """
+        index, spec = target.index_of(param, self._get_catalog)
+        if target.unassignable:
+            # Only these targets can refuse, so only they pay for a catalog.
+            spec = spec or target.spec_at(index, self._get_catalog)
+        if spec is not None:
+            target.refuse_if_unassignable(spec)
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        prm = target.container(msg).params.add()
+        prm.index = index
+        prm.expression = 0
+        prm.expression_min = 0.0
+        prm.expression_max = 1.0
+        return self._t.send(msg)
+
+
 
     # -- grid blocks ---------------------------------------------------------
 
-    def set_block(self, row: int, column: int, model, verify: bool = True,
-                  timeout: float = 5.0):
-        """Put ``model`` in the grid cell at ``row``/``column``.
+    def set_block(self, cell, verify: bool = True, timeout: float = 5.0):
+        """Put a model in a grid cell.
+
+        ``cell`` is a :class:`~pyquadcortex.protocol.targets.Block`, and its
+        ``model_id`` is WHAT TO PLACE - "what is, or is to be, in this cell" is
+        the one meaning that reads the same for a block you read and a block you
+        write, so :func:`blocks` round-trips::
+
+            source = protocol.blocks(preset)[0]
+            qc.set_block(Block(row=2, column=0, model_id=source.model_id))
+
 
         Creates a block in an empty cell and replaces whatever is in an occupied
-        one - the device makes no distinction. ``model`` is a model id or a
+        one - the device makes no distinction. ``model_id`` is a model id or a
         :class:`~pyquadcortex.protocol.catalog.Model`; :mod:`pyquadcortex.protocol.models` has
         constants for the factory blocks, and :attr:`catalog` resolves anything
         installed on the unit, including purchased models and Neural Captures.
@@ -919,6 +797,7 @@ class QuadCortex:
         ``verify=False`` to send and return immediately, in which case a save and
         read-back is the only way to learn whether the block is there.
         """
+        row, column, model = cell.row, cell.column, cell.model_id
         model_id = int(getattr(model, "id", model))
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
@@ -956,8 +835,8 @@ class QuadCortex:
             ) from None
         return None
 
-    def remove_block(self, row: int, column: int):
-        """Remove the block at ``row``/``column``, leaving the cell empty.
+    def remove_block(self, cell):
+        """Remove the block at ``cell``, leaving it empty.
 
         Confirmed on hardware, and matching the device's own broadcast when a
         block is deleted on the unit: ``Grid{action: DELETE, preset{chains{row,
@@ -965,6 +844,7 @@ class QuadCortex:
         an UPDATE carrying ``hash: 0`` is transmitted but ignored by the
         firmware. Save the grid afterwards to keep it.
         """
+        row, column = cell.row, cell.column
         msg = pa.GridMessage(action=pa.MessageAction.DELETE)
         chain = msg.preset.chains.add()
         chain.row = row
@@ -1091,7 +971,7 @@ class QuadCortex:
                              and m.request_id == request_id))
         return Scene(reply.selected_scene)
 
-    def set_bypass(self, row: int, column: int, bypassed: bool, scene=None):
+    def set_bypass(self, cell, bypassed: bool, scene=None):
         """Bypass or enable one block on the grid (row/column-keyed sparse update).
 
         Shape: ``Grid{UPDATE, preset{bypass{row, colBypass{column,
@@ -1126,7 +1006,7 @@ class QuadCortex:
 
             qc.save_current_preset(...)            # materialises the capture
             qc.recall_preset(...)                  # the stored slot
-            qc.set_bypass(row, column, True)       # now it sticks
+            qc.set_bypass(cell, True)              # now it sticks
             qc.save_current_preset(...)            # same name, same slot: no rename
 
         Verify with :func:`bypass_state` on the STORED preset, not just the live
@@ -1141,6 +1021,7 @@ class QuadCortex:
         instead, and check :meth:`active_scene` when a scene-targeted write seems
         to vanish.
         """
+        row, column = cell.row, cell.column
         if scene is not None:
             self.switch_scene(scene)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
@@ -1173,59 +1054,12 @@ class QuadCortex:
 
     # -- file ops ------------------------------------------------------------
 
-    LANE_OUTPUT_CONTROL = 23000
+    LANE_OUTPUT_CONTROL = targets.LANE_OUTPUT_CONTROL
 
-    TEMPO_CONTROL = 25000
+    TEMPO_CONTROL = targets.TEMPO_CONTROL
 
-    INPUT_GATE_CONTROL = 28000
+    INPUT_GATE_CONTROL = targets.INPUT_GATE_CONTROL
 
-    #: Tempo-menu parameter indices, mapped by using each control on the unit in a
-    #: named order. The catalog DOES describe these (23 parameters for model 25000),
-    #: but two of its names differ from the screen, so this map is what
-    #: :meth:`set_tempo_param` resolves a name through first.
-    #:
-    #: Index 4 is ONE control with THREE names: the unit's Tempo page labels it
-    #: **MUTE**, the device catalog calls it ``START`` (a toggleButton), and the
-    #: manual calls it PLAYBACK. **1.0 is audible, 0.0 is muted** - traced from
-    #: the unit's own MUTE button, which writes 0.0 to mute and 1.0 to unmute, so
-    #: the parameter is INVERTED against the label a player sees. There is no
-    #: separate mute parameter: the unit's Tempo page has no start/stop control at
-    #: all, and the transport is always running.
-    #:
-    #: This library published the polarity backwards for two releases. The
-    #: mistake: propagation into a Looper X parameter named METRONOME MUTE proved
-    #: the two are LINKED, and the polarity was then inferred from that name -
-    #: which is the unreliable part, and the mirror turns out to be inverted too.
-    #: Corrected by three independent measurements: all 17 factory presets hold
-    #: 0.0 here at a normal volume and none clicks; writing 1.0 started the click
-    #: on 36 field-built presets; and a capture of the unit's MUTE button shows
-    #: mute-on writing 0.0.
-    #:
-    #: Index 7 is the screen's Subdivisions while the catalog calls it NOTELENGTH.
-    #: Two earlier releases said indices 8 and 9 were absent from the catalog. They
-    #: are not: ``SOUND`` (steps=6) and ``ROUTING`` (steps=5) are described there,
-    #: at exactly those indices. Only NAMES ever disagreed.
-    #:
-    #: Indices 10 to 22 are the per-beat cells - see :attr:`TEMPO_BEATS`. The
-    #: preset carries a 24th parameter (index 23) the catalog does not describe,
-    #: untouched by any Tempo-page control traced so far, so still unattributed.
-    #: It is NOT a 14th beat: the beats stop at 22, which matches 13/4 being the
-    #: largest beat count the unit offers.
-    #:
-    #: Index 1 - the catalog's TYPE - was NOT written by any control in the Tempo
-    #: menu. The menu's MODE (global or per preset) broadcasts nothing at all, so it
-    #: may be that, but nothing establishes it.
-    TEMPO_PARAMS = {
-        "TEMPO": 0,
-        "LED LIGHT": 2, "LED": 2,
-        "VOLUME": 3,
-        "START": 4, "PLAYBACK": 4,
-        "PAN": 5,
-        "TIME SIGNATURE": 6,
-        "NOTELENGTH": 7, "SUBDIVISIONS": 7,
-        "SOUND": 8,
-        "ROUTING": 9,
-    }
 
     #: The tempo parameter index carrying each BEAT of the bar, 1-based: beat 1 is
     #: index 10, beat 13 is index 22. These are the catalog's ``STEPSTATE0`` to
@@ -1244,103 +1078,11 @@ class QuadCortex:
     #: count is allowed here rather than guessed at.
     TEMPO_BEATS = {beat: 9 + beat for beat in range(1, 14)}
 
-    def set_tempo_param(self, param, value: float = None, real=None):
-        """Set a per-preset tempo/metronome parameter.
-
-        Each preset carries a ``TempoControl`` block (model ``25000``) in
-        ``BinaryPreset.tempoProgramData`` - a REPEATED field with one entry, so read
-        it as ``preset.tempoProgramData[0]`` - with 24 parameters, among them ``TEMPO``,
-        ``LED LIGHT``, ``VOLUME``, ``TYPE``, ``TIME SIGNATURE`` and ``SOUND``.
-        These are per PRESET. ``GlobalTempo`` carries the DEVICE's copy of the same
-        block - the unit keeps both at once and the Tempo menu's MODE switch decides
-        which one plays (measured: 111 bpm under PRESET, 120 under GLOBAL, on the same
-        unit minutes apart). This method addresses the preset's block by construction,
-        so writing one while MODE is GLOBAL should store a value you will not hear
-        until you switch back. That last step is INFERRED from those two facts rather
-        than measured. See :meth:`tempo_mode`.
-
-        Confirmed on hardware: although ``tempoProgramData`` is NOT row or column
-        keyed - it sits outside ``chains[]`` - a ``Grid`` UPDATE carrying it is
-        applied anyway, and survives a save and recall. The hash is optional.
-
-        ``param`` may be an index or a NAME from :attr:`TEMPO_PARAMS`, which was
-        built by using each control in the unit's Tempo menu in a named order::
-
-            0 TEMPO   2 LED LIGHT   3 VOLUME   4 START   5 PAN
-            6 TIME SIGNATURE   7 SUBDIVISIONS   8 SOUND   9 ROUTING
-
-Two of those names disagree with the catalog, which is why the map
-        exists: index 4 is the metronome TRANSPORT - the manual's PLAYBACK, the
-        catalog's START - and **1.0 means running**. (Two releases documented it as
-        a mute with the polarity inverted; see :attr:`TEMPO_PARAMS` for how that
-        happened.) Index 7 is Subdivisions on screen and NOTELENGTH in the catalog.
-
-        The catalog describes 23 parameters here, indices 10 to 22 being
-        ``STEPSTATE0`` to ``STEPSTATE12`` - the per-beat cells, reachable by beat
-        number through :meth:`set_beat` - while the preset carries 24. For the
-        list-valued ones prefer :meth:`set_tempo_option`, which range-checks an option
-        number instead of taking a raw float.
-
-        The menu's MODE control - global or per-preset tempo - is NOT here: it is the
-        DEVICE block's index 1, so :meth:`set_tempo_mode` drives it. The PRESET copy of
-        index 1, the catalog's TYPE, is touched by no control in the menu and held 0.0
-        through every flip and edit measured.
-
-        ``real=`` on index 0 means BPM, over the measured 40..240 span
-        (:func:`tempo_bpm`). The catalog cannot convert it - the range it publishes for
-        ``TEMPO`` is a placeholder - so this is the one index where ``real=`` comes from
-        a measurement rather than from the catalog.
-
-        Convenience wrappers: :meth:`set_tempo_led`, :meth:`set_metronome_volume`,
-        and :meth:`set_tempo_option` for the lists.
-        """
-        index = param
-        if isinstance(param, str):
-            key = param.strip().upper()
-            if key == "MUTE":
-                raise ValueError(
-                    "tempo parameter 4 IS the control the unit labels MUTE - but it "
-                    "is INVERTED against that name: 1.0 is audible and 0.0 is "
-                    "muted (traced from the unit's own MUTE button). So "
-                    "set_tempo_param('MUTE', 1.0) would UNMUTE, which is why the "
-                    "name is refused here rather than silently honoured. Use "
-                    "set_metronome_muted(True) to mute, set_metronome_running(True) "
-                    "to make it audible, or the raw name 'START'/'PLAYBACK'."
-                )
-            if key in self.TEMPO_PARAMS:
-                index = self.TEMPO_PARAMS[key]
-            else:
-                index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
-        if real is not None:
-            if index == 0:
-                # TEMPO's catalog range is a placeholder (0..1 with a real unit), so
-                # the catalog cannot convert it. The span was measured instead -
-                # 40..240 bpm, three screen-vs-wire points - so real= means bpm here
-                # rather than raising. Same shape as lane VOLUME and its dB helper.
-                value = bpm_to_tempo(real)
-            else:
-                model = self.catalog[self.TEMPO_CONTROL]
-                if index >= len(model.parameters):
-                    raise ValueError(
-                        f"the catalog does not describe tempo parameter {index} (it "
-                        f"describes 0 to {len(model.parameters) - 1}), so real= cannot "
-                        f"be converted - pass value= with the normalized 0..1 instead"
-                    )
-                value = model.parameters[index].to_normalized(real)
-        if value is None:
-            raise TypeError("set_tempo_param needs value= (0..1) or real= (own units)")
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        tp = msg.preset.tempoProgramData.add()
-        tp.hash = self.TEMPO_CONTROL
-        prm = tp.params.add()
-        prm.index = index
-        prm.param_values.add().float_value = value
-        return self._t.send(msg)
 
     def set_tempo_option(self, param, option: int):
         """Set a list-valued tempo parameter by OPTION NUMBER rather than a float.
 
-        Safer than :meth:`set_tempo_param` for the controls that are lists, because
+        Safer than a raw `set_param(Tempo(), ...)` for the controls that are lists, because
         the option is range-checked against the count the catalog publishes and the
         normalized value is worked out for you::
 
@@ -1356,11 +1098,11 @@ Two of those names disagree with the catalog, which is why the map
         index = param
         if isinstance(param, str):
             key = param.strip().upper()
-            index = self.TEMPO_PARAMS.get(key)
+            index = Tempo.NAMES.get(key)
             if index is None:
                 index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
         spec = self.catalog[self.TEMPO_CONTROL].parameters[index]
-        return self.set_tempo_param(index, value=spec.option_to_value(option))
+        return self.set_param(Tempo(), index, value=spec.option_to_value(option))
 
     def set_tempo_subdivision(self, subdivision: "TempoSubdivision"):
         """Set the metronome's SUBDIVISIONS, by name rather than by number.
@@ -1441,7 +1183,7 @@ Two of those names disagree with the catalog, which is why the map
 
     def set_tempo_led(self, on: bool):
         """Turn this preset's TEMPO LED on or off."""
-        return self.set_tempo_param("LED LIGHT", value=1.0 if on else 0.0)
+        return self.set_param(Tempo(), "LED LIGHT", value=1.0 if on else 0.0)
 
     def set_metronome_running(self, running: bool):
         """Start or stop this preset's metronome.
@@ -1460,7 +1202,7 @@ Two of those names disagree with the catalog, which is why the map
         and ``False`` stopped it, with a person listening at the unit. An audible effect - see
         "Settings only your ears can verify" in the API guide.
         """
-        return self.set_tempo_param("START", value=1.0 if running else 0.0)
+        return self.set_param(Tempo(), "START", value=1.0 if running else 0.0)
 
     def set_metronome_muted(self, muted: bool):
         """Mute or unmute this preset's metronome - the unit's own MUTE control.
@@ -1494,7 +1236,7 @@ Two of those names disagree with the catalog, which is why the map
 
             qc.set_metronome_volume(real=-20.0)      # -20 dB
         """
-        return self.set_tempo_param("VOLUME", value=value, real=real)
+        return self.set_param(Tempo(), "VOLUME", value=value, real=real)
 
     #: Index of MODE inside the DEVICE tempo block. It is the catalog's ``TYPE``,
     #: which no control in the preset's own Tempo page writes - the preset copy of
@@ -1637,371 +1379,21 @@ Two of those names disagree with the catalog, which is why the map
         chain.out_portid = out_portid
         return self._t.send(msg)
 
-    SPLITTER_AB = 10000
-    MIXER = 11000
+    SPLITTER_AB = targets.SPLITTER_AB
+    MIXER = targets.MIXER
 
-    SPLITTER = 10004
+    SPLITTER = targets.SPLITTER
 
-    def set_splitter_param(self, row: int, param, value: float = None, real=None,
-                           scene=None, promote: bool = True):
-        """Set a Splitter parameter on ``row`` (``LEVEL TO A``, ``BALANCE``...).
 
-        The splitter divides a row into two parallel lanes; :meth:`set_mixer_param`
-        controls how they recombine.
 
-        **Address it by the UNIFIED model 10004 ("Splitter"), whatever the preset
-        reports.** A preset stores a type-specific legacy id - 10000 "Splitter AB",
-        10002 "Splitter Balance", 10003 "LR Crossover" - but the device speaks the
-        unified model's parameter order: ``TYPE, STEREO, BALANCE, LEVEL TO A,
-        LEVEL TO B, FREQUENCY, MODE``. Which parameters actually apply depends on
-        ``TYPE``: ``LEVEL TO A``/``LEVEL TO B`` only for A/B, ``BALANCE`` only for
-        Balance, ``FREQUENCY``/``MODE`` only for Crossover.
 
-        **This writes ``chain.combined_splitter``, not ``chain.splitter``.** A preset
-        also exposes ``chain.splitter[]``, which is a READ-ONLY view of the same
-        state: a write addressed there is silently ignored, accepted on the wire and
-        absent on read-back. Always go through this method.
 
-        ``row`` must be 0 or 2: a splitter exists only on an even row, whose lane is
-        the row below (see :func:`splits`). An odd row raises ``ValueError`` rather
-        than sending a write into a collection the device does not have there.
 
-        Same call shape as :meth:`set_param`, ``scene`` included - though note that
-        splitter parameters read back with ``scene_mode`` false in factory content,
-        so per-scene splitter values may be unusual.
-        """
-        _require_even_row(row, "splitter")
-        index = param
-        if isinstance(param, str) or real is not None:
-            model = self.catalog[self.SPLITTER]
-            spec = (model.parameter(param) if isinstance(param, str)
-                    else model.parameters[param])
-            index = spec.index
-            if real is not None:
-                value = spec.to_normalized(real)
-        if value is None:
-            raise TypeError("set_splitter_param needs value= (0..1) or real= (own units)")
-        if scene is not None:
-            if promote:
-                self._t.send(self._combined_splitter_message(row, index, scene_mode=True))
-            self.switch_scene(scene)
-        return self._t.send(self._combined_splitter_message(row, index, value=value))
 
-    def _combined_splitter_message(self, row, index, value=None, scene_mode=None):
-        """Build the shape the device itself broadcasts: no hash, no column."""
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        el = chain.combined_splitter.add()
-        prm = el.params.add()
-        prm.index = index
-        if scene_mode is not None:
-            prm.scene_mode = scene_mode
-        if value is not None:
-            prm.param_values.add().float_value = value
-        return msg
 
-    def set_mixer_param(self, row: int, param, value: float = None, real=None,
-                        scene=None, promote: bool = True):
-        """Set a Mixer parameter on ``row`` (``LEVEL A``, ``LEVEL B``, ``PAN A``...).
 
-        The mixer lives in ``chain.mixer[]``. Model ``11000``, "Mixer".
 
-        This is how factory presets build scenes without bypassing anything:
-        ``LEVEL A`` and ``LEVEL B`` arrive with ``scene_mode`` already set, and each
-        scene raises one path while muting the other. Factory "Darkglass AO900 1"
-        does exactly that across two rows to give eight scenes four amp paths, so a
-        library that cannot write the mixer cannot reproduce that preset's scene
-        behaviour.
 
-        ``row`` must be 0 or 2, for the same reason as :meth:`set_splitter_param`:
-        a mixer exists only where a branch can originate. An odd row raises
-        ``ValueError``.
-
-        ``LEVEL A``, ``LEVEL B`` and ``MIXER LEVEL`` publish a placeholder catalog
-        range, so pass ``value=`` rather than ``real=`` for them;
-        :data:`pyquadcortex.protocol.UNITY_LEVEL` is unity.
-
-        Same call shape as :meth:`set_param`, including ``scene``.
-        """
-        _require_even_row(row, "mixer")
-        return self._set_sub_param("mixer", self.MIXER, row, param,
-                                   value, real, scene, promote)
-
-    def _set_sub_param(self, collection: str, model_hash: int, row: int, param,
-                       value, real, scene, promote):
-        """Shared body for the splitter/mixer/lane-output style collections."""
-        index = param
-        if isinstance(param, str) or real is not None:
-            model = self.catalog[model_hash]
-            spec = (model.parameter(param) if isinstance(param, str)
-                    else model.parameters[param])
-            index = spec.index
-            if real is not None:
-                value = spec.to_normalized(real)
-        if value is None:
-            raise TypeError(
-                f"set_{collection}_param needs value= (0..1) or real= (own units)")
-        if scene is not None:
-            if promote:
-                self._sub_param_scene_mode(collection, model_hash, row, index, True)
-            self.switch_scene(scene)
-        return self._t.send(
-            self._sub_param_message(collection, model_hash, row, index, value=value))
-
-    def _sub_param_scene_mode(self, collection, model_hash, row, index, enabled):
-        return self._t.send(
-            self._sub_param_message(collection, model_hash, row, index,
-                                    scene_mode=enabled))
-
-    def _sub_param_message(self, collection, model_hash, row, index,
-                           value=None, scene_mode=None):
-        """Build a row-keyed Grid update against splitter[]/mixer[].
-
-        The flag and a value must never travel together - the device would treat
-        the message as a plain value write and drop the flag (see
-        :meth:`set_param_scene_mode`).
-        """
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        model_msg = getattr(chain, collection).add()
-        model_msg.hash = model_hash
-        prm = model_msg.params.add()
-        prm.index = index
-        if scene_mode is not None:
-            prm.scene_mode = scene_mode
-        if value is not None:
-            prm.param_values.add().float_value = value
-        return msg
-
-    def set_lane_output(self, row: int, param, value: float = None, real=None,
-                        scene=None, promote: bool = True):
-        """Set a Lane Output Control parameter on ``row``.
-
-        Every grid row carries a Lane Output Control block - the VOLUME, PAN, MUTE
-        and SOLO the manual describes - and it lives in ``chain.output_control[]``
-        rather than ``chain.models[]``, so :meth:`set_param` cannot reach it. It is
-        model ``23000``, present and populated on all four rows whether or not the
-        row has any blocks.
-
-        ``param`` is a name (``"VOLUME"``, ``"PAN"``, ``"MUTE"``, ``"SOLO"``) or a
-        wire index. Pass ``value`` as the normalized 0..1 the wire carries::
-
-            qc.set_lane_output(row=0, param="PAN", value=0.5)                # centre
-            qc.set_lane_output(row=0, param="VOLUME", value=UNITY_LEVEL)     # 0 dB
-            qc.set_lane_output(row=0, param="VOLUME", value=0.0)             # silent
-
-        ``VOLUME`` publishes a placeholder catalog range, but its TRUE span is
-        measured - -40..+12 dB with :data:`UNITY_LEVEL` at 0 dB - so ``real=``
-        takes dB here and converts through :func:`db_to_lane_level` rather than
-        through the catalog. It is the one placeholder parameter that does; every
-        other one still raises, because their spans have never been measured
-        (see the tracking issue on the catalog's placeholder dB ranges).
-
-        The numeric range stops at -39.5 dB: below that the knob reads "Off",
-        which is wire 0.0. For silence write ``value=0.0``, not the bottom of the
-        dB scale - ``real=-40`` is the scale's floor, not the Off detent.
-
-        **``MUTE`` is 1.0 = MUTED** - the intuitive direction, measured by ear on
-        hardware (a row at 0.0 was audible; 1.0 silenced that path). Worth stating
-        because **the library carries two parameters called MUTE with OPPOSITE
-        polarities**: this one, and the tempo block's parameter 4 (the control the
-        unit's Tempo page labels MUTE) where 1.0 is AUDIBLE. Confusing those cost a
-        36-preset build a running metronome on every preset. ``SOLO`` (index 3) has
-        never been measured either way.
-
-        Muting a lane does NOT silence the metronome: the metronome has its own
-        output routing (tempo parameter 9, ``ROUTING``) and bypasses lane outputs -
-        observed with a lane muted and the click still running.
-
-        A keyed parameter write into ``output_control`` persists the same way as
-        one into ``models`` (confirmed on hardware). Note the wire carries FIVE
-        parameters here while the catalog documents four; index 4 is unidentified,
-        so prefer naming the one you want.
-
-        Name a ``scene`` for a per-scene value, exactly as :meth:`set_param` does.
-        A silent scene - one that mutes the rig without leaving the preset - is::
-
-            qc.set_lane_output(row=0, param="VOLUME", value=0.0, scene=Scene.D)
-        """
-        index = param
-        if isinstance(param, str) or real is not None:
-            model = self.catalog[self.LANE_OUTPUT_CONTROL]
-            spec = (model.parameter(param) if isinstance(param, str)
-                    else model.parameters[param])
-            index = spec.index
-            if real is not None:
-                value = (db_to_lane_level(real) if spec.name == "VOLUME"
-                         else spec.to_normalized(real))
-        if value is None:
-            raise TypeError("set_lane_output needs value= (0..1) or real= (own units)")
-        if scene is not None:
-            if promote:
-                self.set_lane_output_scene_mode(row, index, True)
-            self.switch_scene(scene)
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        oc = chain.output_control.add()
-        oc.hash = self.LANE_OUTPUT_CONTROL
-        prm = oc.params.add()
-        prm.index = index
-        prm.param_values.add().float_value = value
-        return self._t.send(msg)
-
-    def _lane_output_param(self, param):
-        """The lane output's catalog :class:`Parameter` for ``param``.
-
-        Refuses the two the device will not let a host assign - see
-        :meth:`set_lane_output_expression`.
-        """
-        model = self.catalog[self.LANE_OUTPUT_CONTROL]
-        spec = (model.parameter(param) if isinstance(param, str)
-                else model.parameters[param])
-        if spec.name in LANE_OUTPUT_UNASSIGNABLE:
-            raise ControlNotDrivable(
-                control=f"the Lane Output Control's {spec.name}",
-                evidence=(
-                    "the device silently refuses a host expression assignment "
-                    "here, in both directions - tested with four message shapes "
-                    "including the one VOLUME accepts in the same session, a "
-                    "Grid DELETE, and a write to bypass_expression."),
-                workaround=(
-                    "Assign it on the unit's touchscreen; the unit writes the "
-                    "same field and the library reads it back."),
-            )
-        return spec
-
-    def set_lane_output_expression(self, row: int, param, pedal: int = 1,
-                                   minimum: float = 0.0, maximum: float = 1.0):
-        """Assign an expression pedal to a Lane Output Control parameter.
-
-        The Lane Output Control has no COLUMN - it lives in
-        ``chain.output_control[]`` rather than ``chain.models[]`` - so
-        :meth:`set_expression` cannot reach it, for the same reason
-        :meth:`set_param` cannot and :meth:`set_lane_output` exists. This is that
-        method's shape with three more fields on the parameter::
-
-            Grid{UPDATE, preset{chains{row, output_control{hash: 23000,
-                 params{index, expression, expression_min, expression_max}}}}}
-
-        ``pedal`` is 1 or 2, matching EXP 1 and EXP 2 on the back panel.
-        ``minimum`` and ``maximum`` are the normalized 0..1 ends of the sweep, and
-        setting minimum above maximum reverses the pedal. The unit DISPLAYS them as
-        a percentage: 0.830769 shows as 83.08%.
-
-        A volume pedal on a row that reaches a physical output::
-
-            qc.set_lane_output_expression(row=0, param="VOLUME", pedal=1,
-                                          minimum=0.0, maximum=db_to_lane_level(3.2))
-
-        The lane VOLUME publishes a placeholder catalog range, so the sweep ends
-        are normalized rather than dB; :func:`db_to_lane_level` converts, and its
-        span is the measured -40..+12 dB.
-
-        **VOLUME and PAN only.** MUTE and SOLO raise
-        :class:`ControlNotDrivable`: the device silently drops a host expression
-        assignment on those two, in both directions, while accepting the
-        byte-identical message aimed at VOLUME. It is a measured pair and NOT an
-        instance of a rule - see :data:`LANE_OUTPUT_UNASSIGNABLE` for the three
-        candidate rules that were tried and disproved. The unit's own touchscreen
-        writes the very same field, so the control is understood but not drivable,
-        and this refuses rather than failing quietly the way the device does
-        (ADR-0007).
-
-        Confirmed on hardware: pedal 1 over 0.0..0.5 and pedal 2 over 0.2..0.8
-        both landed and read back through this method. The identical wire shape,
-        sent by hand beforehand, was also confirmed BY EAR - a pedal assigned that
-        way swept a lane from silence to the intended level. A read straight after
-        the write can return the previous value; reconnect or settle first.
-        """
-        spec = self._lane_output_param(param)
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        oc = chain.output_control.add()
-        oc.hash = self.LANE_OUTPUT_CONTROL
-        prm = oc.params.add()
-        prm.index = spec.index
-        prm.expression = int(pedal)
-        prm.expression_min = minimum
-        prm.expression_max = maximum
-        return self._t.send(msg)
-
-    def clear_lane_output_expression(self, row: int, param):
-        """Unassign the expression pedal from a Lane Output Control parameter.
-
-        Writes ``expression: 0`` with the sweep back to its unassigned ``0.0..1.0``,
-        which is what every unassigned parameter reads. Confirmed on hardware: a
-        row's real VOLUME assignment cleared and then restored.
-
-        **VOLUME and PAN only**, and for the same reason as
-        :meth:`set_lane_output_expression` - the device refuses a host CLEAR on a
-        lane switch just as it refuses a host assignment.
-        """
-        spec = self._lane_output_param(param)
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        oc = chain.output_control.add()
-        oc.hash = self.LANE_OUTPUT_CONTROL
-        prm = oc.params.add()
-        prm.index = spec.index
-        prm.expression = 0
-        prm.expression_min = 0.0
-        prm.expression_max = 1.0
-        return self._t.send(msg)
-
-    def set_input_gate(self, row: int, param, value: float = None, real=None,
-                       scene=None, promote: bool = True):
-        """Set an Input Gate Control parameter on ``row``.
-
-        Every grid row carries an Input Gate Control - the noise gate at the head of
-        the row - in ``chain.input_control[]`` rather than ``chain.models[]``, so
-        :meth:`set_param` cannot reach it. It is model ``28000``, present on all four
-        rows, and it genuinely differs between factory presets, so reproducing a row
-        faithfully means reproducing its gate.
-
-        ``param`` is a name or a wire index. Three of the five are controls:
-
-        * ``NOISE REDUCTION`` - the amount, ``real=`` in percent (0..100)
-        * ``BYPASS`` - 1.0 bypasses the gate, 0.0 engages it
-        * ``INPUT GAIN`` - ``real=`` in dB (-24..+24; 0.5 on the wire is 0 dB)
-
-        ``GAIN REDUCTION`` is not a control but a METER: the catalog types it
-        ``grMeter``, and it only ever holds 0.0 or 0.0011 (-39.96 dB on its -40..0
-        range, i.e. no reduction). It is sampled when the preset is saved, so two
-        saves of the same rig can differ there - worth knowing when comparing
-        presets. Index 4 is unidentified and reads 0.0 everywhere.
-
-        All three controls are confirmed writable on hardware in both directions,
-        by a row-keyed ``Grid`` UPDATE into ``input_control`` - the same shape
-        :meth:`set_lane_output` uses. (A full-preset :meth:`write_preset` reaches
-        ``NOISE REDUCTION`` but not ``BYPASS``; that is the general rule that only
-        keyed sparse updates persist, not anything specific to the gate.)
-
-        Name a ``scene`` for a per-scene value, exactly as :meth:`set_param` does;
-        confirmed on hardware, so a scene can open the gate that others keep shut.
-        """
-        index = param
-        if isinstance(param, str) or real is not None:
-            model = self.catalog[self.INPUT_GATE_CONTROL]
-            spec = (model.parameter(param) if isinstance(param, str)
-                    else model.parameters[param])
-            index = spec.index
-            if real is not None:
-                value = spec.to_normalized(real)
-        if value is None:
-            raise TypeError("set_input_gate needs value= (0..1) or real= (own units)")
-        if scene is not None:
-            if promote:
-                self._t.send(self._sub_param_message(
-                    "input_control", self.INPUT_GATE_CONTROL, row, index,
-                    scene_mode=True))
-            self.switch_scene(scene)
-        return self._t.send(self._sub_param_message(
-            "input_control", self.INPUT_GATE_CONTROL, row, index, value=value))
 
     def set_split_mute(self, row: int, muted: bool = True):
         """Mute or unmute the split/mix path on ``row``.
@@ -2011,7 +1403,7 @@ Two of those names disagree with the catalog, which is why the map
         unit shows the mixer's MUTE already engaged (confirmed on the unit).
         Neither appears in the catalog's parameter list for either model, which
         is why it is here rather than a ``param`` on
-        :meth:`set_splitter_param`.
+        `set_param(Splitter(row), ...)`.
 
         The write goes to ``Chain.splitBypass`` and the device reports the result
         in ``Chain.mixBypass`` - the same write-here/read-there split as
@@ -2030,8 +1422,8 @@ Two of those names disagree with the catalog, which is why the map
         chain.splitBypass.add().bypass = muted
         return self._t.send(msg)
 
-    def set_stomp_assignment(self, row: int, column: int, footswitch):
-        """Assign the block at ``row``/``column`` to a STOMP-mode footswitch.
+    def set_stomp_assignment(self, cell, footswitch):
+        """Assign a block to a STOMP-mode footswitch.
 
         ``footswitch`` is a :class:`~pyquadcortex.protocol.enums.Footswitch` (or 0-7 for
         A-H). One footswitch may drive several blocks - factory content does
@@ -2043,7 +1435,8 @@ Two of those names disagree with the catalog, which is why the map
 
         Read them back with :func:`stomp_assignments`.
         """
-        self.clear_stomp_assignment(row, column)
+        row, column = cell.row, cell.column
+        self.clear_stomp_assignment(cell)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         a = msg.preset.stomp_mode_assignments.add()
         a.row = row
@@ -2051,8 +1444,9 @@ Two of those names disagree with the catalog, which is why the map
         a.stomp_index = int(footswitch)
         return self._t.send(msg)
 
-    def clear_stomp_assignment(self, row: int, column: int):
-        """Unassign the block at ``row``/``column`` from its footswitch."""
+    def clear_stomp_assignment(self, cell):
+        """Unassign a block from its footswitch."""
+        row, column = cell.row, cell.column
         msg = pa.GridMessage(action=pa.MessageAction.DELETE)
         a = msg.preset.stomp_mode_assignments.add()
         a.row = row
@@ -2111,56 +1505,7 @@ Two of those names disagree with the catalog, which is why the map
         target[int(footswitch)] = label
         return self._t.send(msg)
 
-    def set_expression(self, row: int, column: int, param, pedal: int = 1,
-                       minimum: float = 0.0, maximum: float = 1.0, model=None):
-        """Assign an expression pedal to one block parameter.
 
-        ``pedal`` is 1 or 2, matching EXP 1 and EXP 2 on the back panel.
-        ``minimum`` and ``maximum`` are the normalized 0..1 ends of the sweep;
-        setting minimum above maximum reverses the pedal, which is how the
-        manual describes inverting a parameter.
-
-        Row/column-keyed like :meth:`set_param`, and confirmed on hardware both
-        as the device's own broadcast when a pedal is assigned on the unit and
-        as a host write surviving a save and read-back.
-
-        Note the manual's warning: a parameter assigned to an expression pedal is
-        excluded from Scene data and will not change when switching scenes.
-        """
-        index = self._resolve_param_index(param, model) if not isinstance(param, int) \
-            else param
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        model_msg = chain.models.add()
-        model_msg.column = column
-        p = model_msg.params.add()
-        p.index = index
-        p.expression = int(pedal)
-        p.expression_min = minimum
-        p.expression_max = maximum
-        return self._t.send(msg)
-
-    def clear_expression(self, row: int, column: int, param, model=None):
-        """Unassign the expression pedal from a block parameter.
-
-        The counterpart to :meth:`set_expression`, and the same row/column-keyed
-        shape: ``expression: 0`` with the sweep back to the unassigned
-        ``0.0..1.0``.
-        """
-        index = self._resolve_param_index(param, model) if not isinstance(param, int) \
-            else param
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        model_msg = chain.models.add()
-        model_msg.column = column
-        p = model_msg.params.add()
-        p.index = index
-        p.expression = 0
-        p.expression_min = 0.0
-        p.expression_max = 1.0
-        return self._t.send(msg)
 
     def set_midi_out(self, source, messages):
         """Set the MIDI messages a footswitch or expression pedal sends.
@@ -2208,9 +1553,13 @@ Two of those names disagree with the catalog, which is why the map
         return self._t.send(msg)
 
 
-    def move_block(self, from_row: int, from_col: int, to_row: int, to_col: int,
-                   drop: bool = True):
+    def move_block(self, source, destination, drop: bool = True):
         """Move the block at one grid cell to another.
+
+        ``source`` and ``destination`` are
+        :class:`~pyquadcortex.protocol.targets.Block` cells; only their coordinates
+        are read, so a destination's ``model_id`` is ignored.
+
 
         Shape: ``GridMove{move{from_row, from_col, to_row, to_col, is_drop}}``.
         Confirmed driven host-to-device: moving row 2 column 1 to column 7 left
@@ -2227,6 +1576,8 @@ Two of those names disagree with the catalog, which is why the map
         ids. It is ADVISORY - replaying one with a cell zeroed does not delete a
         block - so this sends only the move.
         """
+        from_row, from_col = source.row, source.column
+        to_row, to_col = destination.row, destination.column
         msg = pa.GridMoveMessage()
         mv = msg.move.add()
         mv.from_row = from_row
@@ -2248,8 +1599,8 @@ Two of those names disagree with the catalog, which is why the map
             Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}
 
         Confirmed on factory "Brit 2203", a serial preset: after this write
-        :func:`splits` reported the branch, and :meth:`set_splitter_param`,
-        :meth:`set_mixer_param` and :meth:`set_split_mute` all drove it - a
+        :func:`splits` reported the branch, and `set_param(Splitter(row), ...)`,
+        `set_param(Mixer(row), ...)` and :meth:`set_split_mute` all drove it - a
         ``LEVEL TO B`` of 0.25 and a mixer ``LEVEL B`` of 0.5 both read back.
 
         Pass ``mix_column=-1`` for a branch that never rejoins, which is what
@@ -2272,10 +1623,15 @@ Two of those names disagree with the catalog, which is why the map
         """
         return self.set_split(row, -1, -1)
 
-    def set_expression_bypass(self, row: int, column: int, pedal: int = 1,
+    def set_expression_bypass(self, block, pedal: int = 1,
                               mode: int = 0, invert: bool = False,
                               delay_ms: int = 0, latch_emulation: bool = False):
-        """Let an expression pedal bypass the block at ``row``/``column``.
+        """Let an expression pedal bypass a block.
+
+        ``block`` is a :class:`~pyquadcortex.protocol.targets.Block`. This is the only
+        expression feature that is block-only: a bypass is not a parameter, so
+        the other targets have nothing to point it at.
+
 
         Writes both halves of the feature in one message: ``bypass_expression``
         (which pedal, and the range over which it acts) and
@@ -2290,11 +1646,13 @@ Two of those names disagree with the catalog, which is why the map
         5000 ms), and ``latch_emulation`` lets a momentary toe switch behave as
         latching.
         """
+        if not isinstance(block, Block):
+            raise TypeError(
+                f"set_expression_bypass takes a Block: a bypass is not a "
+                f"parameter, so {type(block).__name__} has nothing to bypass"
+            )
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        model = chain.models.add()
-        model.column = column
+        model = block.container(msg)
         be = model.bypass_expression.add()
         be.expression = int(pedal)
         be.expression_min = 0.0
@@ -2306,23 +1664,6 @@ Two of those names disagree with the catalog, which is why the map
         info.latch_emulation = latch_emulation
         return self._t.send(msg)
 
-    def set_lane_output_scene_mode(self, row: int, param_index: int,
-                                   enabled: bool = True):
-        """Make a Lane Output Control parameter follow scenes.
-
-        The :meth:`set_param_scene_mode` of ``output_control``, and subject to the
-        same rule: the flag must travel alone. :meth:`set_lane_output` sequences it
-        for you when you name a scene.
-        """
-        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
-        chain = msg.preset.chains.add()
-        chain.row = row
-        oc = chain.output_control.add()
-        oc.hash = self.LANE_OUTPUT_CONTROL
-        prm = oc.params.add()
-        prm.index = param_index
-        prm.scene_mode = enabled
-        return self._t.send(msg)
 
 
     # -- global device settings ----------------------------------------------
@@ -3208,7 +2549,7 @@ Two of those names disagree with the catalog, which is why the map
         msg.available_modes.modes.extend(values)
         return self._t.send(msg)
 
-    def set_param_option(self, row: int, column: int, param, option,
+    def set_param_option(self, block, param, option,
                          source: preset.BinaryPreset):
         """Choose a list-valued parameter's option by NAME.
 
@@ -3221,7 +2562,7 @@ Two of those names disagree with the catalog, which is why the map
         rather than the ``sidechain_source_flag`` it looks like it should be::
 
             p = qc.read_preset(Setlist.USER, "30A")
-            qc.set_param_option(row=1, column=0, param="SOURCE",
+            qc.set_param_option(Block(1, 0), param="SOURCE",
                                 option="Input 2", source=p)
 
         ``param`` may be a wire index or a parameter NAME - the block's model is
@@ -3238,15 +2579,16 @@ Two of those names disagree with the catalog, which is why the map
         """
         index = param
         if isinstance(param, str):
-            model_id = next((b.model_id for b in blocks(source)
-                             if b.row == row and b.column == column), None)
+            model_id = block.model_id or next(
+                (b.model_id for b in blocks(source)
+                 if b.row == block.row and b.column == block.column), None)
             if model_id is None:
-                raise ValueError(f"no block at row {row} column {column} in the "
-                                 f"preset given as source=")
+                raise ValueError(
+                    f"no block at row {block.row} column {block.column} in "
+                    f"the preset given as source=")
             index = self.catalog[model_id].parameter(param).index
-        options = param_options(source, row, column, index)
-        return self.set_param(row=row, column=column, param_index=index,
-                              value=option_value(options, option))
+        options = param_options(source, block, index)
+        return self.set_param(block, index, value=option_value(options, option))
 
     def set_output_mute(self, output_port_id: int, muted: bool = True):
         """Mute or unmute an output port.
@@ -3557,8 +2899,7 @@ Two of those names disagree with the catalog, which is why the map
         """
         return self.list_presets(self.CAPTURES_LIBRARY, timeout=timeout)
 
-    def set_capture(self, row: int, column: int, capture, model: int = 14000,
-                    params: dict = None):
+    def set_capture(self, cell, capture, params: dict = None):
         """Point a Neural Capture block at a capture from the library.
 
         ``capture`` is an entry from :meth:`captures` (or anything with ``key`` and
@@ -3599,6 +2940,8 @@ Two of those names disagree with the catalog, which is why the map
         :class:`BlockRefused` on a DSP-capacity refusal - captures are expensive
         blocks, so that refusal is one to expect.
         """
+        row, column = cell.row, cell.column
+        model = cell.model_id
         key = getattr(capture, "key", None)
         name = getattr(capture, "name", None)
         if key is None or name is None:
@@ -3611,17 +2954,15 @@ Two of those names disagree with the catalog, which is why the map
                 f"that is the capture reference itself, set from `capture`"
             )
         if model is not None:
-            self.set_block(row=row, column=column, model=model)
-        result = self.set_param(row=row, column=column,
-                                param_index=self.CAPTURE_FILE_NAME_PARAM,
+            self.set_block(Block(row, column, model))
+        cell = Block(row, column)
+        result = self.set_param(cell, self.CAPTURE_FILE_NAME_PARAM,
                                 text=f"{key}{name}")
         for index, value in (params or {}).items():
             if isinstance(value, str):
-                result = self.set_param(row=row, column=column,
-                                        param_index=index, text=value)
+                result = self.set_param(cell, index, text=value)
             else:
-                result = self.set_param(row=row, column=column,
-                                        param_index=index, value=float(value))
+                result = self.set_param(cell, index, value=float(value))
         return result
 
     IR_LIBRARY = "local_ir_root"
@@ -3659,8 +3000,7 @@ Two of those names disagree with the catalog, which is why the map
                              and m.folder.key.rstrip("/") == wanted.rstrip("/")))
         return [f for f in listing.folder.files if f.HasField("key") and f.key]
 
-    def set_ir(self, row: int, column: int, ir, slot: int = 0,
-               model: int = 29001):
+    def set_ir(self, cell, ir, slot: int = 0):
         """Point an IR Loader block at an IR from the library.
 
         ``ir`` is an entry from :meth:`list_irs` (anything with ``key`` and
@@ -3685,6 +3025,8 @@ Two of those names disagree with the catalog, which is why the map
         unchanged - but the unit shows a warning icon and "<IR NAME> is missing" on
         screen, so check there if a block goes quiet.
         """
+        row, column = cell.row, cell.column
+        model = cell.model_id
         key = getattr(ir, "key", None)
         name = getattr(ir, "name", None)
         if not key or not name:
@@ -3695,11 +3037,10 @@ Two of those names disagree with the catalog, which is why the map
         if slot not in (0, 1):
             raise ValueError(f"slot must be 0 or 1, not {slot!r}")
         if model is not None:
-            self.set_block(row=row, column=column, model=model)
-        self.set_param(row=row, column=column,
-                       param_index=self.IR_PATH_PARAMS[slot], text=key)
-        return self.set_param(row=row, column=column,
-                              param_index=self.IR_NAME_PARAMS[slot], text=name)
+            self.set_block(Block(row, column, model))
+        cell = Block(row, column)
+        self.set_param(cell, self.IR_PATH_PARAMS[slot], text=key)
+        return self.set_param(cell, self.IR_NAME_PARAMS[slot], text=name)
 
     def show_capture_dialog(self, shown: bool = True):
         """Answer the device's request to open the Neural Capture dialog.
@@ -3970,14 +3311,6 @@ def field_present(message, field: str) -> bool:
         return False
 
 
-class Block(NamedTuple):
-    """One occupied grid cell: where it is, and what is in it."""
-
-    row: int
-    column: int
-    model_id: int
-
-
 def blocks(p: preset.BinaryPreset) -> list:
     """The OCCUPIED grid cells of ``p``, as :class:`Block` entries.
 
@@ -4182,7 +3515,7 @@ def tempo_params(p: preset.BinaryPreset) -> dict:
     explicit ``index`` - the field is absent on every one, so position is the index.
     (A host WRITE does set ``index``; it is only the device's stored form that is
     positional.) Names for the indices are in
-    :attr:`QuadCortex.TEMPO_PARAMS`.
+    `targets.Tempo.NAMES`.
 
     Values are the normalized 0..1 of the ACTIVE scene, as elsewhere.
     """
@@ -4227,8 +3560,7 @@ def beats(p: preset.BinaryPreset) -> dict:
     return out
 
 
-def param_options(p: preset.BinaryPreset, row: int, column: int,
-                  param_index: int) -> list:
+def param_options(p: preset.BinaryPreset, block, param_index: int) -> list:
     """The option names of a list-valued parameter, from the preset.
 
     A comboBox parameter's options are NOT in the device catalog, which gives
@@ -4241,10 +3573,10 @@ def param_options(p: preset.BinaryPreset, row: int, column: int,
     such a parameter's stored value changes when the block count does.
     """
     for i, chain in enumerate(p.chains):
-        if (chain.row if field_present(chain, "row") else i) != row:
+        if (chain.row if field_present(chain, "row") else i) != block.row:
             continue
         for j, model in enumerate(chain.models):
-            if (model.column if field_present(model, "column") else j) != column:
+            if (model.column if field_present(model, "column") else j) != block.column:
                 continue
             if param_index < len(model.params):
                 return list(model.params[param_index].dynamic_steps)
@@ -4317,7 +3649,7 @@ class BypassState(NamedTuple):
     scenes: tuple
 
 
-def bypass_state(p: preset.BinaryPreset, row: int, column: int) -> BypassState:
+def bypass_state(p: preset.BinaryPreset, cell) -> BypassState:
     """A preset's stored bypass for one grid cell.
 
     The read-side counterpart of :meth:`QuadCortex.set_bypass`, because verifying
@@ -4335,6 +3667,7 @@ def bypass_state(p: preset.BinaryPreset, row: int, column: int) -> BypassState:
     Note the table persists for EMPTY cells, so a freshly placed block inherits
     whatever the cell last held.
     """
+    row, column = cell.row, cell.column
     cb = p.bypass[row].colBypass[column]
     return BypassState(scene_mode=bool(cb.sceneMode),
                        scenes=tuple(bool(sb.bypass) for sb in cb.sceneBypass))
@@ -4347,8 +3680,7 @@ class ParamState(NamedTuple):
     values: tuple
 
 
-def param_state(p: preset.BinaryPreset, row: int, column: int,
-                param_index: int) -> ParamState:
+def param_state(p: preset.BinaryPreset, cell, param_index: int) -> ParamState:
     """A preset's stored values for one block parameter, all scenes.
 
     The read-side counterpart of :meth:`QuadCortex.set_param`. ``values`` holds
@@ -4361,6 +3693,7 @@ def param_state(p: preset.BinaryPreset, row: int, column: int,
     content stores NaN in some slots - compare with :func:`params_equal`, which
     treats NaN as equal to NaN.
     """
+    row, column = cell.row, cell.column
     prm = p.chains[row].models[column].params[param_index]
     values = []
     for pv in prm.param_values:

@@ -181,8 +181,8 @@ def block_bypassed(binary_preset, row: int, slot: int, scene) -> bool:
     be right for the same reason and wrong the moment scene mode is on, which is
     why it is not written that way.
     """
-    state = protocol.bypass_state(binary_preset, row_to_wire(row),
-                                  slot_to_wire(slot))
+    state = protocol.bypass_state(
+        binary_preset, protocol.Block(row_to_wire(row), slot_to_wire(slot)))
     index = scene_to_wire(scene)
     if index >= len(state.scenes):
         raise LookupError(

@@ -18,8 +18,9 @@ import sys
 import time
 
 from pyquadcortex import protocol
-from pyquadcortex.protocol import (UNITY_LEVEL, BlockRefused, Scene, Setlist, blocks,
-                                   field_present, free_rows, models, splits)
+from pyquadcortex.protocol import (UNITY_LEVEL, Block, BlockRefused, Mixer, Scene,
+                                   Setlist, blocks, field_present, free_rows, models,
+                                   splits)
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Brit 2203"     # a serial factory preset, so there is a row to branch
@@ -75,7 +76,7 @@ def main():
 
         # 2. A block in the lane, which is the row below the branch.
         try:
-            qc.set_block(row=row + 1, column=SPLIT_COLUMN + 1, model=LANE_BLOCK)
+            qc.set_block(Block(row + 1, SPLIT_COLUMN + 1, LANE_BLOCK))
         except BlockRefused as refused:
             print(f"\n{refused}")
             return 1
@@ -84,9 +85,9 @@ def main():
         #    leaves the unit sitting on that scene, so this walks all eight in order.
         for index, hears_lane in enumerate(LANE_SCENES):
             scene = Scene(index)
-            qc.set_mixer_param(row=row, param="LEVEL A", scene=scene,
+            qc.set_param(Mixer(row), param="LEVEL A", scene=scene,
                                value=0.0 if hears_lane else UNITY_LEVEL)
-            qc.set_mixer_param(row=row, param="LEVEL B", scene=scene,
+            qc.set_param(Mixer(row), param="LEVEL B", scene=scene,
                                value=UNITY_LEVEL if hears_lane else 0.0)
             qc.set_scene_label(index, "Lane" if hears_lane else "Main")
             time.sleep(0.4)

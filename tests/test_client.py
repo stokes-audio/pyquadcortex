@@ -15,6 +15,7 @@ from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSour
                                 Output, SceneBypassBehavior, Setlist, TempoMode)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
+from pyquadcortex.protocol.targets import (Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo)
 
 
 class FakeTransport:
@@ -265,7 +266,7 @@ def test_set_param_sends_row_column_keyed_grid_update():
     # CONFIRMED capture shape: Grid{UPDATE, preset{chains{row, models{column,
     # params{index, param_values{float_value}}}}}}.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(row=0, column=1, param_index=1, value=0.4553)
+    qc.set_param(Block(0, 1), param=1, value=0.4553)
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.UPDATE
@@ -285,7 +286,7 @@ def test_set_param_sends_exactly_one_param_value():
     # 0, and so the parameter was zeroed in every scene. A construction test
     # cannot catch that. See test_set_param_refuses_a_nonzero_scene.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(row=0, column=1, param_index=1, value=0.5)
+    qc.set_param(Block(0, 1), param=1, value=0.5)
     param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert len(param.param_values) == 1, "no padding entries may be emitted"
     assert param.param_values[0].HasField("float_value")
@@ -296,7 +297,7 @@ def test_set_bypass_sends_row_column_keyed_grid_update():
     # CONFIRMED capture shape: Grid{UPDATE, preset{bypass{row, colBypass{column,
     # sceneBypass{bypass}}}}}.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_bypass(row=0, column=4, bypassed=True)
+    qc.set_bypass(Block(0, 4), bypassed=True)
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.UPDATE
@@ -313,7 +314,7 @@ def test_set_bypass_never_pads_scene_bypass():
     # scene, so padding wrote a default False to the wrong scene and did nothing to
     # the intended one. See test_set_bypass_targets_a_scene_by_switching_to_it.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_bypass(row=0, column=4, bypassed=True, scene=1)
+    qc.set_bypass(Block(0, 4), bypassed=True, scene=1)
     cb = qc._t.sent[-1].preset.bypass[0].colBypass[0]
     assert len(cb.sceneBypass) == 1
     assert cb.sceneBypass[0].bypass is True
@@ -574,7 +575,7 @@ def test_set_block_sends_row_column_keyed_grid_update():
     # UPDATE as set_param, carrying `hash` instead of params. The device's own
     # broadcast when a block is added on the unit has this exact shape.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_block(row=0, column=2, model=5005)
+    qc.set_block(Block(0, 2, 5005))
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.UPDATE
@@ -588,7 +589,7 @@ def test_set_block_accepts_a_catalog_model():
     model = catalog.Model(id=4005, name="Graphic-9", category="Equalizer",
                           category_id=4)
     qc = client.QuadCortex(FakeTransport())
-    qc.set_block(row=1, column=3, model=model)
+    qc.set_block(Block(1, 3, model))
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 4005
 
 
@@ -598,7 +599,7 @@ def test_remove_block_sends_grid_delete():
     # same shape from the host removes the block; an UPDATE with hash=0 does
     # NOT (the firmware ignores a zero hash on an update).
     qc = client.QuadCortex(FakeTransport())
-    qc.remove_block(row=0, column=4)
+    qc.remove_block(Block(0, 4))
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.DELETE
@@ -613,7 +614,7 @@ def test_set_param_accepts_a_parameter_name_when_the_catalog_is_loaded():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     # row 0 / column 1 holds model 5005 in this grid, whose parameter 0 is
     # THRESHOLD; naming it must resolve to that index.
-    qc.set_param(row=0, column=1, param="THRESHOLD", value=0.25, model=5005)
+    qc.set_param(Block(0, 1, 5005), param="THRESHOLD", value=0.25)
     param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert param.index == 0
     assert abs(param.param_values[0].float_value - 0.25) < 1e-6
@@ -623,7 +624,7 @@ def test_set_param_by_name_needs_a_known_model():
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     with pytest.raises(KeyError):
-        qc.set_param(row=0, column=1, param="NOPE", value=0.5, model=5005)
+        qc.set_param(Block(0, 1, 5005), param="NOPE", value=0.5)
 
 
 def _sample_repo_payload():
@@ -639,7 +640,7 @@ def test_set_param_accepts_a_value_in_real_units():
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     comp = qc._catalog[5005]          # THRESHOLD spans -60..+12 dB
-    qc.set_param(row=0, column=1, param="THRESHOLD", real=-24.0, model=comp)
+    qc.set_param(Block(0, 1, comp), param="THRESHOLD", real=-24.0)
     param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert param.param_values[0].float_value == pytest.approx(0.5)
 
@@ -647,7 +648,7 @@ def test_set_param_accepts_a_value_in_real_units():
 def test_set_param_real_units_require_param_and_model():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError):
-        qc.set_param(row=0, column=1, real=-20)
+        qc.set_param(Block(0, 1), real=-20)
 
 
 # -- the per-scene write ceiling ----------------------------------------------
@@ -665,7 +666,7 @@ def test_set_param_writes_one_scene_by_promoting_then_switching():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(row=2, column=5, param_index=0, value=0.8, scene=Scene.D)
+    qc.set_param(Block(2, 5), param=0, value=0.8, scene=Scene.D)
 
     assert [type(m).__name__ for m in fake.sent] == [
         "GridMessage", "SceneMessage", "GridMessage"], "promote, switch, write"
@@ -687,7 +688,7 @@ def test_set_param_without_a_scene_writes_the_active_scene_only():
     # that is not scene-following this changes its single global value.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(row=0, column=1, param_index=5, value=0.25)
+    qc.set_param(Block(0, 1), param=5, value=0.25)
     assert [type(m).__name__ for m in fake.sent] == ["GridMessage"]
     p = fake.sent[0].preset.chains[0].models[0].params[0]
     assert len(p.param_values) == 1
@@ -699,14 +700,14 @@ def test_set_param_can_skip_promotion():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(row=0, column=1, param_index=5, value=0.5, scene=Scene.B, promote=False)
+    qc.set_param(Block(0, 1), param=5, value=0.5, scene=Scene.B, promote=False)
     assert [type(m).__name__ for m in fake.sent] == ["SceneMessage", "GridMessage"]
 
 
 def test_set_param_scene_mode_sends_the_flag_alone():
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param_scene_mode(row=2, column=5, param_index=1, enabled=True)
+    qc.set_param_scene_mode(Block(2, 5), param=1, enabled=True)
     prm = fake.sent[-1].preset.chains[0].models[0].params[0]
     assert prm.scene_mode is True
     assert not prm.param_values, "a value alongside the flag makes the device drop it"
@@ -717,7 +718,7 @@ def test_set_lane_output_supports_per_scene_values():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_lane_output(row=0, param=0, value=0.0, scene=Scene.D)
+    qc.set_param(LaneOutput(0), param=0, value=0.0, scene=Scene.D)
     assert [type(m).__name__ for m in fake.sent] == [
         "GridMessage", "SceneMessage", "GridMessage"]
     promote = fake.sent[0].preset.chains[0].output_control[0]
@@ -740,7 +741,7 @@ def test_set_bypass_targets_a_scene_by_switching_to_it():
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
 
-    qc.set_bypass(row=0, column=2, bypassed=True, scene=Scene.D)
+    qc.set_bypass(Block(0, 2), bypassed=True, scene=Scene.D)
     assert isinstance(fake.sent[-2], pa.SceneMessage)
     assert fake.sent[-2].selected_scene == 3
     cb = fake.sent[-1].preset.bypass[0].colBypass[0]
@@ -749,7 +750,7 @@ def test_set_bypass_targets_a_scene_by_switching_to_it():
 
     # With no scene named, act on whatever scene is active: no switch is sent.
     fake.sent.clear()
-    qc.set_bypass(row=0, column=2, bypassed=False)
+    qc.set_bypass(Block(0, 2), bypassed=False)
     assert [type(m).__name__ for m in fake.sent] == ["GridMessage"]
     assert len(fake.sent[0].preset.bypass[0].colBypass[0].sceneBypass) == 1
 
@@ -828,7 +829,7 @@ def test_set_lane_output_writes_into_output_control_not_models():
     # reach, so VOLUME/PAN/MUTE/SOLO were unreachable through the API.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_lane_output(row=2, param=1, value=0.5)         # index, no catalog needed
+    qc.set_param(LaneOutput(2), param=1, value=0.5)         # index, no catalog needed
     sent = fake.sent[-1]
     chain = sent.preset.chains[0]
     assert chain.row == 2
@@ -879,7 +880,7 @@ def test_set_mixer_param_targets_the_mixer_collection():
     # collection has to be reachable to reproduce that behaviour.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_mixer_param(row=0, param=0, value=0.769)
+    qc.set_param(Mixer(0), param=0, value=0.769)
     chain = fake.sent[-1].preset.chains[0]
     assert chain.row == 0
     assert not chain.models and not chain.splitter
@@ -896,7 +897,7 @@ def test_set_splitter_param_writes_combined_splitter_not_splitter():
     # which is why this looked impossible rather than merely undiscovered.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_splitter_param(row=0, param=3, value=0.25)      # 3 = LEVEL TO A
+    qc.set_param(Splitter(0), param=3, value=0.25)      # 3 = LEVEL TO A
     chain = fake.sent[-1].preset.chains[0]
     assert chain.row == 0
     assert not chain.splitter, "the legacy field is the device's read-only view"
@@ -913,7 +914,7 @@ def test_splitter_param_per_scene_uses_promote_switch_write():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_splitter_param(row=0, param=3, value=0.1, scene=Scene.B)
+    qc.set_param(Splitter(0), param=3, value=0.1, scene=Scene.B)
     assert [type(m).__name__ for m in fake.sent] == [
         "GridMessage", "SceneMessage", "GridMessage"]
     promote = fake.sent[0].preset.chains[0].combined_splitter[0].params[0]
@@ -926,7 +927,7 @@ def test_set_tempo_param_reaches_tempo_program_data():
     # applied - confirmed on hardware, which is what makes per-preset tempo reachable.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_tempo_param(2, value=0.0)
+    qc.set_param(Tempo(), 2, value=0.0)
     sent = fake.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert not sent.preset.chains, "not a chain edit"
@@ -941,7 +942,7 @@ def test_mixer_param_per_scene_uses_promote_switch_write():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_mixer_param(row=0, param=0, value=0.0, scene=Scene.C)
+    qc.set_param(Mixer(0), param=0, value=0.0, scene=Scene.C)
     assert [type(m).__name__ for m in fake.sent] == [
         "GridMessage", "SceneMessage", "GridMessage"]
     promote = fake.sent[0].preset.chains[0].mixer[0].params[0]
@@ -1137,17 +1138,17 @@ def _preset_with_bypass_and_param():
 def test_bypass_state_reads_positionally_not_by_field_values():
     """Stored entries leave row/column at 0; position IS the address."""
     p = _preset_with_bypass_and_param()
-    st = client.bypass_state(p, 1, 2)
+    st = client.bypass_state(p, Block(1, 2))
     assert st.scene_mode is True
     assert st.scenes == (True, False, False, True, False, False, False, False)
-    other = client.bypass_state(p, 0, 0)
+    other = client.bypass_state(p, Block(0, 0))
     assert other.scene_mode is False
     assert not any(other.scenes)
 
 
 def test_param_state_returns_floats_strings_and_none_per_slot():
     p = _preset_with_bypass_and_param()
-    st = client.param_state(p, 1, 2, 0)
+    st = client.param_state(p, Block(1, 2), 0)
     assert st.scene_mode is True
     assert st.values == (0.25, "named", None)
 
@@ -1353,7 +1354,8 @@ class _Capture:
 def test_set_capture_applies_params_after_the_file_name():
     """Loading a capture resets the block's knobs, so order is data integrity."""
     qc = client.QuadCortex(EchoingTransport())
-    qc.set_capture(row=0, column=2, capture=_Capture(), params={4: 0.56})
+    # model_id on the cell is what to place, so this both places and points.
+    qc.set_capture(Block(0, 2, 14000), capture=_Capture(), params={4: 0.56})
     writes = []
     for msg in qc._t.sent:
         if isinstance(msg, pa.GridMessage):
@@ -1374,7 +1376,7 @@ def test_set_capture_applies_params_after_the_file_name():
 def test_set_capture_refuses_params_that_would_clobber_the_reference():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError, match="capture reference itself"):
-        qc.set_capture(row=0, column=2, capture=_Capture(), model=None,
+        qc.set_capture(Block(0, 2), capture=_Capture(),
                        params={5: "junk"})
     assert qc._t.sent == []
 
@@ -1409,9 +1411,9 @@ def test_splitter_and_mixer_writes_refuse_an_odd_row():
     qc = client.QuadCortex(FakeTransport())
     for row in (1, 3):
         with pytest.raises(ValueError, match="row 0 or"):
-            qc.set_splitter_param(row=row, param=3, value=0.5)
+            qc.set_param(Splitter(row), param=3, value=0.5)
         with pytest.raises(ValueError, match="row 0 or"):
-            qc.set_mixer_param(row=row, param=0, value=0.5)
+            qc.set_param(Mixer(row), param=0, value=0.5)
     assert qc._t.sent == [], "nothing should reach the wire for a row without one"
 
 
@@ -1448,7 +1450,7 @@ class EchoingTransport(FakeTransport):
 
 def test_set_block_verifies_the_device_accepted_the_cell():
     qc = client.QuadCortex(EchoingTransport())
-    qc.set_block(row=1, column=0, model=5005)
+    qc.set_block(Block(1, 0, 5005))
     chain = qc._t.sent[-1].preset.chains[0]
     assert chain.row == 1
     assert chain.models[0].column == 0
@@ -1458,12 +1460,12 @@ def test_set_block_verifies_the_device_accepted_the_cell():
 def test_set_block_raises_when_the_device_never_echoes_the_cell():
     qc = client.QuadCortex(EchoingTransport(refuse={21005}))
     with pytest.raises(client.BlockRefused, match="no DSP capacity"):
-        qc.set_block(row=1, column=4, model=21005)
+        qc.set_block(Block(1, 4, 21005))
 
 
 def test_set_block_can_skip_verification_for_fire_and_forget_placement():
     qc = client.QuadCortex(EchoingTransport(refuse={21005}))
-    qc.set_block(row=1, column=4, model=21005, verify=False)   # must not raise
+    qc.set_block(Block(1, 4, 21005), verify=False)   # must not raise
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 21005
 
 
@@ -1477,7 +1479,7 @@ def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():
         return pa.GridMessage()
 
     qc._t.await_broadcast = await_broadcast
-    qc.set_block(row=2, column=3, model=5005)
+    qc.set_block(Block(2, 3, 5005))
     match = captured["match"]
 
     def echo(row, column, hash_):
@@ -1500,7 +1502,7 @@ def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():
 
 def test_set_input_gate_writes_a_row_keyed_update_into_input_control():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_input_gate(row=0, param=1, value=1.0)          # BYPASS
+    qc.set_param(LaneInput(0), param=1, value=1.0)          # BYPASS
     msg = qc._t.sent[-1]
     assert msg.action == pa.MessageAction.UPDATE
     chain = msg.preset.chains[0]
@@ -1516,7 +1518,7 @@ def test_set_input_gate_promotes_then_switches_then_writes_for_a_scene():
     # Same three-message sequence as set_lane_output: the scene_mode flag must
     # travel alone, or the device treats the message as a plain value write.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_input_gate(row=0, param=0, value=0.9, scene=2)
+    qc.set_param(LaneInput(0), param=0, value=0.9, scene=2)
     flag, switch, write = qc._t.sent[-3:]
     assert flag.preset.chains[0].input_control[0].params[0].scene_mode is True
     assert not flag.preset.chains[0].input_control[0].params[0].param_values
@@ -1527,7 +1529,7 @@ def test_set_input_gate_promotes_then_switches_then_writes_for_a_scene():
 def test_set_input_gate_needs_a_value():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError):
-        qc.set_input_gate(row=0, param=1)
+        qc.set_param(LaneInput(0), param=1)
 
 
 # -- blank scene labels -------------------------------------------------------
@@ -1558,9 +1560,9 @@ def test_set_mixer_param_refuses_real_units_for_a_placeholder_range():
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     with pytest.raises(ValueError, match="placeholder range"):
-        qc.set_mixer_param(row=0, param="MIXER LEVEL", real=0.0)
+        qc.set_param(Mixer(0), param="MIXER LEVEL", real=0.0)
     assert qc._t.sent == []
-    qc.set_mixer_param(row=0, param="MIXER LEVEL", value=client.UNITY_LEVEL)
+    qc.set_param(Mixer(0), param="MIXER LEVEL", value=client.UNITY_LEVEL)
     written = qc._t.sent[-1].preset.chains[0].mixer[0].params[0]
     assert written.param_values[0].float_value == pytest.approx(0.76923077)
 
@@ -1600,7 +1602,7 @@ def test_set_split_mute_refuses_an_odd_row():
 def test_set_stomp_assignment_deletes_the_old_then_writes_the_new():
     # The unit's own sequence. An UPDATE alone leaves the previous assignment.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_stomp_assignment(row=2, column=3, footswitch=Footswitch.D)
+    qc.set_stomp_assignment(Block(2, 3), footswitch=Footswitch.D)
     delete, update = qc._t.sent[-2:]
     assert delete.action == pa.MessageAction.DELETE
     gone = delete.preset.stomp_mode_assignments[0]
@@ -1656,7 +1658,7 @@ def test_set_stomp_momentary_can_clear_back_to_latching():
 
 def test_set_expression_is_row_column_keyed_with_a_range():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_expression(row=0, column=2, param=4, pedal=2, minimum=0.1, maximum=0.9)
+    qc.set_expression(Block(0, 2), param=4, pedal=2, minimum=0.1, maximum=0.9)
     chain = qc._t.sent[-1].preset.chains[0]
     assert chain.row == 0
     prm = chain.models[0].params[0]
@@ -1669,7 +1671,7 @@ def test_set_expression_is_row_column_keyed_with_a_range():
 
 def test_clear_expression_is_row_column_keyed_and_resets_the_range():
     qc = client.QuadCortex(FakeTransport())
-    qc.clear_expression(row=1, column=3, param=4)
+    qc.clear_expression(Block(1, 3), param=4)
     chain = qc._t.sent[-1].preset.chains[0]
     assert chain.row == 1
     prm = chain.models[0].params[0]
@@ -1711,7 +1713,7 @@ def _lane_client():
 
 def test_set_lane_output_expression_writes_into_output_control_not_models():
     qc = _lane_client()
-    qc.set_lane_output_expression(row=0, param="VOLUME", pedal=1,
+    qc.set_expression(LaneOutput(0), param="VOLUME", pedal=1,
                                   minimum=0.0, maximum=0.830769)
     chain = qc._t.sent[-1].preset.chains[0]
     assert chain.row == 0
@@ -1734,14 +1736,14 @@ def test_set_lane_output_expression_does_not_send_scene_mode():
     parameter from scene data, so forcing it is at best inert.
     """
     qc = _lane_client()
-    qc.set_lane_output_expression(row=0, param="VOLUME")
+    qc.set_expression(LaneOutput(0), param="VOLUME")
     prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
     assert not prm.HasField("scene_mode")
 
 
 def test_set_lane_output_expression_takes_pedal_two_and_a_reversed_sweep():
     qc = _lane_client()
-    qc.set_lane_output_expression(row=2, param="PAN", pedal=2,
+    qc.set_expression(LaneOutput(2), param="PAN", pedal=2,
                                   minimum=0.8, maximum=0.2)
     prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
     assert prm.index == 1
@@ -1752,7 +1754,7 @@ def test_set_lane_output_expression_takes_pedal_two_and_a_reversed_sweep():
 
 def test_clear_lane_output_expression_writes_zero_and_the_unassigned_range():
     qc = _lane_client()
-    qc.clear_lane_output_expression(row=3, param="VOLUME")
+    qc.clear_expression(LaneOutput(3), param="VOLUME")
     oc = qc._t.sent[-1].preset.chains[0].output_control[0]
     assert oc.hash == 23000
     prm = oc.params[0]
@@ -1774,9 +1776,9 @@ def test_lane_output_expression_refuses_the_two_the_device_refuses(param):
     """
     qc = _lane_client()
     with pytest.raises(client.ControlNotDrivable) as refused:
-        qc.set_lane_output_expression(row=0, param=param)
+        qc.set_expression(LaneOutput(0), param=param)
     with pytest.raises(client.ControlNotDrivable):
-        qc.clear_lane_output_expression(row=0, param=param)
+        qc.clear_expression(LaneOutput(0), param=param)
     assert not qc._t.sent, "a refused call must send nothing"
 
     # ADR-0007 settled: a refusal carries what, why and what to do instead, so a
@@ -1805,7 +1807,7 @@ def test_the_refusal_is_a_measured_list_and_not_a_rule_about_switches():
     # Resolved by NAME through the catalog, so the type is right there to be
     # checked - and must not be. Jewel HIGH CUT, Mixer PHASE and Splitter TYPE
     # are all switches and all took an assignment on hardware.
-    qc.set_expression(row=0, column=1, param="TYPE", pedal=1, model=25000)
+    qc.set_expression(Block(0, 1, 25000), param="TYPE", pedal=1)
     prm = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert prm.index == switch.index
     assert prm.expression == 1, "set_expression must not care about parameter type"
@@ -1816,7 +1818,7 @@ def test_the_refusal_is_a_measured_list_and_not_a_rule_about_switches():
 
 def test_set_lane_output_real_converts_volume_through_the_measured_db_scale():
     qc = _lane_client()
-    qc.set_lane_output(row=0, param="VOLUME", real=-3.1)
+    qc.set_param(LaneOutput(0), param="VOLUME", real=-3.1)
     prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
     assert prm.param_values[0].float_value == pytest.approx(
         client.db_to_lane_level(-3.1))
@@ -1825,7 +1827,7 @@ def test_set_lane_output_real_converts_volume_through_the_measured_db_scale():
 
 def test_set_lane_output_real_puts_unity_at_the_documented_value():
     qc = _lane_client()
-    qc.set_lane_output(row=0, param="VOLUME", real=0.0)
+    qc.set_param(LaneOutput(0), param="VOLUME", real=0.0)
     prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
     assert prm.param_values[0].float_value == pytest.approx(client.UNITY_LEVEL)
 
@@ -1834,7 +1836,7 @@ def test_other_placeholder_ranges_still_refuse_real():
     """Only the lane VOLUME was measured. Nothing else got quietly loosened."""
     qc = _lane_client()
     with pytest.raises(ValueError, match="placeholder"):
-        qc.set_mixer_param(row=0, param="MIXER LEVEL", real=-3.0)
+        qc.set_param(Mixer(0), param="MIXER LEVEL", real=-3.0)
 
 
 # -- per-preset MIDI out ------------------------------------------------------
@@ -1888,7 +1890,7 @@ def test_midi_out_reader_maps_the_120_slots_to_ten_sources():
 def test_set_param_can_write_a_string_value():
     # A cab's microphone selection travels as string_value, not float_value.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(row=0, column=5, param_index=1, text="NG_212 DG Neo_Condenser U47")
+    qc.set_param(Block(0, 5), param=1, text="NG_212 DG Neo_Condenser U47")
     val = qc._t.sent[-1].preset.chains[0].models[0].params[0].param_values[0]
     assert val.string_value == "NG_212 DG Neo_Condenser U47"
     assert not val.HasField("float_value")
@@ -1897,7 +1899,7 @@ def test_set_param_can_write_a_string_value():
 def test_set_param_rejects_text_and_real_together():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError):
-        qc.set_param(row=0, column=0, param_index=0, text="x", real=1.0)
+        qc.set_param(Block(0, 0), param=0, text="x", real=1.0)
 
 
 def test_param_options_reads_the_list_the_catalog_lacks():
@@ -1910,9 +1912,9 @@ def test_param_options_reads_the_list_the_catalog_lacks():
         for i in range(5):
             m.params.add().index = i
     chain.models[0].params[4].dynamic_steps.extend(["Off", "Follow Input", "Input 1"])
-    assert client.param_options(p, row=2, column=0, param_index=4) == [
+    assert client.param_options(p, Block(2, 0), 4) == [
         "Off", "Follow Input", "Input 1"]
-    assert client.param_options(p, row=2, column=1, param_index=4) == []
+    assert client.param_options(p, Block(2, 1), 4) == []
 
 
 def test_midi_out_builders_match_what_the_unit_stores():
@@ -2091,7 +2093,7 @@ def test_set_ir_writes_the_library_key_as_ir_path_and_the_name_separately():
     """IR PATH takes the KEY, not a path - read off a working block on hardware."""
     qc = client.QuadCortex(EchoingTransport())
     ir = _IR("CIR_eb6d6d347e75f988010a9746580c31c", "Rex 57 on axis")
-    qc.set_ir(row=1, column=0, ir=ir, model=None)
+    qc.set_ir(Block(1, 0, None), ir=ir)
     strings = {}
     for msg in qc._t.sent:
         if isinstance(msg, pa.GridMessage):
@@ -2107,7 +2109,7 @@ def test_set_ir_writes_the_library_key_as_ir_path_and_the_name_separately():
 
 def test_set_ir_slot_one_uses_the_second_pair_of_parameters():
     qc = client.QuadCortex(EchoingTransport())
-    qc.set_ir(row=1, column=0, ir=_IR("CIR_abc", "Second"), slot=1, model=None)
+    qc.set_ir(Block(1, 0, None), ir=_IR("CIR_abc", "Second"), slot=1)
     indices = {pr.index for msg in qc._t.sent if isinstance(msg, pa.GridMessage)
                for chain in msg.preset.chains for m in chain.models for pr in m.params}
     assert indices == {10, 23}
@@ -2116,9 +2118,9 @@ def test_set_ir_slot_one_uses_the_second_pair_of_parameters():
 def test_set_ir_rejects_anything_without_a_key():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError, match="carrying key and name"):
-        qc.set_ir(row=1, column=0, ir=_IR("", "No key"), model=None)
+        qc.set_ir(Block(1, 0, None), ir=_IR("", "No key"))
     with pytest.raises(ValueError, match="slot must be 0 or 1"):
-        qc.set_ir(row=1, column=0, ir=_IR("CIR_x", "x"), slot=2, model=None)
+        qc.set_ir(Block(1, 0, None), ir=_IR("CIR_x", "x"), slot=2)
 
 
 def test_list_irs_asks_with_type_1_and_drops_keyless_plugin_assets():
@@ -2305,7 +2307,7 @@ def test_mode_reader_waits_for_a_push_carrying_mode():
 
 def test_move_block_sends_a_row_and_column_addressed_move():
     qc = client.QuadCortex(FakeTransport())
-    qc.move_block(2, 1, 2, 7)
+    qc.move_block(Block(2, 1), Block(2, 7))
     msg = qc._t.sent[-1]
     assert isinstance(msg, pa.GridMoveMessage)
     mv = msg.move[0]
@@ -2347,7 +2349,7 @@ def test_split_helpers_refuse_an_odd_row():
 
 def test_set_expression_bypass_writes_both_halves():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_expression_bypass(row=0, column=2, pedal=1, mode=1, invert=True,
+    qc.set_expression_bypass(Block(0, 2), pedal=1, mode=1, invert=True,
                              delay_ms=250, latch_emulation=True)
     model = qc._t.sent[-1].preset.chains[0].models[0]
     assert model.column == 2
@@ -2676,7 +2678,7 @@ def test_set_param_option_resolves_the_name_through_the_preset():
     m.params[6].dynamic_steps.extend(["Off", "Follow Input", "Input 1", "Input 2"])
 
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param_option(row=1, column=0, param=6, option="Input 2", source=p)
+    qc.set_param_option(Block(1, 0), param=6, option="Input 2", source=p)
     written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert written.index == 6
     assert written.param_values[0].float_value == pytest.approx(1.0)
@@ -2696,7 +2698,7 @@ def test_set_param_option_resolves_a_parameter_NAME_via_the_preset_block():
 
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    qc.set_param_option(row=1, column=0, param="THRESHOLD", option="On", source=p)
+    qc.set_param_option(Block(1, 0), param="THRESHOLD", option="On", source=p)
     written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert written.index == 0
     assert written.param_values[0].float_value == pytest.approx(1.0)
@@ -2705,7 +2707,7 @@ def test_set_param_option_resolves_a_parameter_NAME_via_the_preset_block():
 def test_set_param_option_needs_the_block_to_be_in_the_source_preset():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError, match="no block at row"):
-        qc.set_param_option(row=3, column=7, param="SOURCE", option="Off",
+        qc.set_param_option(Block(3, 7), param="SOURCE", option="Off",
                             source=preset.BinaryPreset())
 
 
@@ -2818,7 +2820,7 @@ def test_expression_bypass_mode_numbering_is_not_the_manual_order():
 def test_set_expression_bypass_accepts_the_enum():
     qc = client.QuadCortex(FakeTransport())
     from pyquadcortex.protocol.enums import ExpressionSwitchMode as M
-    qc.set_expression_bypass(row=0, column=1, pedal=1, mode=M.HEEL_TOE)
+    qc.set_expression_bypass(Block(0, 1), pedal=1, mode=M.HEEL_TOE)
     assert qc._t.sent[-1].preset.chains[0].models[0].expression_bypass_info[0].type == 2
 
 
@@ -2989,7 +2991,7 @@ def test_set_tempo_param_resolves_the_screen_names():
     for name, index in (("TEMPO", 0), ("LED LIGHT", 2), ("VOLUME", 3), ("START", 4),
                         ("PLAYBACK", 4), ("PAN", 5), ("TIME SIGNATURE", 6),
                         ("SUBDIVISIONS", 7), ("SOUND", 8), ("ROUTING", 9)):
-        qc.set_tempo_param(name, value=0.5)
+        qc.set_param(Tempo(), name, value=0.5)
         got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
         assert got.index == index, f"{name} should resolve to {index}"
 
@@ -2999,7 +3001,7 @@ def test_tempo_param_mute_is_refused_because_it_is_inverted():
     the name would silently do the opposite of what the caller asked."""
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError, match="INVERTED"):
-        qc.set_tempo_param("MUTE", value=1.0)
+        qc.set_param(Tempo(), "MUTE", value=1.0)
     assert qc._t.sent == []
 
 
@@ -3034,9 +3036,9 @@ def test_set_metronome_running_writes_the_transport_polarity():
 
 def test_tempo_param_names_are_case_and_space_tolerant():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_tempo_param("routing", value=0.75)
+    qc.set_param(Tempo(), "routing", value=0.75)
     assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 9
-    qc.set_tempo_param(" Sound ", value=0.2)
+    qc.set_param(Tempo(), " Sound ", value=0.2)
     assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 8
 
 
@@ -3047,8 +3049,8 @@ def test_real_units_refused_for_a_tempo_param_the_catalog_does_not_describe():
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     assert len(qc._catalog[25000].parameters) == 23
-    with pytest.raises(ValueError, match="does not describe tempo parameter"):
-        qc.set_tempo_param(23, real=3)
+    with pytest.raises(ValueError, match="does not describe index 23"):
+        qc.set_param(Tempo(), 23, real=3)
     assert qc._t.sent == []
 
 
@@ -3097,7 +3099,7 @@ def test_set_tempo_param_takes_real_as_bpm_for_index_zero():
     is the point: if this path went through the catalog it would raise.
     """
     qc = client.QuadCortex(FakeTransport())
-    qc.set_tempo_param("TEMPO", real=111.0)
+    qc.set_param(Tempo(), "TEMPO", real=111.0)
     sent = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
     assert sent.index == 0
     assert sent.param_values[0].float_value == pytest.approx(0.355, abs=1e-6)
@@ -3364,7 +3366,7 @@ def test_beats_returns_a_raw_float_it_cannot_place_rather_than_rounding():
 
 def test_a_raw_index_still_works():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_tempo_param(11, value=0.3)
+    qc.set_param(Tempo(), 11, value=0.3)
     assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 11
 
 
@@ -3491,7 +3493,7 @@ def test_set_capture_writes_the_hash_and_name_as_one_string():
     qc = client.QuadCortex(EchoingTransport())
     entry = _Entry("0200eff9df18229325d1816aeb8445eca03604f2a9f95fd3732ceaed167c25c1",
                    "Kyle Pb 1")
-    qc.set_capture(row=1, column=0, capture=entry)
+    qc.set_capture(Block(1, 0, 14000), capture=entry)
     placed, pointed = qc._t.sent[-2:]
     assert placed.preset.chains[0].models[0].hash == 14000
     prm = pointed.preset.chains[0].models[0].params[0]
@@ -3503,7 +3505,7 @@ def test_set_capture_writes_the_hash_and_name_as_one_string():
 def test_set_capture_needs_a_library_entry():
     qc = client.QuadCortex(EchoingTransport())
     with pytest.raises(TypeError, match="captures\\(\\)"):
-        qc.set_capture(row=1, column=0, capture="Kyle Pb 1")
+        qc.set_capture(Block(1, 0), capture="Kyle Pb 1")
 
 
 def test_captures_browses_the_library_not_the_catalog():

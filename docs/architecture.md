@@ -100,6 +100,13 @@ only about the layer directly below it.
 
       proto/                 Generated bindings (committed; see below)
       enums.py               Named port / instrument / setlist-path values
+      targets.py             WHERE a parameter lives: Block, LaneOutput,
+                             LaneInput, Mixer, Splitter, Tempo. Each knows its
+                             collection, how it is keyed, its catalog model,
+                             and what it refuses. No device, no I/O.
+      units.py               Screen values <-> wire values for the scales the
+                             catalog publishes as a placeholder
+      errors.py              BlockRefused, ControlNotDrivable
       hid_ids.py             Vendor and product IDs, interface number
 
     pyquadcortex/_version.py The version string, read by both namespaces and by
@@ -299,7 +306,7 @@ mappings have no helper to call, only a documented rule and a shared constant, s
 their tests pin them against what the protocol write method expects.
 
 Delegating is not always a choice between two homes. `bpm_to_tempo` is called by
-`QuadCortex.set_tempo_param` from inside the protocol layer, so it has to stay
+`QuadCortex.set_param(Tempo(), ...)` from inside the protocol layer, so it has to stay
 there: moving it to the boundary would make the protocol layer import the model,
 which `tests/test_namespace.py` refuses. The wrapper here is what gives the model
 one way in without a second copy of the span.
@@ -383,6 +390,15 @@ check first.
 
 **3. Add a method to `QuadCortex`.** Build the protobuf and hand it to the
 transport. Keep it thin: no HID, no bytes, no sleeps.
+
+If the operation writes a PARAMETER, it almost certainly needs no new method at
+all: `set_param` covers every container through a target, so a container the
+library has never reached is a new class in `targets.py` rather than a new
+method here. A target says which collection on `Chain` holds it, how that
+collection is keyed - by `column`, by `hash`, or by neither - which catalog
+model describes its parameters, whether it has per-scene values, and any
+conversion the catalog cannot do. Adding one earns every parameter operation at
+once, which is the whole point of the type.
 
 ```python
 def set_global_tempo(self, bpm: float):
@@ -596,7 +612,7 @@ next, roughly in order of how well the ground is prepared:
   and it alternates a clock shape with a 25-parameter shape, so a reader has to
   match on a reply that actually carries parameters. Its parameter 1 is the Tempo
   menu's MODE switch - see `tempo_mode`. The per-preset tempo controls live in
-  `tempoProgramData` instead - see `set_tempo_param`.)
+  `tempoProgramData` instead - see the `Tempo` target.)
 - **Types not in the registry at all.** The schema declares 71 message types.
   Whole feature areas are untouched: `Tuner` / `ShowTuner`, `Looper`,
   `MIDISettings`, `NeuralCapture` / `NeuralCapture2`, `Screenshot`,
@@ -621,7 +637,7 @@ next, roughly in order of how well the ground is prepared:
   the wholesale path.
 - **The splitter accepts no host writes.** `chain.mixer[]` is writable with the
   ordinary row-keyed shape, but `chain.splitter[]` is not: four shapes were tried
-  and each saved and read back unchanged, so `set_splitter_param()` raises rather
+  and each saved and read back unchanged, so `set_param(Splitter(row), ...)` raises rather
   than pretend. It has NOT been confirmed by capture that the device stays silent
   when a splitter is edited on the unit, so this is "no known write path" rather
   than "impossible" - and reading that broadcast is the obvious way to settle it.

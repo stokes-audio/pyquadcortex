@@ -34,6 +34,10 @@ from pyquadcortex.protocol.client import (SCENE_UNLABELLED, UNITY_LEVEL,
                                           beats, tempo_params,
                                           preset_load_midi_out, slot_to_position, splits,
                                           stomp_assignments)
+from pyquadcortex.protocol.targets import (BranchControl, ChainTarget,
+                                           LaneControl, LaneInput, LaneOutput,
+                                           Mixer, ParamTarget, PresetTarget,
+                                           Splitter, Tempo)
 from pyquadcortex.protocol.enums import (BROKEN_MODE_VALUE, Footswitch, FootswitchMode,
                                          HYBRID_MODES, Input, Instrument, MidiOutType,
                                          describe_mode, hybrid_mode, PowerOption, RecallReason,
@@ -46,6 +50,7 @@ from pyquadcortex.protocol.enums import (BROKEN_MODE_VALUE, Footswitch, Footswit
                                          TimeSignature)
 from pyquadcortex.protocol.session import DeviceNotFoundError, connect, open_device
 from pyquadcortex.protocol import models  # generated factory-block constants
+from pyquadcortex.protocol import params  # generated parameter constants
 from pyquadcortex.protocol.catalog import Model, ModelCatalog, Parameter
 
 __all__ = [
@@ -99,6 +104,16 @@ __all__ = [
     "param_options",
     "tempo_params",
     "beats",
+    "ParamTarget",
+    "ChainTarget",
+    "LaneControl",
+    "BranchControl",
+    "PresetTarget",
+    "LaneOutput",
+    "LaneInput",
+    "Mixer",
+    "Splitter",
+    "Tempo",
     "BlockRefused",
     "ControlNotDrivable",
     "UNITY_LEVEL",
@@ -120,6 +135,7 @@ __all__ = [
     "position_to_slot",
     "input_chain_rows",
     "models",
+    "params",
     "Model",
     "ModelCatalog",
     "Parameter",

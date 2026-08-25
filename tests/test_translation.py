@@ -25,6 +25,7 @@ import pyquadcortex
 from pyquadcortex import protocol
 from pyquadcortex.device import translate
 from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
+from pyquadcortex.protocol.targets import Block, Tempo
 
 
 # -- rows: 1-4 on screen, 0-3 on the wire ------------------------------------
@@ -460,7 +461,7 @@ def test_the_two_level_scales_are_not_interchangeable():
 
 # -- the tempo: bpm on screen, a 0..1 value on the wire -----------------------
 #
-# The wrapper is here rather than the helper itself. `set_tempo_param(real=)`
+# The wrapper is here rather than the helper itself. `set_param(Tempo(), real=)`
 # calls `protocol.bpm_to_tempo` from inside the protocol layer, so moving the
 # helper up to the boundary would make the protocol layer import the model -
 # which `tests/test_namespace.py` refuses. Delegating gets one copy of the
@@ -498,7 +499,7 @@ def test_a_tempo_wire_value_off_the_scale_is_refused(value):
 
 def test_the_tempo_is_what_the_protocol_write_expects():
     """The same shape as the tuner and hold-timing checks: the model's idea of
-    111 bpm has to be the number `set_tempo_param(real=)` puts on the wire.
+    111 bpm has to be the number `set_param(Tempo(), real=)` puts on the wire.
 
     Weaker than those two, and worth saying so. Both sides of this equality run
     through `protocol.bpm_to_tempo`, so it does not check the arithmetic. What it
@@ -507,7 +508,7 @@ def test_the_tempo_is_what_the_protocol_write_expects():
     number."""
     recorder = Recorder()
     qc = protocol.QuadCortex(recorder)
-    qc.set_tempo_param("TEMPO", real=111.0)
+    qc.set_param(Tempo(), "TEMPO", real=111.0)
     sent = recorder.sent[-1].preset.tempoProgramData[0].params[0]
     assert sent.param_values[0].float_value == \
         pytest.approx(translate.bpm_to_tempo(111.0))
@@ -819,7 +820,11 @@ PROTOCOL_CONVERSIONS = {
     "input_level_db", "db_to_input_level", "lane_level_db", "db_to_lane_level",
     "tempo_bpm", "bpm_to_tempo", "option_at", "option_value",
     "UNITY_LEVEL", "HOLD_TIMING_MS",
-    # readers that hand back raw wire coordinates
+    # readers that hand back raw wire coordinates. `Block` is now BOTH: it is
+    # what `blocks()` returns AND the address every grid write is keyed to, so a
+    # model module building one would be putting screen coordinates on the wire
+    # - the exact bug this boundary exists to stop, and harder to spot than a
+    # bare `- 1` because it reads like construction rather than conversion.
     "blocks", "Block", "stomp_assignments", "StompAssignment",
     "free_rows", "row_status", "RowStatus", "input_chain_rows",
     "splits", "Split",
@@ -1133,7 +1138,7 @@ ARITHMETIC_SAMPLES = [
     ("a bare increment", "row = wire_row + 1", True),
     ("an augmented one", "slot += 1", True),
     ("one on the left", "column = 1 - offset", True),
-    ("hidden in a call", "qc.set_param(row=row - 1, column=slot - 1)", True),
+    ("hidden in a call", "qc.set_param(Block(row - 1, slot - 1))", True),
     ("a comprehension", "[s - 1 for s in slots]", True),
     ("a negated one", "wire_row = row + -1", True),
     ("a float one", "wire_row = row - 1.0", True),
@@ -1411,7 +1416,7 @@ def test_a_row_the_screen_does_not_show_has_no_chain(structural):
 def test_bypass_reads_through_the_scene_letter(structural):
     """The wire keys the eight bypass slots by scene INDEX; the model asks by
     letter, and this is the only place that mapping happens."""
-    wire = protocol.bypass_state(structural, 0, 0)
+    wire = protocol.bypass_state(structural, Block(0, 0))
     for letter in LETTERS:
         assert translate.block_bypassed(structural, 1, 1, letter) is \
             wire.scenes[protocol.Scene[letter]]
