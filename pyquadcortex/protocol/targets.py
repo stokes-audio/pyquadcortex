@@ -187,8 +187,57 @@ class ParamTarget:
         return type(self).__name__
 
 
+class ChainTarget(ParamTarget):
+    """A target that lives on a chain, and therefore has a ``row``.
+
+    Everything except the tempo block. The split matters because a chain target
+    builds its container inside ``preset.chains{row}`` and the tempo block does
+    not - and because a signature that needs a row can say so.
+    """
+
+    row: int
+
+
+class LaneControl(ChainTarget):
+    """A row-addressed control: one per row, addressed by hash, no column.
+
+    The lane's ends and its branch. Distinguished from :class:`Block` because
+    there is exactly ONE of each per row - the device pads them one-per-row the
+    way it pads ``models`` to eight column slots - so a column would mean
+    nothing.
+    """
+
+
+class BranchControl(LaneControl):
+    """A lane control that exists only on rows 0 and 2.
+
+    A branch originates on an even row with its parallel lane on the row below,
+    so rows 1 and 3 report these collections empty and a write addressed there
+    does nothing. The row check is here rather than repeated in each subclass.
+    """
+
+    def __post_init__(self):
+        if self.row % 2:
+            raise ValueError(
+                f"row {self.row} has no {type(self).__name__.lower()}: a branch "
+                f"can only originate on row 0 or row 2, whose parallel lane is "
+                f"the row below it. Rows 1 and 3 report an empty collection, and "
+                f"a write addressed there does nothing."
+            )
+
+
+class PresetTarget(ParamTarget):
+    """A target that hangs off the preset rather than off a chain.
+
+    One member, and it is why :class:`ChainTarget` exists to be distinguished
+    from: the tempo block has no row, so it has no scenes either.
+    """
+
+    supports_scenes = False
+
+
 @dataclass(frozen=True)
-class Block(ParamTarget):
+class Block(ChainTarget):
     """One grid cell: where it is, and what is in it.
 
     This is BOTH the address of a block parameter and what
@@ -225,7 +274,7 @@ class Block(ParamTarget):
 
 
 @dataclass(frozen=True)
-class LaneOutput(ParamTarget):
+class LaneOutput(LaneControl):
     """A row's Lane Output Control - VOLUME, PAN, MUTE, SOLO.
 
     ``chain.output_control[]``, hash-keyed, present on all four rows whether or
@@ -257,7 +306,7 @@ class LaneOutput(ParamTarget):
 
 
 @dataclass(frozen=True)
-class LaneInput(ParamTarget):
+class LaneInput(LaneControl):
     """A row's Input Gate Control - the noise gate at the head of the row.
 
     ``chain.input_control[]``, hash-keyed, present on all four rows. All three
@@ -274,7 +323,7 @@ class LaneInput(ParamTarget):
 
 
 @dataclass(frozen=True)
-class Mixer(ParamTarget):
+class Mixer(BranchControl):
     """A row's Mixer - ``chain.mixer[]``, hash-keyed. Even rows only."""
 
     row: int
@@ -282,15 +331,12 @@ class Mixer(ParamTarget):
     collection = "mixer"
     model_id = MIXER
 
-    def __post_init__(self):
-        _require_even_row(self.row, "mixer")
-
     def describe(self):
         return f"row {self.row}'s Mixer"
 
 
 @dataclass(frozen=True)
-class Splitter(ParamTarget):
+class Splitter(BranchControl):
     """A row's splitter - ``chain.combined_splitter[]``. Even rows only.
 
     The odd one out: this container is sent with **no hash and no column**,
@@ -303,9 +349,6 @@ class Splitter(ParamTarget):
     collection = "combined_splitter"
     model_id = SPLITTER
 
-    def __post_init__(self):
-        _require_even_row(self.row, "splitter")
-
     def container(self, msg):
         chain = msg.preset.chains.add()
         chain.row = self.row
@@ -316,7 +359,7 @@ class Splitter(ParamTarget):
 
 
 @dataclass(frozen=True)
-class Tempo(ParamTarget):
+class Tempo(PresetTarget):
     """The preset's own TempoControl block - tempo, LED and metronome.
 
     Not on a chain at all: it hangs off the preset as ``tempoProgramData``, a
@@ -327,8 +370,6 @@ class Tempo(ParamTarget):
 
     collection = "tempoProgramData"
     model_id = TEMPO_CONTROL
-    #: The tempo block is not on the grid, so it has no per-scene values.
-    supports_scenes = False
 
     #: The unit's screen names for the tempo block's parameters, and the aliases
     #: worth accepting. The catalog names some of these differently, which is why

@@ -52,7 +52,7 @@ def main():
             print("\nDRY RUN - nothing changed. Re-run with --write.")
             return 0
 
-        qc.set_capture(row=row, column=0, capture=chosen)
+        qc.set_capture(Block(row, 0), capture=chosen)
         time.sleep(1.5)
         stored = qc.save_current_preset(Setlist.USER, DEST_SLOT, DEST_NAME,
                                        confirm=True)

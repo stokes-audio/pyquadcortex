@@ -76,7 +76,7 @@ def main():
 
         # 2. A block in the lane, which is the row below the branch.
         try:
-            qc.set_block(row=row + 1, column=SPLIT_COLUMN + 1, model=LANE_BLOCK)
+            qc.set_block(Block(row + 1, SPLIT_COLUMN + 1, LANE_BLOCK))
         except BlockRefused as refused:
             print(f"\n{refused}")
             return 1

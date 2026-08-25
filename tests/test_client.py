@@ -297,7 +297,7 @@ def test_set_bypass_sends_row_column_keyed_grid_update():
     # CONFIRMED capture shape: Grid{UPDATE, preset{bypass{row, colBypass{column,
     # sceneBypass{bypass}}}}}.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_bypass(row=0, column=4, bypassed=True)
+    qc.set_bypass(Block(0, 4), bypassed=True)
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.UPDATE
@@ -314,7 +314,7 @@ def test_set_bypass_never_pads_scene_bypass():
     # scene, so padding wrote a default False to the wrong scene and did nothing to
     # the intended one. See test_set_bypass_targets_a_scene_by_switching_to_it.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_bypass(row=0, column=4, bypassed=True, scene=1)
+    qc.set_bypass(Block(0, 4), bypassed=True, scene=1)
     cb = qc._t.sent[-1].preset.bypass[0].colBypass[0]
     assert len(cb.sceneBypass) == 1
     assert cb.sceneBypass[0].bypass is True
@@ -575,7 +575,7 @@ def test_set_block_sends_row_column_keyed_grid_update():
     # UPDATE as set_param, carrying `hash` instead of params. The device's own
     # broadcast when a block is added on the unit has this exact shape.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_block(row=0, column=2, model=5005)
+    qc.set_block(Block(0, 2, 5005))
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.UPDATE
@@ -589,7 +589,7 @@ def test_set_block_accepts_a_catalog_model():
     model = catalog.Model(id=4005, name="Graphic-9", category="Equalizer",
                           category_id=4)
     qc = client.QuadCortex(FakeTransport())
-    qc.set_block(row=1, column=3, model=model)
+    qc.set_block(Block(1, 3, model))
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 4005
 
 
@@ -599,7 +599,7 @@ def test_remove_block_sends_grid_delete():
     # same shape from the host removes the block; an UPDATE with hash=0 does
     # NOT (the firmware ignores a zero hash on an update).
     qc = client.QuadCortex(FakeTransport())
-    qc.remove_block(row=0, column=4)
+    qc.remove_block(Block(0, 4))
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.DELETE
@@ -741,7 +741,7 @@ def test_set_bypass_targets_a_scene_by_switching_to_it():
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
 
-    qc.set_bypass(row=0, column=2, bypassed=True, scene=Scene.D)
+    qc.set_bypass(Block(0, 2), bypassed=True, scene=Scene.D)
     assert isinstance(fake.sent[-2], pa.SceneMessage)
     assert fake.sent[-2].selected_scene == 3
     cb = fake.sent[-1].preset.bypass[0].colBypass[0]
@@ -750,7 +750,7 @@ def test_set_bypass_targets_a_scene_by_switching_to_it():
 
     # With no scene named, act on whatever scene is active: no switch is sent.
     fake.sent.clear()
-    qc.set_bypass(row=0, column=2, bypassed=False)
+    qc.set_bypass(Block(0, 2), bypassed=False)
     assert [type(m).__name__ for m in fake.sent] == ["GridMessage"]
     assert len(fake.sent[0].preset.bypass[0].colBypass[0].sceneBypass) == 1
 
@@ -1354,7 +1354,8 @@ class _Capture:
 def test_set_capture_applies_params_after_the_file_name():
     """Loading a capture resets the block's knobs, so order is data integrity."""
     qc = client.QuadCortex(EchoingTransport())
-    qc.set_capture(row=0, column=2, capture=_Capture(), params={4: 0.56})
+    # model_id on the cell is what to place, so this both places and points.
+    qc.set_capture(Block(0, 2, 14000), capture=_Capture(), params={4: 0.56})
     writes = []
     for msg in qc._t.sent:
         if isinstance(msg, pa.GridMessage):
@@ -1375,7 +1376,7 @@ def test_set_capture_applies_params_after_the_file_name():
 def test_set_capture_refuses_params_that_would_clobber_the_reference():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError, match="capture reference itself"):
-        qc.set_capture(row=0, column=2, capture=_Capture(), model=None,
+        qc.set_capture(Block(0, 2), capture=_Capture(),
                        params={5: "junk"})
     assert qc._t.sent == []
 
@@ -1449,7 +1450,7 @@ class EchoingTransport(FakeTransport):
 
 def test_set_block_verifies_the_device_accepted_the_cell():
     qc = client.QuadCortex(EchoingTransport())
-    qc.set_block(row=1, column=0, model=5005)
+    qc.set_block(Block(1, 0, 5005))
     chain = qc._t.sent[-1].preset.chains[0]
     assert chain.row == 1
     assert chain.models[0].column == 0
@@ -1459,12 +1460,12 @@ def test_set_block_verifies_the_device_accepted_the_cell():
 def test_set_block_raises_when_the_device_never_echoes_the_cell():
     qc = client.QuadCortex(EchoingTransport(refuse={21005}))
     with pytest.raises(client.BlockRefused, match="no DSP capacity"):
-        qc.set_block(row=1, column=4, model=21005)
+        qc.set_block(Block(1, 4, 21005))
 
 
 def test_set_block_can_skip_verification_for_fire_and_forget_placement():
     qc = client.QuadCortex(EchoingTransport(refuse={21005}))
-    qc.set_block(row=1, column=4, model=21005, verify=False)   # must not raise
+    qc.set_block(Block(1, 4, 21005), verify=False)   # must not raise
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 21005
 
 
@@ -1478,7 +1479,7 @@ def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():
         return pa.GridMessage()
 
     qc._t.await_broadcast = await_broadcast
-    qc.set_block(row=2, column=3, model=5005)
+    qc.set_block(Block(2, 3, 5005))
     match = captured["match"]
 
     def echo(row, column, hash_):
@@ -1601,7 +1602,7 @@ def test_set_split_mute_refuses_an_odd_row():
 def test_set_stomp_assignment_deletes_the_old_then_writes_the_new():
     # The unit's own sequence. An UPDATE alone leaves the previous assignment.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_stomp_assignment(row=2, column=3, footswitch=Footswitch.D)
+    qc.set_stomp_assignment(Block(2, 3), footswitch=Footswitch.D)
     delete, update = qc._t.sent[-2:]
     assert delete.action == pa.MessageAction.DELETE
     gone = delete.preset.stomp_mode_assignments[0]
@@ -2092,7 +2093,7 @@ def test_set_ir_writes_the_library_key_as_ir_path_and_the_name_separately():
     """IR PATH takes the KEY, not a path - read off a working block on hardware."""
     qc = client.QuadCortex(EchoingTransport())
     ir = _IR("CIR_eb6d6d347e75f988010a9746580c31c", "Rex 57 on axis")
-    qc.set_ir(row=1, column=0, ir=ir, model=None)
+    qc.set_ir(Block(1, 0, None), ir=ir)
     strings = {}
     for msg in qc._t.sent:
         if isinstance(msg, pa.GridMessage):
@@ -2108,7 +2109,7 @@ def test_set_ir_writes_the_library_key_as_ir_path_and_the_name_separately():
 
 def test_set_ir_slot_one_uses_the_second_pair_of_parameters():
     qc = client.QuadCortex(EchoingTransport())
-    qc.set_ir(row=1, column=0, ir=_IR("CIR_abc", "Second"), slot=1, model=None)
+    qc.set_ir(Block(1, 0, None), ir=_IR("CIR_abc", "Second"), slot=1)
     indices = {pr.index for msg in qc._t.sent if isinstance(msg, pa.GridMessage)
                for chain in msg.preset.chains for m in chain.models for pr in m.params}
     assert indices == {10, 23}
@@ -2117,9 +2118,9 @@ def test_set_ir_slot_one_uses_the_second_pair_of_parameters():
 def test_set_ir_rejects_anything_without_a_key():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError, match="carrying key and name"):
-        qc.set_ir(row=1, column=0, ir=_IR("", "No key"), model=None)
+        qc.set_ir(Block(1, 0, None), ir=_IR("", "No key"))
     with pytest.raises(ValueError, match="slot must be 0 or 1"):
-        qc.set_ir(row=1, column=0, ir=_IR("CIR_x", "x"), slot=2, model=None)
+        qc.set_ir(Block(1, 0, None), ir=_IR("CIR_x", "x"), slot=2)
 
 
 def test_list_irs_asks_with_type_1_and_drops_keyless_plugin_assets():
@@ -2306,7 +2307,7 @@ def test_mode_reader_waits_for_a_push_carrying_mode():
 
 def test_move_block_sends_a_row_and_column_addressed_move():
     qc = client.QuadCortex(FakeTransport())
-    qc.move_block(2, 1, 2, 7)
+    qc.move_block(Block(2, 1), Block(2, 7))
     msg = qc._t.sent[-1]
     assert isinstance(msg, pa.GridMoveMessage)
     mv = msg.move[0]
@@ -3492,7 +3493,7 @@ def test_set_capture_writes_the_hash_and_name_as_one_string():
     qc = client.QuadCortex(EchoingTransport())
     entry = _Entry("0200eff9df18229325d1816aeb8445eca03604f2a9f95fd3732ceaed167c25c1",
                    "Kyle Pb 1")
-    qc.set_capture(row=1, column=0, capture=entry)
+    qc.set_capture(Block(1, 0, 14000), capture=entry)
     placed, pointed = qc._t.sent[-2:]
     assert placed.preset.chains[0].models[0].hash == 14000
     prm = pointed.preset.chains[0].models[0].params[0]
@@ -3504,7 +3505,7 @@ def test_set_capture_writes_the_hash_and_name_as_one_string():
 def test_set_capture_needs_a_library_entry():
     qc = client.QuadCortex(EchoingTransport())
     with pytest.raises(TypeError, match="captures\\(\\)"):
-        qc.set_capture(row=1, column=0, capture="Kyle Pb 1")
+        qc.set_capture(Block(1, 0), capture="Kyle Pb 1")
 
 
 def test_captures_browses_the_library_not_the_catalog():

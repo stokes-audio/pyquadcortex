@@ -760,9 +760,17 @@ class QuadCortex:
 
     # -- grid blocks ---------------------------------------------------------
 
-    def set_block(self, row: int, column: int, model, verify: bool = True,
-                  timeout: float = 5.0):
-        """Put ``model`` in the grid cell at ``row``/``column``.
+    def set_block(self, cell, verify: bool = True, timeout: float = 5.0):
+        """Put a model in a grid cell.
+
+        ``cell`` is a :class:`~pyquadcortex.protocol.targets.Block`, and its
+        ``model_id`` is WHAT TO PLACE - "what is, or is to be, in this cell" is
+        the one meaning that reads the same for a block you read and a block you
+        write, so :func:`blocks` round-trips::
+
+            source = protocol.blocks(preset)[0]
+            qc.set_block(Block(row=2, column=0, model_id=source.model_id))
+
 
         Creates a block in an empty cell and replaces whatever is in an occupied
         one - the device makes no distinction. ``model`` is a model id or a
@@ -789,6 +797,7 @@ class QuadCortex:
         ``verify=False`` to send and return immediately, in which case a save and
         read-back is the only way to learn whether the block is there.
         """
+        row, column, model = cell.row, cell.column, cell.model_id
         model_id = int(getattr(model, "id", model))
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
@@ -826,8 +835,8 @@ class QuadCortex:
             ) from None
         return None
 
-    def remove_block(self, row: int, column: int):
-        """Remove the block at ``row``/``column``, leaving the cell empty.
+    def remove_block(self, cell):
+        """Remove the block at ``cell``, leaving it empty.
 
         Confirmed on hardware, and matching the device's own broadcast when a
         block is deleted on the unit: ``Grid{action: DELETE, preset{chains{row,
@@ -835,6 +844,7 @@ class QuadCortex:
         an UPDATE carrying ``hash: 0`` is transmitted but ignored by the
         firmware. Save the grid afterwards to keep it.
         """
+        row, column = cell.row, cell.column
         msg = pa.GridMessage(action=pa.MessageAction.DELETE)
         chain = msg.preset.chains.add()
         chain.row = row
@@ -961,7 +971,7 @@ class QuadCortex:
                              and m.request_id == request_id))
         return Scene(reply.selected_scene)
 
-    def set_bypass(self, row: int, column: int, bypassed: bool, scene=None):
+    def set_bypass(self, cell, bypassed: bool, scene=None):
         """Bypass or enable one block on the grid (row/column-keyed sparse update).
 
         Shape: ``Grid{UPDATE, preset{bypass{row, colBypass{column,
@@ -1011,6 +1021,7 @@ class QuadCortex:
         instead, and check :meth:`active_scene` when a scene-targeted write seems
         to vanish.
         """
+        row, column = cell.row, cell.column
         if scene is not None:
             self.switch_scene(scene)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
@@ -1458,8 +1469,8 @@ class QuadCortex:
         chain.splitBypass.add().bypass = muted
         return self._t.send(msg)
 
-    def set_stomp_assignment(self, row: int, column: int, footswitch):
-        """Assign the block at ``row``/``column`` to a STOMP-mode footswitch.
+    def set_stomp_assignment(self, cell, footswitch):
+        """Assign a block to a STOMP-mode footswitch.
 
         ``footswitch`` is a :class:`~pyquadcortex.protocol.enums.Footswitch` (or 0-7 for
         A-H). One footswitch may drive several blocks - factory content does
@@ -1471,7 +1482,8 @@ class QuadCortex:
 
         Read them back with :func:`stomp_assignments`.
         """
-        self.clear_stomp_assignment(row, column)
+        row, column = cell.row, cell.column
+        self.clear_stomp_assignment(cell)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         a = msg.preset.stomp_mode_assignments.add()
         a.row = row
@@ -1479,8 +1491,9 @@ class QuadCortex:
         a.stomp_index = int(footswitch)
         return self._t.send(msg)
 
-    def clear_stomp_assignment(self, row: int, column: int):
-        """Unassign the block at ``row``/``column`` from its footswitch."""
+    def clear_stomp_assignment(self, cell):
+        """Unassign a block from its footswitch."""
+        row, column = cell.row, cell.column
         msg = pa.GridMessage(action=pa.MessageAction.DELETE)
         a = msg.preset.stomp_mode_assignments.add()
         a.row = row
@@ -1587,9 +1600,13 @@ class QuadCortex:
         return self._t.send(msg)
 
 
-    def move_block(self, from_row: int, from_col: int, to_row: int, to_col: int,
-                   drop: bool = True):
+    def move_block(self, source, destination, drop: bool = True):
         """Move the block at one grid cell to another.
+
+        ``source`` and ``destination`` are
+        :class:`~pyquadcortex.protocol.targets.Block` cells; only their coordinates
+        are read, so a destination's ``model_id`` is ignored.
+
 
         Shape: ``GridMove{move{from_row, from_col, to_row, to_col, is_drop}}``.
         Confirmed driven host-to-device: moving row 2 column 1 to column 7 left
@@ -1606,6 +1623,8 @@ class QuadCortex:
         ids. It is ADVISORY - replaying one with a cell zeroed does not delete a
         block - so this sends only the move.
         """
+        from_row, from_col = source.row, source.column
+        to_row, to_col = destination.row, destination.column
         msg = pa.GridMoveMessage()
         mv = msg.move.add()
         mv.from_row = from_row
@@ -2927,8 +2946,7 @@ class QuadCortex:
         """
         return self.list_presets(self.CAPTURES_LIBRARY, timeout=timeout)
 
-    def set_capture(self, row: int, column: int, capture, model: int = 14000,
-                    params: dict = None):
+    def set_capture(self, cell, capture, params: dict = None):
         """Point a Neural Capture block at a capture from the library.
 
         ``capture`` is an entry from :meth:`captures` (or anything with ``key`` and
@@ -2969,6 +2987,8 @@ class QuadCortex:
         :class:`BlockRefused` on a DSP-capacity refusal - captures are expensive
         blocks, so that refusal is one to expect.
         """
+        row, column = cell.row, cell.column
+        model = cell.model_id
         key = getattr(capture, "key", None)
         name = getattr(capture, "name", None)
         if key is None or name is None:
@@ -2981,7 +3001,7 @@ class QuadCortex:
                 f"that is the capture reference itself, set from `capture`"
             )
         if model is not None:
-            self.set_block(row=row, column=column, model=model)
+            self.set_block(Block(row, column, model))
         cell = Block(row, column)
         result = self.set_param(cell, self.CAPTURE_FILE_NAME_PARAM,
                                 text=f"{key}{name}")
@@ -3027,8 +3047,7 @@ class QuadCortex:
                              and m.folder.key.rstrip("/") == wanted.rstrip("/")))
         return [f for f in listing.folder.files if f.HasField("key") and f.key]
 
-    def set_ir(self, row: int, column: int, ir, slot: int = 0,
-               model: int = 29001):
+    def set_ir(self, cell, ir, slot: int = 0):
         """Point an IR Loader block at an IR from the library.
 
         ``ir`` is an entry from :meth:`list_irs` (anything with ``key`` and
@@ -3053,6 +3072,8 @@ class QuadCortex:
         unchanged - but the unit shows a warning icon and "<IR NAME> is missing" on
         screen, so check there if a block goes quiet.
         """
+        row, column = cell.row, cell.column
+        model = cell.model_id
         key = getattr(ir, "key", None)
         name = getattr(ir, "name", None)
         if not key or not name:
@@ -3063,7 +3084,7 @@ class QuadCortex:
         if slot not in (0, 1):
             raise ValueError(f"slot must be 0 or 1, not {slot!r}")
         if model is not None:
-            self.set_block(row=row, column=column, model=model)
+            self.set_block(Block(row, column, model))
         cell = Block(row, column)
         self.set_param(cell, self.IR_PATH_PARAMS[slot], text=key)
         return self.set_param(cell, self.IR_NAME_PARAMS[slot], text=name)

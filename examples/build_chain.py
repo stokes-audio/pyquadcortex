@@ -71,7 +71,7 @@ def main():
         #    A placement can be refused when the preset has no DSP capacity left
         #    for it; set_block checks and says so rather than failing quietly.
         try:
-            qc.set_block(row=row, column=0, model=AMP)
+            qc.set_block(Block(row, 0, AMP))
         except BlockRefused as refused:
             print(f"\n{refused}")
             return 1
