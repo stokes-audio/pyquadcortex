@@ -1006,7 +1006,7 @@ class QuadCortex:
 
             qc.save_current_preset(...)            # materialises the capture
             qc.recall_preset(...)                  # the stored slot
-            qc.set_bypass(row, column, True)       # now it sticks
+            qc.set_bypass(cell, True)              # now it sticks
             qc.save_current_preset(...)            # same name, same slot: no rename
 
         Verify with :func:`bypass_state` on the STORED preset, not just the live
