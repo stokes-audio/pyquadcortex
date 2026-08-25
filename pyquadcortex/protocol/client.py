@@ -57,6 +57,26 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset
 #: screen reads "Off". :func:`lane_level_db` / :func:`db_to_lane_level` convert.
 UNITY_LEVEL = 0.76923077
 
+#: Lane Output Control parameters a host cannot assign an expression pedal to.
+#:
+#: This is a MEASURED LIST, not a rule, and the distinction cost a session. Three
+#: plausible rules were tried and all three are false:
+#:
+#: * "switch-typed parameters are refused" - no. The Jewel's HIGH CUT, the
+#:   Mixer's PHASE and the Splitter's TYPE are all ``switch`` and all accept one.
+#: * "bypass-like parameters are refused" - no. The Input Gate Control's BYPASS is
+#:   bypass-like and accepts one, and accepts a clear.
+#: * "``output_control`` params reject ``expression``" - no. VOLUME and PAN, in
+#:   the same block, accept one.
+#:
+#: Every other collection tested - blocks, the input gate, the mixer, the
+#: splitter - accepts an assignment on every parameter kind. These two are the
+#: only refusal known in the library, so they are named rather than derived.
+#: The unit's own touchscreen writes them into ``params[].expression``, the very
+#: field a host write is dropped from, so the control is understood and not
+#: drivable (ADR-0007).
+LANE_OUTPUT_UNASSIGNABLE = ("MUTE", "SOLO")
+
 
 def input_level_db(level: float) -> float:
     """Convert an input port's wire ``level`` (0..1) to the dB the unit displays.
@@ -222,6 +242,40 @@ class BlockRefused(RuntimeError):
     Raised by :meth:`QuadCortex.set_block` when no echo confirms the cell. The
     known cause is the preset having no DSP capacity left for that model.
     """
+
+
+class ControlNotDrivable(ValueError):
+    """A control the unit has, that the unit itself drives, and a host cannot.
+
+    ADR-0007 decided that such a control is REPRESENTED and REFUSES rather than
+    being omitted or guessed at, and left one question open: how the refusal
+    reads in practice, to be settled by the first control that ships one. This
+    is it - the Lane Output Control's MUTE and SOLO.
+
+    It subclasses ``ValueError`` because it is raised on an argument the caller
+    chose, so ``except ValueError`` around a rig-building script keeps working.
+    Catching this instead tells you the specific thing: the request was well
+    formed and the DEVICE is what refuses.
+
+    The three attributes exist so a caller can branch rather than parse a
+    string - a script assigning pedals across a rig wants to skip these two and
+    report them, not die on the first one::
+
+        try:
+            qc.set_lane_output_expression(row=r, param=name, pedal=1)
+        except ControlNotDrivable as refusal:
+            print(f"do this on the unit: {refusal.workaround}")
+
+    ``control`` is what was addressed, ``evidence`` is why we believe it cannot
+    be driven, and ``workaround`` is what to do instead. All three are required:
+    a refusal with no evidence is the guess this ADR exists to prevent.
+    """
+
+    def __init__(self, control: str, evidence: str, workaround: str):
+        super().__init__(f"{control}: {evidence} {workaround}")
+        self.control = control
+        self.evidence = evidence
+        self.workaround = workaround
 
 
 def _require_even_row(row: int, what: str):
@@ -1738,11 +1792,16 @@ Two of those names disagree with the catalog, which is why the map
             qc.set_lane_output(row=0, param="VOLUME", value=UNITY_LEVEL)     # 0 dB
             qc.set_lane_output(row=0, param="VOLUME", value=0.0)             # silent
 
-        ``VOLUME`` publishes a placeholder catalog range, so ``real=`` raises for it
-        rather than converting - use :func:`db_to_lane_level` to speak dB. The span
-        is -40..+12 dB with :data:`UNITY_LEVEL` at 0 dB, and the numeric range
-        stops at -39.5 dB: below that the knob reads "Off", which is wire 0.0. For
-        silence write 0.0, not the bottom of the dB scale.
+        ``VOLUME`` publishes a placeholder catalog range, but its TRUE span is
+        measured - -40..+12 dB with :data:`UNITY_LEVEL` at 0 dB - so ``real=``
+        takes dB here and converts through :func:`db_to_lane_level` rather than
+        through the catalog. It is the one placeholder parameter that does; every
+        other one still raises, because their spans have never been measured
+        (see the tracking issue on the catalog's placeholder dB ranges).
+
+        The numeric range stops at -39.5 dB: below that the knob reads "Off",
+        which is wire 0.0. For silence write ``value=0.0``, not the bottom of the
+        dB scale - ``real=-40`` is the scale's floor, not the Off detent.
 
         **``MUTE`` is 1.0 = MUTED** - the intuitive direction, measured by ear on
         hardware (a row at 0.0 was audible; 1.0 silenced that path). Worth stating
@@ -1773,7 +1832,8 @@ Two of those names disagree with the catalog, which is why the map
                     else model.parameters[param])
             index = spec.index
             if real is not None:
-                value = spec.to_normalized(real)
+                value = (db_to_lane_level(real) if spec.name == "VOLUME"
+                         else spec.to_normalized(real))
         if value is None:
             raise TypeError("set_lane_output needs value= (0..1) or real= (own units)")
         if scene is not None:
@@ -1788,6 +1848,109 @@ Two of those names disagree with the catalog, which is why the map
         prm = oc.params.add()
         prm.index = index
         prm.param_values.add().float_value = value
+        return self._t.send(msg)
+
+    def _lane_output_param(self, param):
+        """The lane output's catalog :class:`Parameter` for ``param``.
+
+        Refuses the two the device will not let a host assign - see
+        :meth:`set_lane_output_expression`.
+        """
+        model = self.catalog[self.LANE_OUTPUT_CONTROL]
+        spec = (model.parameter(param) if isinstance(param, str)
+                else model.parameters[param])
+        if spec.name in LANE_OUTPUT_UNASSIGNABLE:
+            raise ControlNotDrivable(
+                control=f"the Lane Output Control's {spec.name}",
+                evidence=(
+                    "the device silently refuses a host expression assignment "
+                    "here, in both directions - tested with four message shapes "
+                    "including the one VOLUME accepts in the same session, a "
+                    "Grid DELETE, and a write to bypass_expression."),
+                workaround=(
+                    "Assign it on the unit's touchscreen; the unit writes the "
+                    "same field and the library reads it back."),
+            )
+        return spec
+
+    def set_lane_output_expression(self, row: int, param, pedal: int = 1,
+                                   minimum: float = 0.0, maximum: float = 1.0):
+        """Assign an expression pedal to a Lane Output Control parameter.
+
+        The Lane Output Control has no COLUMN - it lives in
+        ``chain.output_control[]`` rather than ``chain.models[]`` - so
+        :meth:`set_expression` cannot reach it, for the same reason
+        :meth:`set_param` cannot and :meth:`set_lane_output` exists. This is that
+        method's shape with three more fields on the parameter::
+
+            Grid{UPDATE, preset{chains{row, output_control{hash: 23000,
+                 params{index, expression, expression_min, expression_max}}}}}
+
+        ``pedal`` is 1 or 2, matching EXP 1 and EXP 2 on the back panel.
+        ``minimum`` and ``maximum`` are the normalized 0..1 ends of the sweep, and
+        setting minimum above maximum reverses the pedal. The unit DISPLAYS them as
+        a percentage: 0.830769 shows as 83.08%.
+
+        A volume pedal on a row that reaches a physical output::
+
+            qc.set_lane_output_expression(row=0, param="VOLUME", pedal=1,
+                                          minimum=0.0, maximum=db_to_lane_level(3.2))
+
+        The lane VOLUME publishes a placeholder catalog range, so the sweep ends
+        are normalized rather than dB; :func:`db_to_lane_level` converts, and its
+        span is the measured -40..+12 dB.
+
+        **VOLUME and PAN only.** MUTE and SOLO raise
+        :class:`ControlNotDrivable`: the device silently drops a host expression
+        assignment on those two, in both directions, while accepting the
+        byte-identical message aimed at VOLUME. It is a measured pair and NOT an
+        instance of a rule - see :data:`LANE_OUTPUT_UNASSIGNABLE` for the three
+        candidate rules that were tried and disproved. The unit's own touchscreen
+        writes the very same field, so the control is understood but not drivable,
+        and this refuses rather than failing quietly the way the device does
+        (ADR-0007).
+
+        Confirmed on hardware: pedal 1 over 0.0..0.5 and pedal 2 over 0.2..0.8
+        both landed and read back through this method. The identical wire shape,
+        sent by hand beforehand, was also confirmed BY EAR - a pedal assigned that
+        way swept a lane from silence to the intended level. A read straight after
+        the write can return the previous value; reconnect or settle first.
+        """
+        spec = self._lane_output_param(param)
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        oc = chain.output_control.add()
+        oc.hash = self.LANE_OUTPUT_CONTROL
+        prm = oc.params.add()
+        prm.index = spec.index
+        prm.expression = int(pedal)
+        prm.expression_min = minimum
+        prm.expression_max = maximum
+        return self._t.send(msg)
+
+    def clear_lane_output_expression(self, row: int, param):
+        """Unassign the expression pedal from a Lane Output Control parameter.
+
+        Writes ``expression: 0`` with the sweep back to its unassigned ``0.0..1.0``,
+        which is what every unassigned parameter reads. Confirmed on hardware: a
+        row's real VOLUME assignment cleared and then restored.
+
+        **VOLUME and PAN only**, and for the same reason as
+        :meth:`set_lane_output_expression` - the device refuses a host CLEAR on a
+        lane switch just as it refuses a host assignment.
+        """
+        spec = self._lane_output_param(param)
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        oc = chain.output_control.add()
+        oc.hash = self.LANE_OUTPUT_CONTROL
+        prm = oc.params.add()
+        prm.index = spec.index
+        prm.expression = 0
+        prm.expression_min = 0.0
+        prm.expression_max = 1.0
         return self._t.send(msg)
 
     def set_input_gate(self, row: int, param, value: float = None, real=None,
@@ -1978,6 +2141,27 @@ Two of those names disagree with the catalog, which is why the map
         p.expression_max = maximum
         return self._t.send(msg)
 
+    def clear_expression(self, row: int, column: int, param, model=None):
+        """Unassign the expression pedal from a block parameter.
+
+        The counterpart to :meth:`set_expression`, and the same row/column-keyed
+        shape: ``expression: 0`` with the sweep back to the unassigned
+        ``0.0..1.0``.
+        """
+        index = self._resolve_param_index(param, model) if not isinstance(param, int) \
+            else param
+        msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
+        chain = msg.preset.chains.add()
+        chain.row = row
+        model_msg = chain.models.add()
+        model_msg.column = column
+        p = model_msg.params.add()
+        p.index = index
+        p.expression = 0
+        p.expression_min = 0.0
+        p.expression_max = 1.0
+        return self._t.send(msg)
+
     def set_midi_out(self, source, messages):
         """Set the MIDI messages a footswitch or expression pedal sends.
 
@@ -2099,7 +2283,7 @@ Two of those names disagree with the catalog, which is why the map
         through a save: pedal 1, mode 1, invert, 250 ms, latch emulation.
 
 ``mode`` is an
-        :class:`~pyquadcortex.protocol.enums.ExpressionBypassMode`: all three are confirmed
+        :class:`~pyquadcortex.protocol.enums.ExpressionSwitchMode`: all three are confirmed
         on the unit, and note the numbering is not the manual's listed order -
         ``STOP`` is 0, ``SWITCH`` 1 and ``HEEL_TOE`` 2. ``invert`` reverses the
         value at which the bypass engages, ``delay_ms`` is the switch delay (to

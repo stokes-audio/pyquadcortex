@@ -737,12 +737,25 @@ class ExpressionAssignment:              # assigned FROM the parameter, as on sc
     maximum: float                       # MAX RANGE; min>max reverses, as documented
 
 class ExpressionBypass:
-    mode: ExpressionBypassMode           # HEEL_TOE / SWITCH / STOP
+    mode: ExpressionSwitchMode           # HEEL_TOE / SWITCH / STOP
     invert: bool                         # INVERT RANGE
     switch_delay_ms: int                 # SWITCH DELAY, real ms; greyed out in SWITCH mode
-    latch_emulation: bool                # LATCH EMULATION
+    latch_emulation: bool                # LATCH EMULATION; greyed out in HEEL_TOE mode
     # All three verified on hardware as ExpressionBypassInfo{invert, delay_ms,
     # latch_emulation}; a false always travels as an absent field.
+    # The mode decides which of the last two exist, and they are mutually
+    # exclusive in the two modes measured: SWITCH offers latch and no delay,
+    # HEEL_TOE offers delay and no latch. STOP's delay is confirmed; whether it
+    # offers latch emulation has never been looked at.
+    # This same message carries a LANE OUTPUT's MUTE and SOLO settings:
+    # output_control pre-allocates two slots, MUTE at [0] and SOLO at [1], both
+    # confirmed by moving them one at a time on the unit. input_control carries
+    # one, an ordinary block none until set_expression_bypass adds it.
+    # NOT "one slot per switch parameter" - that rule was tried and is false.
+    # The Jewel's HIGH CUT, the Mixer's PHASE and the Splitter's TYPE are all
+    # switch-typed and their blocks carry no slot at all. What generates the
+    # pre-allocation is unestablished; only the counts and the MUTE/SOLO
+    # positions are measured.
 
 class PresetMidiOut:                     # preset.midi_out - the Preset MIDI Out menu
     on_load: Sequence[OnLoadMessage]
@@ -1277,7 +1290,7 @@ the n/a rows below where they intersect the API at all.
 | Stomp momentary | `stomp.momentary` | yes | RESTORED to the model. The manual never mentions it, but the unit's Assign footswitch modal has a Latching/Momentary toggle. Settable only when the switch drives ONE block - the device refuses multi-block switches silently, and the model should refuse them honestly |
 | Expression pedal assignment (MIN/MAX, reverse) | `param.expression` | yes | reversal by min>max, as documented |
 | Expression bypass: three modes | `block.expression_bypass.mode` | yes | wire order differs from the manual's listing - absorbed |
-| Expression bypass: INVERT RANGE / SWITCH DELAY / LATCH EMULATION | `bypass.invert`, `bypass.switch_delay_ms`, `bypass.latch_emulation` | yes | `ExpressionBypassInfo{invert, delay_ms, latch_emulation}`; `delay_ms` is real milliseconds. SWITCH DELAY is greyed out in Switch mode, so it applies to Heel-Toe and Stop only |
+| Expression bypass: INVERT RANGE / SWITCH DELAY / LATCH EMULATION | `bypass.invert`, `bypass.switch_delay_ms`, `bypass.latch_emulation` | yes | `ExpressionBypassInfo{invert, delay_ms, latch_emulation}`; `delay_ms` is real milliseconds. SWITCH DELAY is greyed out in Switch mode, so it applies to Heel-Toe and Stop only, and LATCH EMULATION is greyed out in Heel-Toe mode - the two are mutually exclusive in the modes measured |
 | Expression pedal calibration | **omitted** | no | global setting; candidate `IOSettings`, unexplored |
 | Set Parameters as Defaults | **omitted** | no | `DefaultParameters` decoded, never written |
 | Looper X: place the block | `row.place()` - an ordinary virtual device | yes | |

@@ -49,11 +49,11 @@ already read and need no connection; calling them as methods raises
 | **Add and remove blocks** | `set_block(row, column, model)`, `remove_block(row, column)`, `move_block(...)`, `catalog` |
 | **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
-| **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO |
+| **Lane output** | `set_lane_output(row, param, value=/real=)` - VOLUME, PAN, MUTE, SOLO. `real=` speaks dB for VOLUME |
 | **Input gate** | `set_input_gate(row, param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
 | **Split and mix** | `set_splitter_param(row, param, ...)`, `set_mixer_param(row, param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(row, column, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
-| **Expression pedals** | `set_expression(row, column, param, pedal, minimum, maximum)` |
+| **Expression pedals** | `set_expression(row, column, param, pedal, minimum, maximum)`, `clear_expression(row, column, param)`, and `set_lane_output_expression(row, param, ...)` / `clear_lane_output_expression(row, param)` for a lane VOLUME or PAN |
 | **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `protocol.midi_out(preset)` |
 | **Tempo MODE** | `tempo_mode()`, `set_tempo_mode(TempoMode.GLOBAL)` - global, and it picks which tempo block plays |
 | **Per-preset tempo** | `set_tempo_param(name, ...)`, `set_tempo_option(name, n)`, `protocol.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
@@ -174,6 +174,26 @@ is loud rather than silent; pass `verify=False` if you would rather send and not
 There is no way to ask how much headroom is left, so the answer to a refusal is a
 cheaper block or one fewer.
 
+**Two controls refuse outright, and the device is why.** A Lane Output Control's
+`MUTE` and `SOLO` can be assigned to an expression pedal on the touchscreen, and
+the unit stores that in a field the library reads - but a host write of it is
+silently dropped, in both directions. `set_lane_output_expression()` and
+`clear_lane_output_expression()` raise `ControlNotDrivable` rather than sending a
+message the device will ignore. It subclasses `ValueError`, so an existing
+`except ValueError` still catches it, and it carries `control`, `evidence` and
+`workaround` so a script can skip these two and report them instead of dying:
+
+```python
+try:
+    qc.set_lane_output_expression(row=row, param=name, pedal=1)
+except ControlNotDrivable as refusal:
+    print(f"{refusal.control}: do it on the unit. {refusal.workaround}")
+```
+
+These are the only two such controls in the library. Every other collection -
+blocks, the input gate, the mixer, the splitter - takes an expression assignment
+on any parameter, `switch`-typed ones included.
+
 Two things to watch. `Output` values **16 to 18** are internal row-to-row routing
 rather than jacks - but **19 (`MULTIPLE`) is a real destination**, and often the right
 answer, since it is what factory presets use to reach the Multi-Out. And the device
@@ -199,8 +219,13 @@ that means something else - pass `value=`, or speak dB through the helpers:
 ```python
 from pyquadcortex.protocol import db_to_lane_level, lane_level_db
 
-qc.set_lane_output(row=0, param="VOLUME", value=db_to_lane_level(-6.0))
+qc.set_lane_output(row=0, param="VOLUME", real=-6.0)             # dB directly
+qc.set_lane_output(row=0, param="VOLUME", value=db_to_lane_level(-6.0))  # the same
 lane_level_db(0.76923077)     # 0.0
+
+# A pedal as a volume and mute control: silence at the heel, +3.2 dB at the toe.
+qc.set_lane_output_expression(row=0, param="VOLUME", pedal=1,
+                              minimum=0.0, maximum=db_to_lane_level(3.2))
 ```
 
 The span is **-40 to +12 dB**. The knob's lowest numeric step is -39.5 dB; below it

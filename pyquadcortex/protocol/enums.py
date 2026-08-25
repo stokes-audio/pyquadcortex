@@ -299,16 +299,37 @@ class SceneBypassBehavior(IntEnum):
     NEVER_OVERWRITE = 2
 
 
-class ExpressionBypassMode(IntEnum):
-    """How an expression pedal bypasses a block (``expression_bypass_info.type``).
+class ExpressionSwitchMode(IntEnum):
+    """How an expression pedal actuates a SWITCH (``expression_bypass_info.type``).
 
-    All three confirmed, by setting each one deliberately on the unit with a scene
-    change fencing them apart so the value landed on in each window was
+    The unit labels this control **SWITCH ON**, and it governs every switch-like
+    target a pedal can drive, not only a block's bypass: a block's bypass through
+    :meth:`~pyquadcortex.protocol.client.QuadCortex.set_expression_bypass`, and a
+    Lane Output Control's MUTE and SOLO, which store their settings in the same
+    ``expression_bypass_info`` on ``output_control``.
+
+    All three values confirmed, by setting each one deliberately on the unit with a
+    scene change fencing them apart so the value landed on in each window was
     unambiguous: Heel-Toe stored 2, Switch 1, Stop 0.
 
-    Note this is NOT the manual's listed order, and the unit's SWITCH ON control
-    cycles numerically - from Heel-Toe (2) a press gives Stop (0), then Switch (1),
-    then Heel-Toe again, which is what an earlier session had reported as its cycle.
+    Note this is NOT the manual's listed order, and the SWITCH ON control cycles
+    numerically - from Heel-Toe (2) a press gives Stop (0), then Switch (1), then
+    Heel-Toe again, which is what an earlier session had reported as its cycle.
+
+    **The mode decides which of the other two controls exist.** Observed on the
+    unit, where the unavailable one is greyed out:
+
+    ==================  ============  ================
+    mode                SWITCH DELAY  LATCH EMULATION
+    ==================  ============  ================
+    ``HEEL_TOE`` (2)    available     greyed out
+    ``SWITCH`` (1)      greyed out    available
+    ``STOP`` (0)        available     unestablished
+    ==================  ============  ================
+
+    So the two are mutually exclusive in the two modes measured. ``STOP``'s delay
+    comes from the same sweep that recorded the Switch rule; whether it offers
+    latch emulation has never been looked at.
     """
 
     STOP = 0

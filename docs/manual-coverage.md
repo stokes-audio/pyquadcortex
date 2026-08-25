@@ -20,7 +20,7 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 104 features audited: **65 yes**, **8 partly**, **20 no**, **11 n/a**.
+Of 106 features audited: **66 yes**, **9 partly**, **20 no**, **11 n/a**.
 
 Of the 93 features a host could plausibly drive - everything above except the 11 marked
 n/a - **65 are fully covered** and 8 more are partly covered, which here means the state
@@ -108,8 +108,10 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | Splitter / Mixer MUTE | yes | `set_split_mute()`. It is ONE control, not two; the write goes to `splitBypass` and the device reports it in `mixBypass` |
 | Side-chaining: set a block's SOURCE/TRIGGER | yes | `set_param_option(row, column, param="SOURCE", option=...)`. It is an ordinary comboBox parameter; `sidechain_source_flag` is bookkeeping and ignores writes |
 | Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()`. Momentary is keyed by footswitch, not column, and only lands on a switch driving ONE block - the device refuses multi-block switches silently, as its own toggle does. The manual never mentions stomp momentary; the touchscreen's Assign footswitch modal has it |
-| Expression pedal assignment to a parameter | yes | `set_expression(row, column, param, pedal, minimum, maximum)` |
-| Expression bypass (heel-toe / switch / stop) | yes | `set_expression_bypass()` with `ExpressionBypassMode`. All three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2 - not the manual's listed order |
+| Expression pedal assignment to a block parameter | yes | `set_expression(row, column, param, pedal, minimum, maximum)`, and `clear_expression()` to unassign |
+| Expression pedal on an input gate, mixer or splitter parameter | yes | `set_expression()` reaches these through the same row/column keying where they are column-keyed; the input gate's NOISE REDUCTION, INPUT GAIN and BYPASS, the mixer's LEVEL A and PHASE, and the splitter's LEVEL TO A and TYPE all confirmed. Parameter TYPE is irrelevant - `switch` parameters take an ordinary MIN/MAX sweep, as the manual describes |
+| Expression pedal assignment to a Lane Output Control | partly | `set_lane_output_expression()` / `clear_lane_output_expression()` reach VOLUME and PAN, which `set_expression` cannot - the Lane Output Control has no column. **MUTE and SOLO refuse**: the device silently drops a host assignment on a lane SWITCH parameter, in both directions, while accepting the byte-identical message on VOLUME. The touchscreen writes the same field, so the control is understood and not drivable (ADR-0007) |
+| Expression bypass (heel-toe / switch / stop) | yes | `set_expression_bypass()` with `ExpressionSwitchMode`. All three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2 - not the manual's listed order. The unit labels the control SWITCH ON, and the mode decides which of the other two exist: SWITCH greys out SWITCH DELAY, HEEL_TOE greys out LATCH EMULATION. The same `expression_bypass_info` carries a lane MUTE's and SOLO's settings, one slot per switch parameter |
 | Expression pedal calibration | partly | the flow IS `IOSettings`, as guessed: calibrating a pedal on the unit broadcasts `exp_port{exp_port_id, calibrating: true}` and `false` on completion, for EXP 1 and EXP 2 alike. Observed, never driven from the host |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | it is an ordinary catalog model |
