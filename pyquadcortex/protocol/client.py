@@ -42,105 +42,16 @@ from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
-#: The wire value the mixer, splitter and lane-output LEVEL parameters hold when
-#: nothing is attenuated - 10/13, which is 0 dB on the -40..+12 dB span those
-#: controls cover. The catalog publishes them as 0..1 "dB" (see
-#: :attr:`~pyquadcortex.protocol.catalog.Parameter.range_is_placeholder`), so this is the
-#: reference point for reading and writing them. Measured on every row carrying
-#: one across 17 factory presets.
-#:
-#: Two releases said -100..+30 dB here, and the mistake is instructive: both spans
-#: put 0 dB at exactly 10/13 (100/130 = 40/52), so unity - the only point the
-#: original measurement had - cannot tell them apart. The true span comes from
-#: reading the screen against the wire at three more points: -3.1 dB at 0.71,
-#: +12.0 dB at 1.0, and -39.5 dB at 0.01, the lowest numeric step before the
-#: screen reads "Off". :func:`lane_level_db` / :func:`db_to_lane_level` convert.
-UNITY_LEVEL = 0.76923077
-
-#: Lane Output Control parameters a host cannot assign an expression pedal to.
-#:
-#: This is a MEASURED LIST, not a rule, and the distinction cost a session. Three
-#: plausible rules were tried and all three are false:
-#:
-#: * "switch-typed parameters are refused" - no. The Jewel's HIGH CUT, the
-#:   Mixer's PHASE and the Splitter's TYPE are all ``switch`` and all accept one.
-#: * "bypass-like parameters are refused" - no. The Input Gate Control's BYPASS is
-#:   bypass-like and accepts one, and accepts a clear.
-#: * "``output_control`` params reject ``expression``" - no. VOLUME and PAN, in
-#:   the same block, accept one.
-#:
-#: Every other collection tested - blocks, the input gate, the mixer, the
-#: splitter - accepts an assignment on every parameter kind. These two are the
-#: only refusal known in the library, so they are named rather than derived.
-#: The unit's own touchscreen writes them into ``params[].expression``, the very
-#: field a host write is dropped from, so the control is understood and not
-#: drivable (ADR-0007).
-LANE_OUTPUT_UNASSIGNABLE = ("MUTE", "SOLO")
+from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
+                                          ControlNotDrivable)
+from pyquadcortex.protocol.targets import (  # noqa: F401
+    LANE_OUTPUT_UNASSIGNABLE, Block, LaneInput, LaneOutput, Mixer, ParamTarget,
+    Splitter, Tempo, _require_even_row)
+from pyquadcortex.protocol.units import (UNITY_LEVEL, bpm_to_tempo,  # noqa: F401
+                                         db_to_input_level, db_to_lane_level,
+                                         input_level_db, lane_level_db, tempo_bpm)
 
 
-def input_level_db(level: float) -> float:
-    """Convert an input port's wire ``level`` (0..1) to the dB the unit displays.
-
-    An input port's gain spans **-12 to +60 dB**, so ``dB = -12 + 72 * level``.
-    Solved from four owner-set trims read simultaneously on screen and on the wire
-    (screen +17.2/+16.8/+24.0/0.0 against wire 0.40556/0.40043/0.50009/0.16667 -
-    every point lands within display rounding, and 0 dB is exactly 1/6). It also
-    matches the hardware spec sheet's "MAX INPUT GAIN: +60dB".
-
-    INPUT ports only. Lane and mixer levels run -40..+12 dB instead -
-    :func:`lane_level_db` converts those.
-    """
-    return -12.0 + 72.0 * level
-
-
-def db_to_input_level(db: float) -> float:
-    """Convert displayed input-gain dB to the wire ``level`` an input port takes.
-
-    Inverse of :func:`input_level_db`; see it for how the scale was measured.
-    Values outside -12..+60 dB do not exist on the unit and are refused rather
-    than silently clamped.
-    """
-    if not -12.0 <= db <= 60.0:
-        raise ValueError(
-            f"input gain runs -12..+60 dB on the unit; {db} dB does not exist"
-        )
-    return (db + 12.0) / 72.0
-
-
-def lane_level_db(value: float) -> float:
-    """Convert a lane/mixer/splitter LEVEL wire ``value`` (0..1) to displayed dB.
-
-    These controls span **-40 to +12 dB**, so ``dB = -40 + 52 * value``, with 0 dB
-    at :data:`UNITY_LEVEL` (10/13 exactly). Solved from three screen readings taken
-    against simultaneous wire reads of a row's VOLUME: -3.1 dB at 0.71, +12.0 dB at
-    1.0, -39.5 dB at 0.01 (least squares over the three: -40.02..+11.99).
-
-    The bottom of the knob is special: -39.5 dB (wire 0.01) is the lowest NUMERIC
-    step, and below it the screen reads "Off" - so wire 0.0 is an Off position,
-    not -40 dB. A caller wanting silence writes 0.0, not the bottom of the dB
-    scale. This function still maps 0.0 to -40.0 because it converts the scale;
-    it does not model the Off detent.
-
-    The catalog publishes these parameters as 0..1 "dB" - a placeholder, which is
-    why ``real=`` raises for them and this helper exists.
-    """
-    return -40.0 + 52.0 * value
-
-
-def db_to_lane_level(db: float) -> float:
-    """Convert displayed dB to the wire value a lane/mixer/splitter LEVEL takes.
-
-    Inverse of :func:`lane_level_db`; see it for how the scale was measured.
-    Values outside -40..+12 dB do not exist on the unit and are refused rather
-    than silently clamped. The knob's numeric floor is -39.5 dB; for silence
-    write 0.0 directly (the Off position) instead of converting a dB value.
-    """
-    if not -40.0 <= db <= 12.0:
-        raise ValueError(
-            f"lane and mixer levels run -40..+12 dB on the unit; {db} dB "
-            f"does not exist (for silence write 0.0, the Off position)"
-        )
-    return (db + 40.0) / 52.0
 
 
 def _mode_param(message, index: int):
@@ -183,48 +94,6 @@ def _mode_param(message, index: int):
     return first.float_value
 
 
-def tempo_bpm(value: float) -> float:
-    """Convert a ``TEMPO`` wire value (0..1) to the bpm the unit displays.
-
-    Tempo spans **40 to 240 bpm**, so ``bpm = 40 + 200 * value``. Solved from three
-    screen readings taken against simultaneous wire reads, each landing on the
-    displayed integer exactly: 59 bpm at 0.095, 111 bpm at 0.355, 120 bpm at 0.400.
-    The 59 is what makes the fit worth trusting - a span needs a point away from the
-    others, which is the lesson the lane levels taught (``protocol.md``, "Some
-    catalog ranges are placeholders").
-
-    The ENDPOINTS are the fit's, not separate measurements: neither extreme was
-    driven. They land on 40 and 240, which is the tempo range the unit's manual
-    documents, so the two agree - but if you need the extremes exactly, drive them.
-
-    The catalog publishes ``TEMPO`` as 0..1 with a real-world unit - a placeholder,
-    which is why this helper exists.
-
-    A wire value outside 0..1 is refused rather than converted, for the same reason
-    :func:`bpm_to_tempo` refuses a bpm outside the span: the tempo the caller would
-    read back does not exist on the unit.
-    """
-    if not 0.0 <= value <= 1.0:
-        raise ValueError(
-            f"a tempo wire value runs 0..1; {value} is outside it"
-        )
-    return 40.0 + 200.0 * value
-
-
-def bpm_to_tempo(bpm: float) -> float:
-    """Convert a bpm to the wire value ``TEMPO`` takes.
-
-    Inverse of :func:`tempo_bpm`; see it for how the scale was measured. A bpm
-    outside 40..240 does not exist on the unit and is refused rather than silently
-    clamped.
-    """
-    if not 40.0 <= bpm <= 240.0:
-        raise ValueError(
-            f"the unit's tempo runs 40..240 bpm; {bpm} bpm does not exist"
-        )
-    return (bpm - 40.0) / 200.0
-
-
 #: Where user setlists live. They sit SIDE BY SIDE here rather than nested inside
 #: "My Presets" - a folder created under My Presets is not a setlist and the device
 #: ignores it. :meth:`QuadCortex.create_setlist` builds a key from this.
@@ -234,58 +103,6 @@ USER_SETLIST_ROOT = "/media/p4/Presets"
 #: string. So ``label.strip()`` detects a blank scene and ``label == ""`` does not.
 #: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
 SCENE_UNLABELLED = " "
-
-
-class BlockRefused(RuntimeError):
-    """The device did not accept a block placement.
-
-    Raised by :meth:`QuadCortex.set_block` when no echo confirms the cell. The
-    known cause is the preset having no DSP capacity left for that model.
-    """
-
-
-class ControlNotDrivable(ValueError):
-    """A control the unit has, that the unit itself drives, and a host cannot.
-
-    ADR-0007 decided that such a control is REPRESENTED and REFUSES rather than
-    being omitted or guessed at, and left one question open: how the refusal
-    reads in practice, to be settled by the first control that ships one. This
-    is it - the Lane Output Control's MUTE and SOLO.
-
-    It subclasses ``ValueError`` because it is raised on an argument the caller
-    chose, so ``except ValueError`` around a rig-building script keeps working.
-    Catching this instead tells you the specific thing: the request was well
-    formed and the DEVICE is what refuses.
-
-    The three attributes exist so a caller can branch rather than parse a
-    string - a script assigning pedals across a rig wants to skip these two and
-    report them, not die on the first one::
-
-        try:
-            qc.set_lane_output_expression(row=r, param=name, pedal=1)
-        except ControlNotDrivable as refusal:
-            print(f"do this on the unit: {refusal.workaround}")
-
-    ``control`` is what was addressed, ``evidence`` is why we believe it cannot
-    be driven, and ``workaround`` is what to do instead. All three are required:
-    a refusal with no evidence is the guess this ADR exists to prevent.
-    """
-
-    def __init__(self, control: str, evidence: str, workaround: str):
-        super().__init__(f"{control}: {evidence} {workaround}")
-        self.control = control
-        self.evidence = evidence
-        self.workaround = workaround
-
-
-def _require_even_row(row: int, what: str):
-    """Splitters and mixers exist only on rows 0 and 2 - see :func:`splits`."""
-    if row % 2:
-        raise ValueError(
-            f"row {row} has no {what}: a branch can only originate on row 0 or "
-            f"row 2, whose parallel lane is the row below it. Rows 1 and 3 report "
-            f"an empty {what} collection, and a write addressed there does nothing."
-        )
 
 
 class QuadCortex:
@@ -3968,14 +3785,6 @@ def field_present(message, field: str) -> bool:
         return message.HasField(field)
     except ValueError:
         return False
-
-
-class Block(NamedTuple):
-    """One occupied grid cell: where it is, and what is in it."""
-
-    row: int
-    column: int
-    model_id: int
 
 
 def blocks(p: preset.BinaryPreset) -> list:
