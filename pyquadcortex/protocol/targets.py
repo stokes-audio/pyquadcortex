@@ -217,13 +217,7 @@ class BranchControl(LaneControl):
     """
 
     def __post_init__(self):
-        if self.row % 2:
-            raise ValueError(
-                f"row {self.row} has no {type(self).__name__.lower()}: a branch "
-                f"can only originate on row 0 or row 2, whose parallel lane is "
-                f"the row below it. Rows 1 and 3 report an empty collection, and "
-                f"a write addressed there does nothing."
-            )
+        _require_even_row(self.row, type(self).__name__.lower())
 
 
 class PresetTarget(ParamTarget):
@@ -371,9 +365,42 @@ class Tempo(PresetTarget):
     collection = "tempoProgramData"
     model_id = TEMPO_CONTROL
 
-    #: The unit's screen names for the tempo block's parameters, and the aliases
-    #: worth accepting. The catalog names some of these differently, which is why
-    #: this map exists rather than relying on `Model.parameter`.
+    #: Tempo-menu parameter indices, mapped by using each control on the unit in a
+    #: named order. The catalog DOES describe these (23 parameters for model 25000),
+    #: but two of its names differ from the screen, so this map is what
+    #: `Tempo.index_of` resolves a name through first.
+    #:
+    #: Index 4 is ONE control with THREE names: the unit's Tempo page labels it
+    #: **MUTE**, the device catalog calls it ``START`` (a toggleButton), and the
+    #: manual calls it PLAYBACK. **1.0 is audible, 0.0 is muted** - traced from
+    #: the unit's own MUTE button, which writes 0.0 to mute and 1.0 to unmute, so
+    #: the parameter is INVERTED against the label a player sees. There is no
+    #: separate mute parameter: the unit's Tempo page has no start/stop control at
+    #: all, and the transport is always running.
+    #:
+    #: This library published the polarity backwards for two releases. The
+    #: mistake: propagation into a Looper X parameter named METRONOME MUTE proved
+    #: the two are LINKED, and the polarity was then inferred from that name -
+    #: which is the unreliable part, and the mirror turns out to be inverted too.
+    #: Corrected by three independent measurements: all 17 factory presets hold
+    #: 0.0 here at a normal volume and none clicks; writing 1.0 started the click
+    #: on 36 field-built presets; and a capture of the unit's MUTE button shows
+    #: mute-on writing 0.0.
+    #:
+    #: Index 7 is the screen's Subdivisions while the catalog calls it NOTELENGTH.
+    #: Two earlier releases said indices 8 and 9 were absent from the catalog. They
+    #: are not: ``SOUND`` (steps=6) and ``ROUTING`` (steps=5) are described there,
+    #: at exactly those indices. Only NAMES ever disagreed.
+    #:
+    #: Indices 10 to 22 are the per-beat cells - see :attr:`QuadCortex.TEMPO_BEATS`. The
+    #: preset carries a 24th parameter (index 23) the catalog does not describe,
+    #: untouched by any Tempo-page control traced so far, so still unattributed.
+    #: It is NOT a 14th beat: the beats stop at 22, which matches 13/4 being the
+    #: largest beat count the unit offers.
+    #:
+    #: Index 1 - the catalog's TYPE - was NOT written by any control in the Tempo
+    #: menu. The menu's MODE (global or per preset) broadcasts nothing at all, so it
+    #: may be that, but nothing establishes it.
     NAMES = {
         "TEMPO": 0,
         "LED LIGHT": 2, "LED": 2,

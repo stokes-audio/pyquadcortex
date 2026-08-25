@@ -990,7 +990,7 @@ named order:
 
 The catalog DOES describe these - 23 parameters for model `25000` - while the stored
 preset carries 24. What it gets wrong is two of the NAMES, hence
-`QuadCortex.TEMPO_PARAMS`.
+`targets.Tempo.NAMES`.
 
 **Correcting this table:** two releases listed indices 8 and 9 as absent from the
 catalog. They are not. `SOUND` (steps=6) and `ROUTING` (steps=5) are described at

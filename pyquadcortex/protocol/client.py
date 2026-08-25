@@ -33,7 +33,7 @@ import uuid
 import warnings
 from typing import NamedTuple
 
-from pyquadcortex.protocol import catalog, enums, registry
+from pyquadcortex.protocol import catalog, enums, registry, targets
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
                                 MetronomeSound, MidiOutType,
@@ -773,7 +773,7 @@ class QuadCortex:
 
 
         Creates a block in an empty cell and replaces whatever is in an occupied
-        one - the device makes no distinction. ``model`` is a model id or a
+        one - the device makes no distinction. ``model_id`` is a model id or a
         :class:`~pyquadcortex.protocol.catalog.Model`; :mod:`pyquadcortex.protocol.models` has
         constants for the factory blocks, and :attr:`catalog` resolves anything
         installed on the unit, including purchased models and Neural Captures.
@@ -1054,59 +1054,12 @@ class QuadCortex:
 
     # -- file ops ------------------------------------------------------------
 
-    LANE_OUTPUT_CONTROL = 23000
+    LANE_OUTPUT_CONTROL = targets.LANE_OUTPUT_CONTROL
 
-    TEMPO_CONTROL = 25000
+    TEMPO_CONTROL = targets.TEMPO_CONTROL
 
-    INPUT_GATE_CONTROL = 28000
+    INPUT_GATE_CONTROL = targets.INPUT_GATE_CONTROL
 
-    #: Tempo-menu parameter indices, mapped by using each control on the unit in a
-    #: named order. The catalog DOES describe these (23 parameters for model 25000),
-    #: but two of its names differ from the screen, so this map is what
-    #: :meth:`set_tempo_param` resolves a name through first.
-    #:
-    #: Index 4 is ONE control with THREE names: the unit's Tempo page labels it
-    #: **MUTE**, the device catalog calls it ``START`` (a toggleButton), and the
-    #: manual calls it PLAYBACK. **1.0 is audible, 0.0 is muted** - traced from
-    #: the unit's own MUTE button, which writes 0.0 to mute and 1.0 to unmute, so
-    #: the parameter is INVERTED against the label a player sees. There is no
-    #: separate mute parameter: the unit's Tempo page has no start/stop control at
-    #: all, and the transport is always running.
-    #:
-    #: This library published the polarity backwards for two releases. The
-    #: mistake: propagation into a Looper X parameter named METRONOME MUTE proved
-    #: the two are LINKED, and the polarity was then inferred from that name -
-    #: which is the unreliable part, and the mirror turns out to be inverted too.
-    #: Corrected by three independent measurements: all 17 factory presets hold
-    #: 0.0 here at a normal volume and none clicks; writing 1.0 started the click
-    #: on 36 field-built presets; and a capture of the unit's MUTE button shows
-    #: mute-on writing 0.0.
-    #:
-    #: Index 7 is the screen's Subdivisions while the catalog calls it NOTELENGTH.
-    #: Two earlier releases said indices 8 and 9 were absent from the catalog. They
-    #: are not: ``SOUND`` (steps=6) and ``ROUTING`` (steps=5) are described there,
-    #: at exactly those indices. Only NAMES ever disagreed.
-    #:
-    #: Indices 10 to 22 are the per-beat cells - see :attr:`TEMPO_BEATS`. The
-    #: preset carries a 24th parameter (index 23) the catalog does not describe,
-    #: untouched by any Tempo-page control traced so far, so still unattributed.
-    #: It is NOT a 14th beat: the beats stop at 22, which matches 13/4 being the
-    #: largest beat count the unit offers.
-    #:
-    #: Index 1 - the catalog's TYPE - was NOT written by any control in the Tempo
-    #: menu. The menu's MODE (global or per preset) broadcasts nothing at all, so it
-    #: may be that, but nothing establishes it.
-    TEMPO_PARAMS = {
-        "TEMPO": 0,
-        "LED LIGHT": 2, "LED": 2,
-        "VOLUME": 3,
-        "START": 4, "PLAYBACK": 4,
-        "PAN": 5,
-        "TIME SIGNATURE": 6,
-        "NOTELENGTH": 7, "SUBDIVISIONS": 7,
-        "SOUND": 8,
-        "ROUTING": 9,
-    }
 
     #: The tempo parameter index carrying each BEAT of the bar, 1-based: beat 1 is
     #: index 10, beat 13 is index 22. These are the catalog's ``STEPSTATE0`` to
@@ -1129,7 +1082,7 @@ class QuadCortex:
     def set_tempo_option(self, param, option: int):
         """Set a list-valued tempo parameter by OPTION NUMBER rather than a float.
 
-        Safer than :meth:`set_tempo_param` for the controls that are lists, because
+        Safer than a raw `set_param(Tempo(), ...)` for the controls that are lists, because
         the option is range-checked against the count the catalog publishes and the
         normalized value is worked out for you::
 
@@ -1426,10 +1379,10 @@ class QuadCortex:
         chain.out_portid = out_portid
         return self._t.send(msg)
 
-    SPLITTER_AB = 10000
-    MIXER = 11000
+    SPLITTER_AB = targets.SPLITTER_AB
+    MIXER = targets.MIXER
 
-    SPLITTER = 10004
+    SPLITTER = targets.SPLITTER
 
 
 
@@ -1450,7 +1403,7 @@ class QuadCortex:
         unit shows the mixer's MUTE already engaged (confirmed on the unit).
         Neither appears in the catalog's parameter list for either model, which
         is why it is here rather than a ``param`` on
-        :meth:`set_splitter_param`.
+        `set_param(Splitter(row), ...)`.
 
         The write goes to ``Chain.splitBypass`` and the device reports the result
         in ``Chain.mixBypass`` - the same write-here/read-there split as
@@ -1646,8 +1599,8 @@ class QuadCortex:
             Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}
 
         Confirmed on factory "Brit 2203", a serial preset: after this write
-        :func:`splits` reported the branch, and :meth:`set_splitter_param`,
-        :meth:`set_mixer_param` and :meth:`set_split_mute` all drove it - a
+        :func:`splits` reported the branch, and `set_param(Splitter(row), ...)`,
+        `set_param(Mixer(row), ...)` and :meth:`set_split_mute` all drove it - a
         ``LEVEL TO B`` of 0.25 and a mixer ``LEVEL B`` of 0.5 both read back.
 
         Pass ``mix_column=-1`` for a branch that never rejoins, which is what
@@ -3562,7 +3515,7 @@ def tempo_params(p: preset.BinaryPreset) -> dict:
     explicit ``index`` - the field is absent on every one, so position is the index.
     (A host WRITE does set ``index``; it is only the device's stored form that is
     positional.) Names for the indices are in
-    :attr:`QuadCortex.TEMPO_PARAMS`.
+    `targets.Tempo.NAMES`.
 
     Values are the normalized 0..1 of the ACTIVE scene, as elsewhere.
     """

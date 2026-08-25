@@ -100,7 +100,7 @@ def bpm_to_tempo(bpm: float) -> float:
 
     This pair is a wrapper and not a home. The protocol layer calls
     :func:`pyquadcortex.protocol.bpm_to_tempo` itself, inside
-    :meth:`~pyquadcortex.protocol.QuadCortex.set_tempo_param`, so the helper has
+    `set_param(Tempo(), ...)` at the protocol layer, so the helper has
     to stay down there: moving it up here would make the protocol layer import
     the model, which is the one direction the layering forbids.
     """
