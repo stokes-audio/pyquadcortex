@@ -30,6 +30,13 @@ SETTLE = 3.0
 
 #: The lane whose Lane Output Control these tests drive. Chosen by the same rule
 #: the rest of the suite uses: touch as little as possible. Any row carries one.
+#:
+#: A preset READ returns chains POSITIONALLY - `chain.row` is absent from every
+#: one of them - so this index is also the wire row the writes below are keyed
+#: to. That equivalence is observed, not guaranteed by the schema: writes keyed
+#: `row=N` throughout this session appeared at `chains[N]`. `_reads_and_writes_
+#: agree_on_which_row` pins it, because if it ever stopped holding these tests
+#: would read one lane and restore another, and still pass.
 ROW = 1
 
 
@@ -61,6 +68,32 @@ def _restore(qc, was, row=ROW):
         qc.clear_lane_output_expression(row=row, param="VOLUME")
     time.sleep(0.3)
     qc.set_lane_output(row=row, param="VOLUME", value=was["value"])
+
+
+def test_reads_and_writes_agree_on_which_row(qc, restores):
+    """The chain INDEX a read returns is the row number a write is keyed to.
+
+    Every other test here reads `chains[ROW]` and writes `row=ROW`. If those ever
+    named different lanes the suite would read one and restore another, pass
+    cleanly, and leave the unit edited - the exact failure ADR-0005 exists to
+    stop. So prove it once, with a value no other lane shares.
+    """
+    was = _snapshot(qc)
+    restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
+
+    landmark = 0.3125                       # not a default, not unity, not 0.71
+    qc.set_lane_output(row=ROW, param="VOLUME", value=landmark)
+    time.sleep(SETTLE)
+
+    chains = qc.read_current_preset().chains
+    hits = [n for n, c in enumerate(chains)
+            if c.output_control
+            and c.output_control[0].params[0].param_values
+            and abs(c.output_control[0].params[0].param_values[0].float_value
+                    - landmark) < 1e-4]
+    assert hits == [ROW], (
+        f"a write keyed row={ROW} landed at chain index(es) {hits}; reads and "
+        f"writes disagree about which lane is which")
 
 
 def test_a_pedal_assigns_to_the_lane_volume_and_clears_again(qc, restores):

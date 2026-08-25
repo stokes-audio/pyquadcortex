@@ -1900,17 +1900,21 @@ Two of those names disagree with the catalog, which is why the map
         are normalized rather than dB; :func:`db_to_lane_level` converts, and its
         span is the measured -40..+12 dB.
 
-        **VOLUME and PAN only. MUTE and SOLO raise** - the device silently drops a
-        host expression assignment on a Lane Output Control switch, in both
-        directions, while accepting the byte-identical message aimed at VOLUME.
-        The unit's own touchscreen writes it into the very same field, so the
-        control is understood but not drivable, and this refuses rather than
-        failing quietly the way the device does (ADR-0007).
+        **VOLUME and PAN only.** MUTE and SOLO raise
+        :class:`ControlNotDrivable`: the device silently drops a host expression
+        assignment on those two, in both directions, while accepting the
+        byte-identical message aimed at VOLUME. It is a measured pair and NOT an
+        instance of a rule - see :data:`LANE_OUTPUT_UNASSIGNABLE` for the three
+        candidate rules that were tried and disproved. The unit's own touchscreen
+        writes the very same field, so the control is understood but not drivable,
+        and this refuses rather than failing quietly the way the device does
+        (ADR-0007).
 
-        Confirmed on hardware: pedal 1 over 0.0..0.5 and pedal 2 over 0.2..0.8 both
-        landed and read back, and the owner confirmed by ear that a pedal assigned
-        this way sweeps from silence to the intended level. A read straight after
-        the write can return the previous value - reconnect or settle first.
+        Confirmed on hardware: pedal 1 over 0.0..0.5 and pedal 2 over 0.2..0.8
+        both landed and read back through this method. The identical wire shape,
+        sent by hand beforehand, was also confirmed BY EAR - a pedal assigned that
+        way swept a lane from silence to the intended level. A read straight after
+        the write can return the previous value; reconnect or settle first.
         """
         spec = self._lane_output_param(param)
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)

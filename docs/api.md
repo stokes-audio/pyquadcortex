@@ -174,6 +174,26 @@ is loud rather than silent; pass `verify=False` if you would rather send and not
 There is no way to ask how much headroom is left, so the answer to a refusal is a
 cheaper block or one fewer.
 
+**Two controls refuse outright, and the device is why.** A Lane Output Control's
+`MUTE` and `SOLO` can be assigned to an expression pedal on the touchscreen, and
+the unit stores that in a field the library reads - but a host write of it is
+silently dropped, in both directions. `set_lane_output_expression()` and
+`clear_lane_output_expression()` raise `ControlNotDrivable` rather than sending a
+message the device will ignore. It subclasses `ValueError`, so an existing
+`except ValueError` still catches it, and it carries `control`, `evidence` and
+`workaround` so a script can skip these two and report them instead of dying:
+
+```python
+try:
+    qc.set_lane_output_expression(row=row, param=name, pedal=1)
+except ControlNotDrivable as refusal:
+    print(f"{refusal.control}: do it on the unit. {refusal.workaround}")
+```
+
+These are the only two such controls in the library. Every other collection -
+blocks, the input gate, the mixer, the splitter - takes an expression assignment
+on any parameter, `switch`-typed ones included.
+
 Two things to watch. `Output` values **16 to 18** are internal row-to-row routing
 rather than jacks - but **19 (`MULTIPLE`) is a real destination**, and often the right
 answer, since it is what factory presets use to reach the Multi-Out. And the device
