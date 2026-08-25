@@ -3696,7 +3696,7 @@ class BypassState(NamedTuple):
     scenes: tuple
 
 
-def bypass_state(p: preset.BinaryPreset, row: int, column: int) -> BypassState:
+def bypass_state(p: preset.BinaryPreset, cell) -> BypassState:
     """A preset's stored bypass for one grid cell.
 
     The read-side counterpart of :meth:`QuadCortex.set_bypass`, because verifying
@@ -3714,6 +3714,7 @@ def bypass_state(p: preset.BinaryPreset, row: int, column: int) -> BypassState:
     Note the table persists for EMPTY cells, so a freshly placed block inherits
     whatever the cell last held.
     """
+    row, column = cell.row, cell.column
     cb = p.bypass[row].colBypass[column]
     return BypassState(scene_mode=bool(cb.sceneMode),
                        scenes=tuple(bool(sb.bypass) for sb in cb.sceneBypass))
@@ -3726,8 +3727,7 @@ class ParamState(NamedTuple):
     values: tuple
 
 
-def param_state(p: preset.BinaryPreset, row: int, column: int,
-                param_index: int) -> ParamState:
+def param_state(p: preset.BinaryPreset, cell, param_index: int) -> ParamState:
     """A preset's stored values for one block parameter, all scenes.
 
     The read-side counterpart of :meth:`QuadCortex.set_param`. ``values`` holds
@@ -3740,6 +3740,7 @@ def param_state(p: preset.BinaryPreset, row: int, column: int,
     content stores NaN in some slots - compare with :func:`params_equal`, which
     treats NaN as equal to NaN.
     """
+    row, column = cell.row, cell.column
     prm = p.chains[row].models[column].params[param_index]
     values = []
     for pv in prm.param_values:

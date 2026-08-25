@@ -820,7 +820,11 @@ PROTOCOL_CONVERSIONS = {
     "input_level_db", "db_to_input_level", "lane_level_db", "db_to_lane_level",
     "tempo_bpm", "bpm_to_tempo", "option_at", "option_value",
     "UNITY_LEVEL", "HOLD_TIMING_MS",
-    # readers that hand back raw wire coordinates
+    # readers that hand back raw wire coordinates. `Block` is now BOTH: it is
+    # what `blocks()` returns AND the address every grid write is keyed to, so a
+    # model module building one would be putting screen coordinates on the wire
+    # - the exact bug this boundary exists to stop, and harder to spot than a
+    # bare `- 1` because it reads like construction rather than conversion.
     "blocks", "Block", "stomp_assignments", "StompAssignment",
     "free_rows", "row_status", "RowStatus", "input_chain_rows",
     "splits", "Split",
@@ -1412,7 +1416,7 @@ def test_a_row_the_screen_does_not_show_has_no_chain(structural):
 def test_bypass_reads_through_the_scene_letter(structural):
     """The wire keys the eight bypass slots by scene INDEX; the model asks by
     letter, and this is the only place that mapping happens."""
-    wire = protocol.bypass_state(structural, 0, 0)
+    wire = protocol.bypass_state(structural, Block(0, 0))
     for letter in LETTERS:
         assert translate.block_bypassed(structural, 1, 1, letter) is \
             wire.scenes[protocol.Scene[letter]]

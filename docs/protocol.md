@@ -807,7 +807,7 @@ Grid{UPDATE, chains{row, models{column, params{index, param_values{value}}}}}
 Ordering over the pipe is enough; no settle delay is needed. It works identically
 in `chains[].output_control[]`, so the Lane Output Control can hold a per-scene
 volume - which is how a "silent scene" that mutes without leaving the preset is
-built. `set_param(scene=...)` and `set_lane_output(scene=...)` issue exactly this.
+built. `set_param(scene=...)` issues exactly this, for every target that has scenes.
 
 Padding `param_values` up to a scene index remains actively destructive: the
 entries below carry protobuf defaults, the device reads index 0, and the parameter
@@ -864,8 +864,8 @@ across all 68 rows of 17 factory presets:
 | `split_control_points` | 17 | 0 | 17 | 0 |
 
 So a splitter or mixer write addressed to row 1 or row 3 goes into a collection the
-device does not have there and does nothing. `set_splitter_param` and
-`set_mixer_param` raise `ValueError` on an odd row rather than sending it.
+device does not have there and does nothing. `Splitter(row)` and `Mixer(row)`
+raise `ValueError` on an odd row rather than letting a write be built.
 
 Nor is `in_portid == EMPTY` an occupancy signal: it means "not fed from a physical jack", the normal
 state of any non-input row. Factory "Brit 2203" has six blocks on row 2 with
@@ -1800,7 +1800,7 @@ The tempo one is inverted against its own on-screen label, and it is the one thi
 published backwards for two releases - which left a 36-preset field build with a faint
 click running on every preset. `set_metronome_muted()` and `set_metronome_running()` both
 exist so callers never have to remember which way the raw value goes; the raw name `"MUTE"`
-is refused by `set_tempo_param()` precisely because honouring it would do the opposite of
+is refused by the `Tempo` target precisely because honouring it would do the opposite of
 what a caller means.
 
 Two further facts from the same trace: **the unit's Tempo page has no start/stop control at
@@ -2633,13 +2633,13 @@ visually on the device's own screen.
 | `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
 | `set_param_scene_mode` | `Grid{UPDATE, ..., params{index, scene_mode}}` (flag ALONE) | read-back | promotes a parameter to scene-following; a value in the same message voids it |
 | `set_chain_output` | `Grid{UPDATE, preset{chains{row, out_portid}}}` | read-back | required for a new chain: the device never assigns an output on its own |
-| `set_mixer_param` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |
+| `set_param(Mixer(row), ...)` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |
 | `disconnect` | `Connection{connected: false}` | sent, unverified | matches Cortex Control's captured behaviour on quit; no device state to read back, and no observable effect measured either way |
-| `set_splitter_param` | `Grid{UPDATE, preset{chains{row, combined_splitter{params{index, param_values}}}}}` | read-back | writes `combined_splitter`, NOT `splitter[]`, which is a read-only view; indices follow the unified model 10004 |
+| `set_param(Splitter(row), ...)` | `Grid{UPDATE, preset{chains{row, combined_splitter{params{index, param_values}}}}}` | read-back | writes `combined_splitter`, NOT `splitter[]`, which is a read-only view; indices follow the unified model 10004 |
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
-| `set_tempo_param` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
+| `set_param(Tempo(), ...)` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. A DEVICE setting, not a preset one - nothing to save. No change event is emitted when the switch moves, but the value rides the ambient params push; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
-| `set_lane_output` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, through the measured -40..+12 span rather than the catalog's placeholder - the only placeholder parameter that converts |
+| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, through the measured -40..+12 span rather than the catalog's placeholder - the only placeholder parameter that converts |
 | `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
 | `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
 | `set_expression_bypass` | `Grid{UPDATE, ..., models{bypass_expression, expression_bypass_info}}` | read-back + on-unit | `type` is `ExpressionSwitchMode`, all three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2. The mode decides which other controls exist - SWITCH greys out the delay, HEEL_TOE greys out latch emulation |
@@ -2662,8 +2662,8 @@ visually on the device's own screen.
 | `set_stomp_label` | `Grid{UPDATE, preset{stomp_labels` or `single_stomp_labels{key, value}}}` | read-back + on-unit | `single_stomp_labels` is the one the unit writes when the switch drives a single block; it clears both on unassign |
 | `set_expression` | `Grid{UPDATE, preset{chains{row, models{column, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit | pedal 1 or 2 with a normalized sweep range |
 | `clear_expression` | same shape with `expression: 0` and the sweep back to `0.0..1.0` | read-back | unassigns a block parameter; confirmed clearing a pedal-2 assignment |
-| `set_lane_output_expression` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit + by ear | `set_lane_output`'s shape with the three expression fields. **VOLUME and PAN only** - the device SILENTLY DROPS the same message aimed at MUTE or SOLO, in both directions, so those refuse rather than lying. `scene_mode` is NOT sent: the unit does not set it when it assigns a pedal |
-| `clear_lane_output_expression` | same shape with `expression: 0` and the sweep back to `0.0..1.0` | read-back | unassigns; refuses MUTE and SOLO for the same reason |
+| `set_expression(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit + by ear | `set_lane_output`'s shape with the three expression fields. **VOLUME and PAN only** - the device SILENTLY DROPS the same message aimed at MUTE or SOLO, in both directions, so those refuse rather than lying. `scene_mode` is NOT sent: the unit does not set it when it assigns a pedal |
+| `clear_expression(LaneOutput(row), ...)` | same shape with `expression: 0` and the sweep back to `0.0..1.0` | read-back | unassigns; refuses MUTE and SOLO for the same reason |
 | `set_midi_out` / `set_preset_load_midi_out` | `MIDISettings{UPDATE, general_midi_messages` or `preset_load_messages{messages{source, msg}}}` | read-back | per-preset MIDI Out. A `Grid` update carrying the preset's own midi fields does nothing |
 | `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
 | `param_options` | reads `Param.dynamic_steps` | read-back | the option names of a list parameter, which the catalog does not carry |
@@ -2679,7 +2679,7 @@ visually on the device's own screen.
 | `mode` / `set_mode` | `Mode{READ}` / `{UPDATE, mode}` | read-back | a slot index; `available_modes` lists the configured slots |
 | `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as UPDATE in 2-11 ms (two hardware sessions); `is_dirty` has no presence, absent IS false; flips false across a save; also pushed unsolicited, but only when the flag CHANGES - see below |
 | `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
-| `set_input_gate` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |
+| `set_param(LaneInput(row), ...)` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |
 | `free_rows` | reads `models[]` + `Chain.split_control_points` | read-back | rows available for an independent chain: excludes the lane row of a branch, which is spoken for even when empty |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |
 | `write_preset` | `Grid{UPDATE, preset}` | read-back | low-level primitive; applies ONLY row/column-keyed elements. A full recalled preset written back does NOTHING. Use the keyed wrappers |
@@ -2836,7 +2836,7 @@ with the normalized 0..1 instead.
 them:** the level parameters below, and `TEMPO`, which is **40 to 240 bpm** -
 `bpm = 40 + 200 * value`. Three screen readings against simultaneous wire reads, each
 landing on the displayed integer exactly: 59 bpm at `0.095`, 111 at `0.355`, 120 at
-`0.400`. `tempo_bpm()` / `bpm_to_tempo()` convert, and `set_tempo_param("TEMPO",
+`0.400`. `tempo_bpm()` / `bpm_to_tempo()` convert, and `set_param(Tempo(), "TEMPO",
 real=...)` takes bpm - the one index where `real=` comes from a measurement rather
 than from the catalog. The 59 is what makes the fit worth trusting: 111 and 120 are 9
 bpm apart, and the lane-level story below is what happens when a span is fitted from

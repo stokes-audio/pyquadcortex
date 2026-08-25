@@ -20,6 +20,63 @@ correction.
 
 ## Unreleased
 
+### BREAKING: one `set_param` for everything, addressed by a target
+
+Six ways to set a parameter became one. Say WHERE it lives:
+
+```python
+from pyquadcortex.protocol import Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo
+
+qc.set_param(Block(0, 2, model_id), "GAIN", real=-6.0)
+qc.set_param(LaneOutput(0), "VOLUME", real=-3.1)
+qc.set_param(LaneInput(0), "INPUT GAIN", real=12.0)
+qc.set_param(Mixer(0), "LEVEL A", value=UNITY_LEVEL)
+qc.set_param(Splitter(0), "LEVEL TO B", value=0.25)
+qc.set_param(Tempo(), "TEMPO", real=120)
+```
+
+`set_lane_output`, `set_input_gate`, `set_mixer_param`, `set_splitter_param`,
+`set_tempo_param` and `set_lane_output_scene_mode` are gone, and so are
+`set_lane_output_expression` / `clear_lane_output_expression`, which existed
+only in this same unreleased window. Every grid operation now names its cell
+with a `Block`. **[docs/migration.md](docs/migration.md) has the full before /
+after table.**
+
+`blocks()` already returned `Block(row, column, model_id)`, so what you read is
+now what you write to:
+
+```python
+for block in protocol.blocks(preset):
+    qc.set_param(block, "GAIN", real=-6.0)      # model_id is already on it
+```
+
+### An expression pedal reaches every parameter, not just a block's
+
+`set_expression(target, param, ...)` and `clear_expression(target, param)` work
+against any target. Measured on hardware one write at a time: blocks, the input
+gate, the mixer, the splitter and the lane output all accept an assignment, on
+float **and** `switch`-typed parameters. So a pedal can now drive a noise gate's
+INPUT GAIN or a mixer's LEVEL A, neither of which had ever been tried.
+
+Parameter TYPE turned out to be irrelevant - the manual gives every assignable
+parameter a MIN/MAX sweep, and a block's BYPASS is the separate feature
+`set_expression_bypass` drives.
+
+**Two parameters still refuse**, and they are the only refusal in the library: a
+Lane Output Control's MUTE and SOLO raise `ControlNotDrivable`.
+
+### Also
+
+- **`ControlNotDrivable`, `BlockRefused`** now live in `protocol.errors`, the
+  unit converters and `UNITY_LEVEL` in `protocol.units`, and the targets in
+  `protocol.targets`. Public import paths are unchanged -
+  `from pyquadcortex.protocol import X` still works for all of them.
+- **`Block` is a frozen dataclass**, not a `NamedTuple`, so it no longer unpacks
+  as a tuple. Attribute access is unchanged.
+- **`QuadCortex.TEMPO_PARAMS`** is now `targets.Tempo.NAMES`.
+- **`set_param` no longer defaults `value` to 0.0.** A call that names no value
+  raises instead of silently writing zero.
+
 ### BREAKING: the protocol API moved to `pyquadcortex.protocol`
 
 > Every breaking change in this release is listed side by side in

@@ -169,10 +169,10 @@ wrong - an edit to the wrong row still succeeds and still reads back correctly.
 
 ```python
 row = free_rows(preset)[0]                  # not just "a row with no blocks"
-qc.set_block(row=row, column=0, model=models.BassAmplifier.AMPED_FLIP_TOP_6464)
+qc.set_block(Block(row, 0, models.BassAmplifier.AMPED_FLIP_TOP_6464))
 qc.set_chain_input(row=row, in_portid=Input.INPUT_2)
 qc.set_chain_output(row=row, out_portid=Output.MULTIPLE)   # required, not optional
-qc.set_param(row=row, column=0, param="MASTER", real=5.0, model=amp)
+qc.set_param(Block(row, 0, amp), "MASTER", real=5.0)
 qc.save_current_preset(Setlist.USER, "30A", "Bass on In 2")
 ```
 
@@ -186,9 +186,9 @@ from per-scene parameter VALUES rather than from bypass. Name a scene and the va
 belongs to that scene alone.
 
 ```python
-qc.set_param(row=0, column=5, param="MIX", value=0.8, scene=Scene.C)
-qc.set_lane_output(row=0, param="VOLUME", value=0.0, scene=Scene.E)  # a silent scene
-qc.set_bypass(row=0, column=2, bypassed=True, scene=Scene.B)
+qc.set_param(Block(0, 5), "MIX", value=0.8, scene=Scene.C)
+qc.set_param(LaneOutput(0), "VOLUME", value=0.0, scene=Scene.E)  # a silent scene
+qc.set_bypass(Block(0, 2), bypassed=True, scene=Scene.B)
 ```
 
 ### Drive the whole unit, not just presets

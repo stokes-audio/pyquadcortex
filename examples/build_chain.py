@@ -21,10 +21,9 @@ import sys
 import time
 
 from pyquadcortex import protocol
-from pyquadcortex.protocol import (BlockRefused, Input, Instrument, Output, Scene,
-from pyquadcortex.protocol.targets import Block, LaneOutput
-                                   Setlist, UNITY_LEVEL, blocks, field_present,
-                                   free_rows, models)
+from pyquadcortex.protocol import (Block, BlockRefused, Input, Instrument, LaneOutput,
+                                   Output, Scene, Setlist, UNITY_LEVEL, blocks,
+                                   field_present, free_rows, models)
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Brit 2203"        # any factory preset (see inspect_preset.py)

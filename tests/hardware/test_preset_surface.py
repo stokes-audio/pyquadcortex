@@ -156,9 +156,8 @@ def test_the_active_scene_matches_what_the_unit_reports(device, qc):
 
 def test_bypass_matches_the_protocol_layer_in_every_scene(device, wire):
     for block in device.preset.blocks:
-        stored = protocol.bypass_state(wire,
-                                       translate.row_to_wire(block.row),
-                                       translate.slot_to_wire(block.slot))
+        stored = protocol.bypass_state(wire, protocol.Block(
+            translate.row_to_wire(block.row), translate.slot_to_wire(block.slot)))
         for scene in device.preset.scenes:
             through = scene.blocks[block.row, block.slot]
             assert through.bypassed is \

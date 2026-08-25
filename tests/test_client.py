@@ -1138,17 +1138,17 @@ def _preset_with_bypass_and_param():
 def test_bypass_state_reads_positionally_not_by_field_values():
     """Stored entries leave row/column at 0; position IS the address."""
     p = _preset_with_bypass_and_param()
-    st = client.bypass_state(p, 1, 2)
+    st = client.bypass_state(p, Block(1, 2))
     assert st.scene_mode is True
     assert st.scenes == (True, False, False, True, False, False, False, False)
-    other = client.bypass_state(p, 0, 0)
+    other = client.bypass_state(p, Block(0, 0))
     assert other.scene_mode is False
     assert not any(other.scenes)
 
 
 def test_param_state_returns_floats_strings_and_none_per_slot():
     p = _preset_with_bypass_and_param()
-    st = client.param_state(p, 1, 2, 0)
+    st = client.param_state(p, Block(1, 2), 0)
     assert st.scene_mode is True
     assert st.values == (0.25, "named", None)
 

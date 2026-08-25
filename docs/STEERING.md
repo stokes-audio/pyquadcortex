@@ -256,7 +256,7 @@ log events this code emits are named for #16 to pick up, but nothing reads them 
   a rule scoped to a directory is satisfiable by moving the code one directory up - which
   is precisely what a failure message naming a directory invites
 - A protocol conversion can be delegated to and still not be movable. `bpm_to_tempo`
-  (PR #22) is called by `QuadCortex.set_tempo_param` from inside the protocol layer, so
+  (PR #22) is called by `QuadCortex.set_param(Tempo(), ...)` from inside the protocol layer, so
   the helper stays there and the boundary wraps it, the same way it wraps the level
   scales. Adding the name to the boundary's allowlist is the half that matters: without
   it, a model module reaching for `protocol.tempo_bpm` passes the check

@@ -59,7 +59,7 @@ already read and need no connection; calling them as methods raises
 | **Per-preset tempo** | `set_param(Tempo(), name, ...)`, `set_tempo_option(name, n)`, `protocol.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
 | **Metronome** | `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()` - all taking full enums |
 | **Per-beat accents** | `set_beat(n, MetronomeBeat.ACCENT)`, `set_beats([...])`, `protocol.beats(preset)` |
-| **Inspect a preset** (module functions) | `protocol.blocks(preset)`, `protocol.splits(preset)`, `protocol.free_rows(preset)`, `protocol.row_status(preset)`, `protocol.bypass_state(preset, row, column)`, `protocol.param_state(preset, row, column, index)`, `protocol.param_options(preset, cell, index)`, `protocol.input_chain_rows(preset, input)`, `protocol.params_equal(a, b, option_count=)`, `protocol.field_present(msg, field)` |
+| **Inspect a preset** (module functions) | `protocol.blocks(preset)`, `protocol.splits(preset)`, `protocol.free_rows(preset)`, `protocol.row_status(preset)`, `protocol.bypass_state(preset, cell)`, `protocol.param_state(preset, cell, index)`, `protocol.param_options(preset, cell, index)`, `protocol.input_chain_rows(preset, input)`, `protocol.params_equal(a, b, option_count=)`, `protocol.field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Watch what the unit pushes** | `add_listener(fn)`, `remove_listener(fn)` - your `fn` is called with every message the unit sends, asked for or not. It runs on the transport's read thread, so it must not block and may not read from the device. To catch the connect handshake's own burst of state, register before it with `protocol.connect(before_handshake=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
@@ -275,8 +275,8 @@ positionally; the `row`/`column` fields inside it read 0 everywhere):
 ```python
 from pyquadcortex.protocol import bypass_state, param_state
 
-st = bypass_state(preset, row=0, column=3)     # .scene_mode, .scenes (8 bools)
-pv = param_state(preset, row=0, column=3, param_index=0)   # .scene_mode, .values
+st = bypass_state(preset, Block(0, 3))        # .scene_mode, .scenes (8 bools)
+pv = param_state(preset, Block(0, 3), 0)      # .scene_mode, .values
 ```
 
 ## Per-preset tempo and the metronome
@@ -318,10 +318,10 @@ the write had in fact landed.
 The per-preset controls:
 
 ```python
-qc.set_tempo_param("TEMPO", real=120)   # bpm - three points fit a 40..240 span
+qc.set_param(Tempo(), "TEMPO", real=120)   # bpm - three points fit a 40..240 span
 qc.set_tempo_led(False)                 # this preset's TEMPO LED off
 qc.set_metronome_muted(True)            # silence the click - the unit's own MUTE
-qc.set_tempo_param("TIME SIGNATURE", value=0.1)
+qc.set_param(Tempo(), "TIME SIGNATURE", value=0.1)
 ```
 
 `TEMPO` is the one tempo parameter whose `real=` comes from a measurement rather than
