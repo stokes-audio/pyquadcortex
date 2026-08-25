@@ -53,6 +53,7 @@ already read and need no connection; calling them as methods raises
 | **Input gate** | `set_param(LaneInput(row), param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
 | **Split and mix** | `set_param(Splitter(row), param, ...)`, `set_param(Mixer(row), param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(cell, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
+| **Parameter names** | `protocol.params` - an `IntEnum` per model, so `params.LaneOutputParam.VOLUME` replaces `"VOLUME"`. A member IS its wire index, so it also skips the catalog fetch a name needs |
 | **Expression pedals** | `set_expression(target, param, pedal, minimum, maximum)` and `clear_expression(target, param)`, against ANY target - a block, the lane output or input, the mixer, the splitter |
 | **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `protocol.midi_out(preset)` |
 | **Tempo MODE** | `tempo_mode()`, `set_tempo_mode(TempoMode.GLOBAL)` - global, and it picks which tempo block plays |
@@ -206,7 +207,7 @@ Factory presets often produce their scenes with the **mixer**, not with bypass. 
 `LEVEL A` / `LEVEL B` across two rows, giving four amp paths.
 
 ```python
-qc.set_param(Mixer(0), "LEVEL A", value=0.0, scene=Scene.C)
+qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, value=0.0, scene=Scene.C)
 ```
 
 A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which is
@@ -218,12 +219,13 @@ that means something else - pass `value=`, or speak dB through the helpers:
 ```python
 from pyquadcortex.protocol import db_to_lane_level, lane_level_db
 
-qc.set_param(LaneOutput(0), "VOLUME", real=-6.0)              # dB directly
-qc.set_param(LaneOutput(0), "VOLUME", value=db_to_lane_level(-6.0))  # the same
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, real=-6.0)   # dB
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME,
+             value=db_to_lane_level(-6.0))                             # the same
 lane_level_db(0.76923077)     # 0.0
 
 # A pedal as a volume and mute control: silence at the heel, +3.2 dB at the toe.
-qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
+qc.set_expression(LaneOutput(0), params.LaneOutputParam.VOLUME, pedal=1,
                   minimum=0.0, maximum=db_to_lane_level(3.2))
 ```
 
@@ -234,7 +236,7 @@ the bottom of the dB scale.
 The **splitter** divides a row into two lanes:
 
 ```python
-qc.set_param(Splitter(0), "LEVEL TO A", value=0.25)
+qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_A, value=0.25)
 ```
 
 Address its parameters by the **unified** model's names - `TYPE`, `STEREO`, `BALANCE`,
@@ -318,7 +320,7 @@ the write had in fact landed.
 The per-preset controls:
 
 ```python
-qc.set_param(Tempo(), "TEMPO", real=120)   # bpm - three points fit a 40..240 span
+qc.set_param(Tempo(), params.TempoParam.TEMPO, real=120)  # bpm, 40..240 span
 qc.set_tempo_led(False)                 # this preset's TEMPO LED off
 qc.set_metronome_muted(True)            # silence the click - the unit's own MUTE
 qc.set_param(Tempo(), "TIME SIGNATURE", value=0.1)

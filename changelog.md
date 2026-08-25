@@ -50,6 +50,48 @@ for block in protocol.blocks(preset):
     qc.set_param(block, "GAIN", real=-6.0)      # model_id is already on it
 ```
 
+### Parameter names are constants now, not string literals
+
+`pyquadcortex.protocol.params` is generated from the device catalog, as
+`models.py` already was, with one `IntEnum` per model:
+
+```python
+from pyquadcortex.protocol import params
+
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, real=-3.1)
+qc.set_param(Tempo(), params.TempoParam.TEMPO, real=120)
+qc.set_param(LaneInput(0), params.LaneInputParam.INPUT_GAIN, real=12.0)
+```
+
+A member IS its wire index, so passing one **skips the catalog fetch a name
+needs** - the typed route is also the cheapest. Names still work; nothing is
+forced.
+
+Two things the catalog could not have told you, both measured:
+
+- **A cab's repeated parameters are two MICROPHONES**, not IR slots or channels,
+  so they are `MIC_1_DISTANCE` / `MIC_2_DISTANCE`. Confirmed against the unit's
+  own editor: mic 1 showed POSITION 2.9 / DIST 3.0 against wire 0.29 / 0.30, and
+  mic 2 showed 5.6 / 3.3 against 0.56 / 0.33.
+- **The catalog UNDER-DESCRIBES cabs** - it lists 2 parameters where the wire
+  carries 22. All 140 cab models share the one `Default Cabsim` layout, measured
+  across Bass/Guitar and mono/stereo, so a cab is chosen by its `models.*` id and
+  driven through `params.Cabsim`:
+
+  ```python
+  qc.set_block(Block(0, 5, models.CabsimBassM.N212_DARKGLASS_NEO))
+  qc.set_param(Block(0, 5), params.Cabsim.MIC_1_DISTANCE, real=3.0)
+  ```
+
+An IR Loader's repeated block genuinely IS two IR slots, so those read `IR_1_PATH`
+/ `IR_2_PATH` - and they agree with the `IR_PATH_PARAMS` that `set_ir(slot=)` was
+already using. Where a name repeats, BOTH occurrences are numbered: an unnumbered
+first member would read like the real one and hide that it is one of a pair.
+
+A hardware test regenerates from the connected unit and fails if the committed
+file has drifted, since a generated-and-committed file is otherwise its own
+yardstick.
+
 ### An expression pedal reaches every parameter, not just a block's
 
 `set_expression(target, param, ...)` and `clear_expression(target, param)` work

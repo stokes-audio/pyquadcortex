@@ -50,6 +50,7 @@ from pyquadcortex.protocol.enums import (BROKEN_MODE_VALUE, Footswitch, Footswit
                                          TimeSignature)
 from pyquadcortex.protocol.session import DeviceNotFoundError, connect, open_device
 from pyquadcortex.protocol import models  # generated factory-block constants
+from pyquadcortex.protocol import params  # generated parameter constants
 from pyquadcortex.protocol.catalog import Model, ModelCatalog, Parameter
 
 __all__ = [
@@ -134,6 +135,7 @@ __all__ = [
     "position_to_slot",
     "input_chain_rows",
     "models",
+    "params",
     "Model",
     "ModelCatalog",
     "Parameter",
