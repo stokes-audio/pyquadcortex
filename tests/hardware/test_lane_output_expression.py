@@ -20,6 +20,7 @@ import time
 import pytest
 
 from pyquadcortex.protocol.client import (UNITY_LEVEL, ControlNotDrivable,
+from pyquadcortex.protocol.targets import LaneOutput
                                           db_to_lane_level)
 
 #: A read straight after a write returns the PREVIOUS value on this firmware.
@@ -61,13 +62,13 @@ def _snapshot(qc, row=ROW):
 
 def _restore(qc, was, row=ROW):
     if was["expression"]:
-        qc.set_lane_output_expression(
+        qc.set_expression(
             row=row, param="VOLUME", pedal=was["expression"],
             minimum=was["minimum"], maximum=was["maximum"])
     else:
-        qc.clear_lane_output_expression(row=row, param="VOLUME")
+        qc.clear_expression(LaneOutput(row), param="VOLUME")
     time.sleep(0.3)
-    qc.set_lane_output(row=row, param="VOLUME", value=was["value"])
+    qc.set_param(LaneOutput(row), param="VOLUME", value=was["value"])
 
 
 def test_reads_and_writes_agree_on_which_row(qc, restores):
@@ -82,7 +83,7 @@ def test_reads_and_writes_agree_on_which_row(qc, restores):
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
     landmark = 0.3125                       # not a default, not unity, not 0.71
-    qc.set_lane_output(row=ROW, param="VOLUME", value=landmark)
+    qc.set_param(LaneOutput(ROW), param="VOLUME", value=landmark)
     time.sleep(SETTLE)
 
     chains = qc.read_current_preset().chains
@@ -101,7 +102,7 @@ def test_a_pedal_assigns_to_the_lane_volume_and_clears_again(qc, restores):
     was = _snapshot(qc)
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
-    qc.set_lane_output_expression(row=ROW, param="VOLUME", pedal=1,
+    qc.set_expression(LaneOutput(ROW), param="VOLUME", pedal=1,
                                   minimum=0.0, maximum=0.6)
     time.sleep(SETTLE)
     p = _volume(qc)
@@ -109,7 +110,7 @@ def test_a_pedal_assigns_to_the_lane_volume_and_clears_again(qc, restores):
     assert p.expression_min == pytest.approx(0.0, abs=1e-4)
     assert p.expression_max == pytest.approx(0.6, abs=1e-4)
 
-    qc.clear_lane_output_expression(row=ROW, param="VOLUME")
+    qc.clear_expression(LaneOutput(ROW), param="VOLUME")
     time.sleep(SETTLE)
     p = _volume(qc)
     assert p.expression == 0, "the assignment did not clear"
@@ -128,7 +129,7 @@ def test_the_assignment_leaves_scene_mode_alone(qc, restores):
     before = _volume(qc).scene_mode
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
-    qc.set_lane_output_expression(row=ROW, param="VOLUME", pedal=1)
+    qc.set_expression(LaneOutput(ROW), param="VOLUME", pedal=1)
     time.sleep(SETTLE)
     assert _volume(qc).scene_mode == before, "the assignment moved scene_mode"
 
@@ -141,9 +142,9 @@ def test_the_two_unassignable_parameters_refuse_rather_than_failing_silently(qc,
     that reached the wire would be the bug.
     """
     with pytest.raises(ControlNotDrivable):
-        qc.set_lane_output_expression(row=ROW, param=param)
+        qc.set_expression(LaneOutput(ROW), param=param)
     with pytest.raises(ControlNotDrivable):
-        qc.clear_lane_output_expression(row=ROW, param=param)
+        qc.clear_expression(LaneOutput(ROW), param=param)
 
 
 def test_the_lane_volume_speaks_dB_through_real(qc, restores):
@@ -157,12 +158,12 @@ def test_the_lane_volume_speaks_dB_through_real(qc, restores):
     was = _snapshot(qc)
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
-    qc.set_lane_output(row=ROW, param="VOLUME", real=-3.1)
+    qc.set_param(LaneOutput(ROW), param="VOLUME", real=-3.1)
     time.sleep(SETTLE)
     assert _volume(qc).param_values[0].float_value == pytest.approx(
         db_to_lane_level(-3.1), abs=2e-4)
 
-    qc.set_lane_output(row=ROW, param="VOLUME", real=0.0)
+    qc.set_param(LaneOutput(ROW), param="VOLUME", real=0.0)
     time.sleep(SETTLE)
     assert _volume(qc).param_values[0].float_value == pytest.approx(
         UNITY_LEVEL, abs=2e-4), "0 dB is not unity"

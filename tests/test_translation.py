@@ -25,6 +25,7 @@ import pyquadcortex
 from pyquadcortex import protocol
 from pyquadcortex.device import translate
 from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
+from pyquadcortex.protocol.targets import Block, Tempo
 
 
 # -- rows: 1-4 on screen, 0-3 on the wire ------------------------------------
@@ -460,7 +461,7 @@ def test_the_two_level_scales_are_not_interchangeable():
 
 # -- the tempo: bpm on screen, a 0..1 value on the wire -----------------------
 #
-# The wrapper is here rather than the helper itself. `set_tempo_param(real=)`
+# The wrapper is here rather than the helper itself. `set_param(Tempo(), real=)`
 # calls `protocol.bpm_to_tempo` from inside the protocol layer, so moving the
 # helper up to the boundary would make the protocol layer import the model -
 # which `tests/test_namespace.py` refuses. Delegating gets one copy of the
@@ -498,7 +499,7 @@ def test_a_tempo_wire_value_off_the_scale_is_refused(value):
 
 def test_the_tempo_is_what_the_protocol_write_expects():
     """The same shape as the tuner and hold-timing checks: the model's idea of
-    111 bpm has to be the number `set_tempo_param(real=)` puts on the wire.
+    111 bpm has to be the number `set_param(Tempo(), real=)` puts on the wire.
 
     Weaker than those two, and worth saying so. Both sides of this equality run
     through `protocol.bpm_to_tempo`, so it does not check the arithmetic. What it
@@ -507,7 +508,7 @@ def test_the_tempo_is_what_the_protocol_write_expects():
     number."""
     recorder = Recorder()
     qc = protocol.QuadCortex(recorder)
-    qc.set_tempo_param("TEMPO", real=111.0)
+    qc.set_param(Tempo(), "TEMPO", real=111.0)
     sent = recorder.sent[-1].preset.tempoProgramData[0].params[0]
     assert sent.param_values[0].float_value == \
         pytest.approx(translate.bpm_to_tempo(111.0))
@@ -1133,7 +1134,7 @@ ARITHMETIC_SAMPLES = [
     ("a bare increment", "row = wire_row + 1", True),
     ("an augmented one", "slot += 1", True),
     ("one on the left", "column = 1 - offset", True),
-    ("hidden in a call", "qc.set_param(row=row - 1, column=slot - 1)", True),
+    ("hidden in a call", "qc.set_param(Block(row - 1, slot - 1))", True),
     ("a comprehension", "[s - 1 for s in slots]", True),
     ("a negated one", "wire_row = row + -1", True),
     ("a float one", "wire_row = row - 1.0", True),
