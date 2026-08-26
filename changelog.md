@@ -20,6 +20,36 @@ correction.
 
 ## Unreleased
 
+### `real=` speaks dB for the EQ bands, the mixer and the splitter
+
+Four more families of parameter now take a value in the units the screen shows,
+because their spans were measured rather than inherited:
+
+```python
+qc.set_param(Block(0, 1, models.Equalizer.PARAMETRIC_8), "1 GAIN", real=6.0)
+qc.set_param(Mixer(0), params.MixerParam.MIXER_LEVEL, real=-6.0)
+qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_B, real=-3.1)
+```
+
+- **Block EQ band gains** are `dB = -12 + 24 * wire`. Measured on the
+  Parametric-8 at four points including both ends, and separately on the
+  Parametric-3 and Output Equalizer, which are different catalog entries and so
+  were not assumed to inherit it.
+- **The mixer and splitter levels** are `dB = -40 + 52 * wire`. The library has
+  claimed this for several releases on the strength of a measurement of the lane
+  VOLUME; it is now measured on those controls themselves, and the claim held.
+
+**Wire 0.0 is an OFF detent, not -40 dB.** The splitter's `LEVEL TO A` displays
+"OFF" there, exactly as the lane VOLUME does - so that belongs to the whole level
+family. For silence write `value=0.0`.
+
+Everything else still refuses `real=`, which is the honest answer for a span
+nobody has measured. Two things worth knowing before relying on EQ gain: a band's
+TYPE decides whether GAIN does anything at all (Lo Pass and Hi Pass disable it,
+and a gain written there is stored and ignored), and `N BYPASS = 1` means the
+band is **ON** - a disabled band displays `0.0 dB` whatever it stores.
+
+
 ### BREAKING: one `set_param` for everything, addressed by a target
 
 Six ways to set a parameter became one. Say WHERE it lives:

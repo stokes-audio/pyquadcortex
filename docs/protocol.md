@@ -2688,6 +2688,41 @@ visually on the device's own screen.
 | `catalog` | `ModelRepo{READ}` then `ModelRepo{model_repo_payload}` | read-back | payload is gzip(tar(ModelRepo.xml)): the unit's full block catalog |
 | `GridMove` | `GridMove{move{from_col, to_col, is_drop}, grid{rows{modelIds} x4}}` | captured only | observed in a Cortex Control session; no client method, not driven host-to-device by this library. Its `grid` snapshot is ADVISORY - replaying it with a cell zeroed does NOT delete a block, and the device echoes back only the `move` element |
 
+### Spans recovered behind the catalog's placeholder ranges
+
+The catalog publishes some parameters with a real-world unit and the range
+`0.0..1.0` - a placeholder, the wire's own scale rather than the span the
+parameter covers. 52 parameters across 23 models are like this. Each span below
+was measured against the unit's screen at three or more well-separated points
+INCLUDING BOTH ENDS, because two close points cannot distinguish spans - that is
+how the lane levels shipped `-100..+30` for two releases.
+
+| family | span | evidence |
+|---|---|---|
+| Lane / mixer / splitter LEVEL | `dB = -40 + 52 * wire` | lane VOLUME: -3.1 at 0.71, +12.0 at 1.0, -39.5 at 0.01. Splitter `LEVEL TO B`: -3.1 at 0.71, +12.0 at 1.0. `MIXER LEVEL`: -24.4 at 0.30, +12.0 at 1.0. Splitter `LEVEL TO A` agrees at 0.30 |
+| Block EQ band GAIN (`4000`, `4001`, `4004`) | `dB = -12 + 24 * wire` | Parametric-8 at four points: -12.0 at 0.0, -9.6 at 0.10, 0.0 at 0.50, +12.0 at 1.00. Parametric-3 and Output Equalizer measured at both ends each |
+| Per-preset TEMPO | `bpm = 40 + 200 * wire` | 59 at 0.095, 111 at 0.355, 120 at 0.400 |
+| Input port gain | `dB = -12 + 72 * wire` | four owner trims read on screen against the wire |
+
+**Wire 0.0 is an OFF detent, not the bottom of the dB scale.** The splitter's
+`LEVEL TO A` displays "OFF" there, exactly as the lane VOLUME does, so this
+belongs to the level family rather than to one control. For silence write
+`value=0.0`; `real=-40` is the scale's floor and a different thing.
+
+**A band's TYPE decides whether its GAIN means anything.** Lo Pass and Hi Pass
+disable the control, and a gain written to such a band is stored and ignored by
+the unit. Nothing in the wire says so, so `real=` will happily convert dB into a
+parameter that does nothing.
+
+**`N BYPASS = 1` means the band is ON** for the block EQs, the same inverted
+polarity already recorded for the Global EQ. A disabled band displays `0.0 dB`
+whatever it stores, which makes a write look like it never landed.
+
+Everything NOT in that table still refuses `real=`. That is the honest answer:
+an unmeasured span cannot be converted, only guessed. The remaining families -
+cab LEVEL, send/return and FX-loop levels, the recorder's OUT LEVEL - are
+tracked on the placeholder-ranges issue.
+
 ### What a host can assign an expression pedal to
 
 Every `Model`-shaped collection was tested directly, one write per target, read

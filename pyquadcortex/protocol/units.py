@@ -72,6 +72,13 @@ def lane_level_db(value: float) -> float:
     against simultaneous wire reads of a row's VOLUME: -3.1 dB at 0.71, +12.0 dB at
     1.0, -39.5 dB at 0.01 (least squares over the three: -40.02..+11.99).
 
+    The MIXER and SPLITTER were long claimed here on the strength of that VOLUME
+    measurement alone. They were measured on 2026-08-25 and the claim held:
+    splitter ``LEVEL TO B`` read -3.1 dB at 0.71 - the very same point - and
+    +12.0 at 1.0, while ``MIXER LEVEL`` read -24.4 at 0.30 and +12.0 at 1.0.
+    Splitter ``LEVEL TO A`` agrees at 0.30 and reads **"OFF"** at wire 0.0, so
+    the Off detent belongs to the family and not to the lane VOLUME alone.
+
     The bottom of the knob is special: -39.5 dB (wire 0.01) is the lowest NUMERIC
     step, and below it the screen reads "Off" - so wire 0.0 is an Off position,
     not -40 dB. A caller wanting silence writes 0.0, not the bottom of the dB
@@ -150,3 +157,71 @@ USER_SETLIST_ROOT = "/media/p4/Presets"
 #: How the unit stores "this scene has no label": a single space, not an empty
 #: string. So ``label.strip()`` detects a blank scene and ``label == ""`` does not.
 #: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
+
+
+#: Parameters the catalog publishes as a PLACEHOLDER whose true span has been
+#: MEASURED, keyed by ``(model id, wire index)`` and given in the parameter's own
+#: units. Everything absent from here still refuses ``real=``, which is the
+#: honest answer: an unmeasured span cannot be converted, only guessed.
+#:
+#: Keyed by INDEX rather than by name on purpose. A target knows its model id and
+#: the index without asking the device, so a conversion here costs no catalog
+#: fetch - and the catalog comes over USB.
+#:
+#: Every entry was measured against the unit's screen at THREE or more
+#: well-separated points including both ends. Two close points cannot
+#: distinguish spans, which is how the lane levels shipped ``-100..+30`` for two
+#: releases: both candidate spans put 0 dB at 10/13, so unity could not tell
+#: them apart. `docs/protocol.md` records each measurement.
+MEASURED_SPANS = {
+    # The lane, mixer and splitter LEVEL family: dB = -40 + 52 * wire.
+    # The lane VOLUME came first (-3.1 at 0.71, +12.0 at 1.0, -39.5 at 0.01).
+    # The mixer and splitter INHERITED that claim for several releases and were
+    # measured on 2026-08-25: splitter LEVEL TO B read -3.1 at 0.71 and +12.0 at
+    # 1.0, MIXER LEVEL read -24.4 at 0.30 and +12.0 at 1.0. LEVEL TO A agrees at
+    # 0.30 and reads "OFF" at 0.0 - the same Off detent the lane VOLUME has, so
+    # that is a property of the family and not of one control.
+    (23000, 0): (-40.0, 12.0),      # LaneOutputControl VOLUME
+    (11000, 5): (-40.0, 12.0),      # Mixer MIXER LEVEL
+    (10004, 3): (-40.0, 12.0),      # Splitter LEVEL TO A
+    (10004, 4): (-40.0, 12.0),      # Splitter LEVEL TO B
+    # The per-preset tempo: bpm = 40 + 200 * wire, from three screen readings.
+    (25000, 0): (40.0, 240.0),      # TempoControl TEMPO
+}
+
+#: Block EQ band gains: dB = -12 + 24 * wire. Measured 2026-08-25 on the
+#: Parametric-8 at four points - 0.0 -> -12.0, 0.10 -> -9.6, 0.50 -> 0.0,
+#: 1.00 -> +12.0 - so both ends and an off-half point that a curved mapping
+#: would have missed. Parametric-3 and the Output Equalizer are separate catalog
+#: entries and were each measured at both ends rather than assumed to inherit it.
+#:
+#: A band's TYPE decides whether its GAIN means anything: Lo Pass and Hi Pass
+#: disable the control, and a gain written to such a band is stored and ignored.
+#: Nothing here can detect that, so it stays a caller's problem and a docs note.
+EQ_GAIN_SPAN = (-12.0, 12.0)
+for _model, _bands in ((4000, 8), (4001, 3), (4004, 5)):
+    for _band in range(_bands):
+        MEASURED_SPANS[(_model, _band * 5)] = EQ_GAIN_SPAN
+del _model, _bands, _band
+
+
+def measured_to_wire(span, real: float) -> float:
+    """Convert ``real`` to the wire's 0..1 across a measured ``span``.
+
+    Refuses a value the unit has no position for, rather than clamping: a
+    silently clamped write looks like it worked and lands somewhere else.
+    """
+    low, high = span
+    if not low <= real <= high:
+        raise ValueError(
+            f"this parameter runs {low:g}..{high:g} on the unit; {real:g} does "
+            f"not exist there. (For a level, silence is value=0.0 - the Off "
+            f"position - not the bottom of the dB scale.)"
+        )
+    return (real - low) / (high - low)
+
+
+def measured_from_wire(span, value: float) -> float:
+    """Convert a wire 0..1 to the parameter's own units across ``span``."""
+    low, high = span
+    return low + (high - low) * value

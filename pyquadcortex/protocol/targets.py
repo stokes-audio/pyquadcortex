@@ -32,7 +32,7 @@ around, and put in a list. Nothing here talks to a device.
 from dataclasses import dataclass
 
 from pyquadcortex.protocol.errors import ControlNotDrivable
-from pyquadcortex.protocol.units import bpm_to_tempo, db_to_lane_level
+from pyquadcortex.protocol.units import MEASURED_SPANS, measured_to_wire
 
 #: Catalog model ids for the containers whose model never varies.
 LANE_OUTPUT_CONTROL = 23000
@@ -158,7 +158,19 @@ class ParamTarget:
         TEMPO is bpm and never looks one up. ``spec`` is a hint from
         :meth:`index_of` when a name was resolved, so a name costs one fetch.
         """
+        span = MEASURED_SPANS.get((self.model_id, index))
+        if span is not None:
+            # A placeholder range whose true span WAS measured. Looked up by
+            # index, so this costs no catalog fetch - see `MEASURED_SPANS`.
+            return measured_to_wire(span, real)
         spec = spec if spec is not None else self.spec_at(index, get_catalog)
+        if spec is None and self.model_id is None:
+            raise TypeError(
+                f"real= on {self.describe()} needs model=<model id or catalog "
+                f"Model>, because the conversion depends on WHICH block is in "
+                f"the cell. Use the Block that blocks() handed you - it carries "
+                f"model_id - or pass value= with the normalized 0..1."
+            )
         if spec is None:
             raise ValueError(
                 f"real= needs a parameter the catalog describes, and it does not "
@@ -281,19 +293,6 @@ class LaneOutput(LaneControl):
     collection = "output_control"
     model_id = LANE_OUTPUT_CONTROL
     unassignable = LANE_OUTPUT_UNASSIGNABLE
-
-    def normalize(self, index, real, get_catalog, spec=None):
-        """VOLUME speaks dB, through the measured span rather than the catalog.
-
-        Its catalog range is the placeholder ``0..1 "dB"``, so the catalog cannot
-        convert it - but the true span IS measured at both ends, -40..+12 dB, so
-        refusing here would be refusing something we know. Every other
-        placeholder parameter still refuses, because their spans are not measured.
-        """
-        spec = spec if spec is not None else self.spec_at(index, get_catalog)
-        if spec is not None and spec.name == "VOLUME":
-            return db_to_lane_level(real)
-        return super().normalize(index, real, get_catalog, spec)
 
     def describe(self):
         return f"row {self.row}'s Lane Output Control"
@@ -442,16 +441,6 @@ class Tempo(PresetTarget):
             if key in self.NAMES:
                 return super().index_of(self.NAMES[key], get_catalog, model)
         return super().index_of(param, get_catalog, model)
-
-    def normalize(self, index, real, get_catalog, spec=None):
-        """TEMPO speaks bpm, through the measured 40..240 span.
-
-        Same situation as the lane VOLUME: the catalog publishes ``0..1 "BPM"``,
-        a placeholder, and the span was measured against the screen instead.
-        """
-        if index == 0:
-            return bpm_to_tempo(real)
-        return super().normalize(index, real, get_catalog, spec)
 
     def describe(self):
         return "the preset's TempoControl"

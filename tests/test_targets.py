@@ -203,3 +203,90 @@ def test_the_lane_volume_speaks_db_and_pan_does_not():
                                                                            abs=1e-4)
     index, spec = LaneOutput(0).index_of("PAN", get)
     assert LaneOutput(0).normalize(index, 0.25, get, spec) == pytest.approx(0.25)
+
+
+# -- the spans measured for issue #26 -----------------------------------------
+#
+# Each of these is a screen reading against a wire value, taken at three or more
+# well-separated points including both ends. The numbers in the asserts are the
+# DISPLAYED values, so a wrong span fails here rather than shipping.
+
+
+@pytest.mark.parametrize("target,index,real,wire", [
+    # Block EQ band gains: dB = -12 + 24 * wire. Parametric-8 measured at four
+    # points; Parametric-3 and Output Equalizer at both ends each.
+    (Block(0, 1, 4000), 0, -12.0, 0.0),      # band 1, bottom end
+    (Block(0, 1, 4000), 0, -9.6, 0.1),       # off-half: catches a curve
+    (Block(0, 1, 4000), 0, 0.0, 0.5),
+    (Block(0, 1, 4000), 30, 12.0, 1.0),      # band 7, top end
+    (Block(0, 1, 4001), 0, 12.0, 1.0),       # Parametric-3
+    (Block(0, 1, 4004), 0, -12.0, 0.0),      # Output Equalizer
+    # The LEVEL family: dB = -40 + 52 * wire.
+    (Mixer(0), 5, -24.4, 0.3),               # MIXER LEVEL
+    (Mixer(0), 5, 12.0, 1.0),
+    (Splitter(0), 3, -24.4, 0.3),            # LEVEL TO A
+    (Splitter(0), 4, -3.1, 0.71),            # LEVEL TO B, the lane VOLUME's point
+    (Splitter(0), 4, 12.0, 1.0),
+    (LaneOutput(0), 0, -3.1, 0.71),          # the lane VOLUME itself
+    (Tempo(), 0, 120.0, 0.4),                # bpm = 40 + 200 * wire
+])
+def test_a_measured_span_converts_to_the_wire_value_the_screen_showed(
+        target, index, real, wire):
+    assert target.normalize(index, real, _Exploding()) == pytest.approx(wire, abs=5e-4)
+
+
+def test_a_measured_span_needs_no_catalog():
+    """Keyed by index, so a conversion costs no round trip to the device."""
+    for target, index, real in ((Mixer(0), 5, 0.0), (Splitter(0), 3, 0.0),
+                                (LaneOutput(0), 0, 0.0), (Tempo(), 0, 120.0),
+                                (Block(0, 1, 4000), 0, 0.0)):
+        target.normalize(index, real, _Exploding())     # must not fetch
+
+
+@pytest.mark.parametrize("target,index,real", [
+    (LaneOutput(0), 0, -41.0),
+    (Mixer(0), 5, 13.0),
+    (Block(0, 1, 4000), 0, -12.5),
+    (Tempo(), 0, 300.0),
+])
+def test_a_value_the_unit_has_no_position_for_is_refused(target, index, real):
+    """Refused, not clamped. A clamped write looks like it worked."""
+    with pytest.raises(ValueError, match="does not exist"):
+        target.normalize(index, real, _Exploding())
+
+
+def test_an_unmeasured_placeholder_still_refuses():
+    """51 of 52 placeholder parameters have no measured span - #26.
+
+    The cab LEVEL is the case to watch: it sits right beside parameters that DO
+    convert now, so a table keyed too loosely would sweep it in.
+    """
+    from pyquadcortex.protocol import units
+
+    assert (12000, 2) not in units.MEASURED_SPANS, "cab LEVEL is not measured"
+    assert (11000, 0) not in units.MEASURED_SPANS, "mixer LEVEL A is not measured"
+    assert (13000, 0) not in units.MEASURED_SPANS, "Send 1 LEVEL is not measured"
+
+
+def test_the_mixer_ab_levels_are_absent_because_the_device_refuses_them():
+    """`LEVEL A` and `LEVEL B` took no host write across four attempts.
+
+    So they could not be measured, and an entry here would be a guess. Recorded
+    as a test because their absence otherwise looks like an oversight beside
+    MIXER LEVEL, which is measured.
+    """
+    from pyquadcortex.protocol import units
+
+    assert (11000, 5) in units.MEASURED_SPANS       # MIXER LEVEL: measured
+    assert (11000, 0) not in units.MEASURED_SPANS   # LEVEL A: not drivable
+    assert (11000, 2) not in units.MEASURED_SPANS   # LEVEL B: not drivable
+
+
+def test_real_on_a_bare_block_names_the_missing_model_not_the_catalog():
+    """The conversion depends on WHICH block is in the cell.
+
+    Worth its own message: blaming the catalog sends a reader looking for a
+    missing catalog entry when the address simply never said what it points at.
+    """
+    with pytest.raises(TypeError, match="model="):
+        Block(0, 1).normalize(0, 6.0, _Exploding())
