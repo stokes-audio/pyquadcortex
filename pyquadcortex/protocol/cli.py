@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     Import-safe and device-free: constructs no transport and imports no hidapi,
     so it can be exercised directly in tests.
     """
-    p = argparse.ArgumentParser(prog="qcctl", description="Control a Neural DSP Quad Cortex over USB-HID.")
+    p = argparse.ArgumentParser(prog="qcctl", description="Control a Neural DSP Quad Cortex or Quad Cortex Mini over USB-HID.")
     sub = p.add_subparsers(dest="command", required=True)
 
     r = sub.add_parser(

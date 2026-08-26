@@ -107,7 +107,8 @@ only about the layer directly below it.
       units.py               Screen values <-> wire values for the scales the
                              catalog publishes as a placeholder
       errors.py              BlockRefused, ControlNotDrivable
-      hid_ids.py             Vendor and product IDs, interface number
+      hid_ids.py             Vendor ID, Quad Cortex PID, control HID usage.
+                             Mini (schema DeviceType.ATMA) is enumerated, not pinned.
 
     pyquadcortex/_version.py The version string, read by both namespaces and by
                              pyproject.toml
@@ -199,7 +200,8 @@ Also in this module: `slot_to_position("28C") -> 218` and
 ### session.py
 
 `protocol.connect()` is the protocol layer's front door: `open_device()` finds
-and opens the HID interface, a `Transport` is started around it,
+and opens a Neural DSP HID control interface (Quad Cortex, or Quad Cortex Mini
+under a possibly different product ID), a `Transport` is started around it,
 `QuadCortex._hello()` runs the connect handshake, and the returned client is
 ready for commands. The client
 remembers what it opened (`_owned_resources`) so `close()` and the context

@@ -297,7 +297,8 @@ class QuadCortex:
         """Read the device's version info.
 
         Returns the device's ``VersionMessage``, whose fields include
-        ``app_fw_version`` (the firmware version), ``device_type``,
+        ``app_fw_version`` (the firmware version), ``device_type``
+        (``QC`` for Quad Cortex, ``ATMA`` for Quad Cortex Mini),
         ``device_serial_number``, and ``comms_version``.
 
         Works without the connect handshake, so it is a good first call to

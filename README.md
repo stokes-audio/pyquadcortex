@@ -3,7 +3,7 @@
 [![CI](https://github.com/stokes-audio/pyquadcortex/actions/workflows/ci.yml/badge.svg)](https://github.com/stokes-audio/pyquadcortex/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/stokes-audio/pyquadcortex/blob/main/LICENSE)
 
-Control a Neural DSP Quad Cortex from Python, over USB.
+Control a Neural DSP Quad Cortex or Quad Cortex Mini from Python, over USB.
 
 `pyquadcortex` is a USB client for the Quad Cortex, in the same way Cortex
 Control is a USB client for it: it connects over the cable and speaks the
@@ -35,9 +35,11 @@ with it.
 ## Status
 
 **Working, and verified on real hardware** on macOS (Apple Silicon) and Windows,
-against **CorOS / Cortex Control 4.0.1** (device firmware `d14e`). Every
-operation listed below has been exercised on a physical unit. The test suite runs
-fully offline, with no device attached.
+against **CorOS / Cortex Control 4.0.1** (device firmware `d14e`) on Quad Cortex.
+USB discovery also opens Quad Cortex Mini (same vendor, any matching HID control
+interface); Mini-specific behaviour has not been verified on Mini hardware. Every
+operation listed below has been exercised on a physical Quad Cortex. The test
+suite runs fully offline, with no device attached.
 
 The device protocol carries no version of its own, so a future CorOS update could
 change it. If you are on a newer version and something misbehaves, that is the

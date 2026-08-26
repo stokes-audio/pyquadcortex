@@ -20,6 +20,18 @@ correction.
 
 ## Unreleased
 
+### Quad Cortex Mini opens over USB
+
+`connect()` / `open_device()` enumerate every Neural DSP HID control interface
+rather than opening product `0x880A` only. A Quad Cortex Mini with a different
+product ID now connects. The recovered schema already names Mini
+`DeviceType.ATMA`; Mini-specific fields (`Mode.atma_page`, `AtmaPowerOnMode`)
+have not been driven on Mini hardware.
+
+If nothing Neural DSP is plugged in, `DeviceNotFoundError` now says hidapi saw
+no Neural DSP HID interface, instead of quoting the Quad Cortex-only `0x880A`
+fallback as 'VID/PID not found'.
+
 ### BREAKING: one `set_param` for everything, addressed by a target
 
 Six ways to set a parameter became one. Say WHERE it lives:

@@ -263,7 +263,7 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         A connected :class:`Device`.
 
     Raises:
-        DeviceNotFoundError: if no Quad Cortex could be opened.
+        DeviceNotFoundError: if no Quad Cortex or Quad Cortex Mini could be opened.
         TimeoutError: if the unit opened but never answered the handshake within
             ``handshake_patience``. A unit that has just booted is enumerated and
             openable for 9 to 17 seconds before its control protocol answers, so

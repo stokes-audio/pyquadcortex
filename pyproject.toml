@@ -1,7 +1,7 @@
 [project]
 name = "pyquadcortex"
 dynamic = ["version"]
-description = "Programmatic control of the Neural DSP Quad Cortex over USB HID"
+description = "Programmatic control of the Neural DSP Quad Cortex and Quad Cortex Mini over USB HID"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

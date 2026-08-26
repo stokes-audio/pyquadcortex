@@ -99,7 +99,7 @@ None yet. Protocol unknowns (the splitter write path, the IR import payload form
 - Deep references: [`architecture.md`](architecture.md) (code), [`protocol.md`](protocol.md) (wire), [`capture.md`](capture.md) (observing device traffic), [`domain-model.md`](domain-model.md) (the object model design)
 - Status: [`manual-coverage.md`](manual-coverage.md) (feature audit), [`roadmap.md`](roadmap.md) (direction), [`../changelog.md`](../changelog.md)
 - Operations: [`releasing.md`](releasing.md), [`troubleshooting.md`](troubleshooting.md), [`api.md`](api.md)
-- Device reference: the [Quad Cortex manual](https://neuraldsp.com/manual/quad-cortex)
+- Device reference: the [Quad Cortex manual](https://neuraldsp.com/manual/quad-cortex) and [Quad Cortex Mini](https://neuraldsp.com/quad-cortex-mini)
 
 ## 10. Infrastructure Dependencies
 
@@ -108,7 +108,7 @@ None yet. Protocol unknowns (the splitter write path, the IR import payload form
 - **PyPI** for releases (process and credentials handling in [`releasing.md`](releasing.md))
 - **GitHub Actions** for the offline suite on every PR (`.github/workflows/ci.yml`)
 - **hidapi** as the OS-level native library on any machine that talks to hardware
-- **One physical Quad Cortex** (CorOS 4.0.1 / d14e) - the scarce resource; hardware verification is manual and serialized on it
+- **One physical Quad Cortex** (CorOS 4.0.1 / d14e) - the scarce resource; hardware verification is manual and serialized on it. Quad Cortex Mini is accepted at USB discovery; it has not been the verification unit.
 
 ### Workload characteristics
 
@@ -126,6 +126,35 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-26 - Quad Cortex Mini opens over USB
+
+**What changed:**
+- `pyquadcortex/protocol/session.py`: `open_device()` enumerates Neural DSP HID
+  control interfaces instead of opening product `0x880A` only. Quad Cortex Mini
+  is the same vendor (`VersionMessage.DeviceType.ATMA` in the recovered schema)
+  and may use a different product ID; the known Quad Cortex PID remains the
+  fallback when enumerate sees nothing. A `DeviceNotFoundError` now says whether
+  hidapi saw any Neural DSP interface, so a Mini that is not `0x880A` is not
+  reported as 'VID/PID not found'. Name matching covers a Mini whose vendor_id
+  came back as 0.
+- `pyquadcortex/protocol/hid_ids.py`: documents that Mini is discovered by
+  vendor and usage page, not by a second hardcoded PID.
+- `docs/troubleshooting.md`: first check is 'hidapi sees nothing', including a
+  charge-only USB-C cable on Mini.
+
+**Why:** Cortex Control already speaks to both products over this protocol. The
+library could not open a Mini whose USB product ID was not `0x880A`. Mini-specific
+wire behaviour (`Mode.atma_page`, `AtmaPowerOnMode`, no momentary stomps) is in
+the schema and has not been exercised on Mini hardware.
+
+**What this constrains going forward:**
+- Do not pin a Mini product ID until it is read off hardware. Enumeration is the
+  discovery path for both units.
+- Do not claim Mini operations verified. The coverage table remains Quad Cortex.
+
+**Not covered here:** driving footswitch pages, Mini Hybrid layout, or refusing
+momentary assignments on Mini - those wait on Mini hardware.
 
 ### 2026-08-14 - The model keeps its own copy of what the unit is doing (ADR-0011)
 

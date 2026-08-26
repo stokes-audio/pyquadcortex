@@ -211,6 +211,207 @@ def test_open_device_raises_device_not_found_on_the_real_hid_exception(monkeypat
         session.open_device()
 
 
+def _hid_info(**overrides):
+    """One hid.enumerate() dict, defaulting to a Quad Cortex control interface."""
+    info = {
+        "vendor_id": 0x152A,
+        "product_id": 0x880A,
+        "path": b"qc-path",
+        "usage_page": 0x0001,
+        "usage": 0x0000,
+        "interface_number": 5,
+    }
+    info.update(overrides)
+    return info
+
+
+class RecordingDevice:
+    """Stands in for hid.Device: records how it was constructed."""
+
+    opened = []
+
+    def __init__(self, vid=None, pid=None, serial=None, path=None):
+        RecordingDevice.opened.append({"vid": vid, "pid": pid, "path": path})
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def _install_hid(monkeypatch, *, enumerate_result=None, device_cls=RecordingDevice):
+    """Put a fake `hid` module in sys.modules for open_device() to import."""
+    import sys
+    import types
+
+    RecordingDevice.opened = []
+    fake_hid = types.ModuleType("hid")
+    if enumerate_result is not None:
+        fake_hid.enumerate = lambda *a, **kw: list(enumerate_result)
+    fake_hid.Device = device_cls
+    monkeypatch.setitem(sys.modules, "hid", fake_hid)
+    return fake_hid
+
+
+def test_open_device_opens_a_mini_with_a_different_product_id(monkeypatch):
+    """Quad Cortex Mini may not be 0x880A. Enumerate by vendor, open by path."""
+    mini = _hid_info(product_id=0xFFFF, path=b"mini-path")
+    _install_hid(monkeypatch, enumerate_result=[mini])
+    device = session.open_device()
+    assert RecordingDevice.opened == [
+        {"vid": None, "pid": None, "path": b"mini-path"}
+    ]
+    assert device is not None
+
+
+def test_open_device_still_opens_quad_cortex_by_path_when_enumerated(monkeypatch):
+    _install_hid(monkeypatch, enumerate_result=[_hid_info()])
+    session.open_device()
+    assert RecordingDevice.opened == [
+        {"vid": None, "pid": None, "path": b"qc-path"}
+    ]
+
+
+def test_open_device_skips_a_non_control_hid_interface_when_a_control_one_exists(
+        monkeypatch):
+    other = _hid_info(path=b"other", usage_page=0xFF00, product_id=0x0001)
+    control = _hid_info(path=b"control")
+    _install_hid(monkeypatch, enumerate_result=[other, control])
+    session.open_device()
+    assert RecordingDevice.opened == [
+        {"vid": None, "pid": None, "path": b"control"}
+    ]
+
+
+def test_open_device_accepts_an_unreported_usage_page(monkeypatch):
+    """Linux hidraw often leaves usage_page at 0. That is not a mismatch."""
+    mini = _hid_info(product_id=0xFFFF, path=b"linux-mini", usage_page=0)
+    _install_hid(monkeypatch, enumerate_result=[mini])
+    session.open_device()
+    assert RecordingDevice.opened == [
+        {"vid": None, "pid": None, "path": b"linux-mini"}
+    ]
+
+
+def test_open_device_falls_back_to_the_known_pid_when_enumerate_is_empty(
+        monkeypatch):
+    _install_hid(monkeypatch, enumerate_result=[])
+    session.open_device()
+    assert RecordingDevice.opened == [
+        {"vid": 0x152A, "pid": 0x880A, "path": None}
+    ]
+
+
+def test_open_device_falls_back_to_the_known_pid_when_enumerate_is_missing(
+        monkeypatch):
+    """The original Device(vid, pid) path, for backends with no enumerate()."""
+    _install_hid(monkeypatch, enumerate_result=None)
+    session.open_device()
+    assert RecordingDevice.opened == [
+        {"vid": 0x152A, "pid": 0x880A, "path": None}
+    ]
+
+
+def test_open_device_tries_the_next_interface_when_the_first_fails_to_open(
+        monkeypatch):
+    first = _hid_info(path=b"busy")
+    second = _hid_info(path=b"free", product_id=0xFFFF)
+
+    class FlakyDevice(RecordingDevice):
+        def __init__(self, vid=None, pid=None, serial=None, path=None):
+            super().__init__(vid=vid, pid=pid, serial=serial, path=path)
+            if path == b"busy":
+                raise OSError("exclusive access")
+
+    _install_hid(monkeypatch, enumerate_result=[first, second],
+                 device_cls=FlakyDevice)
+    session.open_device()
+    assert RecordingDevice.opened[-1] == {
+        "vid": None, "pid": None, "path": b"free",
+    }
+
+
+def test_open_device_uses_open_path_on_the_older_hidapi_package(monkeypatch):
+    import sys
+    import types
+
+    opened = []
+
+    class OldDevice:
+        def open(self, vid, pid):
+            opened.append(("open", vid, pid))
+
+        def open_path(self, path):
+            opened.append(("open_path", path))
+
+        def close(self):
+            pass
+
+    fake_hid = types.ModuleType("hid")
+    fake_hid.enumerate = lambda *a, **kw: [_hid_info(path=b"old-path")]
+    fake_hid.device = OldDevice
+    monkeypatch.setitem(sys.modules, "hid", fake_hid)
+    session.open_device()
+    assert opened == [("open_path", b"old-path")]
+
+
+def test_open_device_opens_the_only_neural_dsp_interface_even_if_usage_page_differs(
+        monkeypatch):
+    """If Mini reports a vendor-defined page and it is the only Neural DSP HID
+    device, skipping it would mean never connecting. Prefer the control page
+    when one exists; otherwise take whatever the vendor enumerated."""
+    mini = _hid_info(product_id=0xFFFF, path=b"atma", usage_page=0xFF00)
+    _install_hid(monkeypatch, enumerate_result=[mini])
+    session.open_device()
+    assert RecordingDevice.opened == [
+        {"vid": None, "pid": None, "path": b"atma"}
+    ]
+
+
+def test_control_interfaces_ignores_other_vendors():
+    ours = _hid_info()
+    other = _hid_info(vendor_id=0x1234, path=b"not-ours")
+    assert session._control_interfaces([other, ours]) == [ours]
+
+
+def test_open_device_opens_a_mini_named_in_the_product_string_with_vendor_id_zero(
+        monkeypatch):
+    """macOS hidapi reports vendor_id 0 for some interfaces. A Mini that did
+    that would be invisible to a VID-only filter."""
+    mini = _hid_info(
+        vendor_id=0,
+        product_id=0,
+        path=b"named-mini",
+        product_string="Quad Cortex Mini",
+        manufacturer_string="Neural DSP",
+    )
+    _install_hid(monkeypatch, enumerate_result=[mini])
+    session.open_device()
+    assert RecordingDevice.opened == [
+        {"vid": None, "pid": None, "path": b"named-mini"}
+    ]
+
+
+def test_open_device_says_hidapi_saw_nothing_when_enumerate_is_empty(monkeypatch):
+    """The 0x880A fallback's HIDException must not be the whole story: Mini is
+    not that PID, so 'VID/PID not found' reads as 'this library only opens QC'."""
+    def explode(*a, **kw):
+        raise OSError("No HID devices with requested VID/PID found")
+
+    _install_hid(monkeypatch, enumerate_result=[], device_cls=explode)
+    with pytest.raises(session.DeviceNotFoundError, match="does not currently see"):
+        session.open_device()
+
+
+def test_open_device_says_which_pid_it_saw_when_open_fails(monkeypatch):
+    def explode(*a, **kw):
+        raise OSError("exclusive access")
+
+    mini = _hid_info(product_id=0xFFFF, path=b"busy-mini")
+    _install_hid(monkeypatch, enumerate_result=[mini], device_cls=explode)
+    with pytest.raises(session.DeviceNotFoundError, match="0xffff"):
+        session.open_device()
+
+
 def test_close_says_goodbye_before_tearing_down():
     """The device is told the client is leaving, and told FIRST.
 

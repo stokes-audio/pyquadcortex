@@ -67,10 +67,26 @@ confirming each finding live against hardware.
 ## 1. The USB HID interface
 
 The Quad Cortex enumerates as vendor `0x152A` (Neural DSP), product `0x880A`.
+Quad Cortex Mini is the same vendor; Cortex Control's recovered schema already
+names it `VersionMessage.DeviceType.ATMA` (`1`; Quad Cortex is `QC = 0`). Mini's
+USB product ID has not been read off hardware in this repo, so `open_device()`
+enumerates every Neural DSP HID interface that looks like the control pipe
+(usage page `0x0001` when the backend reports it) rather than requiring
+`0x880A`. The known Quad Cortex PID remains the fallback when enumerate sees
+nothing.
+
 Control traffic uses a single HID interface, **interface 5**
 (`bInterfaceClass = 3`), with usage page `0x0001` and usage `0x0000`, so it is
 *not* a vendor-defined usage page. The unit also exposes USB audio interfaces;
 those are unrelated to control.
+
+Mini-only fields already in the schema - `Mode.atma_page` (footswitch pages),
+`GeneralSettings.atma_power_mode` (`AtmaPowerOnMode`: power button vs power-on
+when plugged in), `atma_looper_lock_mode` - match Neural DSP's published Mini
+differences. None of them have been driven on Mini hardware here; the operations
+this library verified on Quad Cortex are not claimed verified on Mini. Neural
+DSP documents that Mini Hybrid layout differs and that Mini has no momentary
+stomp assignments.
 
 The HID report descriptor (read from the OS registry, no device open required)
 is:
@@ -290,7 +306,8 @@ report 3:  01 | 2e | 80 | <46 data bytes>    last 8 bytes are the trailer:
 ```
 
 The `Version` reply carries the device's kernel string, `zenos` version,
-`app_fw_version`, bootloader version, MAC address, and serial number, among
+`app_fw_version`, bootloader version, MAC address, serial number, and
+`device_type` (`QC = 0` Quad Cortex, `ATMA = 1` Quad Cortex Mini), among
 other fields (see `VersionMessage` in the schema).
 
 ## 3. Message types and actions

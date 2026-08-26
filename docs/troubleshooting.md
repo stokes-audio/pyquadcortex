@@ -1,5 +1,33 @@
 # Troubleshooting
 
+## `DeviceNotFoundError` and hidapi sees nothing
+
+The error's first clause says whether hidapi enumerated a Neural DSP HID
+interface at all. **`does not currently see any Neural DSP HID interface`** means
+the Mac has no Quad Cortex / Mini control pipe right now - not that the library
+refused Mini.
+
+Check, in order:
+
+1. **Quit Cortex Control.** It opens the HID interface exclusively. While it is
+   running, other processes cannot open the unit (and on some hosts it also
+   disappears from `hid.enumerate()`).
+2. **The unit is on and finished booting.** A Mini that is still on the logo
+   screen has not enumerated the control interface yet.
+3. **The cable carries data.** Quad Cortex Mini is USB-C. A charge-only cable
+   powers the unit and enumerates nothing. Use the cable that shipped with it,
+   or any USB-C cable that already works with Cortex Control.
+4. **Confirm hidapi can see it** (Cortex Control still quit):
+
+   ```bash
+   DYLD_LIBRARY_PATH=/opt/homebrew/lib python -c \
+     "import hid; print([d for d in hid.enumerate() if d.get('vendor_id')==0x152A or 'cortex' in str(d).lower()])"
+   ```
+
+   An empty list is the same failure: the OS has no Neural DSP HID device. A
+   dict with a `path` means discovery worked and the open itself is what failed
+   (almost always Cortex Control still holding the interface).
+
 ## `DeviceNotFoundError` when it was working a moment ago
 
 If a session was running fine and then the device vanishes mid-run, the usual advice
