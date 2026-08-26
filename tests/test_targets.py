@@ -258,7 +258,7 @@ def test_a_value_the_unit_has_no_position_for_is_refused(target, index, real):
 
 
 def test_an_unmeasured_placeholder_still_refuses():
-    """51 of 52 placeholder parameters have no measured span - #26.
+    """27 of the 52 placeholder parameters are still unmeasured - #26.
 
     The cab LEVEL is the case to watch: it sits right beside parameters that DO
     convert now, so a table keyed too loosely would sweep it in.
@@ -490,3 +490,25 @@ def test_the_worst_taper_error_is_what_the_docs_claim():
     worst = max(abs(d - units.measured_from_wire(span, v))
                 for v, d in CAB_LEVEL_READINGS)
     assert worst == pytest.approx(0.034, abs=0.001)
+
+
+@pytest.mark.parametrize("index", [2, 10])
+def test_both_cab_mics_convert(index):
+    """Only mic 1 was covered. They are separate wire indices, separately keyed."""
+    from pyquadcortex.protocol import units
+
+    span = units.MEASURED_SPANS[(12000, index)]
+    assert units.measured_from_wire(span, 0.5) == pytest.approx(0.0, abs=0.05)
+    assert units.measured_from_wire(span, 1.0) == pytest.approx(6.0, abs=0.05)
+
+
+@pytest.mark.parametrize("real,wire", [(-12.0, 0.0), (0.0, 0.5), (12.0, 1.0)])
+def test_a_tapered_span_refuses_out_of_range_in_both_directions(real, wire):
+    """The out-of-range tests were all on LINEAR spans."""
+    from pyquadcortex.protocol import units
+
+    cab = units.MEASURED_SPANS[(12000, 2)]
+    with pytest.raises(ValueError, match="does not exist"):
+        units.measured_to_wire(cab, 7.0)
+    with pytest.raises(ValueError, match="does not exist"):
+        units.measured_to_wire(cab, -25.0)

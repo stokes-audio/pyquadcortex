@@ -8,7 +8,7 @@ for ``scene_mode`` and for expression assignment. Six ways to do one thing,
 differing only in where the parameter lives.
 
 A TARGET is that difference, made into a value. ``set_param(LaneOutput(0),
-"VOLUME", ...)`` and ``set_param(Block(0, 2), "GAIN", ..., model=5011)`` are the
+"VOLUME", ...)`` and ``set_param(Block(0, 2, 5011), "GAIN", ...)`` are the
 same operation against different addresses, so there is one method again and a
 new container costs a class rather than a method per operation.
 

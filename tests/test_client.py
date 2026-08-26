@@ -1699,6 +1699,19 @@ LANE_OUTPUT_CATEGORY = """
     <Parameter defaultValue="0" max="1" min="0" name="SOLO" type="switch"/>
   </Model>
 </Category>
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model blob="c0" id="12000" name="Default Cabsim" internal="true">
+    <Parameter defaultValue="0" max="1" min="0" name="bypass" type="switch"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+  </Model>
+</Category>
+<Category id="21" name="Cabsim Bass (M)">
+  <Model blob="c1" id="21005" name="212 Darkglass Neo (M)">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+  </Model>
+</Category>
 <Category id="13" name="Send">
   <Model blob="snd" id="13000" name="Send 1" internal="true">
     <Parameter defaultValue="0.5" max="1" min="0" name="LEVEL" type="float" units="dB"/>
@@ -1839,7 +1852,7 @@ def test_set_lane_output_real_puts_unity_at_the_documented_value():
 
 
 def test_an_unmeasured_placeholder_range_still_refuses_real():
-    """31 of the 52 placeholder parameters are still unmeasured - #26.
+    """27 of the 52 placeholder parameters are still unmeasured - #26.
 
     The point of this test is that measuring some of them did not quietly
     loosen the rule for the rest. A Send's LEVEL is the case to watch: it sits
@@ -1850,6 +1863,26 @@ def test_an_unmeasured_placeholder_range_still_refuses_real():
     qc = _lane_client()
     with pytest.raises(ValueError, match="placeholder"):
         qc.set_param(Block(0, 1, 13000), param="LEVEL", real=-3.0)
+
+
+def test_set_param_converts_a_cab_through_the_shared_layout():
+    """End to end: a cab reports its OWN id and borrows the Cabsim layout's span.
+
+    Covered only at `normalize()` before, so nothing proved the client actually
+    reached that path - which is where a caller meets it.
+    """
+    qc = _lane_client()
+    qc.set_param(Block(0, 5, 21005), 2, real=-3.0)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.3400, abs=5e-4)
+
+
+def test_set_param_refuses_a_cab_level_below_the_knobs_floor():
+    """real=-30 dB used to write wire 0.0005, which the unit reads as OFF."""
+    qc = _lane_client()
+    with pytest.raises(ValueError, match="does not exist"):
+        qc.set_param(Block(0, 5, 21005), 2, real=-30.0)
+    assert qc._t.sent == [], "a refused call must send nothing"
 
 
 # -- per-preset MIDI out ------------------------------------------------------

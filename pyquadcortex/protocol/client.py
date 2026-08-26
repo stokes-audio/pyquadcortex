@@ -585,7 +585,7 @@ class QuadCortex:
         ``target`` says WHERE, and is one of the addresses in
         :mod:`pyquadcortex.protocol.targets`::
 
-            qc.set_param(Block(0, 2, model=5011), "GAIN", real=-6.0)
+            qc.set_param(Block(0, 2, 5011), "GAIN", real=-6.0)
             qc.set_param(LaneOutput(0), "VOLUME", real=-3.1)
             qc.set_param(LaneInput(0), "INPUT GAIN", real=12.0)
             qc.set_param(Mixer(0), "LEVEL A", value=UNITY_LEVEL)
@@ -830,10 +830,16 @@ class QuadCortex:
         except TimeoutError:
             raise BlockRefused(
                 f"the device did not accept {model_id} at row {row} column "
-                f"{column}: no Grid echo within {timeout}s. The usual cause is "
-                f"that the preset has no DSP capacity left for this block - try a "
-                f"cheaper one, or free a block. Pass verify=False to send without "
-                f"checking."
+                f"{column}: no Grid echo within {timeout}s. Two causes are known. "
+                f"The preset may have no DSP capacity left - try a cheaper block, "
+                f"or free one. Or the block may need a PHYSICAL PORT another block "
+                f"already holds: placing an FX Loop 1 while a Send 1 block exists "
+                f"puts a Port Conflict modal on the unit's screen, which the host "
+                f"never sees, and the placement is refused until the conflict is "
+                f"resolved. FX Loop 2 alongside the same Send 1 is fine, because "
+                f"it uses Send 2. Pass verify=False to send without checking - but "
+                f"note a refusal can also be a FALSE NEGATIVE: an FX Loop 2 "
+                f"placement timed out here and had in fact landed."
             ) from None
         return None
 

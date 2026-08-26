@@ -17,6 +17,10 @@ See ``docs/api.md`` for the full surface and ``docs/protocol.md`` for the wire.
 
 from pyquadcortex._version import __version__
 from pyquadcortex.protocol.transport import DeviceLostError
+from pyquadcortex.protocol.units import (CAB_LEVEL_UNITY,  # noqa: F401
+                                         MEASURED_SPANS, Span,
+                                         measured_from_wire,
+                                         measured_to_wire)
 from pyquadcortex.protocol.client import (SCENE_UNLABELLED, UNITY_LEVEL,
                                           db_to_input_level, db_to_lane_level,
                                           input_level_db, lane_level_db,
@@ -117,6 +121,11 @@ __all__ = [
     "BlockRefused",
     "ControlNotDrivable",
     "UNITY_LEVEL",
+    "CAB_LEVEL_UNITY",
+    "Span",
+    "MEASURED_SPANS",
+    "measured_to_wire",
+    "measured_from_wire",
     "DeviceLostError",
     "input_level_db",
     "db_to_input_level",
