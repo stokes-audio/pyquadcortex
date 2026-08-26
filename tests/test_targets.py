@@ -227,6 +227,8 @@ def test_the_lane_volume_speaks_db_and_pan_does_not():
     (Splitter(0), 3, -24.4, 0.3),            # LEVEL TO A
     (Splitter(0), 4, -3.1, 0.71),            # LEVEL TO B, the lane VOLUME's point
     (Splitter(0), 4, 12.0, 1.0),
+    (Mixer(0), 0, -24.4, 0.3),               # LEVEL A, scene-following
+    (Mixer(0), 2, -3.1, 0.71),               # LEVEL B, scene-following
     (LaneOutput(0), 0, -3.1, 0.71),          # the lane VOLUME itself
     (Tempo(), 0, 120.0, 0.4),                # bpm = 40 + 200 * wire
 ])
@@ -264,22 +266,23 @@ def test_an_unmeasured_placeholder_still_refuses():
     from pyquadcortex.protocol import units
 
     assert (12000, 2) not in units.MEASURED_SPANS, "cab LEVEL is not measured"
-    assert (11000, 0) not in units.MEASURED_SPANS, "mixer LEVEL A is not measured"
     assert (13000, 0) not in units.MEASURED_SPANS, "Send 1 LEVEL is not measured"
+    assert (20000, 2) not in units.MEASURED_SPANS, "recorder OUT LEVEL is not measured"
 
 
-def test_the_mixer_ab_levels_are_absent_because_the_device_refuses_them():
-    """`LEVEL A` and `LEVEL B` took no host write across four attempts.
+def test_all_five_mixer_and_splitter_levels_are_measured():
+    """Including the two that were briefly mistaken for undrivable.
 
-    So they could not be measured, and an entry here would be a guess. Recorded
-    as a test because their absence otherwise looks like an oversight beside
-    MIXER LEVEL, which is measured.
+    `LEVEL A` and `LEVEL B` are scene-following, so the wire carries eight
+    values and a write lands on the ACTIVE scene. A reader taking
+    `param_values[0]` reads scene A instead, and on a unit sitting in scene E
+    that looks exactly like a refused write. Both measured once read correctly.
     """
     from pyquadcortex.protocol import units
 
-    assert (11000, 5) in units.MEASURED_SPANS       # MIXER LEVEL: measured
-    assert (11000, 0) not in units.MEASURED_SPANS   # LEVEL A: not drivable
-    assert (11000, 2) not in units.MEASURED_SPANS   # LEVEL B: not drivable
+    for key in ((11000, 0), (11000, 2), (11000, 5), (10004, 3), (10004, 4)):
+        assert key in units.MEASURED_SPANS, key
+        assert units.MEASURED_SPANS[key] == (-40.0, 12.0)
 
 
 def test_real_on_a_bare_block_names_the_missing_model_not_the_catalog():

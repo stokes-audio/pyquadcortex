@@ -181,7 +181,16 @@ MEASURED_SPANS = {
     # 1.0, MIXER LEVEL read -24.4 at 0.30 and +12.0 at 1.0. LEVEL TO A agrees at
     # 0.30 and reads "OFF" at 0.0 - the same Off detent the lane VOLUME has, so
     # that is a property of the family and not of one control.
+    #
+    # The mixer's LEVEL A and LEVEL B nearly went down as NOT DRIVABLE: four host
+    # writes appeared to be dropped. They were not. Both are scene-following, so
+    # the wire carries EIGHT values, and a write lands on the ACTIVE scene while
+    # the reader was taking `param_values[0]` - scene A. The unit was on scene E.
+    # Measured properly afterwards: LEVEL A -24.4 at 0.30 and +12.0 at 1.0,
+    # LEVEL B -3.1 at 0.71 and +12.0 at 1.0.
     (23000, 0): (-40.0, 12.0),      # LaneOutputControl VOLUME
+    (11000, 0): (-40.0, 12.0),      # Mixer LEVEL A
+    (11000, 2): (-40.0, 12.0),      # Mixer LEVEL B
     (11000, 5): (-40.0, 12.0),      # Mixer MIXER LEVEL
     (10004, 3): (-40.0, 12.0),      # Splitter LEVEL TO A
     (10004, 4): (-40.0, 12.0),      # Splitter LEVEL TO B

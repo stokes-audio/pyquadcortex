@@ -35,9 +35,11 @@ qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_B, real=-3.1)
   Parametric-8 at four points including both ends, and separately on the
   Parametric-3 and Output Equalizer, which are different catalog entries and so
   were not assumed to inherit it.
-- **The mixer and splitter levels** are `dB = -40 + 52 * wire`. The library has
-  claimed this for several releases on the strength of a measurement of the lane
-  VOLUME; it is now measured on those controls themselves, and the claim held.
+- **The mixer and splitter levels** are `dB = -40 + 52 * wire`, all five of them
+  - `LEVEL A`, `LEVEL B`, `MIXER LEVEL`, `LEVEL TO A`, `LEVEL TO B`. The library
+  has claimed this for several releases on the strength of a measurement of the
+  lane VOLUME; it is now measured on those controls themselves, and the claim
+  held.
 
 **Wire 0.0 is an OFF detent, not -40 dB.** The splitter's `LEVEL TO A` displays
 "OFF" there, exactly as the lane VOLUME does - so that belongs to the whole level

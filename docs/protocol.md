@@ -2699,10 +2699,18 @@ how the lane levels shipped `-100..+30` for two releases.
 
 | family | span | evidence |
 |---|---|---|
-| Lane / mixer / splitter LEVEL | `dB = -40 + 52 * wire` | lane VOLUME: -3.1 at 0.71, +12.0 at 1.0, -39.5 at 0.01. Splitter `LEVEL TO B`: -3.1 at 0.71, +12.0 at 1.0. `MIXER LEVEL`: -24.4 at 0.30, +12.0 at 1.0. Splitter `LEVEL TO A` agrees at 0.30 |
+| Lane / mixer / splitter LEVEL | `dB = -40 + 52 * wire` | lane VOLUME: -3.1 at 0.71, +12.0 at 1.0, -39.5 at 0.01. Splitter `LEVEL TO B`: -3.1 at 0.71, +12.0 at 1.0. `MIXER LEVEL`: -24.4 at 0.30, +12.0 at 1.0. Mixer `LEVEL A`: -24.4 at 0.30, +12.0 at 1.0. Mixer `LEVEL B`: -3.1 at 0.71, +12.0 at 1.0. Splitter `LEVEL TO A` agrees at 0.30 and reads OFF at 0.0 |
 | Block EQ band GAIN (`4000`, `4001`, `4004`) | `dB = -12 + 24 * wire` | Parametric-8 at four points: -12.0 at 0.0, -9.6 at 0.10, 0.0 at 0.50, +12.0 at 1.00. Parametric-3 and Output Equalizer measured at both ends each |
 | Per-preset TEMPO | `bpm = 40 + 200 * wire` | 59 at 0.095, 111 at 0.355, 120 at 0.400 |
 | Input port gain | `dB = -12 + 72 * wire` | four owner trims read on screen against the wire |
+
+**Reading a scene-following parameter: `param_values[N]` is SCENE N, not the
+active one.** The device honours a WRITE's `param_values[0]` against whichever
+scene is active, so the two halves are not symmetric, and a reader that takes
+`[0]` is reading scene A. On a unit sitting in scene E that looks exactly like a
+write the device refused - four of them, in the case that produced this note.
+Check `Param.scene_mode` and index by the scene you mean;
+`protocol.param_state(preset, cell, index)` hands back all eight with the flag.
 
 **Wire 0.0 is an OFF detent, not the bottom of the dB scale.** The splitter's
 `LEVEL TO A` displays "OFF" there, exactly as the lane VOLUME does, so this

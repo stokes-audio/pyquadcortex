@@ -1554,14 +1554,15 @@ def test_copy_scene_documents_that_the_colour_travels_too():
     assert "COLOUR" in doc and "0xff45f862" in doc
 
 
-def test_set_mixer_param_refuses_real_units_for_a_placeholder_range():
-    # MIXER LEVEL is published as 0..1 "dB". real= used to convert against that
-    # range and produce a number meaning something else entirely; it now raises.
+def test_set_mixer_param_now_takes_real_because_its_span_was_measured():
+    # MIXER LEVEL is published as 0..1 "dB" - a placeholder - and real= used to
+    # refuse it. The span was measured on 2026-08-25 (-24.4 dB at 0.30, +12.0 at
+    # 1.0), so it converts through units.MEASURED_SPANS instead of the catalog.
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    with pytest.raises(ValueError, match="placeholder range"):
-        qc.set_param(Mixer(0), param="MIXER LEVEL", real=0.0)
-    assert qc._t.sent == []
+    qc.set_param(Mixer(0), param="MIXER LEVEL", real=0.0)
+    written = qc._t.sent[-1].preset.chains[0].mixer[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(client.UNITY_LEVEL)
     qc.set_param(Mixer(0), param="MIXER LEVEL", value=client.UNITY_LEVEL)
     written = qc._t.sent[-1].preset.chains[0].mixer[0].params[0]
     assert written.param_values[0].float_value == pytest.approx(0.76923077)
@@ -1698,6 +1699,11 @@ LANE_OUTPUT_CATEGORY = """
     <Parameter defaultValue="0" max="1" min="0" name="SOLO" type="switch"/>
   </Model>
 </Category>
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model blob="cab" id="12000" name="Default Cabsim" internal="true">
+    <Parameter defaultValue="0.5" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+  </Model>
+</Category>
 """
 
 
@@ -1832,11 +1838,16 @@ def test_set_lane_output_real_puts_unity_at_the_documented_value():
     assert prm.param_values[0].float_value == pytest.approx(client.UNITY_LEVEL)
 
 
-def test_other_placeholder_ranges_still_refuse_real():
-    """Only the lane VOLUME was measured. Nothing else got quietly loosened."""
+def test_an_unmeasured_placeholder_range_still_refuses_real():
+    """31 of the 52 placeholder parameters are still unmeasured - #26.
+
+    The point of this test is that measuring some of them did not quietly
+    loosen the rule for the rest. A cab's LEVEL is the case to watch: it sits
+    beside parameters that DO convert now.
+    """
     qc = _lane_client()
     with pytest.raises(ValueError, match="placeholder"):
-        qc.set_param(Mixer(0), param="MIXER LEVEL", real=-3.0)
+        qc.set_param(Block(0, 1, 12000), param="LEVEL", real=-3.0)
 
 
 # -- per-preset MIDI out ------------------------------------------------------
