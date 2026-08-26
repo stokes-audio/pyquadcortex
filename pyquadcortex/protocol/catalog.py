@@ -119,13 +119,15 @@ class Parameter:
         """Whether this parameter's catalog range supports no conversion.
 
         Some parameters are published with the range ``0.0..1.0`` while carrying a
-        real-world unit: ``MIXER LEVEL`` is ``0..1`` "dB", ``TEMPO`` is ``0..1``
-        "BPM". That range is the wire's own normalized scale rather than the span
-        the parameter covers, so there is nothing to convert between, and the true
-        span is not recoverable from the catalog.
+        real-world unit: a Send's ``LEVEL`` is ``0..1`` "dB", for instance. That
+        range is the wire's own normalized scale rather than the span the
+        parameter covers, so there is nothing to convert between, and the true
+        span is not recoverable FROM THE CATALOG.
 
-        For these, pass ``value=`` - the normalized 0..1 the wire carries - rather
-        than ``real=``. :data:`pyquadcortex.protocol.UNITY_LEVEL` is the value the level
+        It can be recovered by MEASUREMENT, and for 25 of them it has been - see
+        ``units.MEASURED_SPANS``, which ``real=`` consults before falling back
+        here. For the rest, pass ``value=`` - the normalized 0..1 the wire
+        carries - rather than ``real=``. :data:`pyquadcortex.protocol.UNITY_LEVEL` is the value the level
         parameters hold when nothing is attenuated.
         """
         return self.minimum == 0.0 and self.maximum == 1.0 and bool(self.units)

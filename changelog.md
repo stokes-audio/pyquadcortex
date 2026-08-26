@@ -255,11 +255,12 @@ The lane VOLUME publishes the placeholder range `0..1 "dB"`, so `real=` used to
 refuse it. Its TRUE span is measured at both ends - -40..+12 dB, unity at 10/13 -
 so the conversion now goes through that instead of through the catalog.
 
-It is **the only** placeholder parameter that converts. The other 51 across 23
-models - EQ band gains, cab levels, send/return and FX loop levels, mixer and
-splitter levels - still refuse, because their spans have never been measured and
-they are demonstrably not all the same scale. Recovering them is tracked
-separately.
+It was the first placeholder parameter to convert; the entries below add the EQ
+band gains, the mixer and splitter levels, and a cab's per-mic LEVEL. The 27 not
+yet measured still refuse, because their spans have never been measured and they
+are demonstrably not all the same scale - the cab LEVEL turned out to be a
+different scale AND a different shape from the lane levels it shares a
+placeholder bucket with. Recovering the rest is tracked separately.
 
 **Why now.** `import pyquadcortex` should hand you the Quad Cortex, not the wire.
 The model of the unit is being built, and it takes the top-level name; the protocol
