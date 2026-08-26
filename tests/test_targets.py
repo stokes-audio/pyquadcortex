@@ -282,7 +282,8 @@ def test_all_five_mixer_and_splitter_levels_are_measured():
 
     for key in ((11000, 0), (11000, 2), (11000, 5), (10004, 3), (10004, 4)):
         assert key in units.MEASURED_SPANS, key
-        assert units.MEASURED_SPANS[key] == (-40.0, 12.0)
+        span = units.MEASURED_SPANS[key]
+        assert (span.low, span.high, span.exponent) == (-40.0, 12.0, 1.0)
 
 
 def test_real_on_a_bare_block_names_the_missing_model_not_the_catalog():
@@ -310,7 +311,7 @@ def test_the_cab_taper_reproduces_every_reading(wire, screen):
 
     Three points in its upper half fit a straight line beautifully and are 12 dB
     wrong at wire 0.01. It was written up as having no closed form until four
-    more points and an exponent produced a fit good to 0.033 dB. The display
+    more points and an exponent produced a fit good to 0.034 dB. The display
     rounds to 0.1 dB, so that is the tolerance here.
     """
     from pyquadcortex.protocol import units
@@ -363,8 +364,11 @@ def test_the_cab_level_is_not_the_lane_level_scale():
 
     assert units.CAB_LEVEL_UNITY == 0.5
     assert units.UNITY_LEVEL != units.CAB_LEVEL_UNITY
-    assert units.MEASURED_SPANS[(23000, 0)] == (-40.0, 12.0)
-    assert len(units.MEASURED_SPANS[(12000, 2)]) == 3, "the cab entry is tapered"
+    lane = units.MEASURED_SPANS[(23000, 0)]
+    cab = units.MEASURED_SPANS[(12000, 2)]
+    assert (lane.low, lane.high, lane.exponent) == (-40.0, 12.0, 1.0)
+    assert cab.exponent != 1.0, "the cab entry is tapered"
+    assert cab.high == 6.0 and lane.high == 12.0
 
 
 def test_unconvertible_is_empty_and_that_is_a_result():
@@ -416,3 +420,73 @@ def test_a_cab_converts_through_the_shared_cabsim_layout():
     # a back door that sweeps in every placeholder range near a measured one.
     with pytest.raises(ValueError, match="placeholder"):
         Block(0, 1, 13000).normalize(0, -3.0, get)
+
+
+# -- `low` is a fit parameter; `floor` is where the knob actually stops --------
+
+
+@pytest.mark.parametrize("key,asked", [
+    ((12000, 2), -30.0),      # cab: the law extrapolates to -39.96, knob stops at -21.8
+    ((12000, 10), -25.0),
+    ((23000, 0), -40.0),      # lane: the scale's floor, not a knob position
+    ((11000, 5), -39.9),
+])
+def test_a_value_below_the_knobs_floor_is_refused_not_silently_muted(key, asked):
+    """Asking for -30 dB on a cab used to return wire 0.0005, which is OFF.
+
+    The unit's quietest NUMERIC cab setting is -21.8 dB at wire 0.01, and the
+    law's -39.96 is a fit parameter extrapolated below the knob's travel. So the
+    caller got silence instead of attenuation, with no error - the exact
+    silently-wrong-value failure this library is built to prevent.
+    """
+    from pyquadcortex.protocol import units
+
+    with pytest.raises(ValueError, match="does not exist"):
+        units.measured_to_wire(units.MEASURED_SPANS[key], asked)
+
+
+def test_the_floor_is_the_lowest_wire_position_with_a_numeric_display():
+    from pyquadcortex.protocol import units
+
+    assert units.MEASURED_SPANS[(12000, 2)].floor == pytest.approx(-21.8, abs=0.05)
+    assert units.MEASURED_SPANS[(23000, 0)].floor == pytest.approx(-39.5, abs=0.05)
+    assert units.MEASURED_SPANS[(4000, 0)].floor == -12.0, "EQ gain has no Off detent"
+    assert units.MEASURED_SPANS[(25000, 0)].floor == 40.0, "tempo has no Off detent"
+
+
+def test_a_refusal_names_the_parameter_s_own_unit_and_hint():
+    """One shared message told a tempo caller about an Off position it has not got."""
+    from pyquadcortex.protocol import units
+
+    with pytest.raises(ValueError, match="bpm") as tempo:
+        units.measured_to_wire(units.MEASURED_SPANS[(25000, 0)], 300.0)
+    assert "Off position" not in str(tempo.value)
+
+    with pytest.raises(ValueError, match="Off position"):
+        units.measured_to_wire(units.MEASURED_SPANS[(23000, 0)], -41.0)
+
+
+def test_a_bool_is_refused_rather_than_written_as_a_level():
+    """A bool IS an int in Python, so this would look deliberate."""
+    from pyquadcortex.protocol import units
+
+    with pytest.raises(TypeError, match="bool"):
+        units.measured_to_wire(units.MEASURED_SPANS[(11000, 5)], True)
+
+
+def test_measured_from_wire_refuses_a_wire_value_outside_zero_to_one():
+    """A tapered span would otherwise return a complex number, silently."""
+    from pyquadcortex.protocol import units
+
+    with pytest.raises(ValueError, match="0..1"):
+        units.measured_from_wire(units.MEASURED_SPANS[(12000, 2)], -0.1)
+
+
+def test_the_worst_taper_error_is_what_the_docs_claim():
+    """Stated in four places, so pin the real bound rather than a loose one."""
+    from pyquadcortex.protocol import units
+
+    span = units.MEASURED_SPANS[(12000, 2)]
+    worst = max(abs(d - units.measured_from_wire(span, v))
+                for v, d in CAB_LEVEL_READINGS)
+    assert worst == pytest.approx(0.034, abs=0.001)

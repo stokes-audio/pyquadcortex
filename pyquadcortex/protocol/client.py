@@ -616,8 +616,10 @@ class QuadCortex:
         for a string-valued parameter such as a cab's microphone. ``real=``
         converts through the catalog's range, except where the catalog publishes
         a placeholder and the true span has been MEASURED instead: the lane
-        VOLUME in dB and the tempo TEMPO in bpm. The other 51 placeholder
-        parameters still refuse, because their spans are not known.
+        four families so far - the lane, mixer and splitter LEVELs, the block EQ
+        band gains, a cab's per-mic LEVEL, and the tempo TEMPO. The 27
+        placeholder parameters not yet measured still refuse, because an
+        unmeasured span cannot be converted, only guessed.
 
         **Per-scene values.** Name a ``scene`` to change that scene alone::
 

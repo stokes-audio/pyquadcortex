@@ -6,18 +6,71 @@ span the parameter covers. For those the catalog offers nothing to convert
 with, so the span was measured against the unit's screen and lives here.
 
 These are pure functions over floats, and they are separate from ``client.py``
-for a structural reason: ``targets.py`` needs them, because a target owns the
-knowledge that ITS placeholder parameter has a measured span - `LaneOutput`
-converts VOLUME in dB, `Tempo` converts TEMPO in bpm - and ``client.py`` imports
+for a structural reason: ``targets.py`` needs them - a target looks a measured
+span up by its own model id and a wire index - and ``client.py`` imports
 ``targets.py``. Keeping these here is what stops that being a cycle.
 
-Every span was solved the same way and carries the same warning: take THREE
-well-separated screen readings, not two. Two close points cannot distinguish
-spans, which is how the lane levels carried a wrong span for two releases.
+Every span was solved the same way, and the warning has been sharpened twice.
+Two close points cannot distinguish spans - that is how the lane levels carried
+a wrong one for two releases. THREE well-separated points are not enough either:
+three in the cab LEVEL's upper half fit a straight line beautifully and are 12 dB
+wrong at wire 0.01. Take the EXTREMES, and expect a taper.
 
 The parameters whose spans have NOT been measured still refuse ``real=``. There
-are 51 of them across 23 models; recovering their spans is tracked separately.
+were 52 of them across 23 models; 25 are measured and live in
+``MEASURED_SPANS``, and the rest are tracked separately.
 """
+
+from typing import NamedTuple
+
+
+class Span(NamedTuple):
+    """A measured real-world range, and how the wire maps onto it.
+
+    ``real = low + (high - low) * wire ** exponent``. The exponent is 1.0 for a
+    control linear in its own units, which is most of them.
+
+    ``floor_wire`` is the lowest wire position the unit gives a NUMERIC display
+    to; below it the screen reads "OFF". It matters because ``low`` is often a
+    FIT PARAMETER rather than a place the knob goes. The cab LEVEL's law
+    extrapolates to -39.96 dB, but its quietest real setting is -21.8 dB at wire
+    0.01. Without a floor, asking for -30 dB returns wire 0.0005 and MUTES the
+    mic - a silently wrong value, which is the failure this library exists to
+    prevent. Leave it 0.0 where every position is real, as on the EQ gains.
+
+    ``unit`` and ``hint`` shape the refusal message only. One shared message for
+    four families told a tempo caller about an Off position the tempo has not
+    got.
+    """
+
+    low: float
+    high: float
+    exponent: float = 1.0
+    floor_wire: float = 0.0
+    unit: str = ""
+    hint: str = ""
+
+    @property
+    def floor(self) -> float:
+        """The lowest value the unit will actually display."""
+        return self.low + (self.high - self.low) * (self.floor_wire ** self.exponent)
+
+
+_LEVEL_HINT = ("for silence write value=0.0, the Off position - the bottom of "
+               "the dB scale is a different thing")
+
+#: The lane, mixer and splitter LEVEL controls, which share one scale. The
+#: floor is measured: -39.5 dB at wire 0.01 is the lowest numeric step on the
+#: lane VOLUME, confirmed on the splitter, with OFF below it.
+_LEVEL = Span(-40.0, 12.0, floor_wire=0.01, unit="dB", hint=_LEVEL_HINT)
+
+#: A cab's per-mic LEVEL. Tapered, and its ``low`` sits well below anything the
+#: knob reaches, which is exactly why it needs a floor.
+_CAB_LEVEL = Span(-39.96, 6.0, exponent=0.202, floor_wire=0.01, unit="dB",
+                  hint="for silence write value=0.0, the Off position")
+
+#: A block EQ band's GAIN. Every position is reachable, so no floor.
+_EQ_GAIN = Span(-12.0, 12.0, unit="dB")
 
 #: The wire value the mixer, splitter and lane-output LEVEL parameters hold when
 #: nothing is attenuated - 10/13, which is 0 dB on the -40..+12 dB span those
@@ -188,14 +241,14 @@ MEASURED_SPANS = {
     # the reader was taking `param_values[0]` - scene A. The unit was on scene E.
     # Measured properly afterwards: LEVEL A -24.4 at 0.30 and +12.0 at 1.0,
     # LEVEL B -3.1 at 0.71 and +12.0 at 1.0.
-    (23000, 0): (-40.0, 12.0),      # LaneOutputControl VOLUME
-    (11000, 0): (-40.0, 12.0),      # Mixer LEVEL A
-    (11000, 2): (-40.0, 12.0),      # Mixer LEVEL B
-    (11000, 5): (-40.0, 12.0),      # Mixer MIXER LEVEL
-    (10004, 3): (-40.0, 12.0),      # Splitter LEVEL TO A
-    (10004, 4): (-40.0, 12.0),      # Splitter LEVEL TO B
+    (23000, 0): _LEVEL,             # LaneOutputControl VOLUME
+    (11000, 0): _LEVEL,             # Mixer LEVEL A
+    (11000, 2): _LEVEL,             # Mixer LEVEL B
+    (11000, 5): _LEVEL,             # Mixer MIXER LEVEL
+    (10004, 3): _LEVEL,             # Splitter LEVEL TO A
+    (10004, 4): _LEVEL,             # Splitter LEVEL TO B
     # The per-preset tempo: bpm = 40 + 200 * wire, from three screen readings.
-    (25000, 0): (40.0, 240.0),      # TempoControl TEMPO
+    (25000, 0): Span(40.0, 240.0, unit="bpm"),   # TempoControl TEMPO
     # Cab LEVEL, per mic. The ONLY tapered control measured so far, and the one
     # that shows why "three points" is not a sufficient standard: three points in
     # the upper half fit a straight line and are 12 dB wrong at wire 0.01.
@@ -206,7 +259,7 @@ MEASURED_SPANS = {
     #   0.15  -8.6   0.25  -5.2   0.35  -2.8   0.50   0.0   0.60  +1.5
     #   0.75  +3.4   0.95  +5.5   1.00  +6.0
     #
-    # dB = -39.96 + 45.96 * wire**0.202, worst error 0.033 dB - inside the
+    # dB = -39.96 + 45.96 * wire**0.202, worst error 0.034 dB - inside the
     # display's own 0.1 dB rounding. Two of those points, 0.15 and 0.60, were
     # PREDICTED from the law and then found, before being fitted to; the lab used
     # the same standard for the lane VOLUME's +3.2 dB at 0.830769.
@@ -214,8 +267,8 @@ MEASURED_SPANS = {
     # The design intent is probably -40 -> +6 with a fifth-root taper: those
     # constants fit to 0.17 dB, which the display can just about resolve, so the
     # measured values are what ships and this note is why they look untidy.
-    (12000, 2): (-39.96, 6.0, 0.202),   # cab LEVEL, mic 1
-    (12000, 10): (-39.96, 6.0, 0.202),  # cab LEVEL, mic 2
+    (12000, 2): _CAB_LEVEL,         # cab LEVEL, mic 1
+    (12000, 10): _CAB_LEVEL,        # cab LEVEL, mic 2
 }
 
 #: Block EQ band gains: dB = -12 + 24 * wire. Measured 2026-08-25 on the
@@ -227,7 +280,7 @@ MEASURED_SPANS = {
 #: A band's TYPE decides whether its GAIN means anything: Lo Pass and Hi Pass
 #: disable the control, and a gain written to such a band is stored and ignored.
 #: Nothing here can detect that, so it stays a caller's problem and a docs note.
-EQ_GAIN_SPAN = (-12.0, 12.0)
+EQ_GAIN_SPAN = _EQ_GAIN
 for _model, _bands in ((4000, 8), (4001, 3), (4004, 5)):
     for _band in range(_bands):
         MEASURED_SPANS[(_model, _band * 5)] = EQ_GAIN_SPAN
@@ -242,7 +295,7 @@ del _model, _bands, _band
 #: EMPTY, and that is a result. The cab LEVEL lived here for about an hour: three
 #: laws were tried against eight points, all missed, and it was written up as
 #: formless. The owner did not believe it. Four more points and a taper exponent
-#: produced a fit good to 0.033 dB. The lesson is in `MEASURED_SPANS` beside the
+#: produced a fit good to 0.034 dB. The lesson is in `MEASURED_SPANS` beside the
 #: cab entry - a control can be perfectly regular and still defeat every law you
 #: happen to try first.
 UNCONVERTIBLE = {}
@@ -253,28 +306,45 @@ CAB_LEVEL_UNITY = 0.5
 
 
 def measured_to_wire(span, real: float) -> float:
-    """Convert ``real`` to the wire's 0..1 across a measured ``span``.
-
-    ``span`` is ``(low, high)`` for a control that is linear in its own units,
-    or ``(low, high, exponent)`` for a TAPERED one, where
-    ``real = low + (high - low) * wire ** exponent``. Most controls here are
-    linear; the cab LEVEL is not, and pretending it were would put a value 12 dB
-    wrong near the bottom of its travel.
+    """Convert ``real`` to the wire's 0..1 across a measured :class:`Span`.
 
     Refuses a value the unit has no position for, rather than clamping: a
-    silently clamped write looks like it worked and lands somewhere else.
+    silently clamped write looks like it worked and lands somewhere else. That
+    includes anything below ``span.floor``, because ``span.low`` is frequently a
+    fit parameter rather than a reachable setting - see :class:`Span`.
     """
-    low, high, exponent = (span if len(span) == 3 else (*span, 1.0))
-    if not low <= real <= high:
-        raise ValueError(
-            f"this parameter runs {low:g}..{high:g} on the unit; {real:g} does "
-            f"not exist there. (For a level, silence is value=0.0 - the Off "
-            f"position - not the bottom of the dB scale.)"
+    span = _as_span(span)
+    if isinstance(real, bool):
+        raise TypeError(
+            f"real= takes a number, not {real!r}. A bool IS an int in Python, so "
+            f"without this it would quietly write a value and look deliberate."
         )
-    return ((real - low) / (high - low)) ** (1.0 / exponent)
+    unit = f" {span.unit}" if span.unit else ""
+    hint = f" ({span.hint})" if span.hint else ""
+    if not span.floor <= real <= span.high:
+        raise ValueError(
+            f"this parameter runs {round(span.floor, 1):g}..{span.high:g}{unit} "
+            f"on the unit; {real:g}{unit} does not exist there.{hint}"
+        )
+    return ((real - span.low) / (span.high - span.low)) ** (1.0 / span.exponent)
 
 
 def measured_from_wire(span, value: float) -> float:
-    """Convert a wire 0..1 to the parameter's own units across ``span``."""
-    low, high, exponent = (span if len(span) == 3 else (*span, 1.0))
-    return low + (high - low) * (value ** exponent)
+    """Convert a wire 0..1 to the parameter's own units across a :class:`Span`.
+
+    Values below the span's floor are still converted: this reports what the
+    unit HOLDS, and a preset can legitimately hold one, where
+    :func:`measured_to_wire` refuses to put one there.
+    """
+    span = _as_span(span)
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(
+            f"the wire carries 0..1; {value!r} is outside it. A tapered span "
+            f"would otherwise return a complex number rather than refusing."
+        )
+    return span.low + (span.high - span.low) * (value ** span.exponent)
+
+
+def _as_span(span) -> Span:
+    """Accept a bare tuple where a :class:`Span` is expected."""
+    return span if isinstance(span, Span) else Span(*span)

@@ -212,9 +212,9 @@ qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, value=0.0, scene=Scene.C)
 
 A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which is
 what every mixer, splitter and lane level in the factory content sits at when nothing
-is attenuated. Those parameters are published with a placeholder `0..1` range that
-claims to be dB, so `real=` is refused for them rather than converting into a number
-that means something else - pass `value=`, or speak dB through the helpers:
+is attenuated. The catalog publishes these with a placeholder `0..1` range that claims
+to be dB, but their true span **has been measured** - -40..+12 dB - so `real=` takes dB
+directly. The helpers remain for reading a stored value back:
 
 ```python
 from pyquadcortex.protocol import db_to_lane_level, lane_level_db

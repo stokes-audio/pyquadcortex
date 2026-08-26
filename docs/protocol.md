@@ -59,7 +59,7 @@ confirming each finding live against hardware.
 - [Grid blocks](#grid-blocks)
   - [A placement can be refused for want of DSP capacity](#a-placement-can-be-refused-for-want-of-dsp-capacity)
 - [The model catalog (ModelRepo)](#the-model-catalog-modelrepo)
-  - [Some catalog ranges are placeholders, and cannot be converted](#some-catalog-ranges-are-placeholders-and-cannot-be-converted)
+  - [Some catalog ranges are placeholders (mostly recovered by measurement)](#some-catalog-ranges-are-placeholders-mostly-recovered-by-measurement)
   - [`param_values` can contain NaN](#param_values-can-contain-nan)
   - [Adding a block rewrites comboBox values on rows you never wrote to](#adding-a-block-rewrites-combobox-values-on-rows-you-never-wrote-to)
 - [Open questions](#open-questions)
@@ -2639,7 +2639,7 @@ visually on the device's own screen.
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_param(Tempo(), ...)` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. A DEVICE setting, not a preset one - nothing to save. No change event is emitted when the switch moves, but the value rides the ambient params push; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
-| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, through the measured -40..+12 span rather than the catalog's placeholder - the only placeholder parameter that converts |
+| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, through the measured -40..+12 span rather than the catalog's placeholder - one of 25 placeholder parameters now measured |
 | `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
 | `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
 | `set_expression_bypass` | `Grid{UPDATE, ..., models{bypass_expression, expression_bypass_info}}` | read-back + on-unit | `type` is `ExpressionSwitchMode`, all three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2. The mode decides which other controls exist - SWITCH greys out the delay, HEEL_TOE greys out latch emulation |
@@ -2733,7 +2733,7 @@ not a sufficient standard. Twelve points on a `212 Darkglass Neo (M)`, per mic:
 |---|---|---|---|---|---|---|---|---|---|
 | screen | OFF | -21.8 | -11.1 | -5.2 | -2.8 | **0.0** | +3.4 | +5.5 | **+6.0** |
 
-**`dB = -39.96 + 45.96 * wire^0.202`**, worst error 0.033 dB across all twelve -
+**`dB = -39.96 + 45.96 * wire^0.202`**, worst error 0.034 dB across all twelve -
 inside the display's own 0.1 dB rounding. Wire 0.15 and 0.60 were PREDICTED from
 the law and then found, before being fitted to.
 
@@ -2760,8 +2760,8 @@ is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
 
 Everything NOT in that table still refuses `real=`. That is the honest answer:
 an unmeasured span cannot be converted, only guessed. The remaining families -
-cab LEVEL, send/return and FX-loop levels, the recorder's OUT LEVEL - are
-tracked on the placeholder-ranges issue.
+send/return and FX-loop levels, the recorder's OUT LEVEL, Parallax's LEVELs -
+are tracked on the placeholder-ranges issue.
 
 ### What a host can assign an expression pedal to
 
@@ -2893,7 +2893,7 @@ Parameter values on the wire are **normalized 0..1**, confirmed on hardware:
 sending `1.0` to a `THRESHOLD` whose catalog range is -60..+12 dB made the unit
 display +12.0 dB.
 
-### Some catalog ranges are placeholders, and cannot be converted
+### Some catalog ranges are placeholders (mostly recovered by measurement)
 
 A parameter published as **`min="0" max="1"` with a real-world unit** is not
 describing its own span - that is just the wire's normalized scale, and the true span
@@ -2907,7 +2907,7 @@ Converting against such a range yields a number that means something else, so
 (`Parameter.range_is_placeholder` is the test) and `real=` is refused. Pass `value=`
 with the normalized 0..1 instead.
 
-**Two of these spans have since been measured, so the placeholder no longer blocks
+**Four families have since been measured, so the placeholder no longer blocks
 them:** the level parameters below, and `TEMPO`, which is **40 to 240 bpm** -
 `bpm = 40 + 200 * value`. Three screen readings against simultaneous wire reads, each
 landing on the displayed integer exactly: 59 bpm at `0.095`, 111 at `0.355`, 120 at
@@ -3082,7 +3082,7 @@ Stated explicitly so nobody builds on a guess:
   arrives (see [above](#a-placement-can-be-refused-for-want-of-dsp-capacity)), so
   whether a block will fit can only be discovered by placing it.
 - **The true spans behind the placeholder 0..1 ranges** are not recoverable from the
-  catalog. Eight parameters are affected; two spans covering seven of them have since
+  catalog. 52 parameters across 23 models are affected; 25 of them have since
   been measured off the screen: the mixer/splitter/lane levels at -40..+12 dB, and
   `TEMPO` at 40..240 bpm (2026-08-12, three points). **Splitter `FREQUENCY` is the one
   still unrecovered.** In both measured cases the endpoints are the fit's rather than

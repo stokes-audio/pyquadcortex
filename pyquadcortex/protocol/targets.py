@@ -36,6 +36,13 @@ from pyquadcortex.protocol.units import MEASURED_SPANS, measured_to_wire
 
 #: Catalog model ids for the containers whose model never varies.
 CABSIM_LAYOUT = 12000
+#: The categories whose models use the `Default Cabsim` layout. Enumerated
+#: rather than matched on a "Cabsim" prefix: this repo's precedent is
+#: `LANE_OUTPUT_UNASSIGNABLE` - "a MEASURED LIST, not a rule" - and a prefix
+#: would silently sweep in a future category whose layout may differ.
+#: `tests/hardware/test_generated_constants.py` holds the same four names.
+CABSIM_CATEGORIES = ("Cabsim Guitar (M)", "Cabsim Guitar (ST)",
+                     "Cabsim Bass (M)", "Cabsim Bass (ST)")
 LANE_OUTPUT_CONTROL = 23000
 INPUT_GATE_CONTROL = 28000
 TEMPO_CONTROL = 25000
@@ -184,21 +191,27 @@ class ParamTarget:
             )
         return spec.to_normalized(real)
 
-    def _layout_span(self, index, get_catalog, model=None):
+    def _layout_span(self, index, get_catalog):
         """A span belonging to this model's shared LAYOUT rather than to itself.
 
         Only cabs need this, and they need it because the catalog
         under-describes them: a cab model lists its two mic selectors while the
         wire carries the whole `Default Cabsim` layout, so a measurement of that
-        layout is what applies. Resolved through the catalog rather than a table
-        of cab ids, so a cab this build has never heard of works too.
+        layout is what applies.
 
-        This is the ONE conversion path that costs a catalog fetch. It is on the
-        miss path only - an indexed write with ``value=`` never reaches here, and
-        neither does any parameter whose own span is measured.
+        **The taper was measured on ONE cab**, a 212 Darkglass Neo (M). Every cab
+        provably shares the LAYOUT - `tests/hardware/test_generated_constants.py`
+        holds that against the live catalog - but sharing a layout is not the
+        same as sharing a taper, and nobody has checked a second cab. Applying it
+        to all of them is the one extrapolation in this module, and it is here
+        rather than in `MEASURED_SPANS` so it is visible.
+
+        This is also the ONE conversion path that costs a catalog fetch, and only
+        on the miss path: an indexed write with ``value=`` never reaches here,
+        nor does any parameter whose own span is measured.
         """
-        source = self.model(get_catalog, model)
-        if source is None or not source.category.startswith("Cabsim"):
+        source = self.model(get_catalog)
+        if source is None or source.category not in CABSIM_CATEGORIES:
             return None
         return MEASURED_SPANS.get((CABSIM_LAYOUT, index))
 
