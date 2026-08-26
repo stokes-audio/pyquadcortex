@@ -35,6 +35,7 @@ from pyquadcortex.protocol.errors import ControlNotDrivable
 from pyquadcortex.protocol.units import MEASURED_SPANS, measured_to_wire
 
 #: Catalog model ids for the containers whose model never varies.
+CABSIM_LAYOUT = 12000
 LANE_OUTPUT_CONTROL = 23000
 INPUT_GATE_CONTROL = 28000
 TEMPO_CONTROL = 25000
@@ -163,6 +164,9 @@ class ParamTarget:
             # A placeholder range whose true span WAS measured. Looked up by
             # index, so this costs no catalog fetch - see `MEASURED_SPANS`.
             return measured_to_wire(span, real)
+        span = self._layout_span(index, get_catalog)
+        if span is not None:
+            return measured_to_wire(span, real)
         spec = spec if spec is not None else self.spec_at(index, get_catalog)
         if spec is None and self.model_id is None:
             raise TypeError(
@@ -179,6 +183,24 @@ class ParamTarget:
                 f"value= with the normalized 0..1 instead."
             )
         return spec.to_normalized(real)
+
+    def _layout_span(self, index, get_catalog, model=None):
+        """A span belonging to this model's shared LAYOUT rather than to itself.
+
+        Only cabs need this, and they need it because the catalog
+        under-describes them: a cab model lists its two mic selectors while the
+        wire carries the whole `Default Cabsim` layout, so a measurement of that
+        layout is what applies. Resolved through the catalog rather than a table
+        of cab ids, so a cab this build has never heard of works too.
+
+        This is the ONE conversion path that costs a catalog fetch. It is on the
+        miss path only - an indexed write with ``value=`` never reaches here, and
+        neither does any parameter whose own span is measured.
+        """
+        source = self.model(get_catalog, model)
+        if source is None or not source.category.startswith("Cabsim"):
+            return None
+        return MEASURED_SPANS.get((CABSIM_LAYOUT, index))
 
     def refuse_if_unassignable(self, spec):
         """Raise :class:`ControlNotDrivable` if a pedal cannot be assigned here."""

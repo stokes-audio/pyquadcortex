@@ -265,8 +265,8 @@ def test_an_unmeasured_placeholder_still_refuses():
     """
     from pyquadcortex.protocol import units
 
-    assert (12000, 2) not in units.MEASURED_SPANS, "cab LEVEL is not measured"
     assert (13000, 0) not in units.MEASURED_SPANS, "Send 1 LEVEL is not measured"
+    assert (13004, 0) not in units.MEASURED_SPANS, "FX Loop SEND LEV is not measured"
     assert (20000, 2) not in units.MEASURED_SPANS, "recorder OUT LEVEL is not measured"
 
 
@@ -293,3 +293,126 @@ def test_real_on_a_bare_block_names_the_missing_model_not_the_catalog():
     """
     with pytest.raises(TypeError, match="model="):
         Block(0, 1).normalize(0, 6.0, _Exploding())
+
+
+#: Every cab LEVEL reading, screen against wire. The law is held to these rather
+#: than to itself, so a future refit cannot quietly drift away from the unit.
+CAB_LEVEL_READINGS = [
+    (0.01, -21.8), (0.02, -19.1), (0.05, -14.9), (0.10, -11.1), (0.15, -8.6),
+    (0.25, -5.2), (0.35, -2.8), (0.50, 0.0), (0.60, 1.5), (0.75, 3.4),
+    (0.95, 5.5), (1.00, 6.0),
+]
+
+
+@pytest.mark.parametrize("wire,screen", CAB_LEVEL_READINGS)
+def test_the_cab_taper_reproduces_every_reading(wire, screen):
+    """A TAPERED control - the only one measured so far, and a warning.
+
+    Three points in its upper half fit a straight line beautifully and are 12 dB
+    wrong at wire 0.01. It was written up as having no closed form until four
+    more points and an exponent produced a fit good to 0.033 dB. The display
+    rounds to 0.1 dB, so that is the tolerance here.
+    """
+    from pyquadcortex.protocol import units
+
+    span = units.MEASURED_SPANS[(12000, 2)]
+    assert units.measured_from_wire(span, wire) == pytest.approx(screen, abs=0.05)
+
+
+def test_the_cab_taper_was_confirmed_by_prediction_not_only_by_fitting():
+    """0.15 and 0.60 were predicted from the law and then found on the unit.
+
+    The lab used the same standard for the lane VOLUME's +3.2 dB at 0.830769:
+    a curve fitted to its own points proves nothing about the points between.
+    """
+    from pyquadcortex.protocol import units
+
+    span = units.MEASURED_SPANS[(12000, 2)]
+    assert units.measured_from_wire(span, 0.15) == pytest.approx(-8.6, abs=0.05)
+    assert units.measured_from_wire(span, 0.60) == pytest.approx(1.5, abs=0.05)
+
+
+def test_a_taper_round_trips():
+    from pyquadcortex.protocol import units
+
+    span = units.MEASURED_SPANS[(12000, 2)]
+    for wire in (0.05, 0.25, 0.5, 0.9):
+        real = units.measured_from_wire(span, wire)
+        assert units.measured_to_wire(span, real) == pytest.approx(wire, abs=1e-6)
+
+
+def test_a_linear_span_is_a_taper_with_exponent_one():
+    """Adding taper support must not have moved any linear conversion."""
+    from pyquadcortex.protocol import units
+
+    assert units.measured_to_wire((-40.0, 12.0), -3.1) == pytest.approx(
+        units.measured_to_wire((-40.0, 12.0, 1.0), -3.1))
+    assert units.measured_to_wire((-40.0, 12.0), -3.1) == pytest.approx(0.709615,
+                                                                        abs=1e-6)
+
+
+def test_the_cab_level_is_not_the_lane_level_scale():
+    """It sits in the same `0..1 "dB"` bucket and is a different control.
+
+    The lane, mixer and splitter levels are -40..+12, LINEAR, with unity at
+    10/13. The cab LEVEL is tapered, has unity at 0.5, and reaches only +6 dB.
+    Assuming the placeholder bucket implied one scale would have put a value
+    20 dB wrong on the wire.
+    """
+    from pyquadcortex.protocol import units
+
+    assert units.CAB_LEVEL_UNITY == 0.5
+    assert units.UNITY_LEVEL != units.CAB_LEVEL_UNITY
+    assert units.MEASURED_SPANS[(23000, 0)] == (-40.0, 12.0)
+    assert len(units.MEASURED_SPANS[(12000, 2)]) == 3, "the cab entry is tapered"
+
+
+def test_unconvertible_is_empty_and_that_is_a_result():
+    """It held the cab LEVEL for an hour. Four more points emptied it."""
+    from pyquadcortex.protocol import units
+
+    assert units.UNCONVERTIBLE == {}
+
+
+def test_a_cab_converts_through_the_shared_cabsim_layout():
+    """A cab reports its OWN model id and uses the Default Cabsim layout.
+
+    The catalog lists two parameters for a cab - its mic selectors - while the
+    wire carries 22, so a measurement of the layout is what applies. Resolved
+    through the catalog rather than a table of cab ids, so a cab this build has
+    never seen works too.
+    """
+    from tests.test_catalog import SAMPLE_XML, make_payload
+    from pyquadcortex.protocol import catalog, units
+
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="21" name="Cabsim Bass (M)">
+  <Model blob="c1" id="21005" name="212 Darkglass Neo (M)">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+  </Model>
+</Category>
+<Category id="13" name="Send">
+  <Model blob="sd" id="13000" name="Send 1" internal="true">
+    <Parameter defaultValue="0.5" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+  </Model>
+</Category>
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model blob="c0" id="12000" name="Default Cabsim" internal="true">
+    <Parameter defaultValue="0" max="1" min="0" name="bypass" type="switch"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+  </Model>
+</Category>
+</Models>""")
+    cat = catalog.parse_model_repo(make_payload(xml))
+    get = lambda: cat
+
+    cab = Block(0, 5, 21005)
+    assert (21005, 2) not in units.MEASURED_SPANS, "the cab's own id is not keyed"
+    assert cab.normalize(2, -3.0, get) == pytest.approx(0.3400, abs=5e-4)
+
+    # A NON-cab whose own span is unmeasured still refuses, so the alias is not
+    # a back door that sweeps in every placeholder range near a measured one.
+    with pytest.raises(ValueError, match="placeholder"):
+        Block(0, 1, 13000).normalize(0, -3.0, get)

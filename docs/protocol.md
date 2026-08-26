@@ -2726,6 +2726,38 @@ parameter that does nothing.
 polarity already recorded for the Global EQ. A disabled band displays `0.0 dB`
 whatever it stores, which makes a write look like it never landed.
 
+**Cab LEVEL is TAPERED**, and it is the reason "three well-separated points" is
+not a sufficient standard. Twelve points on a `212 Darkglass Neo (M)`, per mic:
+
+| wire | 0.00 | 0.01 | 0.10 | 0.25 | 0.35 | 0.50 | 0.75 | 0.95 | 1.00 |
+|---|---|---|---|---|---|---|---|---|---|
+| screen | OFF | -21.8 | -11.1 | -5.2 | -2.8 | **0.0** | +3.4 | +5.5 | **+6.0** |
+
+**`dB = -39.96 + 45.96 * wire^0.202`**, worst error 0.033 dB across all twelve -
+inside the display's own 0.1 dB rounding. Wire 0.15 and 0.60 were PREDICTED from
+the law and then found, before being fitted to.
+
+The three obvious laws all fail, which is the cautionary part. `20*log10(2v)`
+matches the top three points beautifully and is **12 dB out at wire 0.01**;
+linear-in-amplitude matches 0.25 exactly and is 3.1 dB out at 0.01;
+linear-in-dB would need +12 at full travel. This parameter was written up as
+having no closed form on the strength of eight points and three failed laws. It
+took four more points and a taper exponent. **A control can be perfectly regular
+and still defeat every law you happen to try first.**
+
+The constants are probably the design intent -40 -> +6 with a fifth-root taper;
+`-40 + 46 * wire^0.2` fits to 0.17 dB, which the display can just about resolve,
+so the measured values are what ships.
+
+It shares the lane VOLUME's STRUCTURE - a numeric floor at wire 0.01 with the Off
+detent below it - but not its values: -21.8 dB here against the lane's -39.5 dB
+at the same wire position.
+
+Note what this rules out. Cab LEVEL sits in the same `0..1 "dB"` placeholder
+bucket as the lane and mixer levels and is **not** their -40..+12 scale - unity
+is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
+20 dB wrong on the wire.
+
 Everything NOT in that table still refuses `real=`. That is the honest answer:
 an unmeasured span cannot be converted, only guessed. The remaining families -
 cab LEVEL, send/return and FX-loop levels, the recorder's OUT LEVEL - are

@@ -45,6 +45,31 @@ qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_B, real=-3.1)
 "OFF" there, exactly as the lane VOLUME does - so that belongs to the whole level
 family. For silence write `value=0.0`.
 
+### Cab LEVEL takes dB too, and it is TAPERED
+
+```python
+qc.set_param(block, params.Cabsim.MIC_1_LEVEL, real=-3.0)   # block from blocks()
+```
+
+`dB = -39.96 + 45.96 * wire^0.202`, measured at twelve points and accurate to
+0.033 dB - inside the display's own rounding. Two of those points were predicted
+from the law and then found on the unit before being fitted to.
+
+This is the first control here that is not linear in its own units, and it is a
+warning about the standard used for the others. Three well-separated points in
+its upper half fit a straight line beautifully and are **12 dB wrong at wire
+0.01**. It was written up as having no closed form, on the strength of eight
+points and three failed laws, before four more points and a taper exponent
+produced the fit.
+
+A cab is chosen by its `models.*` id and driven through the shared `Cabsim`
+layout, so the conversion follows that layout rather than the cab's own catalog
+entry - which lists two parameters where the wire carries 22.
+
+Note what this rules out: cab LEVEL sits in the same `0..1 "dB"` placeholder
+bucket as the lane and mixer levels and is **not** their -40..+12 linear scale.
+Unity is at wire 0.5 rather than 10/13, and full travel is +6 dB rather than +12.
+
 Everything else still refuses `real=`, which is the honest answer for a span
 nobody has measured. Two things worth knowing before relying on EQ gain: a band's
 TYPE decides whether GAIN does anything at all (Lo Pass and Hi Pass disable it,

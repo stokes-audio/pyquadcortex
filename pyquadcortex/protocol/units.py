@@ -196,6 +196,26 @@ MEASURED_SPANS = {
     (10004, 4): (-40.0, 12.0),      # Splitter LEVEL TO B
     # The per-preset tempo: bpm = 40 + 200 * wire, from three screen readings.
     (25000, 0): (40.0, 240.0),      # TempoControl TEMPO
+    # Cab LEVEL, per mic. The ONLY tapered control measured so far, and the one
+    # that shows why "three points" is not a sufficient standard: three points in
+    # the upper half fit a straight line and are 12 dB wrong at wire 0.01.
+    #
+    # Twelve screen readings, 2026-08-26, on 212 Darkglass Neo (M):
+    #
+    #   0.00 OFF     0.01 -21.8   0.02 -19.1   0.05 -14.9   0.10 -11.1
+    #   0.15  -8.6   0.25  -5.2   0.35  -2.8   0.50   0.0   0.60  +1.5
+    #   0.75  +3.4   0.95  +5.5   1.00  +6.0
+    #
+    # dB = -39.96 + 45.96 * wire**0.202, worst error 0.033 dB - inside the
+    # display's own 0.1 dB rounding. Two of those points, 0.15 and 0.60, were
+    # PREDICTED from the law and then found, before being fitted to; the lab used
+    # the same standard for the lane VOLUME's +3.2 dB at 0.830769.
+    #
+    # The design intent is probably -40 -> +6 with a fifth-root taper: those
+    # constants fit to 0.17 dB, which the display can just about resolve, so the
+    # measured values are what ships and this note is why they look untidy.
+    (12000, 2): (-39.96, 6.0, 0.202),   # cab LEVEL, mic 1
+    (12000, 10): (-39.96, 6.0, 0.202),  # cab LEVEL, mic 2
 }
 
 #: Block EQ band gains: dB = -12 + 24 * wire. Measured 2026-08-25 on the
@@ -214,23 +234,47 @@ for _model, _bands in ((4000, 8), (4001, 3), (4004, 5)):
 del _model, _bands, _band
 
 
+#: Parameters MEASURED and found to have no honest conversion, with the readings
+#: that establish it. ``real=`` refuses these, but "we looked and it does not
+#: fit" is a different fact from "nobody has looked", and only this can tell them
+#: apart.
+#:
+#: EMPTY, and that is a result. The cab LEVEL lived here for about an hour: three
+#: laws were tried against eight points, all missed, and it was written up as
+#: formless. The owner did not believe it. Four more points and a taper exponent
+#: produced a fit good to 0.033 dB. The lesson is in `MEASURED_SPANS` beside the
+#: cab entry - a control can be perfectly regular and still defeat every law you
+#: happen to try first.
+UNCONVERTIBLE = {}
+
+#: The wire value a cab LEVEL holds at unity, which IS worth naming even though
+#: the taper around it is not expressible.
+CAB_LEVEL_UNITY = 0.5
+
+
 def measured_to_wire(span, real: float) -> float:
     """Convert ``real`` to the wire's 0..1 across a measured ``span``.
+
+    ``span`` is ``(low, high)`` for a control that is linear in its own units,
+    or ``(low, high, exponent)`` for a TAPERED one, where
+    ``real = low + (high - low) * wire ** exponent``. Most controls here are
+    linear; the cab LEVEL is not, and pretending it were would put a value 12 dB
+    wrong near the bottom of its travel.
 
     Refuses a value the unit has no position for, rather than clamping: a
     silently clamped write looks like it worked and lands somewhere else.
     """
-    low, high = span
+    low, high, exponent = (span if len(span) == 3 else (*span, 1.0))
     if not low <= real <= high:
         raise ValueError(
             f"this parameter runs {low:g}..{high:g} on the unit; {real:g} does "
             f"not exist there. (For a level, silence is value=0.0 - the Off "
             f"position - not the bottom of the dB scale.)"
         )
-    return (real - low) / (high - low)
+    return ((real - low) / (high - low)) ** (1.0 / exponent)
 
 
 def measured_from_wire(span, value: float) -> float:
     """Convert a wire 0..1 to the parameter's own units across ``span``."""
-    low, high = span
-    return low + (high - low) * value
+    low, high, exponent = (span if len(span) == 3 else (*span, 1.0))
+    return low + (high - low) * (value ** exponent)
