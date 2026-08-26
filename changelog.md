@@ -20,6 +20,63 @@ correction.
 
 ## Unreleased
 
+### `real=` speaks dB for the EQ bands, the mixer and the splitter
+
+Four more families of parameter now take a value in the units the screen shows,
+because their spans were measured rather than inherited:
+
+```python
+qc.set_param(Block(0, 1, models.Equalizer.PARAMETRIC_8), "1 GAIN", real=6.0)
+qc.set_param(Mixer(0), params.MixerParam.MIXER_LEVEL, real=-6.0)
+qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_B, real=-3.1)
+```
+
+- **Block EQ band gains** are `dB = -12 + 24 * wire`. Measured on the
+  Parametric-8 at four points including both ends, and separately on the
+  Parametric-3 and Output Equalizer, which are different catalog entries and so
+  were not assumed to inherit it.
+- **The mixer and splitter levels** are `dB = -40 + 52 * wire`, all five of them
+  - `LEVEL A`, `LEVEL B`, `MIXER LEVEL`, `LEVEL TO A`, `LEVEL TO B`. The library
+  has claimed this for several releases on the strength of a measurement of the
+  lane VOLUME; it is now measured on those controls themselves, and the claim
+  held.
+
+**Wire 0.0 is an OFF detent, not -40 dB.** The splitter's `LEVEL TO A` displays
+"OFF" there, exactly as the lane VOLUME does - so that belongs to the whole level
+family. For silence write `value=0.0`.
+
+### Cab LEVEL takes dB too, and it is TAPERED
+
+```python
+qc.set_param(block, params.Cabsim.MIC_1_LEVEL, real=-3.0)   # block from blocks()
+```
+
+`dB = -39.96 + 45.96 * wire^0.202`, measured at twelve points and accurate to
+0.034 dB - inside the display's own rounding. Two of those points were predicted
+from the law and then found on the unit before being fitted to.
+
+This is the first control here that is not linear in its own units, and it is a
+warning about the standard used for the others. Three well-separated points in
+its upper half fit a straight line beautifully and are **12 dB wrong at wire
+0.01**. It was written up as having no closed form, on the strength of eight
+points and three failed laws, before four more points and a taper exponent
+produced the fit.
+
+A cab is chosen by its `models.*` id and driven through the shared `Cabsim`
+layout, so the conversion follows that layout rather than the cab's own catalog
+entry - which lists two parameters where the wire carries 22.
+
+Note what this rules out: cab LEVEL sits in the same `0..1 "dB"` placeholder
+bucket as the lane and mixer levels and is **not** their -40..+12 linear scale.
+Unity is at wire 0.5 rather than 10/13, and full travel is +6 dB rather than +12.
+
+Everything else still refuses `real=`, which is the honest answer for a span
+nobody has measured. Two things worth knowing before relying on EQ gain: a band's
+TYPE decides whether GAIN does anything at all (Lo Pass and Hi Pass disable it,
+and a gain written there is stored and ignored), and `N BYPASS = 1` means the
+band is **ON** - a disabled band displays `0.0 dB` whatever it stores.
+
+
 ### BREAKING: one `set_param` for everything, addressed by a target
 
 Six ways to set a parameter became one. Say WHERE it lives:
@@ -243,11 +300,12 @@ The lane VOLUME publishes the placeholder range `0..1 "dB"`, so `real=` used to
 refuse it. Its TRUE span is measured at both ends - -40..+12 dB, unity at 10/13 -
 so the conversion now goes through that instead of through the catalog.
 
-It is **the only** placeholder parameter that converts. The other 51 across 23
-models - EQ band gains, cab levels, send/return and FX loop levels, mixer and
-splitter levels - still refuse, because their spans have never been measured and
-they are demonstrably not all the same scale. Recovering them is tracked
-separately.
+It was the first placeholder parameter to convert; the entries below add the EQ
+band gains, the mixer and splitter levels, and a cab's per-mic LEVEL. The 27 not
+yet measured still refuse, because their spans have never been measured and they
+are demonstrably not all the same scale - the cab LEVEL turned out to be a
+different scale AND a different shape from the lane levels it shares a
+placeholder bucket with. Recovering the rest is tracked separately.
 
 **Why now.** `import pyquadcortex` should hand you the Quad Cortex, not the wire.
 The model of the unit is being built, and it takes the top-level name; the protocol

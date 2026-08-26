@@ -59,7 +59,7 @@ confirming each finding live against hardware.
 - [Grid blocks](#grid-blocks)
   - [A placement can be refused for want of DSP capacity](#a-placement-can-be-refused-for-want-of-dsp-capacity)
 - [The model catalog (ModelRepo)](#the-model-catalog-modelrepo)
-  - [Some catalog ranges are placeholders, and cannot be converted](#some-catalog-ranges-are-placeholders-and-cannot-be-converted)
+  - [Some catalog ranges are placeholders (mostly recovered by measurement)](#some-catalog-ranges-are-placeholders-mostly-recovered-by-measurement)
   - [`param_values` can contain NaN](#param_values-can-contain-nan)
   - [Adding a block rewrites comboBox values on rows you never wrote to](#adding-a-block-rewrites-combobox-values-on-rows-you-never-wrote-to)
 - [Open questions](#open-questions)
@@ -2639,7 +2639,7 @@ visually on the device's own screen.
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_param(Tempo(), ...)` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. A DEVICE setting, not a preset one - nothing to save. No change event is emitted when the switch moves, but the value rides the ambient params push; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
-| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, through the measured -40..+12 span rather than the catalog's placeholder - the only placeholder parameter that converts |
+| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, through the measured -40..+12 span rather than the catalog's placeholder - one of 25 placeholder parameters now measured |
 | `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
 | `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
 | `set_expression_bypass` | `Grid{UPDATE, ..., models{bypass_expression, expression_bypass_info}}` | read-back + on-unit | `type` is `ExpressionSwitchMode`, all three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2. The mode decides which other controls exist - SWITCH greys out the delay, HEEL_TOE greys out latch emulation |
@@ -2687,6 +2687,81 @@ visually on the device's own screen.
 | `remove_block` | `Grid{action: DELETE, preset{chains{row, models{column, hash: 0}}}}` | read-back + on-unit | the ACTION marks the removal; an UPDATE carrying `hash: 0` is transmitted but ignored |
 | `catalog` | `ModelRepo{READ}` then `ModelRepo{model_repo_payload}` | read-back | payload is gzip(tar(ModelRepo.xml)): the unit's full block catalog |
 | `GridMove` | `GridMove{move{from_col, to_col, is_drop}, grid{rows{modelIds} x4}}` | captured only | observed in a Cortex Control session; no client method, not driven host-to-device by this library. Its `grid` snapshot is ADVISORY - replaying it with a cell zeroed does NOT delete a block, and the device echoes back only the `move` element |
+
+### Spans recovered behind the catalog's placeholder ranges
+
+The catalog publishes some parameters with a real-world unit and the range
+`0.0..1.0` - a placeholder, the wire's own scale rather than the span the
+parameter covers. 52 parameters across 23 models are like this. Each span below
+was measured against the unit's screen at three or more well-separated points
+INCLUDING BOTH ENDS, because two close points cannot distinguish spans - that is
+how the lane levels shipped `-100..+30` for two releases.
+
+| family | span | evidence |
+|---|---|---|
+| Lane / mixer / splitter LEVEL | `dB = -40 + 52 * wire` | lane VOLUME: -3.1 at 0.71, +12.0 at 1.0, -39.5 at 0.01. Splitter `LEVEL TO B`: -3.1 at 0.71, +12.0 at 1.0. `MIXER LEVEL`: -24.4 at 0.30, +12.0 at 1.0. Mixer `LEVEL A`: -24.4 at 0.30, +12.0 at 1.0. Mixer `LEVEL B`: -3.1 at 0.71, +12.0 at 1.0. Splitter `LEVEL TO A` agrees at 0.30 and reads OFF at 0.0 |
+| Block EQ band GAIN (`4000`, `4001`, `4004`) | `dB = -12 + 24 * wire` | Parametric-8 at four points: -12.0 at 0.0, -9.6 at 0.10, 0.0 at 0.50, +12.0 at 1.00. Parametric-3 and Output Equalizer measured at both ends each |
+| Per-preset TEMPO | `bpm = 40 + 200 * wire` | 59 at 0.095, 111 at 0.355, 120 at 0.400 |
+| Input port gain | `dB = -12 + 72 * wire` | four owner trims read on screen against the wire |
+
+**Reading a scene-following parameter: `param_values[N]` is SCENE N, not the
+active one.** The device honours a WRITE's `param_values[0]` against whichever
+scene is active, so the two halves are not symmetric, and a reader that takes
+`[0]` is reading scene A. On a unit sitting in scene E that looks exactly like a
+write the device refused - four of them, in the case that produced this note.
+Check `Param.scene_mode` and index by the scene you mean;
+`protocol.param_state(preset, cell, index)` hands back all eight with the flag.
+
+**Wire 0.0 is an OFF detent, not the bottom of the dB scale.** The splitter's
+`LEVEL TO A` displays "OFF" there, exactly as the lane VOLUME does, so this
+belongs to the level family rather than to one control. For silence write
+`value=0.0`; `real=-40` is the scale's floor and a different thing.
+
+**A band's TYPE decides whether its GAIN means anything.** Lo Pass and Hi Pass
+disable the control, and a gain written to such a band is stored and ignored by
+the unit. Nothing in the wire says so, so `real=` will happily convert dB into a
+parameter that does nothing.
+
+**`N BYPASS = 1` means the band is ON** for the block EQs, the same inverted
+polarity already recorded for the Global EQ. A disabled band displays `0.0 dB`
+whatever it stores, which makes a write look like it never landed.
+
+**Cab LEVEL is TAPERED**, and it is the reason "three well-separated points" is
+not a sufficient standard. Twelve points on a `212 Darkglass Neo (M)`, per mic:
+
+| wire | 0.00 | 0.01 | 0.10 | 0.25 | 0.35 | 0.50 | 0.75 | 0.95 | 1.00 |
+|---|---|---|---|---|---|---|---|---|---|
+| screen | OFF | -21.8 | -11.1 | -5.2 | -2.8 | **0.0** | +3.4 | +5.5 | **+6.0** |
+
+**`dB = -39.96 + 45.96 * wire^0.202`**, worst error 0.034 dB across all twelve -
+inside the display's own 0.1 dB rounding. Wire 0.15 and 0.60 were PREDICTED from
+the law and then found, before being fitted to.
+
+The three obvious laws all fail, which is the cautionary part. `20*log10(2v)`
+matches the top three points beautifully and is **12 dB out at wire 0.01**;
+linear-in-amplitude matches 0.25 exactly and is 3.1 dB out at 0.01;
+linear-in-dB would need +12 at full travel. This parameter was written up as
+having no closed form on the strength of eight points and three failed laws. It
+took four more points and a taper exponent. **A control can be perfectly regular
+and still defeat every law you happen to try first.**
+
+The constants are probably the design intent -40 -> +6 with a fifth-root taper;
+`-40 + 46 * wire^0.2` fits to 0.17 dB, which the display can just about resolve,
+so the measured values are what ships.
+
+It shares the lane VOLUME's STRUCTURE - a numeric floor at wire 0.01 with the Off
+detent below it - but not its values: -21.8 dB here against the lane's -39.5 dB
+at the same wire position.
+
+Note what this rules out. Cab LEVEL sits in the same `0..1 "dB"` placeholder
+bucket as the lane and mixer levels and is **not** their -40..+12 scale - unity
+is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
+20 dB wrong on the wire.
+
+Everything NOT in that table still refuses `real=`. That is the honest answer:
+an unmeasured span cannot be converted, only guessed. The remaining families -
+send/return and FX-loop levels, the recorder's OUT LEVEL, Parallax's LEVELs -
+are tracked on the placeholder-ranges issue.
 
 ### What a host can assign an expression pedal to
 
@@ -2818,7 +2893,7 @@ Parameter values on the wire are **normalized 0..1**, confirmed on hardware:
 sending `1.0` to a `THRESHOLD` whose catalog range is -60..+12 dB made the unit
 display +12.0 dB.
 
-### Some catalog ranges are placeholders, and cannot be converted
+### Some catalog ranges are placeholders (mostly recovered by measurement)
 
 A parameter published as **`min="0" max="1"` with a real-world unit** is not
 describing its own span - that is just the wire's normalized scale, and the true span
@@ -2832,7 +2907,7 @@ Converting against such a range yields a number that means something else, so
 (`Parameter.range_is_placeholder` is the test) and `real=` is refused. Pass `value=`
 with the normalized 0..1 instead.
 
-**Two of these spans have since been measured, so the placeholder no longer blocks
+**Four families have since been measured, so the placeholder no longer blocks
 them:** the level parameters below, and `TEMPO`, which is **40 to 240 bpm** -
 `bpm = 40 + 200 * value`. Three screen readings against simultaneous wire reads, each
 landing on the displayed integer exactly: 59 bpm at `0.095`, 111 at `0.355`, 120 at
@@ -3007,7 +3082,7 @@ Stated explicitly so nobody builds on a guess:
   arrives (see [above](#a-placement-can-be-refused-for-want-of-dsp-capacity)), so
   whether a block will fit can only be discovered by placing it.
 - **The true spans behind the placeholder 0..1 ranges** are not recoverable from the
-  catalog. Eight parameters are affected; two spans covering seven of them have since
+  catalog. 52 parameters across 23 models are affected; 25 of them have since
   been measured off the screen: the mixer/splitter/lane levels at -40..+12 dB, and
   `TEMPO` at 40..240 bpm (2026-08-12, three points). **Splitter `FREQUENCY` is the one
   still unrecovered.** In both measured cases the endpoints are the fit's rather than
