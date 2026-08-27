@@ -410,6 +410,72 @@ def test_a_push_that_lands_during_a_proactive_read_is_not_lost(link):
     assert cache.needs_read("identity") is True
 
 
+def test_a_grid_push_that_lands_during_a_preset_read_is_not_lost_either(link):
+    """The same window, for the push that says nothing but means everything.
+
+    A `Grid` carries no field the preset entry keeps, so it counts as an arrival
+    on the strength of voiding the copy alone. It is the case a guard written as
+    "count it if it applied something" would drop, and dropping it loses an edit
+    made on the touchscreen while the model was reading.
+    """
+    transport, cache = link
+
+    def preset_but_a_grid_first(triggering=None):
+        transport.push(grid_push())
+        return recall_push(triggering)
+
+    transport.broadcasts["RecallPresetMessage"] = preset_but_a_grid_first
+    cache.value("preset", "preset")
+
+    assert cache.needs_read("preset") is True
+
+
+def test_the_unit_asking_a_question_back_is_not_a_push_that_landed(link):
+    """A `Version` READ is answered by TWO messages, and still costs one read.
+
+    Measured on the unit 2026-08-27 (d14e), ten host reads out of ten: a
+    `Version{READ}` is answered by a `Version{UPDATE}` carrying the unit's
+    fifteen fields and then, 0.5-0.8 ms later, by a `Version{READ}` of the
+    unit's own - the protocol is symmetric, and that one is the unit asking US
+    for Cortex Control's version. It carries `action` and nothing else.
+
+    So it says nothing: not a field the entry keeps, not a field it does not
+    keep. It cannot have made our copy stale, and counting it as a message that
+    landed while we were reading marks the entry for a re-read the unit never
+    asked for. Reported rather than measured: that mark reached the hardware
+    suite as a failing run roughly one time in three.
+
+    Two deliberate departures from the wire, and neither changes what is being
+    measured. The answer here carries an unkept field, as the real fifteen-field
+    reply does, so the mark is set by the answer and cleared by the count rather
+    than by the whole-entry `answered` path - the real sequence. And the
+    follow-up lands inside the read window EVERY time, where on the unit that is
+    a race the question wins about one read in six; the certain case is the one
+    worth pinning. Order is the one thing the loopback cannot reproduce - it
+    pushes the returned reply last - and order is the one thing the read path
+    does not look at, since it compares a count taken before the read with a
+    count taken after it.
+    """
+    transport, cache = link
+
+    def answers_and_then_asks_back():
+        transport.push(pa.VersionMessage(action=pa.MessageAction.READ))
+        return version_reply(app_fw_version="d14e",
+                             device_serial_number="QCS0000001",
+                             uboot_version="2019.04")
+
+    transport.replies["VersionMessage"] = answers_and_then_asks_back
+    cache.mark_for_reread("identity", "this test wants a cold read")
+
+    assert cache.value("identity", "app_fw_version") == "d14e"
+    assert cache.value("identity", "device_serial_number") == "QCS0000001"
+
+    assert transport.reads["VersionMessage"] == 1, (
+        "the unit asking a question back was counted as a push that landed "
+        "during the read, so the second field went to the unit again")
+    assert cache.needs_read("identity") is False
+
+
 # -- the tempo stream ---------------------------------------------------------
 
 
@@ -1037,7 +1103,7 @@ def _watchdog_threads():
 # -- the preset and the active scene ------------------------------------------
 #
 # These two entries are what the grid, the scenes and `device.preset` read
-# through. Both reads are one request and one reply, which is what `StateEntry`
+# through. Both reads are one request and one answer, which is what `StateEntry`
 # requires - the Directory's listings are the streaming case and they are not
 # here.
 

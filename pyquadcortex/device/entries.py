@@ -42,7 +42,7 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 #: skip cannot quietly forgive a field that never arrives.
 #:
 #: ``request_id`` is the transport's, always. **``action`` is not always.** It
-#: says nothing on the two message types tracked today, which is why it is
+#: says nothing about state on the types tracked today, which is why it is
 #: skipped globally - but on ``Grid`` it is load-bearing state: an
 #: ``UPDATE`` carrying ``hash: 0`` is transmitted and ignored, while the same
 #: payload with ``action: DELETE`` removes the block
@@ -50,6 +50,12 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 #: inherit this skip: two pushes with identical payloads and opposite meanings
 #: would apply identically and mark nothing. Give that entry its own decision
 #: about ``action`` rather than widening this set, and see ADR-0011.
+#:
+#: The cache's arrival count leans on this too. A message carrying nothing but
+#: these two said nothing, so it is not counted as having landed during a read
+#: (``_Slot.witnessed`` in ``device/state.py``). An entry whose meaning lives in
+#: ``action`` therefore has to declare ``invalidates`` - as ``Grid`` does - or it
+#: would be both unapplied and uncounted.
 SCAFFOLDING = frozenset({"action", "request_id"})
 
 
@@ -104,9 +110,16 @@ class StateEntry:
             never the RX thread.
         feeds: message class -> :class:`FieldPlan`.
 
-    Every entry's :attr:`read` is one request and one reply, which the read path
-    relies on to tell its own answer apart from a push that arrived while it was
-    waiting. An entry whose read provokes a STREAM instead - a ``File``
+    Every entry's :attr:`read` is one request and one ANSWER, which the read
+    path relies on to tell its own answer apart from a push that arrived while
+    it was waiting. One answer is not the same as one message: a ``Version``
+    READ is answered by the unit's reply and then by a question of the unit's
+    own, and the read path survives that because a message that said nothing is
+    not counted. Said nothing means it applied no field this entry keeps AND
+    named none it does not - a plan with :attr:`FieldPlan.invalidates` set is
+    never in that case, because every message of its type makes the copy
+    untrusted whatever it carried. ``device/state.py``'s ``_apply_one`` decides
+    it. An entry whose read provokes a STREAM OF ANSWERS instead - a ``File``
     enumeration, a preset dump - has to say how many messages that is, and this
     class does not carry that yet because nothing needs it. It lands with the
     first such entry, along with the test that a number other than one works.
@@ -234,11 +247,22 @@ def _carries_unknown_fields(message) -> bool:
 #: ``CLAUDE.md``). That is an inference from scope rather than a measurement,
 #: which is why the read is still the fallback rather than a one-time fill.
 #:
-#: The unit does not announce this. It sends a ``Version`` READ of its own during
-#: the connect handshake - asking US for Cortex Control's version - and that
-#: message carries none of the unit's own fields, so the burst does not warm this
-#: entry and first access reads. That is the case section 9's third column exists
-#: for: where the unit does not tell us, we ask.
+#: The unit does not announce this. The one ``Version`` the connect burst carries
+#: is the unit's answer to our version announce: it sets
+#: ``cortex_control_version_valid`` and none of the unit's own fields. So the
+#: burst does not warm this entry - and, because that field is one the entry does
+#: not keep, it MARKS it untrusted on every connect and never answers it. Either
+#: way first access reads, which is the case section 9's third column exists for:
+#: where the unit does not tell us, we ask.
+#:
+#: **The read costs two messages, and only one of them says anything.** The
+#: protocol is symmetric, so the unit answers a ``Version`` READ and then asks
+#: one of its own, wanting Cortex Control's version: measured 2026-08-27 on
+#: d14e, ten reads out of ten came back as a ``Version{UPDATE}`` of fifteen
+#: fields followed 0.5-0.8 ms later by a ``Version{READ}`` carrying ``action``
+#: alone. The question is not news about the unit and the cache does not count
+#: it - see ``_apply_one`` in ``device/state.py``, where counting it cost a
+#: second round trip whenever it landed before the reading thread woke.
 _VERSION_FOR_IDENTITY = FieldPlan(
     kept=frozenset({"app_fw_version", "device_serial_number"}),
 )
@@ -465,7 +489,7 @@ SCENE = StateEntry(
 #: mark it for a read nobody had asked for.
 #:
 #: The Directory's rows are the ones that need something this class does not
-#: have. Every read here is one request and one reply, which is how the read path
+#: have. Every read here is one request and one answer, which is how the read path
 #: tells its own answer apart from a push that arrived while it was waiting. A
 #: setlist listing is a STREAM - one `File` READ makes the unit enumerate its
 #: whole tree, several hundred messages over about fifteen seconds - so those
