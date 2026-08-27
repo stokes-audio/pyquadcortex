@@ -871,15 +871,33 @@ class QuadCortex:
         try:
             self._t.await_broadcast(pa.GridMessage, lambda: self._t.send(msg),
                                     timeout=timeout, match=echoes_cell)
+            return None
         except TimeoutError:
-            raise BlockRefused(
-                f"the device did not accept {model_id} at row {row} column "
-                f"{column}: no Grid echo within {timeout}s. The usual cause is "
-                f"that the preset has no DSP capacity left for this block - try a "
-                f"cheaper one, or free a block. Pass verify=False to send without "
-                f"checking."
-            ) from None
-        return None
+            pass
+
+        # No echo is not the same as no placement, and treating it as one was a
+        # FALSE NEGATIVE this raised twice in one session on blocks that had
+        # landed perfectly well. So ask the unit what is actually in the cell
+        # before telling the caller it refused.
+        try:
+            landed = any(b.row == row and b.column == column and b.model_id == model_id
+                         for b in blocks(self.read_current_preset()))
+        except Exception:
+            landed = False
+        if landed:
+            return None
+
+        raise BlockRefused(
+            f"the device did not accept {model_id} at row {row} column "
+            f"{column}: no Grid echo within {timeout}s, and reading the preset "
+            f"back shows the cell is not holding it. Two causes are known. The "
+            f"preset may have no DSP capacity left for this block - try a "
+            f"cheaper one, or free a block. Or the placement may have hit a PORT "
+            f"CONFLICT, which puts a modal on the unit's screen that the host "
+            f"never sees: an FX Loop next to a Send competing for the same "
+            f"physical send does this, and it has to be dismissed on the unit. "
+            f"Pass verify=False to send without checking."
+        ) from None
 
     def remove_block(self, cell):
         """Remove the block at ``cell``, leaving it empty.

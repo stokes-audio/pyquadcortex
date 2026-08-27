@@ -57,7 +57,7 @@ confirming each finding live against hardware.
 - [9. The pushed preset structure](#9-the-pushed-preset-structure)
 - [Operation coverage](#operation-coverage)
 - [Grid blocks](#grid-blocks)
-  - [A placement can be refused for want of DSP capacity](#a-placement-can-be-refused-for-want-of-dsp-capacity)
+  - [A placement can be refused, for two known reasons](#a-placement-can-be-refused-for-two-known-reasons)
 - [The model catalog (ModelRepo)](#the-model-catalog-modelrepo)
   - [A parameter's scale is in the catalog, and we were not reading it](#a-parameters-scale-is-in-the-catalog-and-we-were-not-reading-it)
   - [`param_values` can contain NaN](#param_values-can-contain-nan)
@@ -2683,7 +2683,7 @@ visually on the device's own screen.
 | `free_rows` | reads `models[]` + `Chain.split_control_points` | read-back | rows available for an independent chain: excludes the lane row of a branch, which is spoken for even when empty |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |
 | `write_preset` | `Grid{UPDATE, preset}` | read-back | low-level primitive; applies ONLY row/column-keyed elements. A full recalled preset written back does NOTHING. Use the keyed wrappers |
-| `set_block` | `Grid{UPDATE, preset{chains{row, models{column, hash}}}}` | read-back + on-unit | creates a block in an empty cell, replaces one in an occupied cell; the same shape the device broadcasts when a block is added on the unit. A placement can be REFUSED for want of DSP capacity, silently; verified by default against the device's echo |
+| `set_block` | `Grid{UPDATE, preset{chains{row, models{column, hash}}}}` | read-back + on-unit | creates a block in an empty cell, replaces one in an occupied cell; the same shape the device broadcasts when a block is added on the unit. A placement can be REFUSED silently, for DSP capacity OR a port conflict; verified by default against the echo AND a read-back |
 | `remove_block` | `Grid{action: DELETE, preset{chains{row, models{column, hash: 0}}}}` | read-back + on-unit | the ACTION marks the removal; an UPDATE carrying `hash: 0` is transmitted but ignored |
 | `catalog` | `ModelRepo{READ}` then `ModelRepo{model_repo_payload}` | read-back | payload is gzip(tar(ModelRepo.xml)): the unit's full block catalog |
 | `GridMove` | `GridMove{move{from_col, to_col, is_drop}, grid{rows{modelIds} x4}}` | captured only | observed in a Cortex Control session; no client method, not driven host-to-device by this library. Its `grid` snapshot is ADVISORY - replaying it with a cell zeroed does NOT delete a block, and the device echoes back only the `move` element |
@@ -2859,7 +2859,7 @@ deleting a block on the touchscreen emits exactly
 
 Save the grid afterwards to keep the change, as with any other grid edit.
 
-### A placement can be refused for want of DSP capacity
+### A placement can be refused, for two known reasons
 
 A preset has a finite processing budget, and a block that does not fit in what is
 left **is accepted on the wire and simply is not there afterwards**. There is no
@@ -2873,6 +2873,20 @@ Tweed" (02C) placed five of the six and dropped the cab. The same happened on "M
 Strat Vibes" (10B). It is the block, not the position or the count: the cheaper EQ
 placed AFTER the cab in the same chain landed both times, and shifting the chain a
 column left refuses the cab in its new position instead.
+
+**A port conflict is the second cause, and it looks identical from the host.**
+Placing an `FX Loop 1` where a `Send 1` already claims the same physical send is
+refused, and the unit puts a modal on its OWN screen that no message carries:
+"Port Conflict / Send is used as an output by FX Loop Send 1 on path 2, please
+change it first". Observed 2026-08-26, stacked four deep from four attempts, and
+it stays refused until somebody dismisses it on the unit. The unit has a Send 1
+and a Send 2, so an `FX Loop 2` beside `Send 1` places fine - it is the specific
+port that collides, not the block type.
+
+**A missing echo is NOT on its own a refusal.** `set_block(verify=True)` raised
+twice in one session on blocks that had landed, so it now reads the preset back
+before deciding, and only reports a refusal when the cell really is not holding
+the model.
 
 **The refusal is detectable without saving.** The device echoes a `Grid` broadcast
 naming each cell it accepts, and a refused block produces none:

@@ -433,14 +433,30 @@ class Model:
         )
 
     def parameter(self, name: str) -> Parameter:
-        """Return the parameter called ``name`` (case-insensitive)."""
+        """Return the parameter called ``name`` (case-insensitive).
+
+        A name the model publishes MORE THAN ONCE raises rather than returning
+        the first. 186 of the 533 models on the observed unit have at least one
+        repeated name, almost all of them cabs, where "LEVEL" is a microphone's
+        level and there are two microphones. Returning the first quietly
+        addressed mic 1 for every caller who named it, which is the silent wrong
+        write this library exists to prevent.
+        """
         wanted = name.strip().lower()
-        for p in self.parameters:
-            if p.name.lower() == wanted:
-                return p
+        found = [p for p in self.parameters if p.name.lower() == wanted]
+        if len(found) == 1:
+            return found[0]
+        if not found:
+            raise KeyError(
+                f"model {self.name!r} ({self.id}) has no parameter {name!r}; "
+                f"it has {[p.name for p in self.parameters]}"
+            )
         raise KeyError(
-            f"model {self.name!r} ({self.id}) has no parameter {name!r}; "
-            f"it has {[p.name for p in self.parameters]}"
+            f"model {self.name!r} ({self.id}) publishes {name!r} "
+            f"{len(found)} times, at indexes {[p.index for p in found]}, so the "
+            f"name does not say which one you mean. Address it by index - a "
+            f"cab's two microphones are pyquadcortex.protocol.params.Cabsim."
+            f"MIC_1_LEVEL and MIC_2_LEVEL."
         )
 
 

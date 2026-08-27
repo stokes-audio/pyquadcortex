@@ -545,3 +545,32 @@ def test_assignability_defaults_to_allowed():
            '</Model></Category></Models>')
     p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
     assert p.exp_assignable is True
+
+
+def test_a_parameter_name_the_model_publishes_twice_is_refused():
+    """186 of 533 models repeat at least one parameter name, almost all cabs.
+
+    `parameter("LEVEL")` used to return the first match, so every caller who
+    named a cab's level quietly addressed microphone 1 and there was no way to
+    reach microphone 2 by name at all. Refusing is the only honest answer: the
+    name genuinely does not say which one.
+    """
+    xml = ('<Models><Category id="12" name="Cabsim Guitar (M)">'
+           '<Model id="12000" name="Default Cabsim">'
+           '<Parameter name="LEVEL" type="float" min="0" max="1" defaultValue="0"/>'
+           '<Parameter name="PAN" type="float" min="0" max="1" defaultValue="0"/>'
+           '<Parameter name="LEVEL" type="float" min="0" max="1" defaultValue="0"/>'
+           '</Model></Category></Models>')
+    model = catalog.parse_model_repo(make_payload(xml))[12000]
+    assert model.parameter("PAN").index == 1
+    with pytest.raises(KeyError, match="2 times, at indexes"):
+        model.parameter("LEVEL")
+
+
+def test_an_unknown_parameter_name_still_says_what_there_is():
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="Widget">'
+           '<Parameter name="GAIN" type="float" min="0" max="1" defaultValue="0"/>'
+           '</Model></Category></Models>')
+    model = catalog.parse_model_repo(make_payload(xml))[1]
+    with pytest.raises(KeyError, match="has no parameter"):
+        model.parameter("NOPE")

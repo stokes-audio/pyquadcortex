@@ -3837,3 +3837,72 @@ def _scale_client():
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(make_payload(xml))
     return qc
+
+
+# -- set_block's verification, and the false negative it used to produce -------
+
+
+def _preset_holding(row, column, model_id):
+    p = preset.BinaryPreset()
+    for r in range(4):
+        chain = p.chains.add()
+        chain.row = r
+        for c in range(8):
+            m = chain.models.add()
+            m.column = c
+            if r == row and c == column:
+                m.hash = model_id
+    return p
+
+
+def test_a_missing_echo_is_not_a_refusal_if_the_block_actually_landed(monkeypatch):
+    """The false negative, pinned.
+
+    `set_block` waited for a Grid echo and raised when none came. It raised
+    twice in one session on blocks that had landed perfectly well - so a missing
+    echo is not evidence of a refusal, and the unit has to be asked.
+    """
+    qc = client.QuadCortex(FakeTransport())
+
+    def no_echo(*args, **kwargs):
+        raise TimeoutError("no echo")
+
+    monkeypatch.setattr(qc._t, "await_broadcast", no_echo, raising=False)
+    monkeypatch.setattr(qc, "read_current_preset",
+                        lambda *a, **k: _preset_holding(1, 1, 7040))
+    assert qc.set_block(Block(1, 1, 7040)) is None
+
+
+def test_a_missing_echo_AND_an_empty_cell_names_both_known_causes(monkeypatch):
+    """DSP capacity was called "the known cause" for a long time. It is one of
+    two: a port conflict puts a modal on the unit that the host never sees."""
+    qc = client.QuadCortex(FakeTransport())
+
+    def no_echo(*args, **kwargs):
+        raise TimeoutError("no echo")
+
+    monkeypatch.setattr(qc._t, "await_broadcast", no_echo, raising=False)
+    monkeypatch.setattr(qc, "read_current_preset",
+                        lambda *a, **k: _preset_holding(3, 7, 9999))
+    with pytest.raises(client.BlockRefused) as excinfo:
+        qc.set_block(Block(1, 1, 7040))
+    message = str(excinfo.value)
+    assert "DSP capacity" in message
+    assert "PORT CONFLICT" in message
+
+
+def test_a_read_that_fails_does_not_swallow_the_refusal(monkeypatch):
+    """If the unit cannot be asked, the refusal stands - it does not become a
+    silent success."""
+    qc = client.QuadCortex(FakeTransport())
+
+    def no_echo(*args, **kwargs):
+        raise TimeoutError("no echo")
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("link died")
+
+    monkeypatch.setattr(qc._t, "await_broadcast", no_echo, raising=False)
+    monkeypatch.setattr(qc, "read_current_preset", broken)
+    with pytest.raises(client.BlockRefused):
+        qc.set_block(Block(1, 1, 7040))

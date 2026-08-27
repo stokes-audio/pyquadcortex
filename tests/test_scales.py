@@ -118,11 +118,17 @@ READINGS = [
     (12000, 2, 0.05, -14.9, 1),
     (12000, 2, 0.10, -11.1, 1),
     (12000, 2, 0.15, -8.6, 1),
+    # 0.20 is the one that broke the hand fit. The fitted law renders it -6.8;
+    # the screen said -6.7, and the catalog's own numbers give -6.7477, which
+    # rounds to -6.7. PR #32 had to widen a tolerance to hold this point and
+    # dropped it from the worst-error check; here it just passes.
+    (12000, 2, 0.20, -6.7, 1),
     (12000, 2, 0.25, -5.2, 1),
     (12000, 2, 0.35, -2.8, 1),
     (12000, 2, 0.50, 0.0, 1),
     (12000, 2, 0.60, 1.5, 1),
     (12000, 2, 0.75, 3.4, 1),
+    (12000, 2, 0.85, 4.5, 1),
     (12000, 2, 0.95, 5.5, 1),
     (12000, 2, 1.00, 6.0, 1),
 
@@ -431,3 +437,22 @@ def test_reading_a_wire_value_the_wire_cannot_carry_is_refused():
     for outside in (-0.1, 1.5, float("nan")):
         with pytest.raises(ValueError, match="0..1"):
             spec.to_real(outside)
+
+
+def test_every_cab_that_describes_a_level_describes_the_same_one():
+    """What the catalog adds beyond three screen readings.
+
+    All three measured blocks are mono, and 86 of the 174 models in the cabsim
+    categories are stereo - so applying the law across the category IS an
+    extrapolation. But of the 16 cab models that describe a LEVEL of their own,
+    every one carries MIN_CABSIM_DB and skew 4.9594844, stereo variants
+    included. The device says the law is uniform wherever it says anything.
+
+    Pinned on the models the fixture carries, including one stereo and one PCOM
+    variant with literal bounds.
+    """
+    law = (-40.0, 6.0, 4.9594844)
+    for key in ((12000, 2), (12000, 10), (12114, 25), (32000, 2),
+                (3008, 16), (3008, 24)):
+        spec = SCALES[key]
+        assert (spec.minimum, spec.maximum, spec.skew) == law, key

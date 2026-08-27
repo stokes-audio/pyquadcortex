@@ -40,6 +40,8 @@ WANTED = {
     (3008, 24): "Parallax cab LEVEL, mic 2",
     (12114, 25): "PCOM Core Cabsim LEVEL - the same knob with LITERAL bounds,"
                  " which is what the floor's law-keying exists for",
+    (32000, 2): "Default Cabsim (ST) LEVEL - a STEREO cab, because all three"
+                " screen-measured blocks are mono and 86 of 174 cabs are not",
     (13001, 0): "Send 2 LEVEL - proves the send family is more than one model",
     (13003, 0): "Return 2 LEVEL - and the return family likewise",
     (12000, 2): "cab MIC 1 LEVEL - the taper, skew 4.9594844",

@@ -204,10 +204,17 @@ class ParamTarget:
         The taper it borrows is confirmed on three blocks in three different
         categories - a Cabsim Bass, a Cabsim Guitar, and Parallax, which is a
         Bass Overdrive carrying its own cab section. So it belongs to the cab
-        SECTION wherever that appears, not to one cab model, and applying it
-        across the category is no longer an extrapolation. The catalog agrees:
-        every one of those LEVEL entries carries the same skew=4.9594844 and the
-        same MIN_CABSIM_DB bound.
+        SECTION wherever that appears, rather than to one cab model.
+
+        Applying it across the category is still an EXTRAPOLATION, and saying
+        otherwise would overstate it - all three of those blocks are mono, and
+        86 of the 174 models in these categories are stereo. What the catalog
+        adds is worth more than a fourth screen reading, though: of the 16 cab
+        models that describe a LEVEL of their own, every single one carries
+        ``MIN_CABSIM_DB`` and ``skew="4.9594844"``, and that 16 includes the
+        stereo variants. So the device says the law is uniform wherever it says
+        anything, and the remaining 158 models describe no LEVEL at all - which
+        is exactly why they need this borrowing in the first place.
         """
         source = self.model(get_catalog)
         if source is None or source.category not in CABSIM_CATEGORIES:
