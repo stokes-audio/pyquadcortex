@@ -144,10 +144,14 @@ def test_the_metronome_beats_get_no_enum_here():
     corroborated by a factory 4/4 carrying it on beat 1 and nothing else - calls
     them `NORMAL,OFF,ACCENT,QUIET`. They disagree at every position.
 
-    The hardware trace wins: a 4/4 default puts beats 2 to 4 at index 0, and a
-    metronome whose default is three silent beats is not a metronome. So the
-    catalog's words are recorded and not published, because two disagreeing
-    enums on one control is worse than one that is right.
+Measured 2026-08-27: in 4/4 the unit holds index 2 on beat 1 and index 0
+    on beats 2 to 4, and the owner confirms all four are AUDIBLE with an accent
+    on the first. So index 0 is an ordinary click, the catalog's "OFF" there is
+    not silence, and these words are not the ones the screen means.
+
+    Indexes 1 and 3 are still open - see enums.MetronomeBeat. Publishing the
+    catalog's list would put two disagreeing enums on one control, so it is
+    recorded and not published.
 
     This test exists so nobody "fixes" MetronomeBeat to match the catalog.
     """

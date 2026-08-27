@@ -15,9 +15,8 @@ Source: a device's ModelRepo payload, either live or previously saved.
 Three decisions this generator makes:
 
 1. **One enum per distinct LIST, not per parameter.** 527 parameters carry a
-   fixed list and they use only 113 distinct ones - 110 get an enum, because
-   the same list means
-   the same thing everywhere: the note-length list is shared by ``SYNC NOTE``,
+   fixed list and they use only 113 distinct ones, of which 110 get an enum,
+   because the same list means the same thing everywhere: the note-length list is shared by ``SYNC NOTE``,
    ``SYNC NOTE L``, ``SYNC NOTE R``, ``SYNC NOTE A`` and ``SYNC NOTE B``. One
    enum per list is one enum per concept.
 2. **``Off,On`` gets no enum.** 247 of those 527 offer exactly "Off" and "On",
@@ -50,9 +49,13 @@ BOOLEAN_LISTS = {("off", "on")}
 #: metronome's per-beat cells the catalog says `OFF,MUTE,DOWN,ON` while
 #: `enums.MetronomeBeat` - traced on hardware by touching a cell and listening,
 #: with ACCENT corroborated by a factory 4/4 carrying it on beat 1 alone - says
-#: `NORMAL,OFF,ACCENT,QUIET`. They disagree at every position, and the hardware
-#: trace wins: a 4/4 default has beats 2 to 4 at index 0, which is an audible
-#: click, not the catalog's "OFF".
+#: `NORMAL,OFF,ACCENT,QUIET`.
+#:
+#: Measured 2026-08-27: in 4/4 the unit holds index 2 on beat 1 and index 0 on
+#: beats 2 to 4, and the owner confirms all four are AUDIBLE with an accent on
+#: the first. So index 0 is an ordinary click and the catalog's "OFF" there is
+#: not silence - which is enough to know these words are not the screen's.
+#: Indexes 1 and 3 remain unsettled either way.
 #:
 #: So `stepNames` is the device's INTERNAL vocabulary, and usually but not
 #: always the screen's. See docs/domain-model.md.

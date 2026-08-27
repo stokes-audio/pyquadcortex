@@ -395,8 +395,23 @@ class MetronomeBeat(IntEnum):
     four was established rather than assumed.
 
     The unit does not label these in words - it draws them - so the names are the
-    owner's, matched to what he heard and saw. :attr:`ACCENT` is corroborated
-    independently: a factory-default 4/4 carries it on beat 1 and nothing else.
+    owner's, matched to what he heard and saw.
+
+    **The catalog disagrees, and only half of it is settled.** ``stepNames`` on
+    these cells reads ``OFF,MUTE,DOWN,ON``. Measured on the unit 2026-08-27 in
+    4/4: beat 1 holds index 2 and beats 2 to 4 hold index 0, and the owner
+    confirms all four are AUDIBLE with an accent on the first. So:
+
+    * index 2 is the accented beat, and the two vocabularies agree on it -
+      "DOWN" is the downbeat. :attr:`ACCENT` stands.
+    * index 0 is an ordinary audible click, so the catalog's "OFF" there cannot
+      mean silent. :attr:`NORMAL` stands.
+    * **indexes 1 and 3 are NOT settled.** The owner heard silent and softer;
+      the catalog says "MUTE" and "ON". If MUTE means soft rather than silent -
+      which is the reading that makes it differ from OFF at all - then
+      :attr:`OFF` and :attr:`QUIET` may be the wrong way round. Nobody has
+      driven those two cells and listened, and until somebody does, these two
+      names are the owner's ear and not a fact.
 
     Which beat is which lives in :attr:`QuadCortex.TEMPO_BEATS`, indices 10 to 22
     (the catalog's ``STEPSTATE0`` to ``STEPSTATE12``) for beats 1 to 13.

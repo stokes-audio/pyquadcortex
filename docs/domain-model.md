@@ -1430,13 +1430,26 @@ a cell walks the wire value up by 1/3 and wraps, four touches return it to where
 it started, and `ACCENT` is corroborated by a factory 4/4 carrying it on beat 1
 and nothing else.
 
-They disagree at **every** position. The hardware trace wins, because a factory
-4/4 has beats 2 to 4 at index 0, and a metronome whose default is three silent
-beats is not a metronome. So the catalog's words for this control are recorded
-here and deliberately not published - see `NOT_THE_SCREENS_WORDS` in
-`scripts/generate_options.py`.
+They disagree at every position, and **half of it is now settled**. Measured
+2026-08-27, in 4/4: beat 1 holds index 2, beats 2 to 4 hold index 0, and the
+owner confirms all four are audible with an accent on the first.
 
-What that costs elsewhere is unknown: nothing has audited the other 112 lists
+| index | catalog | owner | settled? |
+|---|---|---|---|
+| 0 | `OFF` | `NORMAL` | **yes** - audible ordinary click, so "OFF" is not silence |
+| 1 | `MUTE` | `OFF` | no |
+| 2 | `DOWN` | `ACCENT` | **yes** - both mean the same thing; a downbeat IS the accent |
+| 3 | `ON` | `QUIET` | no |
+
+So the catalog's words for this control are recorded here and deliberately not
+published - see `NOT_THE_SCREENS_WORDS` in `scripts/generate_options.py`.
+
+**Open.** If `MUTE` means soft rather than silent - the reading that makes it
+differ from `OFF` at all - then the owner's `OFF` and `QUIET` may be the wrong
+way round. Settling it needs somebody to set a beat to index 1, listen, then to
+index 3 and listen. Two readings.
+
+What this costs elsewhere is unknown: nothing has audited the other 112 lists
 against the screen, and most are ordinary words that plainly match. This one was
 caught only because a hand-written enum already existed to disagree with it.
 
