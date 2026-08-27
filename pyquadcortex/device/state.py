@@ -71,12 +71,13 @@ class _Slot:
         #: Not every message of a tracked type says something. The protocol is
         #: symmetric, so the unit asks questions of its own down the same pipe,
         #: and a question carries neither a field this entry keeps nor a field
-        #: it does not - measured, a host `Version{READ}` is answered by the
-        #: unit's `Version{UPDATE}` and then, half a millisecond later, by a
-        #: `Version{READ}` of the unit's own asking for Cortex Control's
-        #: version. Counting that as an arrival made one read of two fields
-        #: cost two round trips whenever the question won the race, which is
-        #: what :meth:`_apply_one` skips it for.
+        #: it does not - measured 2026-08-27 on d14e, ten reads out of ten, a
+        #: host `Version{READ}` is answered by the unit's `Version{UPDATE}` and
+        #: then, 0.5-0.8 ms later, by a `Version{READ}` of the unit's own asking
+        #: for Cortex Control's version. Counting that as an arrival made one
+        #: read of two fields cost two round trips whenever the question won the
+        #: race. :meth:`_apply_one` decides what counts; this is only the
+        #: counter.
         #:
         #: Drawn from a counter rather than written `+= 1`, which is the
         #: transport's idiom for the same job (`Transport._ids`). It also keeps
@@ -250,8 +251,10 @@ class DeviceState:
             # thing a read returns, so it replaces rather than merges and
             # there is nothing left to ask about. That is what makes the
             # connect burst leave the cache warm rather than nominally warm:
-            # measured, it marks two entries and answers both in full, in that
-            # order, inside ten milliseconds.
+            # measured, two of the entries it marks are answered in full, in
+            # that order, inside ten milliseconds. Not all of them - the burst's
+            # `Version` marks `identity` and never answers it, which is why
+            # first access there reads.
             #
             # Judged on what the MESSAGE carried, not on what its plan could
             # carry. A plan-level version of this check was written first and
@@ -385,17 +388,17 @@ class DeviceState:
                 # see a reply before the thread that asked for it wakes (ADR-
                 # 0009) - so exactly one message is expected to have SAID
                 # SOMETHING here, every entry's read being one request and one
-                # reply. Anything beyond that is a push that landed while we
+                # answer. Anything beyond that is a push that landed while we
                 # waited, and clearing the mark regardless would throw it away
                 # with nothing left to recover it from.
                 #
-                # Said something, rather than arrived: the unit answers a
-                # `Version` READ and then asks one of its own, and a question
-                # is not news about the unit's state. `_Slot.witnessed` is
-                # where that is decided, because the read path cannot tell the
-                # two apart after the fact. An entry whose read provokes a
-                # stream of ANSWERS will still have to say how many messages
-                # that is; see `StateEntry`.
+                # Said something, rather than arrived, and one ANSWER rather
+                # than one message: the unit answers a `Version` READ and then
+                # asks one of its own, and a question is not news about the
+                # unit's state. `_apply_one` is where that is decided, because
+                # the read path cannot tell the two apart after the fact. An
+                # entry whose read provokes a stream of ANSWERS will still have
+                # to say how many messages that is; see `StateEntry`.
                 extra = slot.witnessed - witnessed_before
                 retracted = slot.needs_read and extra <= 1
                 slot.needs_read = extra > 1

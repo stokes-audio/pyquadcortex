@@ -280,7 +280,7 @@ class QuadCortex:
         # none sent here it asks nothing back. Measured 2026-08-27 on d14e - one
         # inbound Version through connect and the whole burst, an UPDATE
         # carrying cortex_control_version_valid in answer to this announce, and
-        # none at all while idle.
+        # none in the eight seconds of idling after it.
         self._t.send(
             pa.VersionMessage(
                 action=pa.MessageAction.UPDATE, cortex_control_version=self.CC_VERSION

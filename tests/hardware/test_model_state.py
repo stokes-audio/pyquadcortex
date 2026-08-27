@@ -44,6 +44,7 @@ import pytest
 
 from pyquadcortex.device import entries
 from pyquadcortex.device.watch import WatchOutcome
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.targets import Block
 
 #: The metronome clock always runs, so the unit pushes GlobalTempo in pairs, one
@@ -172,18 +173,82 @@ def test_nothing_the_burst_delivered_is_read_again_on_first_access(
         "again, which is the round trip the cache exists to avoid")
 
 
-def test_the_burst_does_not_warm_what_the_unit_never_announces(burst_warmed):
+def test_the_burst_does_not_warm_what_the_unit_never_announces(burst_warmed,
+                                                              handshake_burst):
     """The other half, and the reason the read path exists.
 
     The unit does send a ``Version`` during the handshake, but it is the answer
     to our version announce - it sets ``cortex_control_version_valid`` and none
     of the unit's own fields. So identity is exactly the case section 9's third
     column is for: where the unit does not tell us, we ask.
+
+    The count is asserted because the empty cache below is not evidence for that
+    story: it was equally true of the story this replaced, which had the unit
+    volunteering a ``Version`` READ of its own during connect. ``_hello`` sends
+    no host ``Version`` READ, and the unit only asks when asked, so one is the
+    number - and a second would mean the handshake has changed under us.
     """
+    versions = handshake_burst.names().count("VersionMessage")
+    assert versions == 1, (
+        f"the connect burst carried {versions} Version message(s), not the one "
+        f"answering our version announce. Section 4 of docs/protocol.md says "
+        f"the unit asks for our version only when we ask for its.")
     assert burst_warmed["identity"] == {}, (
         f"the burst carried the unit's own identity after all, which is worth "
         f"knowing - it held {burst_warmed['identity']}. If that is now true, "
         f"the entry's docstring in device/entries.py is wrong.")
+
+
+def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
+    """The two-message answer the entry below is built around, on the unit.
+
+    The protocol is symmetric, so a host ``Version{READ}`` gets the unit's answer
+    and then a question of the unit's own, wanting Cortex Control's version.
+    Measured 2026-08-27 on d14e, ten reads out of ten, the question arriving
+    0.5-0.8 ms after the answer.
+
+    That measurement is load-bearing in four files and was prose in all of them.
+    It is here as a test because both directions matter: if the question ever
+    stops arriving, the cache's rule for not counting it is dead code and the
+    docs over-claim; if it ever starts carrying a field, the rule stops applying
+    and the entry below goes back to costing two round trips. Neither shows up
+    anywhere else, because a question that says nothing leaves no other trace.
+
+    Timing is deliberately not asserted. The gap is recorded in the docs as
+    measured; what the code depends on is the SHAPE.
+    """
+    versions = Pushes("VersionMessage")
+    qc.add_listener(versions)
+    try:
+        qc.version()
+        assert _wait_until(lambda: len(versions.seen()) >= 2, timeout=2.0), (
+            f"one Version READ brought back {len(versions.seen())} message(s). "
+            f"If the unit has stopped asking for our version, the cache's rule "
+            f"for not counting that question is dead code - see _apply_one in "
+            f"device/state.py and section 4 of docs/protocol.md.")
+        time.sleep(0.5)                  # anything further would be here by now
+    finally:
+        qc.remove_listener(versions)
+
+    seen = versions.seen()
+    record_property("versions_per_read", [
+        {"action": pa.MessageAction.Enum.Name(m.action),
+         "fields": sorted(f.name for f, _ in m.ListFields())} for m in seen])
+
+    assert len(seen) == 2, f"one Version READ brought back {len(seen)} messages"
+    answer, question = seen
+    assert answer.action == pa.MessageAction.UPDATE, (
+        f"the unit answered with action {answer.action}, not an UPDATE")
+    assert answer.app_fw_version and answer.device_serial_number, (
+        "the unit's answer carried neither firmware nor serial")
+    assert question.action == pa.MessageAction.READ, (
+        f"the second message was action {question.action}, so it is not the "
+        f"unit asking us anything - which is the reading this suite records")
+    assert sorted(f.name for f, _ in question.ListFields()) == ["action"], (
+        f"the unit's question now carries "
+        f"{sorted(f.name for f, _ in question.ListFields())}. It used to carry "
+        f"nothing but action, which is the whole reason the cache is allowed "
+        f"not to count it - see _apply_one in device/state.py.")
 
 
 def test_state_the_unit_never_announces_costs_one_read_and_then_none(
@@ -196,7 +261,8 @@ def test_state_the_unit_never_announces_costs_one_read_and_then_none(
     Control's version. The cache used to count that question as a push that had
     landed mid-read and kept the entry marked, so the second field below went
     back to the unit - measured at 7 reads in 40 before the fix and 0 in 60
-    after, which reached this suite as a failure about one run in three.
+    after. Reported, rather than measured: it reached this suite as a failing
+    run roughly one time in three.
     """
     model_cache.mark_for_reread("identity", "this test wants a cold read")
 

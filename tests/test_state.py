@@ -442,19 +442,27 @@ def test_the_unit_asking_a_question_back_is_not_a_push_that_landed(link):
     So it says nothing: not a field the entry keeps, not a field it does not
     keep. It cannot have made our copy stale, and counting it as a message that
     landed while we were reading marks the entry for a re-read the unit never
-    asked for. That mark cost the hardware suite a failing test in about one run
-    in three, because whether the question arrives before the reading thread
-    wakes is a race over half a millisecond.
+    asked for. Reported rather than measured: that mark reached the hardware
+    suite as a failing run roughly one time in three.
 
-    The loopback pushes the RETURNED reply last, so the follow-up is pushed
-    from inside the answer here rather than after it. The read path counts what
-    arrived rather than ordering it, so the two orders are the same measurement.
+    Two deliberate departures from the wire, and neither changes what is being
+    measured. The answer here carries an unkept field, as the real fifteen-field
+    reply does, so the mark is set by the answer and cleared by the count rather
+    than by the whole-entry `answered` path - the real sequence. And the
+    follow-up lands inside the read window EVERY time, where on the unit that is
+    a race the question wins about one read in six; the certain case is the one
+    worth pinning. Order is the one thing the loopback cannot reproduce - it
+    pushes the returned reply last - and order is the one thing the read path
+    does not look at, since it compares a count taken before the read with a
+    count taken after it.
     """
     transport, cache = link
 
     def answers_and_then_asks_back():
         transport.push(pa.VersionMessage(action=pa.MessageAction.READ))
-        return full_version_reply()
+        return version_reply(app_fw_version="d14e",
+                             device_serial_number="QCS0000001",
+                             uboot_version="2019.04")
 
     transport.replies["VersionMessage"] = answers_and_then_asks_back
     cache.mark_for_reread("identity", "this test wants a cold read")
@@ -1095,7 +1103,7 @@ def _watchdog_threads():
 # -- the preset and the active scene ------------------------------------------
 #
 # These two entries are what the grid, the scenes and `device.preset` read
-# through. Both reads are one request and one reply, which is what `StateEntry`
+# through. Both reads are one request and one answer, which is what `StateEntry`
 # requires - the Directory's listings are the streaming case and they are not
 # here.
 

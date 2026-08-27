@@ -358,9 +358,10 @@ broadcasts `Scene`, `SceneLabel`, `SceneColor`, `SceneCopy`, `Grid`, and
 
 That symmetry is not free for a listener. A message of a type the host tracks is
 not necessarily news about the device: the device's own `Version` READ carries
-`action` and nothing else, so anything counting inbound messages per type has to
-tell a question apart from an answer (`_Slot.witnessed` in
-`pyquadcortex/device/state.py`).
+`action` and nothing else. So anything counting inbound messages per type needs a
+rule for the ones that say nothing - the model's cache counts a message only when
+it carried a field the cache keeps or a field it does not
+(`pyquadcortex/device/state.py`, `_apply_one`).
 
 ## 4. The connect handshake
 
@@ -389,11 +390,12 @@ As Cortex Control performs it:
 1. host: `ResetCommsBuffers{request_id: 0, session_id: <fresh 32 hex chars>}`.
    The device echoes the same `session_id` back.
 2. host: `Version{action: READ}`. The device replies with its full version blob.
-3. device: `Version{action: READ}` to the host. This is the TAIL OF STEP 2's
-   ANSWER, not a separate handshake step: measured 2026-08-27 on `d14e`, ten
-   host READs out of ten were answered by a `Version{UPDATE}` carrying fifteen
-   fields and then, 0.5-0.8 ms later, by the device's own `Version{READ}`
-   carrying `action` alone. Cortex Control answers
+3. device: `Version{action: READ}` to the host. Read this as the TAIL OF STEP
+   2's ANSWER rather than as a separate handshake step. The capture cannot say
+   so on its own, but our own reads can: measured 2026-08-27 on `d14e`, ten host
+   `Version` READs out of ten were answered by a `Version{UPDATE}` carrying
+   fifteen fields and then, 0.5-0.8 ms later, by the device's own
+   `Version{READ}` carrying `action` alone. Cortex Control answers
    `Version{action: UPDATE, cortex_control_version: "4.0.1"}`. The device keeps
    talking even if its own READ is never answered, but the UPDATE is what opens
    the push gate.
@@ -416,8 +418,9 @@ the transport hands a `Version` with no id to whichever waiter is first in line.
 Skipping it also means the device asks nothing back. Measured 2026-08-27 on
 `d14e`: a connect through `_hello()` and its whole burst produce exactly one
 inbound `Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer
-to the announce, and an idle connection produces none at all. So step 3 above is
-a consequence of step 2 rather than something the device does on connecting.
+to the announce, and eight seconds of idling after it produce none. So step 3
+above is a consequence of step 2 rather than something the device does on
+connecting.
 
 After the burst the device needs a moment before it treats the client as
 connected; a command sent too soon gets no push (observed as flaky preset-read
@@ -1888,7 +1891,10 @@ keep timeouts generous, but 9 s is the typical seed arrival.)
 
 **`connect()` returns before the burst arrives.** Re-measured 2026-08-12 on d14e with a
 transport listener registered before the handshake: `connect()` handed back its client 2.0 s
-in, having seen only the `ResetCommsBuffers` echo and the unit's own `Version` READ. The
+in, having seen only the `ResetCommsBuffers` echo and one `Version`. (That session read the
+`Version` as the unit's own READ. Re-measured 2026-08-27 on d14e it is the unit's `UPDATE`
+answering our version announce, carrying `cortex_control_version_valid`; `_hello()` sends no
+host `Version` READ, and with none sent the unit asks nothing back. See section 4.) The
 ModelRepo landed at 4.9 s, the 399 `File` listings and most settings at 5.1 s, and the seed
 `RecallPreset` at 10.1 s - 474 messages of 24 distinct types by 15 s. So a listener attached
 to the client `connect()` returns is about 3 s too late for the ModelRepo and 8 s too late

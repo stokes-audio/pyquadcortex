@@ -69,8 +69,13 @@ class ReplyingTransport:
     Used to drive the REAL ``QuadCortex`` rather than a stub of it.
     """
 
-    def __init__(self, canned):
+    def __init__(self, canned, trailing=()):
         self.canned = canned
+        #: What the unit sends AFTER answering, before the caller wakes. The
+        #: real one does: it answers a `Version` READ and then asks one of its
+        #: own (``docs/protocol.md`` section 4). A double that only ever
+        #: delivers the answer cannot see a cache that miscounts the rest.
+        self.trailing = list(trailing)
         self.sent = []
         self.listeners = []
 
@@ -80,8 +85,9 @@ class ReplyingTransport:
     def request(self, msg, timeout=5.0):
         self.sent.append(msg)
         reply = self.canned[type(msg).__name__]
-        for listener in list(self.listeners):
-            listener(reply)         # listeners see a reply first (ADR-0009)
+        for message in [reply] + self.trailing:
+            for listener in list(self.listeners):
+                listener(message)   # listeners see a reply first (ADR-0009)
         return reply
 
     def add_listener(self, listener):
@@ -170,11 +176,29 @@ def test_from_client_asks_the_unit_nothing_until_it_is_asked():
 
 
 def test_identity_is_read_once_however_often_it_is_asked_for():
-    qc = FakeClient()
-    device = Device.from_client(qc)
+    """Two fields, one round trip - through the real client and the real cache.
+
+    Built on `ReplyingTransport` rather than `FakeClient` on purpose. `FakeClient`
+    hands its reply straight back and notifies no listener, so the cache's
+    arrival count never moves and this test passed just as happily against the
+    version of the cache that took two round trips here (see
+    `tests/test_state.py`'s `test_the_unit_asking_a_question_back_is_not_a_push_
+    that_landed`). The reply carries a field the entry does not keep and is
+    followed by the unit's own `Version` READ, which is what the unit really
+    sends.
+    """
+    reply = pa.VersionMessage(action=pa.MessageAction.UPDATE)
+    reply.app_fw_version = "d14e"
+    reply.device_serial_number = "QCS0000001"
+    reply.uboot_version = "2019.04"
+    transport = ReplyingTransport(
+        {"VersionMessage": reply},
+        trailing=[pa.VersionMessage(action=pa.MessageAction.READ)])
+    device = Device.from_client(client.QuadCortex(transport))
+
     assert (device.firmware, device.serial, device.firmware) == (
         "d14e", "QCS0000001", "d14e")
-    assert qc.version_reads == 1
+    assert sum(isinstance(m, pa.VersionMessage) for m in transport.sent) == 1
 
 
 def test_from_client_exposes_the_client_it_was_given():
