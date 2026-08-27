@@ -49,7 +49,7 @@ Counted from the shipped catalog, 3,809 parameters:
 | what | count | takes |
 |---|---|---|
 | a unit and no option list | 1,490 | a unit type |
-| unitless, with a real range | 2,315 | `Shown` - see below |
+| unitless, with a real range | 2,315 | `Real` - see below |
 | an option list | 539 | an enum or a bool, unchanged |
 | bounds nobody has measured | 1 | `Normalized` only |
 
@@ -69,14 +69,14 @@ qc.set_param(LaneOutput(0), VOLUME, Db(-3.1))
 qc.set_param(Tempo(), TEMPO, Bpm(120))
 qc.set_param(block, "ATTACK", Milliseconds(12))
 qc.set_param(block, "MIX", Percent(35))
-qc.set_param(block, "GAIN", Shown(5.0))          # unitless, 0..10 on its own scale
+qc.set_param(block, "GAIN", Real(5.0))           # unitless, 0..10 on its own scale
 qc.set_param(block, 21, Normalized(0.5))         # an index the catalog omits
 qc.set_param(block, IR_PATH_SLOT_1, "/media/...")  # a string is itself
 ```
 
 `value=`, `real=` and `text=` all go away.
 
-### `Shown` is the general case; a unit type is a checkable claim on top
+### `Real` is the general case; a unit type is a checkable claim on top
 
 The 2,315 unitless parameters are the corner that shapes this. A drive's `GAIN`
 runs 0..10 with no unit. `Db` is wrong, `Normalized` is wrong (it is not a 0..1
@@ -85,21 +85,28 @@ it could equally mean the wire.
 
 So:
 
-* **`Shown(x)`** means "the number the screen shows, in whatever unit it shows".
-  Every parameter accepts it.
+* **`Real(x)`** means "the value in the parameter's own scale, whatever that
+  scale is". Every parameter accepts it. The name is deliberate: the codebase
+  and docs already say "real units" throughout, so it reads continuously, and
+  the migration from the old keyword is literally `real=-3.1` -> `Real(-3.1)`.
 * **`Db(x)`, `Hertz(x)`, `Milliseconds(x)`, `Seconds(x)`, `Percent(x)`,
-  `Semitones(x)`, `Cents(x)`, `Bpm(x)`** are `Shown` plus an assertion about the
-  unit. Passing `Db` to a parameter the catalog calls `Hz` is a `TypeError`
-  naming both.
+  `Semitones(x)`, `Cents(x)`, `Bpm(x)`** subclass `Real` and add an assertion
+  about the unit. Passing `Db` to a parameter the catalog calls `Hz` is a
+  `TypeError` naming both.
 * **`Normalized(x)`** is the wire's own 0..1, accepted everywhere.
 
 That makes the unit types optional precision rather than a wall: a caller who
-does not care writes `Shown`, and a caller who wants the mistake caught writes
+does not care writes `Real`, and a caller who wants the mistake caught writes
 `Db`. The library's own examples always write the unit type.
 
-The tail units (`x`, `bits`, `dB/oct`) get no type. They take `Shown`, and the
+Note the base type is NOT distinguished by being ranged - `Db` is ranged too.
+What distinguishes it is WHICH SCALE: the parameter's own, against the wire's
+0..1. `RangedValue` was considered and rejected for naming a property all of
+them share.
+
+The tail units (`x`, `bits`, `dB/oct`) get no type. They take `Real`, and the
 reason is written beside the type list: two parameters each does not earn a
-public name, and `Shown` is not a worse answer for them, only a less specific
+public name, and `Real` is not a worse answer for them, only a less specific
 one.
 
 ### `Normalized` stays allowed everywhere, and is never advertised
@@ -170,13 +177,51 @@ mechanical ones are worth showing as a sed-able before/after.
 No name survives with a changed meaning, which is the one break shape that
 needs shouting about, and this does not have it.
 
-## Open question for review
+## Deferred, and available: static unit checking
 
-**Is `Shown` the right name?** It is the type most callers touch, because 2,315
-parameters are unitless. Alternatives considered: `Amount` (vague), `Display`
-(reads like a verb), `Native` (jargon), `Unitless` (wrong - it is also what a
-dB parameter takes when you do not want the check). `Shown` says "the number on
-the screen", which is exactly what it is.
+The runtime check above catches a wrong unit for every caller. A STATIC check is
+also possible, was verified rather than assumed, and is deliberately not in this
+phase. Recorded here and in an ADR so the door stays open and nobody has to
+re-derive it.
+
+**It works.** A generated parameter constant can carry its unit in its type, and
+mypy rejects the mismatch:
+
+```python
+class Param(int, Generic[U]): ...            # an int, tagged with its unit
+
+class LaneOutputParam:
+    VOLUME: Param[DbUnit] = Param(0)
+
+set_param(b, LaneOutputParam.VOLUME, Db(-3.1))     # fine
+set_param(b, LaneOutputParam.VOLUME, Hertz(217))   # mypy: Cannot infer type parameter "U"
+set_by_index(b, LaneOutputParam.VOLUME)            # still an int at runtime
+```
+
+Checked against mypy 2.3.1: the wrong-unit call errors, the correct call and the
+plain-int use do not.
+
+**Three conditions, which are why it is deferred:**
+
+1. It only bites where the caller uses a GENERATED CONSTANT. A string
+   (`set_param(b, "VOLUME", ...)`) or a bare index has nothing static to key on,
+   and those are most real code today.
+2. A type checker has to run. There is no mypy or pyright in the dev extra, so
+   it buys nothing until one joins CI.
+3. `params.py`'s constants would stop being `IntEnum`s. An enum member's type is
+   the enum class, so it cannot carry a PER-MEMBER unit, and a model's
+   parameters have mixed units. They would become `Param[Unit]` instances, and
+   `.name`, iteration and `by_model` would need reimplementing along with
+   `tests/test_params.py`.
+
+**Why deferring is safe.** It is purely additive: `Param(int, Generic[U])`
+disturbs nothing this phase builds, because the value types and the runtime
+check are the same either way. Adopting it later is a reshape of one generated
+file plus a CI addition, not a redesign.
+
+**What would make it worth doing:** a type checker in CI for other reasons, or
+evidence that callers actually reach for the generated constants rather than
+strings. Neither is true today.
 
 ## Relationship to issue #13
 
