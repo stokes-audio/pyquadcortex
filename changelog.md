@@ -20,6 +20,33 @@ correction.
 
 ## Unreleased
 
+### BREAKING: a parameter value now says which scale it is on
+
+```python
+qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))     # dB, checked
+qc.set_param(block, "GAIN", Real(5.0))              # 5 of 0..10, no unit
+qc.set_param(block, 21, Encoded(0.5))               # the device's own 0..1
+qc.set_param(block, "IR PATH SLOT 1", "/media/...")  # a string is itself
+```
+
+`value=`, `real=` and `text=` are replaced by one positional value. A bare
+number is refused.
+
+The reason is a pair that used to be indistinguishable. Every knob has two
+number lines - the one the screen shows and the one the device stores - and on
+a lane volume, zero on the screen's line is **unity** while zero on the
+device's line is **silence**. `real=0.0` and `value=0.0` were opposite ends of
+the same knob, told apart only by a keyword nobody reads twice.
+
+Naming the unit gets it checked. `Db` on a parameter the catalog calls Hz is a
+`TypeError` before anything reaches the wire, and the two units the catalog
+spells twice - `Cents`/`cents` and `Semitones`/`st` - are one type each.
+
+Reads come back the same way, so `to_real` hands you `Db(12.0)` rather than
+`12.0`.
+
+See `docs/migration.md` for the table, and `docs/api.md` for the picture.
+
 ### BREAKING: the metronome beat names were wrong, two of them backwards
 
 `MetronomeBeat` is now the device's own `OFF`, `MUTE`, `DOWN`, `ON`, replacing

@@ -17,6 +17,42 @@ while that is true, and this file is the cost of doing it.
 
 ## 0.40.0 to the next release
 
+### `set_param` takes one value, and it must say which scale it is on
+
+`value=`, `real=` and `text=` are gone.
+
+| before | after |
+|---|---|
+| `set_param(t, p, value=0.71)` | `set_param(t, p, Encoded(0.71))` |
+| `set_param(t, p, real=-3.1)` | `set_param(t, p, Db(-3.1))`, or `Real(-3.1)` |
+| `set_param(t, p, text="/media/x.wav")` | `set_param(t, p, "/media/x.wav")` |
+| `set_metronome_volume(real=-20.0)` | `set_metronome_volume(Db(-20.0))` |
+
+A bare number is refused, and the error shows the call rewritten.
+
+**Read this part before running a find-and-replace.** `real=` and `value=` are
+NOT the same number in different clothes. On a lane VOLUME, `-40..+12 dB`:
+
+```python
+set_param(LaneOutput(0), "VOLUME", Real(0.0))     # 0 dB - unity
+set_param(LaneOutput(0), "VOLUME", Encoded(0.0))  # the Off detent - silence
+```
+
+Every knob has two number lines - the screen's and the device's - and the type
+says which one your number is on. A mechanical migration is safe as long as
+`real=` becomes `Real`/a unit type and `value=` becomes `Encoded`, because that
+preserves which line each call was already using. Swapping them silently
+inverts a volume.
+
+`Db`, `Percent`, `Hertz`, `Milliseconds`, `Seconds`, `Semitones`, `Cents` and
+`Bpm` are `Real` plus a claim that gets checked: hand `Db` to a parameter the
+catalog calls Hz and you get a `TypeError` rather than a wrong write. Use plain
+`Real` where you do not want the check, or where the parameter has no unit -
+2,315 of them do not.
+
+Only `Encoded` works with no device attached. The other two read the parameter's
+scale from the catalog, and the catalog comes from the unit.
+
 ### DANGEROUS: `MetronomeBeat.OFF` now means the OPPOSITE of what it meant
 
 Read this before the rest. It is the only break here where a name survives, the
