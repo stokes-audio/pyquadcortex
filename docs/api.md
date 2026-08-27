@@ -45,12 +45,12 @@ already read and need no connection; calling them as methods raises
 |---|---|
 | **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
-| **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(target, param, value=)`, `set_bypass(Block(row, column), bypassed)` |
+| **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(target, param, value)`, `set_bypass(Block(row, column), bypassed)` |
 | **Add and remove blocks** | `set_block(Block(row, column, model_id))`, `remove_block(cell)`, `move_block(source, destination)`, `catalog` |
 | **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
-| **Lane output** | `set_param(LaneOutput(row), param, value=/real=)` - VOLUME, PAN, MUTE, SOLO. `real=` speaks dB for VOLUME |
-| **Input gate** | `set_param(LaneInput(row), param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
+| **Lane output** | `set_param(LaneOutput(row), param, value)` - VOLUME, PAN, MUTE, SOLO. VOLUME speaks dB, so `Db(-6.0)` |
+| **Input gate** | `set_param(LaneInput(row), param, value)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
 | **Split and mix** | `set_param(Splitter(row), param, ...)`, `set_param(Mixer(row), param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(cell, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
 | **Parameter names** | `protocol.params` - an `IntEnum` per model, so `params.LaneOutputParam.VOLUME` replaces `"VOLUME"`. A member IS its wire index, so it also skips the catalog fetch a name needs |
@@ -213,7 +213,7 @@ in their own units rather than as a 0..1 fraction:
 
 ```python
 comp = qc.catalog[5005]
-qc.set_param(Block(0, 1, comp), "THRESHOLD", real=-20)  # dB
+qc.set_param(Block(0, 1, comp), "THRESHOLD", Db(-20))
 ```
 
 That is worth preferring: parameter indices are positional, and not every index
@@ -278,7 +278,7 @@ Factory presets often produce their scenes with the **mixer**, not with bypass. 
 `LEVEL A` / `LEVEL B` across two rows, giving four amp paths.
 
 ```python
-qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, value=0.0, scene=Scene.C)
+qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, Encoded(0.0), scene=Scene.C)
 ```
 
 A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which is
@@ -290,7 +290,7 @@ takes dB directly. The helpers remain for converting without a device in hand:
 ```python
 from pyquadcortex.protocol import db_to_lane_level, lane_level_db
 
-qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, real=-6.0)   # dB
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Db(-6.0))
 qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME,
              value=db_to_lane_level(-6.0))                             # the same
 lane_level_db(0.76923077)     # 0.0
@@ -307,7 +307,7 @@ the bottom of the dB scale.
 The **splitter** divides a row into two lanes:
 
 ```python
-qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_A, value=0.25)
+qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_A, Db(-27.0))
 ```
 
 Address its parameters by the **unified** model's names - `TYPE`, `STEREO`, `BALANCE`,
@@ -335,7 +335,7 @@ qc.read_preset(Setlist.FACTORY, "1A")                 # load it onto the grid
 
 # a different drive level in scene C - naming the scene switches to it,
 # promotes the parameter to follow scenes, and writes, in the right order
-qc.set_param(Block(0, 3), 0, value=0.4, scene=Scene.C)
+qc.set_param(Block(0, 3), 0, Encoded(0.4), scene=Scene.C)
 
 # per-scene bypass works the same way
 qc.set_bypass(Block(0, 3), bypassed=True, scene=Scene.D)
@@ -391,10 +391,10 @@ the write had in fact landed.
 The per-preset controls:
 
 ```python
-qc.set_param(Tempo(), params.TempoParam.TEMPO, real=120)  # bpm, 40..240 span
+qc.set_param(Tempo(), params.TempoParam.TEMPO, Bpm(120))   # 40..240 span
 qc.set_tempo_led(False)                 # this preset's TEMPO LED off
 qc.set_metronome_muted(True)            # silence the click - the unit's own MUTE
-qc.set_param(Tempo(), "TIME SIGNATURE", value=0.1)
+qc.set_param(Tempo(), "TIME SIGNATURE", Encoded(0.1))   # a list index; see options
 ```
 
 `TEMPO` runs 40..240 bpm, which the catalog names as `MIN_TEMPO` / `MAX_TEMPO`.
