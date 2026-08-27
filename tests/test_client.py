@@ -1699,9 +1699,11 @@ LANE_OUTPUT_CATEGORY = """
     <Parameter defaultValue="0" max="1" min="0" name="SOLO" type="switch"/>
   </Model>
 </Category>
-<Category id="13" name="Send">
-  <Model blob="snd" id="13000" name="Send 1" internal="true">
-    <Parameter defaultValue="0.5" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+<Category id="20" name="Neural Capture Internal">
+  <Model blob="rec" id="20000" name="NC_Recorder" skip_self_test="true">
+    <Parameter defaultValue="0" max="1" min="0" name="A" type="float"/>
+    <Parameter defaultValue="0" max="1" min="0" name="B" type="float"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="OUT LEVEL" type="float" units="dB"/>
   </Model>
 </Category>
 """
@@ -1842,14 +1844,14 @@ def test_an_unmeasured_placeholder_range_still_refuses_real():
     """31 of the 52 placeholder parameters are still unmeasured - #26.
 
     The point of this test is that measuring some of them did not quietly
-    loosen the rule for the rest. A Send's LEVEL is the case to watch: it sits
-    in the same placeholder bucket as parameters that DO convert now, and the
-    cab LEVEL - which was in this test until it got measured - turned out to be
-    on a completely different scale from the lane and mixer levels.
+    loosen the rule for the rest. The recorder's OUT LEVEL is the case to watch
+    now: the cab LEVEL and then the Send LEVEL each held this role until they
+    got measured, and the cab turned out to be on a completely different scale
+    AND a different shape from the lane levels it shares a bucket with.
     """
     qc = _lane_client()
     with pytest.raises(ValueError, match="placeholder"):
-        qc.set_param(Block(0, 1, 13000), param="LEVEL", real=-3.0)
+        qc.set_param(Block(0, 1, 20000), param="OUT LEVEL", real=-3.0)
 
 
 # -- per-preset MIDI out ------------------------------------------------------

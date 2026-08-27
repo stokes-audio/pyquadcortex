@@ -72,6 +72,15 @@ _CAB_LEVEL = Span(-39.96, 6.0, exponent=0.202, floor_wire=0.01, unit="dB",
 #: A block EQ band's GAIN. Every position is reachable, so no floor.
 _EQ_GAIN = Span(-12.0, 12.0, unit="dB")
 
+#: The SEND side of the FX loop: a Send block's LEVEL and THRU, and an FX Loop's
+#: SEND LEV. Measured 2026-08-26 at five points including both ends - -39.6 at
+#: 0.01, -36.0 at 0.10, -20.0 at 0.50, -10.0 at 0.75, 0.0 at 1.00 - and every one
+#: is exact. It tops out at UNITY rather than +12: a send cannot boost.
+#:
+#: `Send.LEVEL`, `Send.THRU` and `FX Loop.SEND LEV` were each measured and agree,
+#: so this is three controls confirmed rather than one generalised.
+_SEND = Span(-40.0, 0.0, floor_wire=0.01, unit="dB", hint=_LEVEL_HINT)
+
 #: The wire value the mixer, splitter and lane-output LEVEL parameters hold when
 #: nothing is attenuated - 10/13, which is 0 dB on the -40..+12 dB span those
 #: controls cover. The catalog publishes them as 0..1 "dB" (see
@@ -267,6 +276,34 @@ MEASURED_SPANS = {
     # The design intent is probably -40 -> +6 with a fifth-root taper: those
     # constants fit to 0.17 dB, which the display can just about resolve, so the
     # measured values are what ships and this note is why they look untidy.
+    # The FX loop family, measured 2026-08-26. FIVE parameters across three
+    # blocks turned out to be TWO scales, not one and not five: everything on the
+    # send side is -40..0 and everything on the return side is -40..+12, the same
+    # scale the lane, mixer and splitter levels use. Established by setting all
+    # five to one wire value and reading them together, twice, at 0.10 and 0.50 -
+    # so the grouping is not two laws crossing at a point.
+    #
+    # Both show OFF at wire 0.0, hence the floor on each.
+    #
+    # Measured on Send 1, Return 1 and FX Loop 2. The 1/2 and second-port
+    # siblings below are the same control on another port and are NOT separately
+    # measured; each group already has two independently measured members, which
+    # is why extending it is a small step rather than the cab's one-model leap.
+    (13000, 0): _SEND,              # Send 1 LEVEL
+    (13000, 1): _SEND,              # Send 1 THRU
+    (13001, 0): _SEND,              # Send 2 LEVEL
+    (13001, 1): _SEND,              # Send 2 THRU
+    (13006, 0): _SEND,              # Send 1/2 LEVEL
+    (13006, 1): _SEND,              # Send 1/2 THRU
+    (13004, 0): _SEND,              # FX Loop 1 SEND LEV
+    (13005, 0): _SEND,              # FX Loop 2 SEND LEV
+    (13008, 0): _SEND,              # FX Loop 1/2 SEND LEV
+    (13002, 0): _LEVEL,             # Return 1 LEVEL
+    (13003, 0): _LEVEL,             # Return 2 LEVEL
+    (13007, 0): _LEVEL,             # Return 1/2 LEVEL
+    (13004, 1): _LEVEL,             # FX Loop 1 RET LEV
+    (13005, 1): _LEVEL,             # FX Loop 2 RET LEV
+    (13008, 1): _LEVEL,             # FX Loop 1/2 RET LEV
     (12000, 2): _CAB_LEVEL,         # cab LEVEL, mic 1
     (12000, 10): _CAB_LEVEL,        # cab LEVEL, mic 2
 }

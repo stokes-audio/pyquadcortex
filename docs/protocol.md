@@ -2701,6 +2701,8 @@ how the lane levels shipped `-100..+30` for two releases.
 |---|---|---|
 | Lane / mixer / splitter LEVEL | `dB = -40 + 52 * wire` | lane VOLUME: -3.1 at 0.71, +12.0 at 1.0, -39.5 at 0.01. Splitter `LEVEL TO B`: -3.1 at 0.71, +12.0 at 1.0. `MIXER LEVEL`: -24.4 at 0.30, +12.0 at 1.0. Mixer `LEVEL A`: -24.4 at 0.30, +12.0 at 1.0. Mixer `LEVEL B`: -3.1 at 0.71, +12.0 at 1.0. Splitter `LEVEL TO A` agrees at 0.30 and reads OFF at 0.0 |
 | Block EQ band GAIN (`4000`, `4001`, `4004`) | `dB = -12 + 24 * wire` | Parametric-8 at four points: -12.0 at 0.0, -9.6 at 0.10, 0.0 at 0.50, +12.0 at 1.00. Parametric-3 and Output Equalizer measured at both ends each |
+| FX loop SEND side (`Send.LEVEL`, `Send.THRU`, `FX Loop.SEND LEV`) | `dB = -40 + 40 * wire` | five points, every one exact: -39.6 at 0.01, -36.0 at 0.10, -20.0 at 0.50, -10.0 at 0.75, 0.0 at 1.00. Tops out at UNITY - a send cannot boost |
+| FX loop RETURN side (`Return.LEVEL`, `FX Loop.RET LEV`) | `dB = -40 + 52 * wire` | -39.5 at 0.01, -34.8 at 0.10, -14.0 at 0.50, +12.0 at 1.00. **The same scale as the lane, mixer and splitter levels** |
 | Per-preset TEMPO | `bpm = 40 + 200 * wire` | 59 at 0.095, 111 at 0.355, 120 at 0.400 |
 | Input port gain | `dB = -12 + 72 * wire` | four owner trims read on screen against the wire |
 
@@ -2759,9 +2761,16 @@ is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
 20 dB wrong on the wire.
 
 Everything NOT in that table still refuses `real=`. That is the honest answer:
-an unmeasured span cannot be converted, only guessed. The remaining families -
-send/return and FX-loop levels, the recorder's OUT LEVEL, Parallax's LEVELs -
-are tracked on the placeholder-ranges issue.
+an unmeasured span cannot be converted, only guessed. What is left - the
+recorder's OUT LEVEL and Parallax's two LEVELs, three parameters - is tracked on
+the placeholder-ranges issue.
+
+**Five FX-loop parameters turned out to be TWO scales, not one and not five.**
+Worth the method note: they were grouped by setting all five to the SAME wire
+value and reading them together, twice, at 0.10 and 0.50. Two readings agreeing
+at one point could be two laws crossing; agreeing at two points is a family. The
+send side tops out at unity and the return side at +12, so pooling them would
+have put a send 12 dB out at full travel.
 
 ### What a host can assign an expression pedal to
 
