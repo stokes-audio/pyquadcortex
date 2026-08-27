@@ -285,9 +285,11 @@ IDENTITY = StateEntry(
 #: behind ``preset.has_unsaved_changes``, which is built: it lives in
 #: ``device/preset.py`` and answers from this entry's copy. The cache holds it
 #: because it is the entry the unit pushes most plainly - the connect burst
-#: delivers one, and every CHANGE of the flag produces another. Not every edit:
-#: an edit to an already-dirty preset sends nothing, measured 2026-08-14, which
-#: is why the property reads a cached fact rather than counting notifications.
+#: delivers one, and an edit that FLIPS the flag produces another. Not every
+#: edit: an edit to an already-dirty preset sends nothing, measured 2026-08-14,
+#: which is why the property reads a cached fact rather than counting edits. The
+#: unit is silent the other way as well, on a recall, which is what
+#: :data:`_A_RECALL_RESETS` below is for.
 #:
 #: ``is_dirty`` is the model's one presence-free field. Proto3 gives a plain bool
 #: no presence, so a clean grid and an unmentioned grid are the same bytes and
