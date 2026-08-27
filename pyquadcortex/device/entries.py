@@ -42,14 +42,15 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 #: skip cannot quietly forgive a field that never arrives.
 #:
 #: ``request_id`` is the transport's, always. **``action`` is not always.** It
-#: says nothing about state on the types tracked today, which is why it is
-#: skipped globally - but on ``Grid`` it is load-bearing state: an
+#: says nothing about state on the plans that merge field by field, which is why
+#: it is skipped globally - but on ``Grid`` it is load-bearing state: an
 #: ``UPDATE`` carrying ``hash: 0`` is transmitted and ignored, while the same
 #: payload with ``action: DELETE`` removes the block
-#: (``QuadCortex.remove_block``). So a ``Grid`` entry - issue #12 - cannot
-#: inherit this skip: two pushes with identical payloads and opposite meanings
-#: would apply identically and mark nothing. Give that entry its own decision
-#: about ``action`` rather than widening this set, and see ADR-0011.
+#: (``QuadCortex.remove_block``). So the ``Grid`` feed - which ``PRESET`` carries
+#: - cannot inherit this skip: two pushes with identical payloads and opposite
+#: meanings would apply identically and mark nothing. That feed makes its own
+#: decision about ``action`` (:data:`_GRID_MOVED`) rather than widening this
+#: set, and see ADR-0011.
 #:
 #: The cache's arrival count leans on this too. A message carrying nothing but
 #: these two said nothing, so it is not counted as having landed during a read
@@ -281,9 +282,12 @@ IDENTITY = StateEntry(
 
 
 #: Whether the live grid has edits nobody has saved. Section 9's table puts this
-#: behind ``preset.has_unsaved_changes``, which arrives with the preset surface
-#: (issue #12); the cache holds it now because it is the entry the unit pushes
-#: most plainly - the connect burst delivers one, and every edit produces one.
+#: behind ``preset.has_unsaved_changes``, which is built: it lives in
+#: ``device/preset.py`` and answers from this entry's copy. The cache holds it
+#: because it is the entry the unit pushes most plainly - the connect burst
+#: delivers one, and every CHANGE of the flag produces another. Not every edit:
+#: an edit to an already-dirty preset sends nothing, measured 2026-08-14, which
+#: is why the property reads a cached fact rather than counting notifications.
 #:
 #: ``is_dirty`` is the model's one presence-free field. Proto3 gives a plain bool
 #: no presence, so a clean grid and an unmentioned grid are the same bytes and
