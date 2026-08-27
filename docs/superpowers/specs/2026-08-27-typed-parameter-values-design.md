@@ -51,7 +51,7 @@ Counted from the shipped catalog, 3,809 parameters:
 | a unit and no option list | 1,490 | a unit type |
 | unitless, with a real range | 2,315 | `Real` - see below |
 | an option list | 539 | an enum or a bool, unchanged |
-| bounds nobody has measured | 1 | `Normalized` only |
+| bounds nobody has measured | 1 | `Encoded` only |
 
 Units, by parameter count: `dB` 499, `%` 487, `Hz` 276, `ms` 176, `s` 22,
 `Semitones` 18, `Cents` 5, and a tail of `x`, `bits`, `st`, `cents`, `dB/oct`,
@@ -70,7 +70,7 @@ qc.set_param(Tempo(), TEMPO, Bpm(120))
 qc.set_param(block, "ATTACK", Milliseconds(12))
 qc.set_param(block, "MIX", Percent(35))
 qc.set_param(block, "GAIN", Real(5.0))           # unitless, 0..10 on its own scale
-qc.set_param(block, 21, Normalized(0.5))         # an index the catalog omits
+qc.set_param(block, 21, Encoded(0.5))         # an index the catalog omits
 qc.set_param(block, IR_PATH_SLOT_1, "/media/...")  # a string is itself
 ```
 
@@ -79,7 +79,7 @@ qc.set_param(block, IR_PATH_SLOT_1, "/media/...")  # a string is itself
 ### `Real` is the general case; a unit type is a checkable claim on top
 
 The 2,315 unitless parameters are the corner that shapes this. A drive's `GAIN`
-runs 0..10 with no unit. `Db` is wrong, `Normalized` is wrong (it is not a 0..1
+runs 0..10 with no unit. `Db` is wrong, `Encoded` is wrong (it is not a 0..1
 control), and a bare `5.0` is genuinely ambiguous - on a unitless 0..1 control
 it could equally mean the wire.
 
@@ -93,7 +93,7 @@ So:
   `Semitones(x)`, `Cents(x)`, `Bpm(x)`** subclass `Real` and add an assertion
   about the unit. Passing `Db` to a parameter the catalog calls `Hz` is a
   `TypeError` naming both.
-* **`Normalized(x)`** is the wire's own 0..1, accepted everywhere.
+* **`Encoded(x)`** is the wire's own 0..1, accepted everywhere.
 
 That makes the unit types optional precision rather than a wall: a caller who
 does not care writes `Real`, and a caller who wants the mistake caught writes
@@ -109,7 +109,54 @@ reason is written beside the type list: two parameters each does not earn a
 public name, and `Real` is not a worse answer for them, only a less specific
 one.
 
-### `Normalized` stays allowed everywhere, and is never advertised
+### How `Real` and `Encoded` differ, since both are numbers
+
+`Encoded` is the DEVICE'S scale: always 0..1, identical for every parameter,
+needs no catalog. `Real` is the PARAMETER'S scale, whatever the catalog says
+that is. They are the two sides of one conversion, and the same number means
+different things through each:
+
+| on a lane VOLUME, -40..+12 dB | wire value | what the unit does |
+|---|---|---|
+| `Real(0.0)` | 0.76923 | 0 dB - unity, no attenuation |
+| `Encoded(0.0)` | 0.0 | the Off detent - silence |
+
+That pair is the whole argument for making the type mandatory. A bare `0.0`
+would be a coin flip between unity and silence.
+
+They are not interchangeable in range either. A Myth Drive's `GAIN` runs 0..10
+with no unit, so `Real(5.0)` is its midpoint and `Encoded(5.0)` is refused - the
+wire only carries 0..1.
+
+**Where they coincide, which is worth saying so nobody reads it as a rule.** 279
+parameters are unitless with a range of exactly 0..1 - `BRIGHT`, `FAT`, various
+mix controls. On those `Real(0.5)` and `Encoded(0.5)` write the same wire value.
+The distinction still holds - one means "half this knob's travel", the other
+"the encoded value 0.5" - it simply happens to land in the same place.
+
+So `Db` narrows `Real` (same scale, plus a claim about the unit), while
+`Encoded` sits alongside as a genuinely different scale.
+
+### The name
+
+`Normalized` was the first choice and it was wrong: it names a PROCESS applied
+at the wrong end. Nothing is normalized when you write `Encoded(0.71)` - 0.71 is
+already on that scale, and the normalizing happened elsewhere to produce it.
+`Parameter.to_normalized()` keeps its name, because that method really does
+normalize; what changes is the noun for its result.
+
+Rejected, with reasons, so this is not relitigated: `Wire` (accurate and the
+codebase's own word, but disliked), `Raw` (vaguer - raw what, on what scale? -
+and "raw payload"/"raw bytes" already mean undecoded bytes here), `Position`
+(140 uses, mostly preset slots), `Ratio` (a real parameter name, and there is an
+`options.Ratio3`), `Fraction` (stdlib), `Travel` (concrete and already the
+codebase's phrase for this, but a switch has no travel and this type also
+addresses indexes the catalog does not describe).
+
+`Encoded` is correct for every case including switches and undocumented
+indexes, and it says plainly that this is the machine's representation.
+
+### `Encoded` stays allowed everywhere, and is never advertised
 
 It is what the wire carries, and an index the catalog does not describe still
 needs it. But **no example and no docstring mentions it on a method that takes
@@ -162,15 +209,15 @@ otherwise.
 * The wrong-unit `TypeError` fires for each pair the catalog actually has.
 * `Cents` accepts a parameter spelled `cents`, and `Semitones` one spelled `st`.
 * Every existing `real=` test becomes a typed-value test; every `value=` test
-  becomes `Normalized`.
-* A source-reading test that no example and no docstring mentions `Normalized`
+  becomes `Encoded`.
+* A source-reading test that no example and no docstring mentions `Encoded`
   where a unit type would serve - the "never advertised" rule is exactly the
   kind that rots without one.
 * Hardware: one write per unit type, read back after a reconnect.
 
 ## Breaks
 
-Every call site. `value=` -> `Normalized(...)`, `real=` -> the unit type,
+Every call site. `value=` -> `Encoded(...)`, `real=` -> the unit type,
 `text=` -> the bare string. `docs/migration.md` gets a table, and the
 mechanical ones are worth showing as a sed-able before/after.
 
