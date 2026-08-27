@@ -1555,9 +1555,9 @@ def test_copy_scene_documents_that_the_colour_travels_too():
 
 
 def test_set_mixer_param_now_takes_real_because_its_span_was_measured():
-    # MIXER LEVEL is published as 0..1 "dB" - a placeholder - and real= used to
-    # refuse it. The span was measured on 2026-08-25 (-24.4 dB at 0.30, +12.0 at
-    # 1.0), so it converts through units.MEASURED_SPANS instead of the catalog.
+    # MIXER LEVEL's bounds are MIN_MIXER_DB / MAX_MIXER_DB, which the catalog
+    # names and units.FIRMWARE_CONSTANTS supplies: -40..+12 dB, so 0.0 dB is
+    # 10/13. Measured on 2026-08-25 at -24.4 dB at 0.30 and +12.0 at 1.0.
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     qc.set_param(Mixer(0), param="MIXER LEVEL", real=0.0)
@@ -1693,7 +1693,7 @@ def test_clear_expression_is_row_column_keyed_and_resets_the_range():
 LANE_OUTPUT_CATEGORY = """
 <Category id="23" name="Lane Output">
   <Model blob="loc" id="23000" name="LaneOutputControl" internal="true">
-    <Parameter defaultValue="0.769" max="1" min="0" name="VOLUME" type="float" units="dB"/>
+    <Parameter defaultValue="0.769" max="MAX_MIXER_DB" min="MIN_MIXER_DB" name="VOLUME" type="float" units="dB" min_string="OFF"/>
     <Parameter defaultValue="0.5" max="1" min="0" name="PAN" type="float" units=""/>
     <Parameter defaultValue="0" max="1" min="0" name="MUTE" type="switch"/>
     <Parameter defaultValue="0" max="1" min="0" name="SOLO" type="switch"/>
@@ -1703,7 +1703,7 @@ LANE_OUTPUT_CATEGORY = """
   <Model blob="rec" id="20000" name="NC_Recorder" skip_self_test="true">
     <Parameter defaultValue="0" max="1" min="0" name="A" type="float"/>
     <Parameter defaultValue="0" max="1" min="0" name="B" type="float"/>
-    <Parameter defaultValue="0.5" max="1" min="0" name="OUT LEVEL" type="float" units="dB"/>
+    <Parameter defaultValue="MAX_INPUT_TRIM" max="MAX_INPUT_TRIM" min="MIN_INPUT_TRIM" name="OUT LEVEL" type="float" units="dB" steps="41"/>
   </Model>
 </Category>
 """
@@ -1821,7 +1821,7 @@ def test_the_refusal_is_a_measured_list_and_not_a_rule_about_switches():
     assert prm.expression == 1, "set_expression must not care about parameter type"
 
 
-# -- the lane VOLUME is the one placeholder whose true span is measured --------
+# -- the lane VOLUME speaks dB, over the span the catalog names ---------------
 
 
 def test_set_lane_output_real_converts_volume_through_the_measured_db_scale():
@@ -1840,17 +1840,17 @@ def test_set_lane_output_real_puts_unity_at_the_documented_value():
     assert prm.param_values[0].float_value == pytest.approx(client.UNITY_LEVEL)
 
 
-def test_an_unmeasured_placeholder_range_still_refuses_real():
-    """31 of the 52 placeholder parameters are still unmeasured - #26.
+def test_a_bound_nobody_has_measured_still_refuses_real():
+    """The recorder's OUT LEVEL, and it is now the ONLY one.
 
-    The point of this test is that measuring some of them did not quietly
-    loosen the rule for the rest. The recorder's OUT LEVEL is the case to watch
-    now: the cab LEVEL and then the Send LEVEL each held this role until they
-    got measured, and the cab turned out to be on a completely different scale
-    AND a different shape from the lane levels it shares a bucket with.
+    Reading the whole catalog resolved every other symbolic bound, so this is
+    what is left: a parameter whose block crashes the unit when placed, which
+    means nobody can read its ends off the screen. It refuses rather than
+    converting against a number somebody made up - see units.UNMEASURED_BOUNDS
+    and units.DO_NOT_PROBE.
     """
     qc = _lane_client()
-    with pytest.raises(ValueError, match="placeholder"):
+    with pytest.raises(ValueError, match="nobody has measured"):
         qc.set_param(Block(0, 1, 20000), param="OUT LEVEL", real=-3.0)
 
 
@@ -3082,7 +3082,8 @@ def test_set_tempo_option_range_checks_against_the_catalogs_step_count():
 
 
 # -- the TEMPO span ------------------------------------------------------------
-# The catalog publishes TEMPO as 0..1 with a real-world unit - a placeholder - so
+# The catalog names TEMPO's bounds MIN_TEMPO / MAX_TEMPO rather than giving
+# numbers, and units.FIRMWARE_CONSTANTS supplies 40..240 - so
 # the span was measured instead: three screen readings taken against simultaneous
 # wire reads on 2026-08-12, each landing on the displayed integer exactly.
 
@@ -3107,13 +3108,15 @@ def test_tempo_bpm_refuses_a_tempo_the_unit_does_not_have():
 
 
 def test_set_tempo_param_takes_real_as_bpm_for_index_zero():
-    """The one index where ``real=`` comes from a measurement, not the catalog.
+    """TEMPO converts through the catalog like everything else now.
 
-    Every other tempo parameter converts through the catalog, which refuses TEMPO
-    because its published range is a placeholder. No catalog is loaded here, which
-    is the point: if this path went through the catalog it would raise.
+    It used to be the one index served by a hand-measured span, which let it
+    work with no catalog loaded. It is not special: the device publishes
+    min="MIN_TEMPO" max="MAX_TEMPO" and steps="201", and the numbers behind
+    those names are in units.FIRMWARE_CONSTANTS. Needing a catalog to speak bpm
+    is the honest cost - protocol.bpm_to_tempo is the offline route.
     """
-    qc = client.QuadCortex(FakeTransport())
+    qc = _lane_client()
     qc.set_param(Tempo(), "TEMPO", real=111.0)
     sent = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
     assert sent.index == 0
@@ -3310,10 +3313,10 @@ def test_set_beat_writes_the_traced_wire_values():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     # exactly the four values the unit wrote, and the indices it wrote them to
     for beat, state, index, value in (
-            (3, MetronomeBeat.OFF, 12, 1 / 3),
-            (4, MetronomeBeat.QUIET, 13, 1.0),
-            (1, MetronomeBeat.ACCENT, 10, 2 / 3),
-            (2, MetronomeBeat.NORMAL, 11, 0.0)):
+            (3, MetronomeBeat.MUTE, 12, 1 / 3),
+            (4, MetronomeBeat.ON, 13, 1.0),
+            (1, MetronomeBeat.DOWN, 10, 2 / 3),
+            (2, MetronomeBeat.OFF, 11, 0.0)):
         qc.set_beat(beat, state)
         got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
         assert got.index == index
@@ -3327,7 +3330,7 @@ def test_set_beat_rejects_a_beat_the_unit_cannot_store():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     for bad in (0, 14, -1):
         with pytest.raises(ValueError, match="beat must be 1 to 13"):
-            qc.set_beat(bad, MetronomeBeat.ACCENT)
+            qc.set_beat(bad, MetronomeBeat.DOWN)
     with pytest.raises(ValueError):
         qc.set_beat(1, 4)          # not one of the four states
     assert qc._t.sent == []
@@ -3338,16 +3341,16 @@ def test_set_beats_writes_consecutive_beats_and_leaves_the_rest():
 
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    qc.set_beats([B.ACCENT, B.NORMAL, B.OFF, B.QUIET])
+    qc.set_beats([B.DOWN, B.OFF, B.MUTE, B.ON])
     assert len(qc._t.sent) == 4
     indices = [m.preset.tempoProgramData[0].params[0].index for m in qc._t.sent]
     assert indices == [10, 11, 12, 13]        # only the four given; 14-22 untouched
     with pytest.raises(ValueError, match="stores only 13"):
-        qc.set_beats([B.NORMAL] * 14)
+        qc.set_beats([B.OFF] * 14)
 
 
 def test_beats_reads_the_states_back_as_the_enum():
-    """The end state of the traced session: ENFD on beats 1-4."""
+    """The end state of the traced session, in the device's own words."""
     from pyquadcortex.protocol.enums import MetronomeBeat as B
 
     p = preset.BinaryPreset()
@@ -3359,13 +3362,13 @@ def test_beats_reads_the_states_back_as_the_enum():
     for value in values:
         tp.params.add().param_values.add().float_value = value
     got = client.beats(p)
-    assert got[1] == B.ACCENT
-    assert got[2] == B.NORMAL
-    assert got[3] == B.OFF
-    assert got[4] == B.QUIET
+    assert got[1] == B.DOWN
+    assert got[2] == B.OFF
+    assert got[3] == B.MUTE
+    assert got[4] == B.ON
     # all 13 are always present whatever the signature - stored, simply not sounded
     assert len(got) == 13
-    assert all(got[b] == B.NORMAL for b in range(5, 14))
+    assert all(got[b] == B.OFF for b in range(5, 14))
 
 
 def test_beats_returns_a_raw_float_it_cannot_place_rather_than_rounding():
@@ -3607,3 +3610,299 @@ def test_add_and_remove_listener_pass_straight_through_to_the_transport():
     qc.add_listener(seen.append)
     assert qc.remove_listener(seen.append) is True
     assert fake.listeners == []
+
+
+# -- picking an option by enum -------------------------------------------------
+# The names live in the catalog's stepNames, which this library read for the
+# first time on 2026-08-26. set_param_option used to require a preset to read
+# them from; that is true of 12 dynamic lists and of nothing else.
+
+
+def _option_client():
+    """A client whose catalog carries a fixed list and a two-option switch."""
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="4" name="Equalizer">
+  <Model blob="lhc" id="4003" name="Low-High Cut">
+    <Parameter defaultValue="0" max="8" min="0" name="HPF SLOPE" steps="9" type="rotarySwitch" units="dB/oct" stepNames="Flat,   -6, -12, -18, -24, -30, -36, -42, -48"/>
+    <Parameter defaultValue="0" max="1" min="0" name="SYNC" steps="2" type="switch" stepNames="Off,On"/>
+  </Model>
+</Category>
+""" + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    return qc
+
+
+def test_an_option_enum_selects_by_its_wire_position():
+    """Confirmed on hardware: wire 0.25 on this knob showed '-12 dB/o'."""
+    from pyquadcortex.protocol import options
+
+    qc = _option_client()
+    qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", options.HpfSlope.MINUS_12)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.index == 0
+    assert written.param_values[0].float_value == pytest.approx(0.25)
+
+
+def test_an_option_name_still_works_and_matches_the_devices_spelling():
+    qc = _option_client()
+    qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", "-12")
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.25)
+
+
+def test_a_fixed_list_needs_no_preset():
+    """The whole point: 527 of the 539 lists are in the catalog."""
+    qc = _option_client()
+    qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", 8)      # no source=
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(1.0)
+
+
+def test_a_parameter_with_no_options_says_to_pass_the_preset():
+    qc = _option_client()
+    with pytest.raises(ValueError, match="dynamic list"):
+        qc.set_param_option(Block(0, 1, 5005), "THRESHOLD", 0)
+
+
+def test_a_two_option_switch_takes_a_bool():
+    qc = _option_client()
+    qc.set_param(Block(0, 2, 4003), "SYNC", True)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(1.0)
+    qc.set_param(Block(0, 2, 4003), "SYNC", False)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.0)
+
+
+def test_a_bool_on_a_longer_list_is_refused_rather_than_picking_the_last():
+    """True is wire 1.0, which on a nine-way switch means '-48', not 'on'."""
+    qc = _option_client()
+    with pytest.raises(TypeError, match="offers 9 options"):
+        qc.set_param(Block(0, 2, 4003), "HPF SLOPE", True)
+
+
+def test_a_bool_on_a_continuous_knob_is_refused():
+    """`set_param(block, "GAIN", True)` meaning "enable" is a plausible slip,
+    and it would have written the top of a -60..+12 dB range."""
+    qc = _option_client()
+    with pytest.raises(TypeError, match="not a list at all"):
+        qc.set_param(Block(0, 1, 5005), "THRESHOLD", True)
+
+
+def test_a_bool_the_catalog_cannot_describe_is_refused_not_guessed():
+    """An indexed write fetches no catalog, so there is nothing to check with.
+
+    A bool we cannot check is refused rather than written as 1.0, which is what
+    it used to do.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="no way to check"):
+        qc.set_param(Block(0, 1), 3, True)
+
+
+def test_a_bool_on_a_named_tempo_parameter_is_refused_too():
+    """Tempo maps its screen names straight to indexes, so the spec was never
+    in hand and the guard did not fire. `TIME SIGNATURE` has 21 options."""
+    qc = _lane_client()
+    with pytest.raises(TypeError, match="offers 21 options"):
+        qc.set_param(Tempo(), "TIME SIGNATURE", True)
+
+
+def test_an_enum_from_a_different_list_is_refused():
+    """An IntEnum member IS an int, so a member of the wrong list would convert.
+
+    `DynMode3.GATE` and `SplitterType.CROSSOVER` are both 2, and both used to be
+    accepted wherever an option index was wanted.
+    """
+    from pyquadcortex.protocol import options
+
+    qc = _option_client()
+    with pytest.raises(TypeError, match="belongs to a different list"):
+        qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", options.DynMode3.GATE)
+
+
+def test_a_bool_cannot_name_an_option():
+    """`set_param` refuses True on a 3-option list; this refused nothing and
+    picked index 1."""
+    qc = _option_client()
+    with pytest.raises(TypeError, match="cannot name an option"):
+        qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", True)
+
+
+def test_a_dynamic_lists_catalog_snapshot_is_not_used():
+    """The catalog's copy is the wrong LENGTH, so it picks the right name at the
+    wrong position.
+
+    A Doubler's TRIGGER publishes 45 stepNames while the real list is 19 to 25
+    depending on the preset. Option 1 of 45 is wire 0.0227, which against a real
+    19-entry list reads back as option 0 - silently the wrong choice.
+    """
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    names = ",".join(f"o{i}" for i in range(45))
+    xml = SAMPLE_XML.replace("</Models>", f'''
+<Category id="18" name="Pitch">
+  <Model blob="dbl" id="18000" name="Doubler">
+    <Parameter defaultValue="0" max="44" min="0" name="TRIGGER" steps="45"
+     type="comboBox" dynamic="true" stepNames="{names}"/>
+  </Model>
+</Category>
+''' + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    with pytest.raises(ValueError, match="builds its options from the PRESET"):
+        qc.set_param_option(Block(0, 1, 18000), "TRIGGER", "o1")
+
+
+def test_the_recorder_cannot_be_placed_on_the_grid():
+    """Placing it crashed the unit and needed a reboot, 2026-08-26.
+
+    That was recorded in units.DO_NOT_PROBE and nothing read it, so set_block
+    would happily do it again. A note nothing enforces is not a guard.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="must not be placed on the grid"):
+        qc.set_block(Block(1, 1, 20000))
+    assert not qc._t.sent, "nothing should reach the wire"
+
+
+# -- real units through the public entry point ---------------------------------
+# Every real-unit test above uses a plain linear parameter with a value inside
+# range. The taper, the floor and the refusals were covered only on `Parameter`
+# and on `target.normalize`, one and two layers below where a caller sits.
+
+
+def test_set_param_real_applies_the_taper():
+    """A cab LEVEL, through `qc.set_param`, not through the converter."""
+    qc = _scale_client()
+    qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", real=0.0)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.5, abs=1e-4)
+
+
+def test_set_param_real_refuses_below_the_floor():
+    """The blocking bug, reached the way a caller reaches it.
+
+    Without the floor this converts to wire 0.0005 and mutes the microphone.
+    """
+    qc = _scale_client()
+    with pytest.raises(ValueError, match="does not exist there"):
+        qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", real=-30.0)
+
+
+def test_set_param_real_refuses_a_value_off_the_top():
+    qc = _scale_client()
+    with pytest.raises(ValueError, match="does not exist there"):
+        qc.set_param(LaneOutput(0), "VOLUME", real=13.0)
+
+
+def test_set_param_real_refuses_a_bool():
+    qc = _scale_client()
+    with pytest.raises(TypeError, match="bool IS an int"):
+        qc.set_param(LaneOutput(0), "VOLUME", real=True)
+
+
+def test_set_param_real_refuses_the_one_unmeasurable_parameter():
+    """ControlNotDrivable, with the evidence, not a bare ValueError."""
+    from pyquadcortex.protocol.errors import ControlNotDrivable
+
+    qc = _lane_client()
+    with pytest.raises(ControlNotDrivable) as excinfo:
+        qc.set_param(Block(0, 1, 20000), "OUT LEVEL", real=-3.0)
+    assert "nobody has measured" in excinfo.value.evidence
+    assert "normalized 0..1" in excinfo.value.workaround
+
+
+def _scale_client():
+    """A client whose catalog carries a cab and a lane output, with real bounds."""
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model blob="cab" id="12000" name="Default Cabsim" internal="true">
+    <Parameter defaultValue="0" max="1" min="0" name="bypass" type="switch"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir" type="string"/>
+    <Parameter defaultValue="0.5" max="MAX_CABSIM_DB" min="MIN_CABSIM_DB" name="MIC 1 LEVEL" type="float" units="dB" skew="4.9594844" min_string="OFF"/>
+  </Model>
+</Category>
+<Category id="23" name="Lane Output">
+  <Model blob="loc" id="23000" name="LaneOutputControl" internal="true">
+    <Parameter defaultValue="0.769" max="MAX_MIXER_DB" min="MIN_MIXER_DB" name="VOLUME" type="float" units="dB" min_string="OFF"/>
+  </Model>
+</Category>
+""" + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    return qc
+
+
+# -- set_block's verification, and the false negative it used to produce -------
+
+
+def _preset_holding(row, column, model_id):
+    p = preset.BinaryPreset()
+    for r in range(4):
+        chain = p.chains.add()
+        chain.row = r
+        for c in range(8):
+            m = chain.models.add()
+            m.column = c
+            if r == row and c == column:
+                m.hash = model_id
+    return p
+
+
+def test_a_missing_echo_is_not_a_refusal_if_the_block_actually_landed(monkeypatch):
+    """The false negative, pinned.
+
+    `set_block` waited for a Grid echo and raised when none came. It raised
+    twice in one session on blocks that had landed perfectly well - so a missing
+    echo is not evidence of a refusal, and the unit has to be asked.
+    """
+    qc = client.QuadCortex(FakeTransport())
+
+    def no_echo(*args, **kwargs):
+        raise TimeoutError("no echo")
+
+    monkeypatch.setattr(qc._t, "await_broadcast", no_echo, raising=False)
+    monkeypatch.setattr(qc, "read_current_preset",
+                        lambda *a, **k: _preset_holding(1, 1, 7040))
+    assert qc.set_block(Block(1, 1, 7040)) is None
+
+
+def test_a_missing_echo_AND_an_empty_cell_names_both_known_causes(monkeypatch):
+    """DSP capacity was called "the known cause" for a long time. It is one of
+    two: a port conflict puts a modal on the unit that the host never sees."""
+    qc = client.QuadCortex(FakeTransport())
+
+    def no_echo(*args, **kwargs):
+        raise TimeoutError("no echo")
+
+    monkeypatch.setattr(qc._t, "await_broadcast", no_echo, raising=False)
+    monkeypatch.setattr(qc, "read_current_preset",
+                        lambda *a, **k: _preset_holding(3, 7, 9999))
+    with pytest.raises(client.BlockRefused) as excinfo:
+        qc.set_block(Block(1, 1, 7040))
+    message = str(excinfo.value)
+    assert "DSP capacity" in message
+    assert "PORT CONFLICT" in message
+
+
+def test_a_read_that_fails_does_not_swallow_the_refusal(monkeypatch):
+    """If the unit cannot be asked, the refusal stands - it does not become a
+    silent success."""
+    qc = client.QuadCortex(FakeTransport())
+
+    def no_echo(*args, **kwargs):
+        raise TimeoutError("no echo")
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("link died")
+
+    monkeypatch.setattr(qc._t, "await_broadcast", no_echo, raising=False)
+    monkeypatch.setattr(qc, "read_current_preset", broken)
+    with pytest.raises(client.BlockRefused):
+        qc.set_block(Block(1, 1, 7040))

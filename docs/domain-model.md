@@ -1393,6 +1393,87 @@ the n/a rows below where they intersect the API at all.
 
 ---
 
+## Catalog attributes we can see and cannot yet explain
+
+The device puts **24** distinct attributes on its `<Parameter>` elements. Fourteen
+are parsed. These are the other ten, recorded so the next person does not have to
+rediscover that they exist. None is guessed at, per the rule that a control we do
+not understand is omitted with the reason written down.
+
+The counts are from the shipped catalog, 3,809 parameters.
+
+| attribute | on | what it looks like, and what is unknown |
+|---|---|---|
+| `displayPos` | 1446 | The order the unit lays knobs out on screen, which is not wire order. Nothing here needs it; a UI would. |
+| `hidden` | 650 | Present on a parameter, distinct from the `hidden` we already read on a `<Model>`. Whether it means "not shown on screen" or "not writable" is untested, and the two have very different consequences for a host. |
+| `replaces` | 462 | Also distinct from the `<Model>` attribute of the same name, which we do parse. On a parameter it presumably names a superseded index, which would matter for reading an old preset - untested. |
+| `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, **212 parameters between them** | `toggleOn` carries a number (`4`, `5`, `6`) on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`). The obvious reading is the two values a footswitch toggle alternates between - obvious, and untested. Driving one and watching the screen would settle it. |
+| `tooltip` | 126 | The help text the unit shows. Real prose, occasionally load-bearing: a Vibrato's `MODE` warns that changing it causes a brief mute. Note the values contain HTML (`<div align="left">`), which is where an `align` "attribute" appears - it is markup inside the tooltip, not an attribute of the parameter. |
+| `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`). |
+| `mid_string` | 36 | The sibling of `min_string` and `max_string`, which we do read. Presumably a label at some middle position, but WHICH position is not stated anywhere, so it cannot be used. |
+| `isplayPos` | 1 | `displayPos` with the `d` missing. The device's own typo. Recorded rather than silently accepted as an alias, because a parser that took both would hide that the catalog has a defect. |
+
+On `<Model>`, `blob` is also unexplained: a same-length string of letters that
+**changes between fetches**. Two dumps of one unit taken minutes apart differed
+on 338 models and on nothing else. A per-fetch token of some kind, not content.
+
+### `stepNames` was right and our hand-chosen names were wrong
+
+Worth keeping because of how it went, not just how it ended.
+
+The metronome's per-beat cells carry `stepNames="OFF,MUTE,DOWN,ON"`.
+`enums.MetronomeBeat` called the same four positions `NORMAL, OFF, ACCENT,
+QUIET` - names chosen by ear in an earlier session. They disagree at every
+position, and this document briefly concluded that `stepNames` must therefore be
+the device's *internal* vocabulary rather than the screen's, on the strength of
+one half-measurement: in a factory 4/4 the unit holds index 0 on beats 2 to 4,
+those beats are audible, so index 0 could not mean "OFF".
+
+That inference was wrong, and it was wrong in the ordinary way - it assumed the
+word `OFF` had to be about **sound**.
+
+Driven properly on 2026-08-27, one bar at 60 bpm in 4/4 with all four states on
+the four beats, listened to and looked at:
+
+| index | catalog | sounds like | drawn as | old name |
+|---|---|---|---|---|
+| 0 | `OFF` | the plain click | solid circle | `NORMAL` |
+| 1 | `MUTE` | silent | outlined circle | `OFF` |
+| 2 | `DOWN` | the big accent | solid circle, dot ABOVE | `ACCENT` |
+| 3 | `ON` | a small accent | solid circle, dot BELOW | `QUIET` |
+
+`OFF` and `ON` are about the **accent**, not about whether the beat sounds. Under
+that reading every one of the device's four words is true: `MUTE` silences,
+`DOWN` is the downbeat, and the pair `OFF`/`ON` is the accent off or on. The
+drawing agrees - hollow is silent, a bare circle is plain, a dot lifts it.
+
+Two of the four hand-chosen names were not merely different, they were
+**backwards**: what we called `NORMAL` is the quietest audible state and what we
+called `QUIET` is the louder of the two ordinary ones. A caller reaching for
+`QUIET` got the opposite of what they asked for.
+
+So the enum now uses the device's words, and the lesson is the one ADR-0015 is
+already about: the device's description of itself beat four names arrived at by
+listening, and the way to find that out was to drive all four states at once
+rather than reason about the two we had.
+
+**What this does not license.** Nothing has audited the other 112 option lists
+against the screen. This one was checked only because a hand-written enum
+existed to disagree with it, and the disagreement turned out to be ours.
+
+### `expAssignable` says something, and not what it looks like
+
+Fourteen parameters carry `expAssignable="false"`, and it does **not** govern a host
+expression assignment. ADR-0010 capture, 2026-08-26: a Pattern Tremolo's `STEPS` (one
+of the fourteen) and `DEPTH` (not one) both accepted a pedal identically, and both
+survived a disconnect and a fresh read.
+
+So the flag is published as `Parameter.exp_assignable` and nothing acts on it. The
+likely reading - that it governs which knobs the unit's own touchscreen offers for
+assignment - is a guess and stays one. A second, separate unknown: whether the unit
+ACTS on an assignment stored against such a parameter. That needs audio, not a wire
+read, so it is not something this suite can settle.
+
 ## Deferred by design (recorded, not planned)
 
 - **An exclusive-use fast mode** - a connection mode where the caller promises no

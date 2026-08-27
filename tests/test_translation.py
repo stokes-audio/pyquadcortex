@@ -502,12 +502,17 @@ def test_the_tempo_is_what_the_protocol_write_expects():
     111 bpm has to be the number `set_param(Tempo(), real=)` puts on the wire.
 
     Weaker than those two, and worth saying so. Both sides of this equality run
-    through `protocol.bpm_to_tempo`, so it does not check the arithmetic. What it
-    fails on is `set_tempo_param` routing `real=` somewhere else - the catalog,
-    whose published range for TEMPO is a placeholder and would send a different
-    number."""
+    through the same MIN_TEMPO / MAX_TEMPO numbers, so it does not check the
+    arithmetic. What it fails on is `set_param(Tempo(), real=)` routing
+    somewhere else, or the device layer and the protocol layer drifting onto
+    different spans."""
+    from tests.test_catalog import make_payload, SAMPLE_XML
+    from pyquadcortex.protocol import catalog as catalog_module
+
     recorder = Recorder()
     qc = protocol.QuadCortex(recorder)
+    # TEMPO converts through the catalog now, like every other parameter.
+    qc._catalog = catalog_module.parse_model_repo(make_payload(SAMPLE_XML))
     qc.set_param(Tempo(), "TEMPO", real=111.0)
     sent = recorder.sent[-1].preset.tempoProgramData[0].params[0]
     assert sent.param_values[0].float_value == \

@@ -59,7 +59,7 @@ already read and need no connection; calling them as methods raises
 | **Tempo MODE** | `tempo_mode()`, `set_tempo_mode(TempoMode.GLOBAL)` - global, and it picks which tempo block plays |
 | **Per-preset tempo** | `set_param(Tempo(), name, ...)`, `set_tempo_option(name, n)`, `protocol.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
 | **Metronome** | `set_tempo_subdivision()`, `set_metronome_sound()`, `set_metronome_routing()`, `set_time_signature()` - all taking full enums |
-| **Per-beat accents** | `set_beat(n, MetronomeBeat.ACCENT)`, `set_beats([...])`, `protocol.beats(preset)` |
+| **Per-beat accents** | `set_beat(n, MetronomeBeat.DOWN)`, `set_beats([...])`, `protocol.beats(preset)` |
 | **Inspect a preset** (module functions) | `protocol.blocks(preset)`, `protocol.splits(preset)`, `protocol.free_rows(preset)`, `protocol.row_status(preset)`, `protocol.bypass_state(preset, cell)`, `protocol.param_state(preset, cell, index)`, `protocol.param_options(preset, cell, index)`, `protocol.input_chain_rows(preset, input)`, `protocol.params_equal(a, b, option_count=)`, `protocol.field_present(msg, field)` |
 | **Wait for the device** | `wait_for_listing(setlist, until=...)` |
 | **Watch what the unit pushes** | `add_listener(fn)`, `remove_listener(fn)` - your `fn` is called with every message the unit sends, asked for or not. It runs on the transport's read thread, so it must not block and may not read from the device. To catch the connect handshake's own burst of state, register before it with `protocol.connect(before_handshake=...)` |
@@ -212,9 +212,9 @@ qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, value=0.0, scene=Scene.C)
 
 A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which is
 what every mixer, splitter and lane level in the factory content sits at when nothing
-is attenuated. The catalog publishes these with a placeholder `0..1` range that claims
-to be dB, but their true span **has been measured** - -40..+12 dB - so `real=` takes dB
-directly. The helpers remain for reading a stored value back:
+is attenuated. Their span is **-40..+12 dB**, which the catalog names as
+`MIN_MIXER_DB` / `MAX_MIXER_DB` and this library supplies the numbers for, so `real=`
+takes dB directly. The helpers remain for converting without a device in hand:
 
 ```python
 from pyquadcortex.protocol import db_to_lane_level, lane_level_db
@@ -326,9 +326,10 @@ qc.set_metronome_muted(True)            # silence the click - the unit's own MUT
 qc.set_param(Tempo(), "TIME SIGNATURE", value=0.1)
 ```
 
-`TEMPO` is the one tempo parameter whose `real=` comes from a measurement rather than
-the catalog, which publishes a placeholder range for it. `tempo_bpm()` and
-`bpm_to_tempo()` convert if you need the numbers directly.
+`TEMPO` runs 40..240 bpm, which the catalog names as `MIN_TEMPO` / `MAX_TEMPO`.
+`tempo_bpm()` and `bpm_to_tempo()` convert if you need the numbers directly, or want
+them without a catalog - `real=` reads the device's own description, so it fetches
+one.
 
 Use `set_metronome_muted` and not the volume to silence a click:
 `set_metronome_volume(0.0)` is **-60 dB, quiet but still audible**, not silence.

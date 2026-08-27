@@ -11,12 +11,16 @@ import tarfile
 
 import pytest
 
-from pyquadcortex.protocol import catalog
+from pyquadcortex.protocol import catalog, units
 
 # A miniature ModelRepo covering every case the parser must handle: a plain
 # factory model with parameters, a purchasable one (sku/plugin_id), a hidden
 # one, an internal one, a model in a hidden category, and a Neural Capture
 # (user content, whose ids are not stable across devices).
+#
+# The bounds are the device's OWN spellings. MIXER LEVEL and TEMPO carry
+# symbolic ones because that is what the unit ships, and a fixture that wrote
+# 0..1 there would be reproducing the bug this parser was fixed for.
 SAMPLE_XML = """<?xml version="1.0" ?><Models>
 <Category id="0" name="Guitar Overdrive">
   <Model blob="aaa" id="1" name="Myth Drive" tm="Based on Klon&#174; Centaur&#174;">
@@ -42,14 +46,14 @@ SAMPLE_XML = """<?xml version="1.0" ?><Models>
 </Category>
 <Category id="11" name="Mixer">
   <Model blob="mmm" id="11000" name="Mixer" internal="true">
-    <Parameter defaultValue="0.769" max="1" min="0" name="MIXER LEVEL" type="float" units="dB"/>
+    <Parameter defaultValue="0.769" max="MAX_MIXER_DB" min="MIN_MIXER_DB" name="MIXER LEVEL" type="float" units="dB" min_string="OFF"/>
     <Parameter defaultValue="5" max="10" min="0" name="PAN A" type="float" units=""/>
     <Parameter defaultValue="0" max="1" min="0" name="DUMMY" type="empty"/>
   </Model>
 </Category>
 <Category id="25" name="Tempo">
   <Model blob="ttt" id="25000" name="TempoControl" internal="true">
-    <Parameter defaultValue="0.5" max="1" min="0" name="TEMPO" type="float" units="BPM"/>
+    <Parameter defaultValue="DEFAULT_TEMPO" max="MAX_TEMPO" min="MIN_TEMPO" name="TEMPO" type="float" units="BPM" steps="201" showAsInteger="true"/>
     <Parameter defaultValue="0" max="1" min="0" name="TYPE" type="switch"/>
     <Parameter defaultValue="1" max="1" min="0" name="LED LIGHT" type="switch"/>
     <Parameter defaultValue="0.6" max="9" min="-60" name="VOLUME" type="float" units="dB"/>
@@ -204,11 +208,21 @@ def test_parameter_converts_normalized_back_to_real_units(cat):
     assert thr.to_real(0.5) == pytest.approx(-24.0)
 
 
-def test_real_unit_conversion_clamps_out_of_range(cat):
+def test_real_unit_conversion_refuses_out_of_range(cat):
+    """Refused, not clamped. A clamped write looks like it worked.
+
+    This used to clamp. Both behaviours were in the library at once - the
+    catalog path clamped and the measured-span path refused - and unifying them
+    on the catalog meant picking one. Refusing is the project's rule: a setting
+    the unit does not have is a mistake, not a request to round.
+    """
     thr = catalog.Parameter(index=0, name="THRESHOLD", minimum=-60.0,
                             maximum=12.0, default=-40.0, units="dB")
-    assert thr.to_normalized(999.0) == pytest.approx(1.0)
-    assert thr.to_normalized(-999.0) == pytest.approx(0.0)
+    assert thr.to_normalized(12.0) == pytest.approx(1.0)
+    assert thr.to_normalized(-60.0) == pytest.approx(0.0)
+    for outside in (999.0, -999.0):
+        with pytest.raises(ValueError, match="does not exist there"):
+            thr.to_normalized(outside)
 
 
 def test_degenerate_range_does_not_divide_by_zero(cat):
@@ -241,39 +255,74 @@ def test_superseded_models_are_still_factory_and_still_resolvable(cat):
     assert cat[24003].name == "Envelope Filter"
 
 
-# -- placeholder ranges -------------------------------------------------------
-# Some parameters are published as 0..1 with a real-world unit: the mixer,
-# splitter and lane-output LEVEL controls are 0..1 "dB", and TEMPO is 0..1 "BPM".
-# That is the wire's own normalized scale, not the span the control covers, so
-# there is nothing to convert and the true span is not in the catalog. Measured:
-# those level parameters read 0.76923077 (10/13, i.e. 0 dB on -40..+12) on every
-# row carrying one across 17 factory presets.
+# -- symbolic bounds ----------------------------------------------------------
+# This library spent months believing in a "placeholder range": a parameter
+# published as 0..1 with a real-world unit and therefore unconvertible. There is
+# no such thing. Zero parameters in the shipped catalog are published that way.
+#
+# What actually happens is that `min` and `max` are sometimes a NAME -
+# min="MIN_CABSIM_DB" - and the parser's float conversion fell back to 0.0 and
+# 1.0 for anything it could not read. That fallback invented the concept, and
+# a table of hand-measured spans grew for months to work around it.
 
 
-def test_a_zero_to_one_range_with_a_unit_is_flagged_as_a_placeholder(cat):
-    level = cat[11000].parameter("MIXER LEVEL")
-    assert level.minimum == 0.0 and level.maximum == 1.0 and level.units == "dB"
-    assert level.range_is_placeholder is True
+def test_a_symbolic_bound_resolves_to_its_firmware_number():
+    xml = ('<Models><Category id="12" name="Cabsim Guitar (M)">'
+           '<Model id="12000" name="Default Cabsim">'
+           '<Parameter name="LEVEL" type="float" units="dB" defaultValue="0.5"'
+           ' min="MIN_CABSIM_DB" max="MAX_CABSIM_DB" skew="4.9594844"'
+           ' min_string="OFF"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[12000].parameters[0]
+    assert (p.minimum, p.maximum) == (-40.0, 6.0)
 
 
-def test_a_real_range_is_not_a_placeholder(cat):
-    assert cat[5005].parameter("THRESHOLD").range_is_placeholder is False
+def test_a_symbolic_bound_nobody_has_measured_becomes_None():
+    """It then refuses to convert, rather than answering against a guess."""
+    xml = ('<Models><Category id="20" name="Neural Capture Internal">'
+           '<Model id="20000" name="NC_Recorder">'
+           '<Parameter name="OUT LEVEL" type="float" units="dB" steps="41"'
+           ' min="MIN_INPUT_TRIM" max="MAX_INPUT_TRIM"'
+           ' defaultValue="MAX_INPUT_TRIM"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[20000].parameters[0]
+    assert p.minimum is None and p.maximum is None
+    with pytest.raises(ValueError, match="nobody has measured"):
+        p.to_real(0.5)
 
 
-def test_a_zero_to_one_range_without_a_unit_is_not_a_placeholder(cat):
-    # A unitless 0..1 is a genuine fraction - a switch, a mix control - and
-    # converts fine, so only the ones claiming a real-world unit are suspect.
-    plain = catalog.Parameter(index=0, name="PHASE", minimum=0.0, maximum=1.0,
-                              default=0.0, units="", type="switch", steps=2)
-    assert plain.range_is_placeholder is False
+def test_a_bound_this_build_has_never_heard_of_is_loud():
+    """A firmware update adding a constant must fail, not silently become 0..1.
+
+    Falling back is exactly what created the placeholder-range bug, so the
+    parser refuses rather than inventing a span.
+    """
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="Widget">'
+           '<Parameter name="Z" type="float" min="MIN_FUTURE_THING" max="1"'
+           ' defaultValue="0"/>'
+           '</Model></Category></Models>')
+    with pytest.raises(ValueError, match="MIN_FUTURE_THING"):
+        catalog.parse_model_repo(make_payload(xml))
 
 
-def test_placeholder_conversions_refuse_rather_than_mislead(cat):
-    level = cat[11000].parameter("MIXER LEVEL")
-    with pytest.raises(ValueError, match="placeholder range"):
-        level.to_real(0.76923077)
-    with pytest.raises(ValueError, match="value="):
-        level.to_normalized(0.0)
+def test_a_measured_family_carries_its_floor_from_the_units_table():
+    """min_string="OFF" says the bottom is a word; only measurement says where
+    the numbers resume."""
+    xml = ('<Models><Category id="12" name="Cabsim Guitar (M)">'
+           '<Model id="12000" name="Default Cabsim">'
+           '<Parameter name="LEVEL" type="float" units="dB" defaultValue="0.5"'
+           ' min="MIN_CABSIM_DB" max="MAX_CABSIM_DB" skew="4.9594844"'
+           ' min_string="OFF"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[12000].parameters[0]
+    assert p.floor_wire == 0.01
+    assert p.floor == pytest.approx(-21.8, abs=0.05)
+
+
+def test_the_placeholder_concept_is_gone():
+    """There was never such a thing - see ADR-0015."""
+    assert not hasattr(catalog.Parameter, "range_is_placeholder")
+    assert not hasattr(units, "MEASURED_SPANS")
 
 
 def test_a_unitless_parameter_on_the_same_model_still_converts(cat):
@@ -334,3 +383,194 @@ def test_option_helpers_reject_a_non_list_parameter_and_a_bad_option(cat):
         routing.option_to_value(5)
     with pytest.raises(ValueError, match="5 options"):
         routing.option_to_value(-1)
+
+
+# --- The taper -------------------------------------------------------------
+#
+# The catalog publishes a `skew` attribute on 1,200 parameters and this library
+# ignored it for several releases, converting every one of them as a straight
+# line. 615 of them convert non-linearly, so 615 conversions were wrong.
+
+
+@pytest.mark.parametrize("raw, expected", [
+    (None, 1.0),
+    ("LIN_SKEW", 1.0),
+    ("1", 1.0),
+    ("1.0", 1.0),
+    ("LOG_SKEW", 0.3),
+    ("0.3", 0.3),
+    ("4.9594844", 4.9594844),
+    (" 0.4", 0.4),      # the shipped catalog carries a leading space, twice
+    ("", 1.0),          # and nothing at all, twice
+])
+def test_parse_skew_cleans_what_the_device_actually_ships(raw, expected):
+    assert catalog.parse_skew(raw) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("raw", ["nonsense", "EXP_SKEW", "0", "-2", "1e400"])
+def test_parse_skew_refuses_a_taper_it_cannot_decode(raw):
+    """It used to fall back to linear, and that was the wrong call.
+
+    A named taper nobody has decoded would convert silently wrong by a factor
+    of 25 at quarter travel - a Low-High Cut's HPF FREQ asked for 217 Hz would
+    land near 24 Hz. `_as_bound` already refuses an unknown BOUND for exactly
+    that reason; a wrong taper is no more forgivable than a wrong bound.
+
+    An absent or empty attribute still means linear, because 2,609 parameters
+    say so by carrying nothing and two more carry "".
+    """
+    with pytest.raises(ValueError):
+        catalog.parse_skew(raw)
+
+
+def test_log_skew_is_not_a_log_sweep():
+    """The name is the device's and it is misleading.
+
+    Confirmed on hardware 2026-08-26 - see the constant's docstring. Guarding
+    the value here because the obvious "fix" is to make it logarithmic, and the
+    unit says otherwise.
+    """
+    assert catalog.LOG_SKEW == 0.3
+
+
+def _knob(minimum, maximum, skew, units=""):
+    return catalog.Parameter(index=0, name="X", minimum=minimum, maximum=maximum,
+                             default=0.0, units=units, type="float", skew=skew)
+
+
+@pytest.mark.parametrize("minimum, maximum, skew, wire, screen, tol", [
+    # Low-High Cut HPF FREQ, read 217 Hz on screen at wire 0.25.
+    (20.0, 20000.0, 0.3, 0.25, 217.0, 0.5),
+    # The same block's LPF FREQ, read 7678 Hz at wire 0.75.
+    (20.0, 20000.0, 0.3, 0.75, 7678.0, 0.5),
+    # The same block's OUTPUT, which carries no skew, read -10.0 dB at 0.25.
+    (-20.0, 20.0, 1.0, 0.25, -10.0, 0.05),
+    # An Envelope Filter's LOG_SKEW knobs: FREQ read 197 Hz, RESO read 4.45.
+    (100.0, 10000.0, 0.3, 0.25, 197.0, 0.5),
+    (1.0, 10.0, 0.3, 0.75, 4.45, 0.005),
+    # A cab LEVEL, whose taper took three days to fit and one attribute to read.
+    (-40.0, 6.0, 4.9594844, 0.01, -21.8, 0.05),
+    (-40.0, 6.0, 4.9594844, 0.50, 0.0, 0.05),
+    (-40.0, 6.0, 4.9594844, 1.00, 6.0, 0.05),
+])
+def test_to_real_reproduces_what_the_screen_showed(
+        minimum, maximum, skew, wire, screen, tol):
+    """Every row was read off the unit's own display. See docs/protocol.md."""
+    assert _knob(minimum, maximum, skew).to_real(wire) == pytest.approx(screen, abs=tol)
+
+
+def test_to_normalized_is_the_inverse_of_to_real():
+    knob = _knob(20.0, 20000.0, 0.3)
+    for wire in (0.0, 0.01, 0.25, 0.5, 0.75, 1.0):
+        assert knob.to_normalized(knob.to_real(wire)) == pytest.approx(wire, abs=1e-9)
+
+
+def test_a_linear_knob_is_untouched_by_the_change():
+    """The 2,609 parameters with no `skew` attribute must convert as before."""
+    knob = _knob(-60.0, 12.0, 1.0, units="dB")
+    assert knob.to_real(1.0) == pytest.approx(12.0)
+    assert knob.to_real(0.5) == pytest.approx(-24.0)
+    assert knob.to_normalized(-24.0) == pytest.approx(0.5)
+
+
+def test_the_parser_reads_skew_off_the_xml():
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="FREQ" type="float" min="20" max="20000"'
+           ' units="Hz" skew="0.3" defaultValue="0"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.skew == pytest.approx(0.3)
+    assert round(p.to_real(0.25)) == 217
+
+
+# -- the attributes we used to discard -----------------------------------------
+#
+# The parser read 8 of the 24 attributes the device puts on a <Parameter>. These
+# are the rest of the ones we can name a use for; the others are recorded in
+# docs/domain-model.md's appendix rather than guessed at.
+
+
+def test_option_names_come_from_the_catalog():
+    """`set_param_option` said they do not. They always did.
+
+    Its docstring read "the option names are not in the catalog - they are in
+    the preset, per block". That is true of the 12 dynamic lists and of nothing
+    else.
+    """
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="MODE" type="comboBox" min="0" max="2" steps="3"'
+           ' defaultValue="1" stepNames="Normal,Vibrato,Vibrato Bright Off"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.options == ("Normal", "Vibrato", "Vibrato Bright Off")
+    assert p.dynamic is False
+    assert p.option_count == 3
+    assert p.option_to_value(2) == pytest.approx(1.0)
+
+
+def test_padding_in_an_option_list_is_stripped():
+    """The device pads some lists to line them up on screen."""
+    assert catalog.parse_options("Flat,   -6, -12") == ("Flat", "-6", "-12")
+
+
+def test_a_dynamic_list_is_marked_so_the_preset_stays_authoritative():
+    """Its entries include one per upstream block, so `steps` overstates it."""
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="SOURCE" type="comboBox" dynamic="true" min="0"'
+           ' max="44" steps="45" defaultValue="0" stepNames="Off,In 1,R1C1"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.dynamic is True
+    # `steps` wins for a dynamic list, because the names are only a snapshot.
+    assert p.option_count == 45
+
+
+def test_the_labels_and_flags_are_read():
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="STEPS" type="float" min="1" max="16" steps="16"'
+           ' defaultValue="1" expAssignable="false" showAsInteger="true"'
+           ' min_string="OFF" max_string="MAX"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.exp_assignable is False
+    assert p.show_as_integer is True
+    assert (p.min_label, p.max_label) == ("OFF", "MAX")
+
+
+def test_assignability_defaults_to_allowed():
+    """Only 14 parameters in the shipped catalog say otherwise."""
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="GAIN" type="float" min="0" max="10"'
+           ' defaultValue="5"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.exp_assignable is True
+
+
+def test_a_parameter_name_the_model_publishes_twice_is_refused():
+    """186 of 533 models repeat at least one parameter name, almost all cabs.
+
+    `parameter("LEVEL")` used to return the first match, so every caller who
+    named a cab's level quietly addressed microphone 1 and there was no way to
+    reach microphone 2 by name at all. Refusing is the only honest answer: the
+    name genuinely does not say which one.
+    """
+    xml = ('<Models><Category id="12" name="Cabsim Guitar (M)">'
+           '<Model id="12000" name="Default Cabsim">'
+           '<Parameter name="LEVEL" type="float" min="0" max="1" defaultValue="0"/>'
+           '<Parameter name="PAN" type="float" min="0" max="1" defaultValue="0"/>'
+           '<Parameter name="LEVEL" type="float" min="0" max="1" defaultValue="0"/>'
+           '</Model></Category></Models>')
+    model = catalog.parse_model_repo(make_payload(xml))[12000]
+    assert model.parameter("PAN").index == 1
+    with pytest.raises(KeyError, match="2 times, at indexes"):
+        model.parameter("LEVEL")
+
+
+def test_an_unknown_parameter_name_still_says_what_there_is():
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="Widget">'
+           '<Parameter name="GAIN" type="float" min="0" max="1" defaultValue="0"/>'
+           '</Model></Category></Models>')
+    model = catalog.parse_model_repo(make_payload(xml))[1]
+    with pytest.raises(KeyError, match="has no parameter"):
+        model.parameter("NOPE")

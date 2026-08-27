@@ -104,8 +104,9 @@ only about the layer directly below it.
                              LaneInput, Mixer, Splitter, Tempo. Each knows its
                              collection, how it is keyed, its catalog model,
                              and what it refuses. No device, no I/O.
-      units.py               Screen values <-> wire values for the scales the
-                             catalog publishes as a placeholder
+      units.py               The numbers behind the bounds the catalog NAMES
+                             but does not spell out, plus the input-port
+                             scales, which belong to no catalog model
       errors.py              BlockRefused, ControlNotDrivable
       hid_ids.py             Vendor and product IDs, interface number
 
