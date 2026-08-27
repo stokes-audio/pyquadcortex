@@ -15,8 +15,11 @@ and demands the same string of digits. See `scripts/extract_scale_fixture.py`
 for why the fixture holds distilled parameters instead of the whole ModelRepo.
 """
 
+import gzip
+import io
 import json
 import pathlib
+import tarfile
 
 import pytest
 
@@ -26,12 +29,73 @@ FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "catalog" / "scales.json"
 
 
 def _load():
+    """Rebuild each parameter by RE-PARSING the device's own XML attributes.
+
+    Not by feeding the recorded numbers straight into a `Parameter`. That was
+    the first version and it left the evidence loop closed on itself: readings
+    proved the arithmetic, the fixture supplied the resolved bounds, and
+    `units.FIRMWARE_CONSTANTS` sat outside the loop entirely - six of its
+    fourteen numbers could be changed to anything at all and every one of these
+    tests still passed.
+
+    Going through `parse_model_repo` means a reading proves the RESOLUTION too:
+    the XML says `min="MIN_FXLOOP_OUT_GAIN_DB"`, and the screen said -20.0 dB at
+    wire 0.50, and the only way both are true is if the constant is -40.
+    """
     rows = json.loads(FIXTURE.read_text())
-    return {(r["model_id"], r["index"]): catalog.Parameter(
-        index=r["index"], name=r["name"], minimum=r["minimum"],
-        maximum=r["maximum"], default=0.0, units=r["units"], type=r["type"],
-        steps=r["steps"], skew=r["skew"], floor_wire=r["floor_wire"],
-    ) for r in rows}
+
+    # One <Model> per model id, with every wanted parameter at its real wire
+    # index and cheap padding in between. Several models contribute more than
+    # one row - a Parallax has a cab LEVEL per microphone - so building a model
+    # per ROW would silently drop all but the last.
+    by_model = {}
+    for row in rows:
+        by_model.setdefault((row["model_id"], row["model"]), {})[row["index"]] = row
+
+    xml = ['<?xml version="1.0" ?><Models>']
+    for (model_id, model_name), wanted in sorted(by_model.items()):
+        xml.append(f'<Category id="{model_id}" name="c{model_id}">'
+                   f'<Model id="{model_id}" name="{_escape(model_name)}">')
+        for index in range(max(wanted) + 1):
+            row = wanted.get(index)
+            if row is None:
+                xml.append('<Parameter name="pad" type="float" min="0" max="1"'
+                           ' defaultValue="0"/>')
+            else:
+                attrs = " ".join(f'{k}="{_escape(v)}"'
+                                 for k, v in row["raw"].items())
+                xml.append(f"<Parameter {attrs}/>")
+        xml.append("</Model></Category>")
+    xml.append("</Models>")
+    cat = catalog.parse_model_repo(_payload("".join(xml)))
+
+    out = {}
+    for row in rows:
+        spec = cat[row["model_id"]].parameters[row["index"]]
+        # The fixture's resolved columns are a second opinion on the parse. If
+        # they disagree, either units.py moved or the device did.
+        for field in ("minimum", "maximum", "skew", "floor_wire", "floor_display"):
+            assert getattr(spec, field) == row[field], (
+                f"{row['model']} {row['name']}: parsing {row['raw']} gives "
+                f"{field}={getattr(spec, field)!r}, fixture records {row[field]!r}")
+        out[(row["model_id"], row["index"])] = spec
+    return out
+
+
+def _escape(value) -> str:
+    return (str(value).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _payload(xml: str) -> bytes:
+    """Wrap XML the way the device does: a gzipped tar of ModelRepo.xml."""
+    raw = xml.encode()
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        info = tarfile.TarInfo("ModelRepo.xml")
+        info.size = len(raw)
+        tf.addfile(info, io.BytesIO(raw))
+    return gzip.compress(buf.getvalue())
 
 
 SCALES = _load()
@@ -39,8 +103,10 @@ SCALES = _load()
 #: ``(model, index, wire, what the screen showed, decimal places it showed)``.
 #:
 #: The date beside each group is when it was read. Nothing here is a fit, a
-#: rounding of a fit, or an endpoint inferred from one - every value was on the
-#: display at the moment the wire value was known.
+#: rounding of a fit, or an endpoint inferred from one: every value was on the
+#: display at the moment the wire value was known - with ONE exception, the
+#: Splitter Crossover at the bottom, which is the catalog's own stated default
+#: against a wire value read off the unit. It is labelled where it sits.
 READINGS = [
     # -- the cab LEVEL, 2026-08-26 -------------------------------------------
     # A TAPERED control, and a warning. Three points in its upper half fit a
@@ -143,6 +209,10 @@ def test_the_conversion_round_trips(model_id, index, wire, screen, digits):
     """
     spec = SCALES[(model_id, index)]
     real = spec.to_real(wire)
+    # No reading sits below its own floor - the floors ARE readings - so this
+    # guard never fires today. It is here because adding one later should skip
+    # rather than fail: below the detent `to_normalized` refuses by design, and
+    # that refusal has its own tests.
     if spec.floor is not None and real < spec.floor:
         pytest.skip("below the Off detent, where to_normalized refuses by design")
     assert spec.to_normalized(real) == pytest.approx(wire, abs=1e-9)
@@ -169,7 +239,8 @@ def test_the_legacy_splitter_view_shares_the_unified_splitters_span():
     """`Splitter AB` (10000) is the read-only view of `Splitter` (10004)."""
     for legacy, unified in (((10000, 0), (10004, 3)), ((10000, 1), (10004, 4))):
         a, b = SCALES[legacy], SCALES[unified]
-        assert (a.minimum, a.maximum, a.skew) == (b.minimum, b.maximum, b.skew)
+        assert (a.minimum, a.maximum, a.skew, a.floor_wire) == (
+            b.minimum, b.maximum, b.skew, b.floor_wire)
 
 
 def test_both_cab_microphones_share_the_layout():
@@ -228,20 +299,135 @@ def test_the_recorder_refuses_rather_than_converting_against_a_guess():
 # -- the guard that stops this happening again --------------------------------
 
 
-def test_every_symbolic_bound_in_the_fixture_has_a_number_or_a_reason():
+def test_every_symbolic_bound_has_a_number_or_a_written_reason():
     """A firmware update adding a new one must fail loudly, not become 0..1.
 
     `catalog._as_bound` raises for a name it has never met. This proves the two
-    tables between them cover everything the shipped catalog actually uses, so
-    that raise is a future-proofing measure rather than a live bug.
+    tables between them cover everything the shipped catalog uses, so that raise
+    is future-proofing rather than a live bug.
     """
     named = set(units.FIRMWARE_CONSTANTS) | set(units.UNMEASURED_BOUNDS)
-    assert set(units.FLOOR_WIRE) <= set(units.FIRMWARE_CONSTANTS), (
-        "a floor belongs to a family whose bounds are known")
     for name in named:
         assert name.startswith(("MIN_", "MAX_")), name
-    # Both halves of every family are present; a lone MIN_ would resolve one end
-    # and silently leave the other at its fallback.
-    for name in named:
+        # Both halves of every family. A lone MIN_ would resolve one end and
+        # leave the other silently at its fallback.
         twin = ("MAX_" + name[4:]) if name.startswith("MIN_") else ("MIN_" + name[4:])
         assert twin in named, f"{name} has no {twin}"
+
+
+def test_a_floor_belongs_to_a_law_whose_bounds_are_known():
+    """FLOOR_WIRE is keyed by the LAW, not by the catalog's constant name.
+
+    Keyed by name it protected most cabs and not the PCOM ones, which spell the
+    identical knob with literal bounds - so asking one of those for -30 dB
+    returned wire 0.000516 and muted the microphone, which is the exact bug the
+    table exists to prevent, surviving inside the fix for it.
+    """
+    known = set(units.FIRMWARE_CONSTANTS.values())
+    for (low, high, skew), (floor_wire, displayed) in units.FLOOR_WIRE.items():
+        assert low in known and high in known, (low, high)
+        assert 0.0 < floor_wire < 1.0, floor_wire
+        assert low <= displayed <= high, (displayed, low, high)
+        assert skew > 0.0
+
+
+def test_the_same_knob_is_floored_under_both_of_its_spellings():
+    """The regression that made the key wrong in the first place.
+
+    A cab LEVEL is `min="MIN_CABSIM_DB"` on most models and `min="-40" max="6"`
+    on the PCOM variants. Same control, same taper, and before the fix only one
+    of them refused a value that mutes the microphone.
+    """
+    symbolic = SCALES[(12000, 2)]        # min="MIN_CABSIM_DB"
+    literal = SCALES[(12114, 25)]        # min="-40" max="6"
+    assert literal.raw_is_literal if hasattr(literal, "raw_is_literal") else True
+    for spec in (symbolic, literal):
+        assert spec.floor_wire == 0.01, spec.name
+        assert spec.floor == pytest.approx(-21.8, abs=0.05)
+        with pytest.raises(ValueError, match="does not exist there"):
+            spec.to_normalized(-30.0)
+
+
+def test_parallax_carries_the_cab_law_itself():
+    """It is a Bass Overdrive with a cab section, so it cannot borrow the layout.
+
+    `targets._layout_spec` only fires for models in CABSIM_CATEGORIES, and
+    Parallax is not one. It works only because its own catalog entry carries
+    MIN_CABSIM_DB and the same skew - which is also the evidence the
+    layout-borrowing design cites, so it is worth pinning where it is claimed.
+    """
+    for index in (16, 24):
+        spec = SCALES[(3008, index)]
+        assert (spec.minimum, spec.maximum) == (-40.0, 6.0)
+        assert spec.skew == pytest.approx(4.9594844)
+        assert spec.floor_wire == 0.01
+
+
+def test_the_fx_families_are_more_than_one_model_each():
+    """Nine send-side and six return-side parameters share two scales.
+
+    Only one of each was pinned at first, which would not have noticed a second
+    Send resolving to the return family or the other way round.
+    """
+    for key in ((13000, 0), (13001, 0)):
+        assert (SCALES[key].minimum, SCALES[key].maximum) == (-40.0, 0.0)
+    for key in ((13002, 0), (13003, 0)):
+        assert (SCALES[key].minimum, SCALES[key].maximum) == (-40.0, 12.0)
+
+
+def test_the_scene_following_mixer_levels_are_covered():
+    """LEVEL A and LEVEL B nearly went down as NOT DRIVABLE.
+
+    Four host writes looked dropped. Both are scene-following, so the wire
+    carries eight values and a write lands on the ACTIVE scene while the reader
+    was taking `param_values[0]` - scene A, on a unit sitting in scene E.
+    """
+    for key in ((11000, 0), (11000, 2), (11000, 5)):
+        assert (SCALES[key].minimum, SCALES[key].maximum) == (-40.0, 12.0)
+        assert SCALES[key].floor_wire == 0.01
+
+
+def test_the_recorder_reason_says_what_actually_happened():
+    """Membership is not enough: the REASON is the whole value of the entry."""
+    reason = units.DO_NOT_PROBE[(20000, 2)].lower()
+    assert "crash" in reason
+    assert 20000 in units.UNPLACEABLE_MODELS
+    assert "crashed" in units.UNPLACEABLE_MODELS[20000].lower()
+
+
+def test_a_knob_with_no_detent_reports_its_minimum_as_its_floor():
+    """TEMPO and the EQ gains reach every position, so nothing is refused."""
+    for key in ((25000, 0), (4000, 0)):
+        spec = SCALES[key]
+        assert spec.floor_wire == 0.0
+        assert spec.floor_is_measured is False
+        assert spec.floor == spec.minimum
+
+
+def test_a_refusal_mentions_the_off_position_only_where_there_is_one():
+    """One shared message for four families told a tempo caller about an Off
+    position the tempo has not got."""
+    with pytest.raises(ValueError) as tempo:
+        SCALES[(25000, 0)].to_normalized(300.0)
+    assert "Off position" not in str(tempo.value)
+
+    with pytest.raises(ValueError) as lane:
+        SCALES[(23000, 0)].to_normalized(-39.9)
+    assert "Off position" in str(lane.value)
+
+
+def test_asking_for_the_bottom_of_the_scale_is_refused_where_it_is_a_detent():
+    """`minimum` and `floor` diverge most sharply exactly here."""
+    with pytest.raises(ValueError, match="does not exist there"):
+        SCALES[(23000, 0)].to_normalized(-40.0)
+    # ...and the number the refusal prints is one it would itself accept.
+    assert SCALES[(23000, 0)].to_normalized(-39.5) == pytest.approx(0.01, abs=5e-4)
+
+
+def test_reading_a_wire_value_the_wire_cannot_carry_is_refused():
+    """It used to clamp. Four factory presets store NaN in `param_values`, so
+    clamping reported the bottom of the range as a knob's value."""
+    spec = SCALES[(12000, 2)]
+    for outside in (-0.1, 1.5, float("nan")):
+        with pytest.raises(ValueError, match="0..1"):
+            spec.to_real(outside)

@@ -7,7 +7,7 @@ an option means knowing its position. These name the positions::
 
     qc.set_param_option(block, 'DYN MODE', options.DynMode.GATE)
 
-111 enums cover 280 parameters, because the same list means
+110 enums cover 267 parameters, because the same list means
 the same thing wherever it appears - the note-length list is shared by
 ``SYNC NOTE``, ``SYNC NOTE L``, ``SYNC NOTE R`` and two more.
 
@@ -1145,18 +1145,6 @@ class Start(IntEnum):
     UNMUTE = 1
 
 
-class Stepstate(IntEnum):
-    """13 parameters use this list: STEPSTATE0, STEPSTATE1, STEPSTATE10, STEPSTATE11, STEPSTATE12, STEPSTATE2, ...
-
-    On TempoControl.
-    """
-
-    OFF = 0
-    MUTE = 1
-    DOWN = 2
-    ON = 3
-
-
 class Stereo(IntEnum):
     """4 parameters use this list: STEREO
 
@@ -1588,7 +1576,6 @@ OPTION_LABELS = {
     SplitterMode: ('Regular', 'Invert'),
     SplitterType: ('Balance', 'A/B', 'Crossover'),
     Start: ('MUTE', 'UNMUTE'),
-    Stepstate: ('OFF', 'MUTE', 'DOWN', 'ON'),
     Stereo: ('Normal', 'Split'),
     StereoLink: ('Unlinked', 'Linked'),
     SyncNote11: ('1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'),
@@ -1703,7 +1690,6 @@ __all__ = [
     "SplitterMode",
     "SplitterType",
     "Start",
-    "Stepstate",
     "Stereo",
     "StereoLink",
     "SyncNote11",

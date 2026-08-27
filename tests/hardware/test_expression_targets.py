@@ -152,10 +152,10 @@ def test_the_two_unassignable_parameters_refuse_rather_than_failing_silently(qc,
 def test_the_lane_volume_speaks_dB_through_real(qc, restores):
     """`real=` converts through the MEASURED -40..+12 dB span.
 
-    The catalog publishes this parameter as ``0..1 "dB"`` - a placeholder - so
-    the conversion cannot come from there. It is the one placeholder parameter
-    whose true span has been measured at both ends; every other one still
-    refuses `real=`.
+    The catalog NAMES this parameter's bounds - ``min="MIN_MIXER_DB"`` - rather
+    than giving numbers, and `units.FIRMWARE_CONSTANTS` supplies them: -40..+12
+    dB, measured at both ends. So the conversion does come from the catalog,
+    which is the whole point of ADR-0015.
     """
     was = _snapshot(qc)
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))

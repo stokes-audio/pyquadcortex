@@ -14,6 +14,7 @@ A changed bound or taper is a real protocol change and belongs in
 """
 import json
 import pathlib
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -28,19 +29,43 @@ def live_catalog(qc):
     return catalog.parse_model_repo(qc._fetch_model_repo())
 
 
+@pytest.fixture(scope="module")
+def live_xml(qc):
+    return ET.fromstring(catalog._extract_xml(qc._fetch_model_repo()))
+
+
+def _raw_attrs(qc, model_id: int, index: int) -> dict:
+    """One parameter's XML attributes, straight off the unit."""
+    root = ET.fromstring(catalog._extract_xml(qc._fetch_model_repo()))
+    for category in root.findall("Category"):
+        for element in category.findall("Model"):
+            if int(element.get("id", -1)) == model_id:
+                return dict(element.findall("Parameter")[index].attrib)
+    raise AssertionError(f"no model {model_id} on this unit")
+
+
 @pytest.mark.parametrize("row", json.loads(FIXTURE.read_text()),
                          ids=lambda r: f"{r['model_id']}.{r['index']}")
-def test_the_fixture_still_matches_this_unit(live_catalog, row):
+def test_the_fixture_still_matches_this_unit(qc, live_catalog, row):
     """Read-only: nothing is written to the unit, so no restore is needed."""
     model = live_catalog[row["model_id"]]
     p = model.parameters[row["index"]]
-    actual = {"name": p.name, "minimum": p.minimum, "maximum": p.maximum,
-              "units": p.units, "type": p.type, "steps": p.steps,
-              "skew": p.skew, "floor_wire": p.floor_wire}
-    expected = {k: row[k] for k in actual}
-    assert actual == expected, (
-        f"{model.name!r} {p.name!r} no longer matches the committed fixture. "
-        f"Regenerate with scripts/extract_scale_fixture.py and read the diff.")
+    # The RAW attributes are the device's own words, so this is a genuine
+    # comparison against the unit. The resolved columns are not: `minimum` for a
+    # symbolic bound, and `floor_wire` always, are read out of `units.py`, so
+    # comparing them here would be comparing units.py against a copy of itself.
+    # They are checked in the offline suite, where the fixture's raw attributes
+    # are re-parsed; here what matters is that the device still says the same
+    # thing.
+    raw = _raw_attrs(qc, row["model_id"], row["index"])
+    assert raw == row["raw"], (
+        f"{model.name!r} {p.name!r}: this unit's catalog no longer matches the "
+        f"committed fixture.\n  fixture: {row['raw']}\n  this unit: {raw}\n"
+        f"A changed bound, taper or step count is a PROTOCOL CHANGE and belongs "
+        f"in docs/protocol.md alongside the readings it invalidates. Regenerate "
+        f"with scripts/extract_scale_fixture.py only once you know which it is - "
+        f"regenerating first would bless the change silently.")
+    assert (p.name, p.units, p.type) == (row["name"], row["units"], row["type"])
 
 
 def test_every_symbolic_bound_this_unit_ships_is_known(live_catalog):

@@ -15,7 +15,8 @@ Source: a device's ModelRepo payload, either live or previously saved.
 Three decisions this generator makes:
 
 1. **One enum per distinct LIST, not per parameter.** 527 parameters carry a
-   fixed list and they use only 113 distinct ones, because the same list means
+   fixed list and they use only 113 distinct ones - 110 get an enum, because
+   the same list means
    the same thing everywhere: the note-length list is shared by ``SYNC NOTE``,
    ``SYNC NOTE L``, ``SYNC NOTE R``, ``SYNC NOTE A`` and ``SYNC NOTE B``. One
    enum per list is one enum per concept.
@@ -41,6 +42,23 @@ from pyquadcortex.protocol import catalog  # noqa: E402
 #: Lists that are a boolean wearing a costume. Their parameters take ``True`` and
 #: ``False``; no enum is emitted.
 BOOLEAN_LISTS = {("off", "on")}
+
+#: Lists the catalog names but whose names are NOT what the screen means, so
+#: publishing them would put two disagreeing enums on one control.
+#:
+#: One entry, and it is a warning about `stepNames` in general: for the
+#: metronome's per-beat cells the catalog says `OFF,MUTE,DOWN,ON` while
+#: `enums.MetronomeBeat` - traced on hardware by touching a cell and listening,
+#: with ACCENT corroborated by a factory 4/4 carrying it on beat 1 alone - says
+#: `NORMAL,OFF,ACCENT,QUIET`. They disagree at every position, and the hardware
+#: trace wins: a 4/4 default has beats 2 to 4 at index 0, which is an audible
+#: click, not the catalog's "OFF".
+#:
+#: So `stepNames` is the device's INTERNAL vocabulary, and usually but not
+#: always the screen's. See docs/domain-model.md.
+NOT_THE_SCREENS_WORDS = {
+    ("OFF", "MUTE", "DOWN", "ON"): "the metronome beats - see enums.MetronomeBeat",
+}
 
 #: The device's own typos, corrected in the MEMBER NAME ONLY. The wire still
 #: carries the device's spelling, which ``OPTION_LABELS`` preserves.
@@ -114,6 +132,8 @@ def collect(cat: catalog.ModelCatalog) -> dict:
             if not p.options or p.dynamic:
                 continue
             if tuple(o.lower() for o in p.options) in BOOLEAN_LISTS:
+                continue
+            if p.options in NOT_THE_SCREENS_WORDS:
                 continue
             lists[p.options].append((model, p))
     return lists

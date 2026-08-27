@@ -22,6 +22,7 @@ parameter not already listed in ``WANTED`` below.
 import argparse
 import json
 import pathlib
+import xml.etree.ElementTree as ET
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -32,6 +33,15 @@ from pyquadcortex.protocol import catalog  # noqa: E402
 #: Each entry says why it is here, because an entry nobody can justify is one
 #: nobody will dare delete.
 WANTED = {
+    (11000, 0): "Mixer LEVEL A - scene-following, and briefly mistaken for undrivable",
+    (11000, 2): "Mixer LEVEL B - the other half of that pair",
+    (3008, 16): "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so"
+                " it cannot borrow the layout and must carry the law itself",
+    (3008, 24): "Parallax cab LEVEL, mic 2",
+    (12114, 25): "PCOM Core Cabsim LEVEL - the same knob with LITERAL bounds,"
+                 " which is what the floor's law-keying exists for",
+    (13001, 0): "Send 2 LEVEL - proves the send family is more than one model",
+    (13003, 0): "Return 2 LEVEL - and the return family likewise",
     (12000, 2): "cab MIC 1 LEVEL - the taper, skew 4.9594844",
     (12000, 10): "cab MIC 2 LEVEL - proves both mics share the layout",
     (4000, 0): "Parametric-8 band 1 GAIN - the EQ family, steps=241",
@@ -54,6 +64,19 @@ WANTED = {
 }
 
 
+def _raw_attrs(payload: bytes, model_id: int, index: int) -> dict:
+    """The XML attributes of one parameter, exactly as the device wrote them."""
+    root = ET.fromstring(catalog._extract_xml(payload))
+    for category in root.findall("Category"):
+        for element in category.findall("Model"):
+            if int(element.get("id", -1)) != model_id:
+                continue
+            params = element.findall("Parameter")
+            if index < len(params):
+                return dict(params[index].attrib)
+    raise SystemExit(f"no parameter {model_id}[{index}] in this catalog")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--payload", required=True,
@@ -61,7 +84,8 @@ def main():
     ap.add_argument("--out", default="tests/fixtures/catalog/scales.json")
     args = ap.parse_args()
 
-    cat = catalog.parse_model_repo(pathlib.Path(args.payload).read_bytes())
+    payload = pathlib.Path(args.payload).read_bytes()
+    cat = catalog.parse_model_repo(payload)
 
     rows = []
     for (model_id, index), reason in sorted(WANTED.items()):
@@ -78,6 +102,12 @@ def main():
             "model": model.name,
             "index": index,
             "name": p.name,
+            # The raw XML, so the offline test can re-parse it. Without this the
+            # fixture records ALREADY-RESOLVED numbers and the evidence loop is
+            # readings -> fixture -> readings, with units.FIRMWARE_CONSTANTS
+            # outside it: six of the fourteen constants could be edited to
+            # anything and the whole offline suite stayed green.
+            "raw": {k: v for k, v in _raw_attrs(payload, model_id, index).items()},
             "minimum": p.minimum,
             "maximum": p.maximum,
             "units": p.units,
@@ -85,6 +115,7 @@ def main():
             "steps": p.steps,
             "skew": p.skew,
             "floor_wire": p.floor_wire,
+            "floor_display": p.floor_display,
             "why": reason,
         })
 

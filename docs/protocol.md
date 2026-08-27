@@ -2923,7 +2923,7 @@ display +12.0 dB.
 
 ### A parameter's scale is in the catalog, and we were not reading it
 
-The device publishes **25 attributes** on each `<Parameter>`. This library read
+The device publishes **24 attributes** on each `<Parameter>`. This library read
 eight of them until 2026-08-26, and four of the seventeen it discarded carry facts
 the project had spent days measuring off the unit's screen.
 
@@ -2942,7 +2942,7 @@ Confirmed on hardware 2026-08-26, over three unrelated blocks in two different u
 
 | block | parameter | skew | wire | predicted | screen |
 |---|---|---|---|---|---|
-| any cab | `MIC n LEVEL` | 4.9594844 | 0.01 / 0.50 / 1.00 | -21.82 / 0.00 / 6.00 dB | -21.8 / 0.0 / 6.0 |
+| any cab | `LEVEL`, indexes 2 and 10 | 4.9594844 | 0.01 / 0.50 / 1.00 | -21.82 / 0.00 / 6.00 dB | -21.8 / 0.0 / 6.0 |
 | Low-High Cut | `HPF FREQ` | 0.3 | 0.25 | 216.7 Hz | 217 Hz |
 | Low-High Cut | `LPF FREQ` | 0.3 | 0.75 | 7678.3 Hz | 7678 Hz |
 | Low-High Cut | `OUTPUT` | none | 0.25 | -10.0 dB | -10.0 dB |
@@ -2952,7 +2952,7 @@ Confirmed on hardware 2026-08-26, over three unrelated blocks in two different u
 The two `LOG_SKEW` readings solve independently to exponent 3.3366 and 3.3330, both
 `1/0.3`. A true log sweep would have shown 316 Hz and 5.62; linear, 2575 and 7.75.
 
-**617 parameters carry a non-linear skew**, and every one of them converted as a
+**615 parameters carry a non-linear skew**, and every one of them converted as a
 straight line before this was read.
 
 #### There is no such thing as a placeholder range
@@ -2974,13 +2974,13 @@ work around it. Eight families, 55 parameters:
 
 | constant | count | parameters | value | how it is known |
 |---|---|---|---|---|
-| `EQ_DB` | 16 | the 8 band gains | -12..12 | `steps=241` fixes 0.1 dB steps; measured at four points |
+| `EQ_DB` | 16 | the band gains, over three EQ models | -12..12 | `steps=241` fixes 0.1 dB steps; measured at four points |
 | `CABSIM_DB` | 12 | cab `LEVEL` | -40..6 | a PCOM cab spells the same knob out literally |
 | `FXLOOP_OUT_GAIN_DB` | 9 | `LEVEL`, `SEND LEV`, `THRU` | -40..0 | measured at five points; tops out at unity - a send cannot boost |
 | `FXLOOP_IN_GAIN_DB` | 6 | `LEVEL`, `RET LEV` | -40..12 | measured at three points; a return can boost |
 | `MIXER_DB` | 8 | `LEVEL A/B`, `LEVEL TO A/B`, `MIXER LEVEL`, `VOLUME` | -40..12 | measured; and `LEVEL TO A/B` sit at 10/13, which is 0 dB on that span |
 | `TEMPO` | 1 | `TEMPO` | 40..240 | `steps=201` fixes whole bpm; measured at three points |
-| `EQ_FREQ` | 2 | Splitter Crossover `FREQUENCY` | 20..20000 | solved, see below |
+| `EQ_FREQ` | 2 | `FREQUENCY` on both splitter models | 20..20000 | solved, see below |
 | `INPUT_TRIM` | 1 | `NC_Recorder OUT LEVEL` | **unknown** | placing the block crashes the unit |
 
 The numbers live in `units.FIRMWARE_CONSTANTS`, each with its evidence. A name this

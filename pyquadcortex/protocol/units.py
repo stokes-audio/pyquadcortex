@@ -7,8 +7,8 @@ the handful of scales that belong to things the catalog does not describe at
 all, such as an input PORT.
 
 **The history is worth knowing, because it cost several days.** A
-``<Parameter>``'s ``min`` and ``max`` are usually numbers, but 55 of them are a
-NAME - ``min="MIN_CABSIM_DB"``. The parser handed those to a float conversion
+``<Parameter>``'s ``min`` and ``max`` are usually numbers, but 55 PARAMETERS name
+one instead - ``min="MIN_CABSIM_DB"``. The parser handed those to a float conversion
 that fell back to ``0.0`` and ``1.0``, and that invented a concept this library
 called a "placeholder range": a parameter published as ``0..1`` with a real unit
 and therefore, supposedly, unconvertible. There is no such thing. Zero
@@ -65,7 +65,10 @@ FIRMWARE_CONSTANTS = {
     "MAX_FXLOOP_OUT_GAIN_DB": 0.0,
 
     # The RETURN side: an FX Loop's LEVEL and RET LEV. Measured 2026-08-26 at
-    # -34.8 at 0.10, -14.0 at 0.50, -1.0 at 0.75. A return CAN boost.
+    # four points INCLUDING THE TOP - -39.5 at 0.01, -34.8 at 0.10, -14.0 at
+    # 0.50, +12.0 at 1.00. A return CAN boost, which is what separates it from
+    # the send side above; citing only the three interior points would have left
+    # the +12 looking assumed, which is the mistake recorded under MIN_MIXER_DB.
     "MIN_FXLOOP_IN_GAIN_DB": -40.0,
     "MAX_FXLOOP_IN_GAIN_DB": 12.0,
 
@@ -98,35 +101,67 @@ UNMEASURED_BOUNDS = {
     "MAX_INPUT_TRIM": "NC_Recorder OUT LEVEL - see DO_NOT_PROBE",
 }
 
-#: The lowest wire position with a NUMERIC display, for families whose bottom is
-#: an OFF detent rather than the bottom of the scale. Keyed by the catalog's own
-#: constant name, which is how the parser finds it.
+#: Where a knob's numbers actually start, for the families whose bottom is an
+#: OFF detent rather than the bottom of the scale.
 #:
-#: This exists because ``min`` is frequently NOT a place the knob goes. A cab
-#: LEVEL's law runs to -40 dB, but its quietest real setting is -21.8 dB at wire
-#: 0.01 and the screen reads OFF below that. Without a floor, asking for -30 dB
-#: returns wire 0.0005 and MUTES the mic - a silently wrong value, which is the
-#: failure this library exists to prevent.
+#: Keyed by the LAW - ``(minimum, maximum, skew)`` after the bounds are resolved
+#: - and NOT by the catalog's constant name, which was the first attempt and was
+#: wrong. The device spells one knob two ways: most cabs say
+#: ``min="MIN_CABSIM_DB"`` while the PCOM variants write ``min="-40" max="6"``
+#: for the identical control, same taper and all. Keyed by spelling, the guard
+#: protected one and not the other, so asking a PCOM cab for -30 dB returned
+#: wire 0.000516 and MUTED the microphone - the exact bug this table exists to
+#: prevent, surviving inside the fix for it.
 #:
-#: ``min_string="OFF"`` in the catalog says the bottom shows a word rather than a
-#: number, but not WHERE the numbers resume. Only measurement knows that, which
-#: is why this table is separate from :data:`FIRMWARE_CONSTANTS` and why it
-#: covers only the families somebody has actually driven.
+#: The law is the physical control, so the law is the honest key.
+#:
+#: Each value is ``(floor_wire, displayed)``: the lowest wire position with a
+#: NUMERIC display, and what the unit SHOWS there. Both are measured. The second
+#: matters because the law does not reproduce it exactly - the lane family's
+#: fitted value at wire 0.01 is -39.48 while the screen says -39.5 - and a
+#: refusal that quotes a number it would itself reject is a dead end for whoever
+#: reads it.
+#:
+#: ``min_string="OFF"`` says the bottom of a range shows a word rather than a
+#: number, and 254 parameters carry it. It does NOT say where the numbers
+#: resume, so it cannot key this table; only measurement knows that. The
+#: consequence is deliberate and worth stating: parameters on a listed law
+#: inherit its floor even where nobody drove that particular knob. For the two
+#: linear families that costs at most a loud refusal across a 0.5 dB sliver at
+#: the very bottom. For the cab it prevents an 18 dB silent mute. That trade is
+#: the right way round.
 FLOOR_WIRE = {
-    # -21.8 dB at wire 0.01, OFF below it. Measured 2026-08-26.
-    "MIN_CABSIM_DB": 0.01,
-    # -39.5 dB at wire 0.01 on the lane VOLUME, confirmed on the splitter's
-    # LEVEL TO A, which reads OFF at wire 0.0. Measured 2026-08-25.
-    "MIN_MIXER_DB": 0.01,
-    # -39.6 dB at wire 0.01. Measured 2026-08-26.
-    "MIN_FXLOOP_OUT_GAIN_DB": 0.01,
-    "MIN_FXLOOP_IN_GAIN_DB": 0.01,
+    # The cab section's per-mic LEVEL. -21.8 dB at wire 0.01, OFF below it.
+    # Measured 2026-08-26 on a 212 Darkglass Neo (M); the same law covers the
+    # PCOM cabs and Parallax's cab section.
+    (-40.0, 6.0, 4.9594844): (0.01, -21.8),
+    # The lane, mixer, splitter and FX-return LEVEL family. -39.5 dB at wire
+    # 0.01 on the lane VOLUME, confirmed on the splitter's LEVEL TO A, which
+    # reads OFF at wire 0.0. Measured 2026-08-25.
+    (-40.0, 12.0, 1.0): (0.01, -39.5),
+    # The FX loop's send side. -39.6 dB at wire 0.01. Measured 2026-08-26.
+    (-40.0, 0.0, 1.0): (0.01, -39.6),
 }
 
 #: What a caller wanting silence should write instead of the bottom of a dB
 #: scale. Shared by every family in :data:`FLOOR_WIRE`.
 OFF_HINT = ("for silence write the wire value 0.0, the Off position - the "
             "bottom of the dB scale is a different thing")
+
+#: Models that must never be placed on the grid, and why.
+#:
+#: Enforced by :meth:`~pyquadcortex.protocol.QuadCortex.set_block`, which is the
+#: only reason this is a separate table from :data:`DO_NOT_PROBE`: a note that
+#: nothing reads is not a guard, and the note here is "this reboots the unit".
+UNPLACEABLE_MODELS = {
+    20000: ("NC_Recorder is the internal recorder the Neural Capture wizard "
+            "drives, not a block. Placing it on the grid CRASHED the unit - "
+            "\"Something went wrong ... Cancel / Reboot\" - and required a "
+            "reboot, 2026-08-26. Its `internal` and `hidden` flags are both "
+            "false, which is what made it look placeable; the category name "
+            "\"Neural Capture Internal\" was the real signal and was not read "
+            "carefully enough."),
+}
 
 #: Parameters that will NOT be measured, and why. Distinct from an unmeasured
 #: bound: nobody is going to look, so a later session should not spend a session

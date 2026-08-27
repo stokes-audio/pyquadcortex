@@ -34,6 +34,8 @@ import warnings
 from typing import NamedTuple
 
 from pyquadcortex.protocol import catalog, enums, registry, targets
+from pyquadcortex.protocol import options as options_module
+from pyquadcortex.protocol import units as units_module
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
                                 MetronomeSound, MidiOutType,
@@ -614,12 +616,14 @@ class QuadCortex:
         Give the value as ``value=`` (the normalized 0..1 the wire carries),
         ``real=`` (the parameter's own units - dB, ms, Hz, bpm), or ``text=``
         for a string-valued parameter such as a cab's microphone. ``real=``
-        converts through the catalog's range, except where the catalog publishes
-        a placeholder and the true span has been MEASURED instead: the lane
-        four families so far - the lane, mixer and splitter LEVELs, the block EQ
-        band gains, a cab's per-mic LEVEL, and the tempo TEMPO. The 27
-        placeholder parameters not yet measured still refuse, because an
-        unmeasured span cannot be converted, only guessed.
+        converts through the catalog's own description of the parameter - its
+        ``min``, ``max`` and ``skew`` - so it applies any taper and refuses a
+        value the knob has no position for rather than clamping to the nearest
+        one. It needs a catalog, which comes from the device.
+
+        One parameter refuses ``real=`` outright: ``NC_Recorder``'s ``OUT
+        LEVEL``, whose bounds the catalog names and nobody can measure, because
+        placing that block crashes the unit.
 
         **Per-scene values.** Name a ``scene`` to change that scene alone::
 
@@ -655,17 +659,36 @@ class QuadCortex:
             )
         if isinstance(value, bool):
             # A bool is the natural way to write a two-option switch, and 247
-            # parameters are exactly Off/On. It is NOT a safe way to write a
-            # longer list: True is wire 1.0, which selects the LAST option, so
-            # True on a three-way MODE would silently choose the third. Refused
-            # where the spec is already in hand; an indexed write with no
-            # catalog is left alone rather than made to fetch one.
-            if spec is not None and (spec.option_count or 2) != 2:
+            # parameters are exactly Off/On. It is NOT safe on anything else:
+            # True is the wire's 1.0, which selects the LAST option of a longer
+            # list and writes full scale on a continuous knob. So the parameter
+            # has to be checked, and a bool we cannot check is refused rather
+            # than guessed - `set_param(block, "GAIN", True)` meaning "enable"
+            # is a plausible slip and it would have written maximum gain.
+            #
+            # The spec is often not in hand here: an indexed write never fetches
+            # one, and `Tempo` maps its screen names straight to indexes.
+            if spec is None:
+                try:
+                    spec = target.spec_at(index, self._get_catalog)
+                except Exception:
+                    spec = None
+            if spec is None:
                 raise TypeError(
-                    f"{spec.name!r} offers {spec.option_count} options, so True "
-                    f"and False cannot say which one. True is the wire's 1.0, "
-                    f"which would pick the last. Use an enum from "
-                    f"pyquadcortex.protocol.options with set_param_option."
+                    f"True and False can only write a two-option switch, and "
+                    f"this parameter is not one the catalog describes - so there "
+                    f"is no way to check. Pass 0.0 or 1.0 if you meant the wire "
+                    f"value, or connect so the catalog can be read."
+                )
+            if spec.option_count != 2:
+                offers = (f"offers {spec.option_count} options"
+                          if spec.option_count else "is not a list at all")
+                raise TypeError(
+                    f"{spec.name!r} {offers}, so True and False cannot say what "
+                    f"you mean. True is the wire's 1.0, which on a list picks the "
+                    f"LAST option and on a continuous knob writes the top of the "
+                    f"range. Use an enum from pyquadcortex.protocol.options with "
+                    f"set_param_option, or pass the number you want."
                 )
             value = 1.0 if value else 0.0
         if scene is not None:
@@ -814,6 +837,12 @@ class QuadCortex:
         ``verify=False`` to send and return immediately, in which case a save and
         read-back is the only way to learn whether the block is there.
         """
+        if cell.model_id in units_module.UNPLACEABLE_MODELS:
+            raise ValueError(
+                f"model {cell.model_id} must not be placed on the grid: "
+                f"{units_module.UNPLACEABLE_MODELS[cell.model_id]} Recovering "
+                f"needs a power cycle, so this is refused rather than tried."
+            )
         row, column, model = cell.row, cell.column, cell.model_id
         model_id = int(getattr(model, "id", model))
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
@@ -1244,9 +1273,9 @@ class QuadCortex:
 
         The catalog's range for this control is genuine: **-60 to +9 dB**, linear
         in the wire value (``dB = -60 + 69 * value``), and unlike the
-        similarly-named lane VOLUME - whose 0..1 "dB" range is a placeholder where
-        0.0 really is silence - the metronome's quietest setting is still plainly
-        audible on headphones. True silence is not reachable with this control;
+        similarly-named lane VOLUME - whose wire 0.0 is an Off detent and really
+        is silence - the metronome's quietest setting is still plainly audible on
+        headphones. True silence is not reachable with this control;
         stop the transport instead with :meth:`set_metronome_running`.
 
         Pass ``value=`` for the wire 0..1 or ``real=`` for dB::
@@ -2574,7 +2603,8 @@ class QuadCortex:
         knowing its position. Pass an enum from
         :mod:`pyquadcortex.protocol.options`, which names them::
 
-            qc.set_param_option(Block(0, 1), "DYN MODE", options.DynMode3.GATE)
+            block = protocol.blocks(preset)[0]      # carries its model_id
+            qc.set_param_option(block, "DYN MODE", options.DynMode3.GATE)
 
         An option NAME or a bare index works too. A name is matched against the
         device's own spelling, typos included - see ``options.OPTION_LABELS``.
@@ -2618,16 +2648,50 @@ class QuadCortex:
         # nothing. The catalog comes over USB, so a caller who already handed us
         # the answer should not pay for a round trip.
         names = tuple(param_options(source, block, index)) if source else ()
+        dynamic = False
         if not names and model_id is not None:
             model = self.catalog.get(model_id)
             if model is not None and index < len(model.parameters):
-                names = model.parameters[index].options
+                spec = model.parameters[index]
+                # A DYNAMIC list's stepNames are a snapshot and the catalog's
+                # own count overstates it - a Doubler's TRIGGER publishes 45
+                # while the real list is 19 to 25 depending on the preset. Using
+                # them would pick the right NAME at the wrong POSITION: option 1
+                # of 45 is wire 0.0227, which against a real 19-entry list reads
+                # back as option 0. Silently the wrong choice, and the device
+                # says nothing.
+                dynamic = spec.dynamic
+                names = () if dynamic else spec.options
         if not names:
             raise ValueError(
-                f"index {index} on row {block.row} column {block.column} offers "
-                f"no options here. A dynamic list - one whose entries include "
-                f"the blocks ahead of it - is only in the preset, so pass "
-                f"source=<the preset you read>."
+                f"index {index} on row {block.row} column {block.column} "
+                + ("builds its options from the PRESET - the list includes one "
+                   "entry per block ahead of it, so the catalog's copy is a "
+                   "snapshot at the wrong length. Pass source=<the preset you "
+                   "read>." if dynamic else
+                   "offers no options here. A dynamic list - one whose entries "
+                   "include the blocks ahead of it - is only in the preset, so "
+                   "pass source=<the preset you read>.")
+            )
+        if isinstance(option, bool):
+            raise TypeError(
+                f"True and False cannot name an option out of {len(names)}: "
+                f"{names[:4]}{'...' if len(names) > 4 else ''}. A bool would be "
+                f"read as the index 0 or 1. Name the option, or use an enum from "
+                f"pyquadcortex.protocol.options."
+            )
+        # An IntEnum member is an int, so a member of the WRONG list converts
+        # silently: DynMode3.GATE and SplitterType.CROSSOVER are both 2, and
+        # both would be accepted here. Check the enum describes THIS list.
+        labels = options_module.OPTION_LABELS.get(type(option))
+        if labels is not None and tuple(labels) != tuple(names):
+            raise TypeError(
+                f"{type(option).__name__}.{option.name} belongs to a different "
+                f"list. This parameter offers {list(names)[:4]}"
+                f"{'...' if len(names) > 4 else ''}, and that enum describes "
+                f"{list(labels)[:4]}{'...' if len(labels) > 4 else ''}. An "
+                f"IntEnum member is an int, so without this the wrong one would "
+                f"convert quietly."
             )
         return self.set_param(block, index, value=option_value(names, option))
 
@@ -3602,11 +3666,19 @@ def beats(p: preset.BinaryPreset) -> dict:
 
 
 def param_options(p: preset.BinaryPreset, block, param_index: int) -> list:
-    """The option names of a list-valued parameter, from the preset.
+    """The option names of a list-valued parameter, as THIS PRESET renders them.
 
-    A comboBox parameter's options are NOT in the device catalog, which gives
-    only ``min``, ``max`` and ``steps`` - but the preset carries the rendered
-    list in ``Param.dynamic_steps``. Reading factory "US TWN Vibrato" (01C), the
+    For the 12 parameters marked ``dynamic`` in the catalog this is the only
+    honest source: their lists include one entry per block earlier in the chain,
+    so the length changes with the preset and the catalog's ``steps`` overstates
+    it. For the other 527 the catalog has the names too, in ``stepNames``, and
+    :meth:`QuadCortex.set_param_option` reads them from there.
+
+    This docstring used to say the names were "NOT in the device catalog". That
+    was true of the dynamic twelve and wrong about the rest - see ADR-0015.
+
+    The preset carries the rendered list in ``Param.dynamic_steps``. Reading
+    factory "US TWN Vibrato" (01C), the
     Doubler's TRIGGER options are ``Off, Follow Input, Input 1, Input 2, Input
     1/2, Return 1, Return 2, Return 1/2, USB input 5..8, ...``.
 

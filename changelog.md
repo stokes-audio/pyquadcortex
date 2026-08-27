@@ -22,11 +22,11 @@ correction.
 
 ### The device was publishing every parameter's scale, and we were not reading it
 
-`catalog.py` read 8 of the 25 attributes the unit puts on each parameter. Four of
+`catalog.py` read 8 of the 24 attributes the unit puts on each parameter. Four of
 the seventeen it discarded carry facts this project had spent days measuring off
 the screen.
 
-**`skew` is the taper, and 617 parameters converted wrongly without it.** One law
+**`skew` is the taper, and 615 parameters converted wrongly without it.** One law
 covers the whole catalog:
 
 ```
@@ -44,7 +44,7 @@ anything it could not read. Eight families, 55 parameters. Seven families have
 numbers with their evidence; the eighth is the recorder, whose block crashes the
 unit when placed, so it refuses rather than converting against a guess.
 
-`units.MEASURED_SPANS` - 42 hand-measured entries covering 23 models - becomes 14
+`units.MEASURED_SPANS` - 44 hand-measured entries covering 19 models - becomes 14
 numbers covering all 533. The readings that built it are now the tests that prove
 the catalog reproduces the screen, exactly at the display's own precision.
 
@@ -63,7 +63,7 @@ goes on the wire: 16 `INVERT` parameters offer `Noral`, so the member reads
 `NORMAL` and `options.OPTION_LABELS` keeps `Noral`.
 
 **Three behaviour changes worth checking your code against**, all in
-`docs/migration.md`: conversions return different numbers for 617 parameters, an
+`docs/migration.md`: conversions return different numbers for 615 parameters, an
 out-of-range value is refused rather than clamped, and `real=` now needs a
 catalog where a few parameters used to work without one.
 

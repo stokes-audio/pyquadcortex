@@ -166,9 +166,17 @@ class ParamTarget:
         is a hint from :meth:`index_of` when a name was resolved, so naming a
         parameter costs one fetch rather than two.
         """
-        spec = spec if spec is not None else self.spec_at(index, get_catalog)
-        if spec is None:
-            spec = self._layout_spec(index, get_catalog)
+        # The LAYOUT wins where there is one. A cab's own catalog entry does not
+        # describe the wire: 12 of the 174 cab models list something else
+        # entirely at index 2 - a Plini Cab calls it POSITION over 0..1 - while
+        # the wire carries `Default Cabsim`'s LEVEL, -40..6 dB and tapered.
+        # Converting -3.0 dB against POSITION would refuse it as out of range,
+        # and a value inside 0..1 would be written on the wrong scale in silence.
+        layout = self._layout_spec(index, get_catalog)
+        if layout is not None:
+            spec = layout
+        elif spec is None:
+            spec = self.spec_at(index, get_catalog)
         if spec is None and self.model_id is None:
             raise TypeError(
                 f"real= on {self.describe()} needs model=<model id or catalog "

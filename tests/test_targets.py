@@ -203,7 +203,7 @@ def test_no_other_target_refuses_anything():
 
 
 def test_the_lane_volume_speaks_db_and_pan_does_not():
-    """VOLUME is the one placeholder range hiding a span measured at both ends."""
+    """VOLUME speaks dB over MIN_MIXER_DB..MAX_MIXER_DB; PAN is a bare 0..1."""
     get = _lane_catalog()
     index, spec = LaneOutput(0).index_of("VOLUME", get)
     assert LaneOutput(0).normalize(index, -3.1, get, spec) == pytest.approx(0.7096,

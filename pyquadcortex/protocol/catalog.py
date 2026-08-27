@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import math
 import tarfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
@@ -70,22 +71,42 @@ LOG_SKEW = 0.3
 def parse_skew(raw: str | None) -> float:
     """The taper from the catalog's ``skew`` attribute, as a positive float.
 
-    Anything unrecognised falls back to :data:`LIN_SKEW`, which is what an absent
-    attribute means. The shipped catalog needs that tolerance: two parameters
-    carry ``" 0.4"`` with a leading space and two carry ``""``.
+    Absent or empty means linear, which is what 2,609 parameters say by carrying
+    no attribute and two more say with ``""``. A leading space is tolerated,
+    because two parameters ship ``" 0.4"``.
+
+    Anything ELSE this build does not recognise RAISES, and the asymmetry with
+    those two cases is deliberate. A named taper nobody has decoded - a future
+    ``EXP_SKEW``, say - would fall back to a straight line and be silently wrong
+    by a factor of 25 at quarter travel: a Low-High Cut's HPF FREQ asked for 217
+    Hz would land near 24 Hz, with no signal of any kind. That is the same shape
+    of failure as the cab that muted itself, and it is why :func:`_as_bound`
+    refuses an unknown bound rather than guessing one. A wrong taper is no more
+    forgivable than a wrong bound.
     """
     if raw is None:
         return LIN_SKEW
     text = raw.strip()
-    if text == "LIN_SKEW":
+    if not text or text == "LIN_SKEW":
         return LIN_SKEW
     if text == "LOG_SKEW":
         return LOG_SKEW
     try:
         value = float(text)
     except ValueError:
-        return LIN_SKEW
-    return value if value > 0.0 else LIN_SKEW
+        raise ValueError(
+            f"the catalog names a taper this build cannot decode: {raw!r}. Find "
+            f"out what curve it means and add it beside LIN_SKEW and LOG_SKEW. "
+            f"Treating it as linear would convert every parameter carrying it "
+            f"silently wrong."
+        ) from None
+    if not 0.0 < value < math.inf:
+        raise ValueError(
+            f"a skew must be a positive finite number; the catalog says {raw!r}. "
+            f"Zero would divide by zero, and infinity would map every wire "
+            f"position to the top of the range."
+        )
+    return value
 
 
 def parse_options(raw: str | None) -> tuple[str, ...]:
@@ -125,13 +146,18 @@ class Parameter:
     steps: int | None = None
     #: The taper, from the XML's ``skew``. ``real = min + (max - min) * wire **
     #: (1 / skew)``. 1.0 is a straight line, which is what an absent attribute
-    #: means; 617 parameters carry something else. See :func:`parse_skew`.
+    #: means; 615 parameters carry something else. See :func:`parse_skew`.
     skew: float = LIN_SKEW
     #: The lowest wire position with a NUMERIC display, where the bottom of the
-    #: range is an OFF detent instead. 0.0 where every position is a number. See
-    #: :data:`~pyquadcortex.protocol.units.FLOOR_WIRE`, which is where the
-    #: measurement lives.
+    #: range is an OFF detent instead. 0.0 where every position is a number, and
+    #: also where nobody has looked - see :attr:`floor_is_measured`.
     floor_wire: float = 0.0
+    #: What the unit SHOWS at :attr:`floor_wire`, or ``None`` if unmeasured.
+    #: Carried rather than derived, because the law does not reproduce it
+    #: exactly: the lane family's fitted value at wire 0.01 is -39.48 while the
+    #: screen says -39.5, and a refusal quoting a number it would itself reject
+    #: is a dead end for whoever reads it.
+    floor_display: float | None = None
     #: This list parameter's option names, in wire order, exactly as the device
     #: spells them - typos included. Empty for a parameter that is not a list.
     #:
@@ -148,9 +174,9 @@ class Parameter:
     #: :func:`~pyquadcortex.protocol.client.param_options`.
     dynamic: bool = False
     #: What the screen shows at the bottom of the range instead of a number,
-    #: from ``min_string``: "OFF" on 191 parameters, and also "-Inf" and "L".
-    #: Says THAT the bottom is a word, not where the numbers resume - see
-    #: :attr:`floor_wire` for that.
+    #: from ``min_string``. Five distinct values across 254 parameters: "OFF"
+    #: 191, "L" 35, "-Inf" 20, "Off" 7, "A" 1. Says THAT the bottom is a word,
+    #: not where the numbers resume - see :attr:`floor_wire` for that.
     min_label: str = ""
     #: The same at the top, from ``max_string``.
     max_label: str = ""
@@ -163,15 +189,31 @@ class Parameter:
 
     @property
     def floor(self) -> float | None:
-        """The lowest value this parameter will actually DISPLAY.
+        """The lowest value this parameter is KNOWN to reach.
 
         Usually :attr:`minimum`, but not where the bottom of the scale is an Off
-        position: a cab LEVEL's law runs to -40 dB and its quietest real setting
+        detent: a cab LEVEL's law runs to -40 dB and its quietest real position
         is -21.8 dB.
+
+        **Check :attr:`floor_is_measured` before trusting this as the knob's own
+        bottom.** 254 parameters carry a :attr:`min_label` - the device saying
+        the bottom of the range shows a word rather than a number - and only
+        three laws have been driven to find where the numbers resume. For the
+        other 187 this returns :attr:`minimum`, the bottom of the SCALE, which
+        may sit below the bottom of the TRAVEL. The library does not refuse
+        there: refusing on a detent nobody has measured would be its own guess.
+        Driving one is what moves it.
         """
         if self.minimum is None or self.maximum is None:
             return None
+        if self.floor_display is not None:
+            return self.floor_display
         return self.to_real(self.floor_wire)
+
+    @property
+    def floor_is_measured(self) -> bool:
+        """Whether somebody has actually driven this knob to its bottom."""
+        return self.floor_display is not None
 
     @property
     def option_count(self) -> int | None:
@@ -250,10 +292,12 @@ class Parameter:
                 f"{self.name!r}'s range and look deliberate."
             )
         self._reject_unmeasured()
+        # Before the degenerate-span shortcut, not after: a zero-width parameter
+        # should refuse a value it does not have like every other one.
+        self._reject_outside_range(real)
         span = self.maximum - self.minimum
         if span == 0:
             return 0.0
-        self._reject_outside_range(real)
         fraction = min(1.0, max(0.0, (real - self.minimum) / span))
         return fraction ** self.skew
 
@@ -269,13 +313,24 @@ class Parameter:
         -40 dB while its quietest real position is -21.8 dB, so -30 dB converts
         to wire 0.0005 and MUTES the microphone.
         """
-        low, high = self.floor, self.maximum
-        if low is None or low <= real <= high:
+        if self.floor is None:
+            return
+        # sorted() so an inverted range - min > max, which nothing in the
+        # shipped catalog has and nothing stops a firmware update introducing -
+        # refuses values OUTSIDE the range rather than refusing every value
+        # including both of its own endpoints.
+        low, high = sorted((self.floor, self.maximum))
+        if low <= real <= high:
             return
         unit = f" {self.units}" if self.units else ""
         hint = f" ({units.OFF_HINT})" if self.floor_wire > 0.0 else ""
         raise ValueError(
-            f"{self.name!r} runs {round(low, 1):g}..{high:g}{unit} on the unit; "
+            # The bound printed is the bound COMPARED. Rounding only the message
+            # produced a dead end: the lane family's fitted floor is -39.48, the
+            # message said -39.5, and -39.5 was then refused - while -39.5 is
+            # precisely the value measured on the unit's screen at that wire
+            # position. `floor` reports the measured display where there is one.
+            f"{self.name!r} runs {low:g}..{high:g}{unit} on the unit; "
             f"{real:g}{unit} does not exist there.{hint}"
         )
 
@@ -292,21 +347,45 @@ class Parameter:
         nobody has measured - see :meth:`_reject_unmeasured`.
         """
         self._reject_unmeasured()
+        if not 0.0 <= normalized <= 1.0:
+            # NaN lands here, and that is the point of the check rather than a
+            # side effect: `min(1.0, max(0.0, nan))` is 0.0, so clamping would
+            # report the bottom of the range as this parameter's value. Four
+            # factory presets - 05B, 07C, 09A and 10B - store NaN in
+            # `param_values`, so reading a shipped preset and asking what a knob
+            # holds would have returned a specific, plausible, wrong number.
+            raise ValueError(
+                f"the wire carries 0..1; {normalized!r} is outside it, so there "
+                f"is no value of {self.name!r} to report. A preset holding NaN "
+                f"reaches here - four factory presets do."
+            )
         span = self.maximum - self.minimum
         if span == 0:
             return self.minimum
-        clamped = min(1.0, max(0.0, normalized))
-        return self.minimum + span * clamped ** (1.0 / self.skew)
+        return self.minimum + span * normalized ** (1.0 / self.skew)
 
     def _reject_unmeasured(self):
-        """Refuse rather than convert against a bound nobody has measured."""
-        if self.minimum is None or self.maximum is None:
-            raise ValueError(
-                f"{self.name!r} has a bound the catalog names but nobody has "
-                f"measured, so there is nothing honest to convert with - see "
-                f"units.UNMEASURED_BOUNDS. Pass the normalized 0..1 the wire "
-                f"carries instead."
-            )
+        """Refuse rather than convert against a bound nobody has measured.
+
+        :class:`~pyquadcortex.protocol.errors.ControlNotDrivable` rather than a
+        bare ``ValueError``: this is exactly the ADR-0007 shape, and CLAUDE.md
+        requires all three fields because a refusal nobody can audit is the
+        guess the rule exists to prevent. It subclasses ``ValueError``, so a
+        caller already catching that is unaffected.
+        """
+        if self.minimum is not None and self.maximum is not None:
+            return
+        from pyquadcortex.protocol.errors import ControlNotDrivable
+        raise ControlNotDrivable(
+            control=f"{self.name!r} in its own units",
+            evidence=(
+                "the catalog NAMES this parameter's bounds instead of giving "
+                "numbers, and nobody has measured what they are - see "
+                "units.UNMEASURED_BOUNDS for which, and units.DO_NOT_PROBE for "
+                "why the one case there is going to stay that way"),
+            workaround=("write the normalized 0..1 the wire carries, which needs "
+                        "no conversion"),
+        )
 
 
 @dataclass(frozen=True)
@@ -439,6 +518,12 @@ def _as_bound(value, fallback, where: str):
     if value is None:
         return fallback
     text = str(value).strip()
+    if not text:
+        # Absent, not unknown. The vendor ships empty attributes elsewhere - 58
+        # parameters carry an empty `defaultValue` and two an empty `skew` - and
+        # raising here would let a single empty `min` unparse the entire catalog
+        # and take every name-addressed operation down with it.
+        return fallback
     try:
         return float(text)
     except ValueError:
@@ -483,6 +568,40 @@ def _extract_xml(payload: bytes) -> bytes:
         return extracted.read()
 
 
+def _parameter(index: int, p, model_name: str) -> Parameter:
+    """Build one :class:`Parameter` from its XML element."""
+    where = f"{model_name!r} {p.get('name')!r}"
+    minimum = _as_bound(p.get("min"), 0.0, where)
+    maximum = _as_bound(p.get("max"), 1.0, where)
+    skew = parse_skew(p.get("skew"))
+    # The floor is keyed by the LAW, not by how the vendor spelled the bound.
+    # Keying it by the symbolic name protected most cabs and not the PCOM ones,
+    # which write `min="-40" max="6"` for the identical control - so asking one
+    # of those for -30 dB returned wire 0.000516 and muted the microphone, which
+    # is the exact bug the floor exists to prevent.
+    floor_wire, floor_display = units.FLOOR_WIRE.get((minimum, maximum, skew),
+                                                     (0.0, None))
+    return Parameter(
+        index=index,
+        name=p.get("name", ""),
+        minimum=minimum,
+        maximum=maximum,
+        default=_as_float(p.get("defaultValue")),
+        units=p.get("units", ""),
+        type=p.get("type", ""),
+        steps=_as_int(p.get("steps")),
+        skew=skew,
+        floor_wire=floor_wire,
+        floor_display=floor_display,
+        options=parse_options(p.get("stepNames")),
+        dynamic=p.get("dynamic") == "true",
+        min_label=p.get("min_string", ""),
+        max_label=p.get("max_string", ""),
+        exp_assignable=p.get("expAssignable") != "false",
+        show_as_integer=p.get("showAsInteger") == "true",
+    )
+
+
 def parse_model_repo(payload: bytes) -> ModelCatalog:
     """Parse a device ModelRepo payload into a :class:`ModelCatalog`."""
     root = ET.fromstring(_extract_xml(payload))
@@ -496,26 +615,7 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
             if model_id is None:
                 continue
             parameters = tuple(
-                Parameter(
-                    index=i,
-                    name=p.get("name", ""),
-                    minimum=_as_bound(p.get("min"), 0.0,
-                                      f"{element.get('name')!r} {p.get('name')!r}"),
-                    maximum=_as_bound(p.get("max"), 1.0,
-                                      f"{element.get('name')!r} {p.get('name')!r}"),
-                    default=_as_float(p.get("defaultValue")),
-                    units=p.get("units", ""),
-                    type=p.get("type", ""),
-                    steps=_as_int(p.get("steps")),
-                    skew=parse_skew(p.get("skew")),
-                    floor_wire=units.FLOOR_WIRE.get(str(p.get("min")).strip(), 0.0),
-                    options=parse_options(p.get("stepNames")),
-                    dynamic=p.get("dynamic") == "true",
-                    min_label=p.get("min_string", ""),
-                    max_label=p.get("max_string", ""),
-                    exp_assignable=p.get("expAssignable") != "false",
-                    show_as_integer=p.get("showAsInteger") == "true",
-                )
+                _parameter(i, p, element.get("name", ""))
                 for i, p in enumerate(element.findall("Parameter"))
             )
             catalog.models[model_id] = Model(

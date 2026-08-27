@@ -387,9 +387,9 @@ def test_option_helpers_reject_a_non_list_parameter_and_a_bad_option(cat):
 
 # --- The taper -------------------------------------------------------------
 #
-# The catalog publishes a `skew` attribute on 1,184 parameters and this library
+# The catalog publishes a `skew` attribute on 1,200 parameters and this library
 # ignored it for several releases, converting every one of them as a straight
-# line. 617 carry a non-linear value, so 617 conversions were wrong.
+# line. 615 of them convert non-linearly, so 615 conversions were wrong.
 
 
 @pytest.mark.parametrize("raw, expected", [
@@ -402,12 +402,25 @@ def test_option_helpers_reject_a_non_list_parameter_and_a_bad_option(cat):
     ("4.9594844", 4.9594844),
     (" 0.4", 0.4),      # the shipped catalog carries a leading space, twice
     ("", 1.0),          # and nothing at all, twice
-    ("nonsense", 1.0),
-    ("0", 1.0),         # a zero skew would divide by zero downstream
-    ("-2", 1.0),
 ])
 def test_parse_skew_cleans_what_the_device_actually_ships(raw, expected):
     assert catalog.parse_skew(raw) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("raw", ["nonsense", "EXP_SKEW", "0", "-2", "1e400"])
+def test_parse_skew_refuses_a_taper_it_cannot_decode(raw):
+    """It used to fall back to linear, and that was the wrong call.
+
+    A named taper nobody has decoded would convert silently wrong by a factor
+    of 25 at quarter travel - a Low-High Cut's HPF FREQ asked for 217 Hz would
+    land near 24 Hz. `_as_bound` already refuses an unknown BOUND for exactly
+    that reason; a wrong taper is no more forgivable than a wrong bound.
+
+    An absent or empty attribute still means linear, because 2,609 parameters
+    say so by carrying nothing and two more carry "".
+    """
+    with pytest.raises(ValueError):
+        catalog.parse_skew(raw)
 
 
 def test_log_skew_is_not_a_log_sweep():
@@ -472,7 +485,7 @@ def test_the_parser_reads_skew_off_the_xml():
 
 # -- the attributes we used to discard -----------------------------------------
 #
-# The parser read 8 of the 25 attributes the device puts on a <Parameter>. These
+# The parser read 8 of the 24 attributes the device puts on a <Parameter>. These
 # are the rest of the ones we can name a use for; the others are recorded in
 # docs/domain-model.md's appendix rather than guessed at.
 

@@ -2,12 +2,23 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Teach `catalog.py` to read the attributes the device actually publishes, so parameter conversion stops being wrong for 617 parameters and the invented "placeholder range" concept can be deleted.
+**Goal:** Teach `catalog.py` to read the attributes the device actually publishes, so parameter conversion stops being wrong for 615 parameters and the invented "placeholder range" concept can be deleted.
 
-**Architecture:** `Parameter` grows the fields the XML already carries (`skew`, `options`, `dynamic`, `min_label`, `exp_assignable`). A resolver turns the 8 symbolic `min`/`max` constants into numbers held in `units.FIRMWARE_CONSTANTS`. `to_normalized`/`to_real` apply one power law. `units.MEASURED_SPANS` collapses from 42 hand-measured entries to 16 firmware numbers, and the measurements become a regression table in the tests. A generated `options.py` publishes the option names the catalog was always carrying.
+**Architecture:** `Parameter` grows the fields the XML already carries (`skew`, `options`, `dynamic`, `min_label`, `exp_assignable`). A resolver turns the 8 symbolic `min`/`max` constants into numbers held in `units.FIRMWARE_CONSTANTS`. `to_normalized`/`to_real` apply one power law. `units.MEASURED_SPANS` collapses from 44 hand-measured entries to 14 firmware numbers, and the measurements become a regression table in the tests. A generated `options.py` publishes the option names the catalog was always carrying.
 
 **Tech Stack:** Python 3.11, protobuf, pytest. Run tests with the main checkout's venv:
 `PYTHONPATH=$PWD /Users/jonathanstokes/dev/work/personal/pyquadcortex/.venv/bin/python -m pytest`
+
+> **Implementation note, added after the work landed.** This document records
+> what was AGREED, and three things changed while building it. `units.Span` was
+> deleted rather than kept, because once `Parameter` carried the taper there was
+> nothing left for it to hold; `Parameter.span` was never added and the cab path
+> is `_layout_spec`, returning a `Parameter`. `lane_level_db`, `tempo_bpm` and
+> their inverses were KEPT, not deleted - `device/translate/` delegates to them
+> and has no catalog to reach. And the floor turned out to need keying by the
+> resolved law rather than by the catalog's constant name; see the review
+> findings in the PR.
+
 
 ## Global Constraints
 
@@ -648,9 +659,9 @@ git commit -m "feat: the catalog names 14 parameters that decline a pedal"
 - [ ] **Step 1: ADR-0015**
 
 The catalog is the source of truth for scales. Measurements are evidence, and
-evidence lives in tests. Record what the old approach cost: 42 hand-measured
-entries covering 23 models, several days of screen readings, and a wrong linear
-conversion on 617 parameters that nobody had noticed.
+evidence lives in tests. Record what the old approach cost: 44 hand-measured
+entries covering 19 models, several days of screen readings, and a wrong linear
+conversion on 615 parameters that nobody had noticed.
 
 - [ ] **Step 2: `docs/protocol.md`**
 
@@ -661,7 +672,7 @@ confirmation table in its place.
 - [ ] **Step 3: `docs/migration.md`**
 
 A new version-pair section. Lead with the silent one: `to_normalized` and
-`to_real` return different numbers for 617 parameters - same name, same
+`to_real` return different numbers for 615 parameters - same name, same
 signature, better answer. Then the removed names and their replacements.
 
 - [ ] **Step 4: `docs/domain-model.md` appendix**

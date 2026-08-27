@@ -1821,7 +1821,7 @@ def test_the_refusal_is_a_measured_list_and_not_a_rule_about_switches():
     assert prm.expression == 1, "set_expression must not care about parameter type"
 
 
-# -- the lane VOLUME is the one placeholder whose true span is measured --------
+# -- the lane VOLUME speaks dB, over the span the catalog names ---------------
 
 
 def test_set_lane_output_real_converts_volume_through_the_measured_db_scale():
@@ -3082,7 +3082,8 @@ def test_set_tempo_option_range_checks_against_the_catalogs_step_count():
 
 
 # -- the TEMPO span ------------------------------------------------------------
-# The catalog publishes TEMPO as 0..1 with a real-world unit - a placeholder - so
+# The catalog names TEMPO's bounds MIN_TEMPO / MAX_TEMPO rather than giving
+# numbers, and units.FIRMWARE_CONSTANTS supplies 40..240 - so
 # the span was measured instead: three screen readings taken against simultaneous
 # wire reads on 2026-08-12, each landing on the displayed integer exactly.
 
@@ -3681,3 +3682,158 @@ def test_a_bool_on_a_longer_list_is_refused_rather_than_picking_the_last():
     qc = _option_client()
     with pytest.raises(TypeError, match="offers 9 options"):
         qc.set_param(Block(0, 2, 4003), "HPF SLOPE", True)
+
+
+def test_a_bool_on_a_continuous_knob_is_refused():
+    """`set_param(block, "GAIN", True)` meaning "enable" is a plausible slip,
+    and it would have written the top of a -60..+12 dB range."""
+    qc = _option_client()
+    with pytest.raises(TypeError, match="not a list at all"):
+        qc.set_param(Block(0, 1, 5005), "THRESHOLD", True)
+
+
+def test_a_bool_the_catalog_cannot_describe_is_refused_not_guessed():
+    """An indexed write fetches no catalog, so there is nothing to check with.
+
+    A bool we cannot check is refused rather than written as 1.0, which is what
+    it used to do.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="no way to check"):
+        qc.set_param(Block(0, 1), 3, True)
+
+
+def test_a_bool_on_a_named_tempo_parameter_is_refused_too():
+    """Tempo maps its screen names straight to indexes, so the spec was never
+    in hand and the guard did not fire. `TIME SIGNATURE` has 21 options."""
+    qc = _lane_client()
+    with pytest.raises(TypeError, match="offers 21 options"):
+        qc.set_param(Tempo(), "TIME SIGNATURE", True)
+
+
+def test_an_enum_from_a_different_list_is_refused():
+    """An IntEnum member IS an int, so a member of the wrong list would convert.
+
+    `DynMode3.GATE` and `SplitterType.CROSSOVER` are both 2, and both used to be
+    accepted wherever an option index was wanted.
+    """
+    from pyquadcortex.protocol import options
+
+    qc = _option_client()
+    with pytest.raises(TypeError, match="belongs to a different list"):
+        qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", options.DynMode3.GATE)
+
+
+def test_a_bool_cannot_name_an_option():
+    """`set_param` refuses True on a 3-option list; this refused nothing and
+    picked index 1."""
+    qc = _option_client()
+    with pytest.raises(TypeError, match="cannot name an option"):
+        qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", True)
+
+
+def test_a_dynamic_lists_catalog_snapshot_is_not_used():
+    """The catalog's copy is the wrong LENGTH, so it picks the right name at the
+    wrong position.
+
+    A Doubler's TRIGGER publishes 45 stepNames while the real list is 19 to 25
+    depending on the preset. Option 1 of 45 is wire 0.0227, which against a real
+    19-entry list reads back as option 0 - silently the wrong choice.
+    """
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    names = ",".join(f"o{i}" for i in range(45))
+    xml = SAMPLE_XML.replace("</Models>", f'''
+<Category id="18" name="Pitch">
+  <Model blob="dbl" id="18000" name="Doubler">
+    <Parameter defaultValue="0" max="44" min="0" name="TRIGGER" steps="45"
+     type="comboBox" dynamic="true" stepNames="{names}"/>
+  </Model>
+</Category>
+''' + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    with pytest.raises(ValueError, match="builds its options from the PRESET"):
+        qc.set_param_option(Block(0, 1, 18000), "TRIGGER", "o1")
+
+
+def test_the_recorder_cannot_be_placed_on_the_grid():
+    """Placing it crashed the unit and needed a reboot, 2026-08-26.
+
+    That was recorded in units.DO_NOT_PROBE and nothing read it, so set_block
+    would happily do it again. A note nothing enforces is not a guard.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError, match="must not be placed on the grid"):
+        qc.set_block(Block(1, 1, 20000))
+    assert not qc._t.sent, "nothing should reach the wire"
+
+
+# -- real units through the public entry point ---------------------------------
+# Every real-unit test above uses a plain linear parameter with a value inside
+# range. The taper, the floor and the refusals were covered only on `Parameter`
+# and on `target.normalize`, one and two layers below where a caller sits.
+
+
+def test_set_param_real_applies_the_taper():
+    """A cab LEVEL, through `qc.set_param`, not through the converter."""
+    qc = _scale_client()
+    qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", real=0.0)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.5, abs=1e-4)
+
+
+def test_set_param_real_refuses_below_the_floor():
+    """The blocking bug, reached the way a caller reaches it.
+
+    Without the floor this converts to wire 0.0005 and mutes the microphone.
+    """
+    qc = _scale_client()
+    with pytest.raises(ValueError, match="does not exist there"):
+        qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", real=-30.0)
+
+
+def test_set_param_real_refuses_a_value_off_the_top():
+    qc = _scale_client()
+    with pytest.raises(ValueError, match="does not exist there"):
+        qc.set_param(LaneOutput(0), "VOLUME", real=13.0)
+
+
+def test_set_param_real_refuses_a_bool():
+    qc = _scale_client()
+    with pytest.raises(TypeError, match="bool IS an int"):
+        qc.set_param(LaneOutput(0), "VOLUME", real=True)
+
+
+def test_set_param_real_refuses_the_one_unmeasurable_parameter():
+    """ControlNotDrivable, with the evidence, not a bare ValueError."""
+    from pyquadcortex.protocol.errors import ControlNotDrivable
+
+    qc = _lane_client()
+    with pytest.raises(ControlNotDrivable) as excinfo:
+        qc.set_param(Block(0, 1, 20000), "OUT LEVEL", real=-3.0)
+    assert "nobody has measured" in excinfo.value.evidence
+    assert "normalized 0..1" in excinfo.value.workaround
+
+
+def _scale_client():
+    """A client whose catalog carries a cab and a lane output, with real bounds."""
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model blob="cab" id="12000" name="Default Cabsim" internal="true">
+    <Parameter defaultValue="0" max="1" min="0" name="bypass" type="switch"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir" type="string"/>
+    <Parameter defaultValue="0.5" max="MAX_CABSIM_DB" min="MIN_CABSIM_DB" name="MIC 1 LEVEL" type="float" units="dB" skew="4.9594844" min_string="OFF"/>
+  </Model>
+</Category>
+<Category id="23" name="Lane Output">
+  <Model blob="loc" id="23000" name="LaneOutputControl" internal="true">
+    <Parameter defaultValue="0.769" max="MAX_MIXER_DB" min="MIN_MIXER_DB" name="VOLUME" type="float" units="dB" min_string="OFF"/>
+  </Model>
+</Category>
+""" + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    return qc

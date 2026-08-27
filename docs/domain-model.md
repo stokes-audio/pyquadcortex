@@ -1395,30 +1395,50 @@ the n/a rows below where they intersect the API at all.
 
 ## Catalog attributes we can see and cannot yet explain
 
-The device puts 25 attributes on each `<Parameter>`. Ten are parsed; these are the
-rest, recorded so the next person does not have to rediscover that they exist. None
-is guessed at, per the rule that a control we do not understand is omitted with the
-reason written down.
+The device puts **24** distinct attributes on its `<Parameter>` elements. Fourteen
+are parsed. These are the other ten, recorded so the next person does not have to
+rediscover that they exist. None is guessed at, per the rule that a control we do
+not understand is omitted with the reason written down.
 
-- **`toggleOn`, `toggleOff`, `toggleStep`** - 212 parameters. `toggleOn` carries a
-  number (`4`, `5`, `6`) on `float` parameters like a tremolo's `LEVEL`, and
-  `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`, `"2,3"`). The obvious
-  reading is the two values a footswitch toggle alternates between, which is why it
-  is not written anywhere as fact: it is obvious and untested. Driving one and
-  watching the screen would settle it.
-- **`displayPos`** - the order the unit lays knobs out on screen, which is not wire
-  order. Nothing in the library needs it yet; a UI would.
-- **`isplayPos`** - the same attribute with the `d` missing, on a small number of
-  parameters. The device's own typo. Preserved here rather than corrected, because
-  a parser that silently accepted both would hide that the catalog has a defect.
-- **`align`** - a layout hint, presumably paired with `displayPos`.
-- **`selfTestValue`** - a value the unit uses during its self test. Sometimes an IR
-  name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`).
-- **`tooltip`** - the help text the unit shows. Real prose, occasionally load-bearing:
-  a Vibrato's `MODE` warns that changing it causes a brief mute.
-- **`blob`** on a `<Model>` - a same-length string of letters that CHANGES BETWEEN
-  FETCHES. Two dumps of one unit taken minutes apart differed on 338 models and on
-  nothing else. A per-fetch token of some kind; not content.
+The counts are from the shipped catalog, 3,809 parameters.
+
+| attribute | on | what it looks like, and what is unknown |
+|---|---|---|
+| `displayPos` | 1446 | The order the unit lays knobs out on screen, which is not wire order. Nothing here needs it; a UI would. |
+| `hidden` | 650 | Present on a parameter, distinct from the `hidden` we already read on a `<Model>`. Whether it means "not shown on screen" or "not writable" is untested, and the two have very different consequences for a host. |
+| `replaces` | 462 | Also distinct from the `<Model>` attribute of the same name, which we do parse. On a parameter it presumably names a superseded index, which would matter for reading an old preset - untested. |
+| `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, **212 parameters between them** | `toggleOn` carries a number (`4`, `5`, `6`) on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`). The obvious reading is the two values a footswitch toggle alternates between - obvious, and untested. Driving one and watching the screen would settle it. |
+| `tooltip` | 126 | The help text the unit shows. Real prose, occasionally load-bearing: a Vibrato's `MODE` warns that changing it causes a brief mute. Note the values contain HTML (`<div align="left">`), which is where an `align` "attribute" appears - it is markup inside the tooltip, not an attribute of the parameter. |
+| `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`). |
+| `mid_string` | 36 | The sibling of `min_string` and `max_string`, which we do read. Presumably a label at some middle position, but WHICH position is not stated anywhere, so it cannot be used. |
+| `isplayPos` | 1 | `displayPos` with the `d` missing. The device's own typo. Recorded rather than silently accepted as an alias, because a parser that took both would hide that the catalog has a defect. |
+
+On `<Model>`, `blob` is also unexplained: a same-length string of letters that
+**changes between fetches**. Two dumps of one unit taken minutes apart differed
+on 338 models and on nothing else. A per-fetch token of some kind, not content.
+
+### `stepNames` is the device's internal vocabulary, not always the screen's
+
+Usually the two agree, and 110 of the 113 fixed option lists are published as
+enums on that basis. One does not, and it is worth knowing before trusting the
+rest.
+
+The metronome's per-beat cells (`STEPSTATE0` to `STEPSTATE12`) carry
+`stepNames="OFF,MUTE,DOWN,ON"`. `enums.MetronomeBeat` calls the same four
+positions `NORMAL, OFF, ACCENT, QUIET`, and that was traced on hardware: touching
+a cell walks the wire value up by 1/3 and wraps, four touches return it to where
+it started, and `ACCENT` is corroborated by a factory 4/4 carrying it on beat 1
+and nothing else.
+
+They disagree at **every** position. The hardware trace wins, because a factory
+4/4 has beats 2 to 4 at index 0, and a metronome whose default is three silent
+beats is not a metronome. So the catalog's words for this control are recorded
+here and deliberately not published - see `NOT_THE_SCREENS_WORDS` in
+`scripts/generate_options.py`.
+
+What that costs elsewhere is unknown: nothing has audited the other 112 lists
+against the screen, and most are ordinary words that plainly match. This one was
+caught only because a hand-written enum already existed to disagree with it.
 
 ### `expAssignable` says something, and not what it looks like
 

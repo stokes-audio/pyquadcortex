@@ -2,9 +2,20 @@
 
 Agreed 2026-08-26. Supersedes the approach in PR #32.
 
+> **Implementation note, added after the work landed.** This document records
+> what was AGREED, and three things changed while building it. `units.Span` was
+> deleted rather than kept, because once `Parameter` carried the taper there was
+> nothing left for it to hold; `Parameter.span` was never added and the cab path
+> is `_layout_spec`, returning a `Parameter`. `lane_level_db`, `tempo_bpm` and
+> their inverses were KEPT, not deleted - `device/translate/` delegates to them
+> and has no catalog to reach. And the floor turned out to need keying by the
+> resolved law rather than by the catalog's constant name; see the review
+> findings in the PR.
+
+
 ## What we found
 
-`catalog.py` reads 8 attributes per `<Parameter>`. The device publishes 25. Four
+`catalog.py` reads 7 attributes per `<Parameter>`. The device publishes 24. Four
 of the discarded ones carry facts this project spent days measuring by hand.
 
 ### `skew` - the taper
@@ -40,7 +51,7 @@ The two `LOG_SKEW` readings solve independently to exponent 3.3366 and 3.3330,
 both `1/0.3`. A true log sweep would have read 316 Hz and 5.62; linear, 2575 and
 7.75.
 
-`Parameter.to_normalized` and `to_real` are straight lines today, so **617
+`Parameter.to_normalized` and `to_real` are straight lines today, so **615
 parameters convert wrongly** through `real=`.
 
 ### Symbolic `min` and `max` - the placeholder concept never existed
@@ -77,7 +88,7 @@ Never tested. See "Refusals" below.
 
 `min_string` / `max_string` / `mid_string` (191 parameters read `OFF` at the
 bottom), `dynamic`, `showAsInteger`, `tooltip`, `toggleOn` / `toggleOff` /
-`toggleStep` (212), `displayPos`, `align`, `selfTestValue`, and the device's own
+`toggleStep` (212), `displayPos`, `selfTestValue`, and the device's own
 typo `isplayPos`.
 
 ## The catalog dump is trustworthy
@@ -117,8 +128,8 @@ Attributes seen but not understood go in `docs/domain-model.md`'s appendix.
 ### `units.py`
 
 `Span` survives as the value type but is built from the catalog.
-`MEASURED_SPANS` (42 entries keyed by `(model_id, index)`) becomes
-`FIRMWARE_CONSTANTS` (16 numbers keyed by the device's own constant names),
+`MEASURED_SPANS` (44 entries keyed by `(model_id, index)`) becomes
+`FIRMWARE_CONSTANTS` (14 numbers keyed by the device's own constant names),
 each carrying its evidence.
 
 Deleted: `lane_level_db`, `db_to_lane_level`, `tempo_bpm`, `bpm_to_tempo`,
@@ -163,7 +174,7 @@ down if it does not.
 
 ## Breaks
 
-`to_normalized` returns different numbers for 617 parameters - same name, same
+`to_normalized` returns different numbers for 615 parameters - same name, same
 signature. This goes in `migration.md` under its own heading, because a silent
 behaviour change is the hardest kind to notice.
 

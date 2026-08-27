@@ -17,13 +17,13 @@ while that is true, and this file is the cost of doing it.
 
 ## 0.40.0 to the next release
 
-### `to_real` and `to_normalized` return DIFFERENT NUMBERS for 617 parameters
+### `to_real` and `to_normalized` return DIFFERENT NUMBERS for 615 parameters
 
 Read this one first, because nothing about it is visible at a call site: the
 names, the arguments and the types are unchanged, and the answers are better.
 
 The device publishes a `skew` attribute describing each knob's taper. This
-library did not read it, so every conversion was a straight line. 617 parameters
+library did not read it, so every conversion was a straight line. 615 parameters
 are not straight lines. If you have calibrated anything against the old output -
 a stored mapping, a fixture, a value you tuned by ear until it sounded right -
 recheck it.
@@ -91,8 +91,10 @@ The option names are in the catalog. They always were.
 p = qc.read_preset(Setlist.USER, "30A")
 qc.set_param_option(Block(0, 1), "DYN MODE", "Gate", source=p)
 
-# after - and the choices have names
-qc.set_param_option(Block(0, 1), "DYN MODE", options.DynMode3.GATE)
+# after - and the choices have names. The block must know its model, which is
+# what blocks() gives you; a hand-built Block(row, col) does not.
+block = protocol.blocks(p)[0]
+qc.set_param_option(block, "DYN MODE", options.DynMode3.GATE)
 ```
 
 `source=` is still required for a DYNAMIC list, whose entries include one per

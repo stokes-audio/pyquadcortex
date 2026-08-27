@@ -16,10 +16,52 @@ import pytest
 from pyquadcortex.protocol import options
 
 
+#: Every enum name this module publishes. Pinned, because these are PUBLIC API
+#: and two of the generator's naming rules are not stable against the device:
+#: a colliding concept qualified by option count renames itself when firmware
+#: adds an entry to the list (DynMode3 -> DynMode4), and one qualified by model
+#: name flips to the count form when a fourth model starts using the list.
+#:
+#: So a rename is allowed - it just has to show up as a diff here rather than
+#: silently breaking someone's import.
+PUBLISHED_NAMES = [
+    'Adjust', 'AnalogDelayMSyncNote', 'ArpPattern', 'BitDepth', 'Boost',
+    'Bright', 'Center', 'ChannelNormal', 'ChiefCe2wMType', 'ChiefDc2wMMode',
+    'ChiefDc2wMType', 'Color', 'CoryWongDIFunkConsoleAttack',
+    'CoryWongDelayYYMode', 'Crunch', 'Curve', 'DCellHisbertCh2Mode',
+    'Decay', 'DigitalFlangerPolarity', 'DivSource', 'Divider',
+    'DreamChorusMMode', 'DriveType', 'DualChorusMode', 'DumbbellOdsChannel',
+    'DumbbellOdsEq', 'DuplicateMode', 'DynMode2', 'DynMode3', 'Eq3',
+    'FeedbackMode', 'Filter', 'FilterCutoff', 'FilterType',
+    'FlangerEngineWaveform', 'Focus', 'Frequency', 'GainPolarity',
+    'GojiraWowMode', 'HighsFreq', 'HpfSlope', 'Input', 'Instrument',
+    'Invert', 'Legendary87MRatio', 'LowsFreq', 'Mid', 'MidsFreq',
+    'MinivoicerMidiCh', 'MinivoicerMode', 'MinivoicerRoot', 'MixLaw',
+    'ModSource', 'MonoSynthMidiCh', 'MonoSynthRoot', 'MulSource',
+    'Multiplier', 'MxPhase95Mode', 'MxPhase95Type', 'NollyCompressorAttack',
+    'Notelength', 'Octave', 'OnOff', 'Osc1Wave', 'OutMode', 'Peak',
+    'Pickup', 'PliniChorusMode', 'PliniDriveMode', 'PreRoll', 'PunchMode',
+    'Quality', 'Quantize', 'Ratio3', 'RecLength', 'RedDriveMode',
+    'Resonance', 'Routing', 'RoutingMode', 'Scale', 'Size',
+    'SlapbackDelayMSyncNote', 'Slope', 'SoldanoSlo100Channel', 'Sound',
+    'Speed', 'SplitterMode', 'SplitterType', 'Start', 'Stereo',
+    'StereoLink', 'SyncNote11', 'SyncNote14', 'SyncNote17', 'SyncNote21',
+    'SyncOn', 'TankType', 'TapPreset', 'TempocontrolType', 'TimeSignature',
+    'TremoloWaveform', 'TrigDirection', 'TriggerMode', 'Tube',
+    'UnisonSource', 'UsDlx64VintageMode', 'V1Inter', 'VibNote',
+    'VintageChorusMode', 'VoiceMode',
+]
+
+
 def test_the_module_covers_the_lists_the_generator_found():
-    assert len(options.OPTION_LABELS) == 111
+    assert len(options.OPTION_LABELS) == 110
     assert set(options.__all__) == {e.__name__ for e in options.OPTION_LABELS} | {
         "OPTION_LABELS"}
+
+
+def test_the_published_names_have_not_changed():
+    """These are public API. A regeneration that renames one must say so."""
+    assert sorted(e.__name__ for e in options.OPTION_LABELS) == PUBLISHED_NAMES
 
 
 @pytest.mark.parametrize("enum_type", list(options.OPTION_LABELS))
@@ -36,7 +78,7 @@ def test_every_member_sits_at_its_wire_position(enum_type):
 def test_no_enum_is_a_disguised_boolean(enum_type):
     """`Off,On` parameters take True and False, so no enum is emitted for them.
 
-    247 of the 527 fixed lists are exactly that pair, and `OffOn.ON` says
+    247 of the 527 fixed-list PARAMETERS are exactly that pair, and `OffOn.ON` says
     nothing `True` does not.
     """
     labels = tuple(label.lower() for label in options.OPTION_LABELS[enum_type])
@@ -92,3 +134,25 @@ def test_the_labels_are_stripped_but_otherwise_verbatim(enum_type):
     touched, because a dynamic list is matched by string."""
     for label in options.OPTION_LABELS[enum_type]:
         assert label == label.strip()
+
+
+def test_the_metronome_beats_get_no_enum_here():
+    """`stepNames` is the device's internal vocabulary, not always the screen's.
+
+    The catalog calls the per-beat cells `OFF,MUTE,DOWN,ON`. `enums.MetronomeBeat`
+    - traced on hardware by touching a cell and listening, with ACCENT
+    corroborated by a factory 4/4 carrying it on beat 1 and nothing else - calls
+    them `NORMAL,OFF,ACCENT,QUIET`. They disagree at every position.
+
+    The hardware trace wins: a 4/4 default puts beats 2 to 4 at index 0, and a
+    metronome whose default is three silent beats is not a metronome. So the
+    catalog's words are recorded and not published, because two disagreeing
+    enums on one control is worse than one that is right.
+
+    This test exists so nobody "fixes" MetronomeBeat to match the catalog.
+    """
+    from pyquadcortex.protocol import enums
+
+    assert [m.name for m in enums.MetronomeBeat] == ["NORMAL", "OFF", "ACCENT", "QUIET"]
+    assert not [e for e in options.OPTION_LABELS
+                if options.OPTION_LABELS[e] == ("OFF", "MUTE", "DOWN", "ON")]
