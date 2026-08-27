@@ -15,8 +15,20 @@ class BlockRefused(RuntimeError):
     """The device did not accept a block placement.
 
     Raised by :meth:`~pyquadcortex.protocol.client.QuadCortex.set_block` when no echo
-    confirms the cell. The known cause is the preset having no DSP capacity left
-    for that model.
+    confirms the cell AND reading the preset back shows the cell does not hold
+    the model. Both halves matter: a missing echo alone is not a refusal, and
+    treating it as one produced FALSE NEGATIVES twice in one session on blocks
+    that had landed.
+
+    TWO causes are known, and for a long time this said one.
+
+    * The preset has no DSP capacity left for that model.
+    * A PORT CONFLICT. Placing an FX Loop beside a Send that competes for the
+      same physical send is refused, and the unit puts a modal on its own screen
+      that the host never sees - so from here it looks identical to running out
+      of capacity, and it stays refused until somebody dismisses it ON THE UNIT.
+      Observed 2026-08-26: "Port Conflict / Send is used as an output by FX Loop
+      Send 1 on path 2, please change it first", stacked four deep.
     """
 
 

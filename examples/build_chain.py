@@ -82,9 +82,9 @@ def main():
         #    every one is a knob you can see.
         qc.set_param(Block(row, 0, amp), param="MASTER", real=5.0)
 
-        # 3. The row's own level, then one scene that silences it. Lane VOLUME is
-        #    one of the parameters whose catalog range is a placeholder, so it takes
-        #    the wire's 0..1 - UNITY_LEVEL is the value meaning "no attenuation".
+        # 3. The row's own level, then one scene that silences it. UNITY_LEVEL is
+        #    the wire value meaning "no attenuation"; `real=0.0` would say the same
+        #    in dB, and wire 0.0 is the Off detent below the bottom of that scale.
         #    Naming a scene leaves the unit sitting on it.
         qc.set_param(LaneOutput(row), param="VOLUME", value=UNITY_LEVEL)
         qc.set_param(LaneOutput(row), param="VOLUME", value=0.0,
