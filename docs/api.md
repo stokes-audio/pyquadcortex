@@ -112,6 +112,65 @@ Things worth knowing before you script against this:
 - **Don't count a row's blocks with `len()`.** Every row reports all 8 column
   slots whether or not they hold anything. Use `protocol.blocks(preset)`.
 
+## Setting a parameter: the two number lines
+
+**Every knob on the unit has two number lines**, and this is the one thing to
+understand before setting anything.
+
+The screen shows one of them. A lane volume runs -40 dB to +12 dB, a drive's
+`GAIN` runs 0 to 10, a filter's cutoff runs 20 Hz to 20000 Hz. Each knob has its
+own, and they are all different.
+
+The device stores the other. Every parameter, without exception, is kept as a
+number from 0.0 to 1.0 - the same line for all 3,809 of them.
+
+You say which line your number is on:
+
+```python
+from pyquadcortex.protocol import Db, Encoded, Real
+
+qc.set_param(LaneOutput(0), "VOLUME", Real(0.0))      # zero on the SCREEN's line
+qc.set_param(LaneOutput(0), "VOLUME", Encoded(0.0))   # zero on the DEVICE's line
+```
+
+Those two are **opposite ends of the same knob**. Zero on the screen's line is
+0 dB - unity, full signal, nothing taken away. Zero on the device's line is the
+bottom of the travel, which is silence.
+
+Same number, opposite results. That is why you have to say which, and why a bare
+`0.0` is refused rather than guessed at.
+
+### Naming the unit gets it checked
+
+`Db(-3.1)` means the same as `Real(-3.1)` and adds a claim: this parameter had
+better be in dB. Hand it to one the catalog calls Hz and you get a `TypeError`
+rather than a silently wrong write.
+
+```python
+qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))          # fine
+qc.set_param(block, "HPF FREQ", Db(-3.1))                # TypeError: it is in Hz
+qc.set_param(block, "HPF FREQ", Hertz(217))              # fine
+```
+
+The types are `Db`, `Percent`, `Hertz`, `Milliseconds`, `Seconds`, `Semitones`,
+`Cents` and `Bpm`. Use plain `Real` when you do not want the check, or when the
+parameter has no unit at all - 2,315 of them do not, like that drive's `GAIN`:
+
+```python
+qc.set_param(block, "GAIN", Real(5.0))    # 5 of 0..10, no unit involved
+```
+
+### When you need `Encoded`
+
+Rarely. The wire carries more parameters than the catalog describes, so an index
+the catalog does not know can only be written on the device's line:
+
+```python
+qc.set_param(block, 21, Encoded(0.5))     # the catalog omits index 21
+```
+
+Everywhere else a unit type or `Real` says more, and reads better.
+
 ## Blocks and the model catalog
 
 A grid cell holds a block. `set_block()` fills an empty cell or replaces an
