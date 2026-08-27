@@ -35,6 +35,7 @@ from typing import NamedTuple
 
 from pyquadcortex.protocol import catalog, enums, registry, targets
 from pyquadcortex.protocol import options as options_module
+from pyquadcortex.protocol import values
 from pyquadcortex.protocol import units as units_module
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
@@ -588,19 +589,19 @@ class QuadCortex:
         """The catalog, fetched lazily - see `ParamTarget.model`."""
         return self.catalog
 
-    def set_param(self, target, param, value: float = None, real=None,
-                  text: str = None, scene=None, promote: bool = True):
+    def set_param(self, target, param, value=None, *, scene=None,
+                  promote: bool = True):
         """Set one parameter, wherever on the unit it lives.
 
         ``target`` says WHERE, and is one of the addresses in
         :mod:`pyquadcortex.protocol.targets`::
 
-            qc.set_param(Block(0, 2, model=5011), "GAIN", real=-6.0)
-            qc.set_param(LaneOutput(0), "VOLUME", real=-3.1)
-            qc.set_param(LaneInput(0), "INPUT GAIN", real=12.0)
-            qc.set_param(Mixer(0), "LEVEL A", value=UNITY_LEVEL)
-            qc.set_param(Splitter(0), "LEVEL TO B", value=0.25)
-            qc.set_param(Tempo(), "TEMPO", real=120)
+            qc.set_param(Block(0, 2, model=5011), "GAIN", Real(-6.0))
+            qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))
+            qc.set_param(LaneInput(0), "INPUT GAIN", Db(12.0))
+            qc.set_param(Mixer(0), "LEVEL A", Db(0.0))
+            qc.set_param(Splitter(0), "LEVEL TO B", Db(-27.0))
+            qc.set_param(Tempo(), "TEMPO", Bpm(120))
 
         :func:`blocks` hands back :class:`~pyquadcortex.protocol.targets.Block` values
         with ``model_id`` already filled in, so reading a preset gives you
@@ -635,7 +636,7 @@ class QuadCortex:
 
         **Per-scene values.** Name a ``scene`` to change that scene alone::
 
-            qc.set_param(Block(2, 5), 0, value=0.8, scene=Scene.D)
+            qc.set_param(Block(2, 5), 0, Encoded(0.8), scene=Scene.D)
 
         Three things had to line up for this, all confirmed on hardware:
 
@@ -654,16 +655,12 @@ class QuadCortex:
         parameter that is not scene-following is its single global value and so
         appears in all eight.
         """
-        if text is not None and real is not None:
-            raise TypeError("pass text= or real=, not both")
         index, spec = target.index_of(param, self._get_catalog)
-        if real is not None:
-            value = target.normalize(index, real, self._get_catalog, spec)
-        if value is None and text is None:
+
+        if value is None:
             raise TypeError(
-                "set_param needs value= (the normalized 0..1 the wire carries), "
-                "real= (the parameter's own units) or text= (a string-valued "
-                "parameter)"
+                "set_param needs a value that says which scale it is on. See "
+                "docs/api.md, 'the two number lines'."
             )
         if isinstance(value, bool):
             # A bool is the natural way to write a two-option switch, and 247
@@ -685,8 +682,9 @@ class QuadCortex:
                 raise TypeError(
                     f"True and False can only write a two-option switch, and "
                     f"this parameter is not one the catalog describes - so there "
-                    f"is no way to check. Pass 0.0 or 1.0 if you meant the wire "
-                    f"value, or connect so the catalog can be read."
+                    f"is no way to check. Pass Encoded(0.0) or Encoded(1.0) if "
+                    f"you meant the device's own scale, or connect so the "
+                    f"catalog can be read."
                 )
             if spec.option_count != 2:
                 offers = (f"offers {spec.option_count} options"
@@ -699,6 +697,30 @@ class QuadCortex:
                     f"set_param_option, or pass the number you want."
                 )
             value = 1.0 if value else 0.0
+        elif isinstance(value, str):
+            pass                      # a string is itself; written below
+        elif isinstance(value, values.Encoded):
+            # The device's own scale, so there is nothing to convert and no
+            # catalog to fetch. This is what keeps an index-addressed write free
+            # of a round trip.
+            value = float(value)
+        elif isinstance(value, values.Real):
+            if spec is None:
+                spec = target.spec_at(index, self._get_catalog)
+            if spec is not None:
+                value.check_unit(spec)
+            value = target.normalize(index, float(value), self._get_catalog, spec)
+        else:
+            raise TypeError(
+                f"set_param needs a value that says which scale it is on; you "
+                f"passed {value!r}. Every knob has two number lines - the "
+                f"screen's and the device's - and a bare number cannot say "
+                f"which one you mean.\n"
+                f"  Real({value!r})     the screen's line, this knob's own units\n"
+                f"  Db({value!r})       the same, and checked against the catalog\n"
+                f"  Encoded({value!r})  the device's line, 0.0 to 1.0\n"
+                f"See docs/api.md, 'the two number lines'."
+            )
         if scene is not None:
             if not target.supports_scenes:
                 raise TypeError(
@@ -711,8 +733,8 @@ class QuadCortex:
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         prm = target.container(msg).params.add()
         prm.index = index
-        if text is not None:
-            prm.param_values.add().string_value = text
+        if isinstance(value, str):
+            prm.param_values.add().string_value = value
         else:
             prm.param_values.add().float_value = value
         return self._t.send(msg)
@@ -1174,7 +1196,8 @@ class QuadCortex:
             if index is None:
                 index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
         spec = self.catalog[self.TEMPO_CONTROL].parameters[index]
-        return self.set_param(Tempo(), index, value=spec.option_to_value(option))
+        return self.set_param(Tempo(), index,
+                              values.Encoded(spec.option_to_value(option)))
 
     def set_tempo_subdivision(self, subdivision: "TempoSubdivision"):
         """Set the metronome's SUBDIVISIONS, by name rather than by number.
@@ -1255,7 +1278,8 @@ class QuadCortex:
 
     def set_tempo_led(self, on: bool):
         """Turn this preset's TEMPO LED on or off."""
-        return self.set_param(Tempo(), "LED LIGHT", value=1.0 if on else 0.0)
+        return self.set_param(Tempo(), "LED LIGHT",
+                              values.Encoded(1.0 if on else 0.0))
 
     def set_metronome_running(self, running: bool):
         """Start or stop this preset's metronome.
@@ -1274,7 +1298,8 @@ class QuadCortex:
         and ``False`` stopped it, with a person listening at the unit. An audible effect - see
         "Settings only your ears can verify" in the API guide.
         """
-        return self.set_param(Tempo(), "START", value=1.0 if running else 0.0)
+        return self.set_param(Tempo(), "START",
+                              values.Encoded(1.0 if running else 0.0))
 
     def set_metronome_muted(self, muted: bool):
         """Mute or unmute this preset's metronome - the unit's own MUTE control.
@@ -1294,7 +1319,7 @@ class QuadCortex:
         """
         return self.set_metronome_running(not muted)
 
-    def set_metronome_volume(self, value: float = None, real: float = None):
+    def set_metronome_volume(self, value):
         """Set this preset's metronome level. **Wire 0.0 is -60 dB, not silence.**
 
         The catalog's range for this control is genuine: **-60 to +9 dB**, linear
@@ -1306,9 +1331,9 @@ class QuadCortex:
 
         Pass ``value=`` for the wire 0..1 or ``real=`` for dB::
 
-            qc.set_metronome_volume(real=-20.0)      # -20 dB
+            qc.set_metronome_volume(Db(-20.0))       # -20 dB
         """
-        return self.set_param(Tempo(), "VOLUME", value=value, real=real)
+        return self.set_param(Tempo(), "VOLUME", value)
 
     #: Index of MODE inside the DEVICE tempo block. It is the catalog's ``TYPE``,
     #: which no control in the preset's own Tempo page writes - the preset copy of
@@ -2719,7 +2744,8 @@ class QuadCortex:
                 f"IntEnum member is an int, so without this the wrong one would "
                 f"convert quietly."
             )
-        return self.set_param(block, index, value=option_value(names, option))
+        return self.set_param(block, index,
+                              values.Encoded(option_value(names, option)))
 
     def set_output_mute(self, output_port_id: int, muted: bool = True):
         """Mute or unmute an output port.
@@ -3087,13 +3113,13 @@ class QuadCortex:
         if model is not None:
             self.set_block(Block(row, column, model))
         cell = Block(row, column)
-        result = self.set_param(cell, self.CAPTURE_FILE_NAME_PARAM,
-                                text=f"{key}{name}")
+        result = self.set_param(cell, self.CAPTURE_FILE_NAME_PARAM, f"{key}{name}")
         for index, value in (params or {}).items():
             if isinstance(value, str):
-                result = self.set_param(cell, index, text=value)
+                result = self.set_param(cell, index, value)
             else:
-                result = self.set_param(cell, index, value=float(value))
+                result = self.set_param(cell, index,
+                                        values.Encoded(float(value)))
         return result
 
     IR_LIBRARY = "local_ir_root"
@@ -3170,8 +3196,8 @@ class QuadCortex:
         if model is not None:
             self.set_block(Block(row, column, model))
         cell = Block(row, column)
-        self.set_param(cell, self.IR_PATH_PARAMS[slot], text=key)
-        return self.set_param(cell, self.IR_NAME_PARAMS[slot], text=name)
+        self.set_param(cell, self.IR_PATH_PARAMS[slot], key)
+        return self.set_param(cell, self.IR_NAME_PARAMS[slot], name)
 
     def show_capture_dialog(self, shown: bool = True):
         """Answer the device's request to open the Neural Capture dialog.

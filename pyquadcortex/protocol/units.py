@@ -239,7 +239,7 @@ def lane_level_db(value: float) -> float:
     scale; it does not model the Off detent. :data:`FLOOR_WIRE` does, and
     ``Parameter.to_normalized`` enforces it.
 
-    Prefer ``qc.set_param(..., real=)``, which reads the span from the catalog
+    Prefer ``qc.set_param(..., Db(...))``, which reads the span from the catalog
     and applies any taper. This helper exists for the ``device/translate``
     boundary, which converts without a catalog in hand.
     """

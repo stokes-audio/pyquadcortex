@@ -19,6 +19,7 @@ import time
 
 from pyquadcortex import protocol
 from pyquadcortex.protocol import (UNITY_LEVEL, Block, BlockRefused, Mixer, Scene,
+from pyquadcortex.protocol.values import Db, Encoded, Real
                                    Setlist, blocks, field_present, free_rows, models,
                                    splits)
 
@@ -85,10 +86,8 @@ def main():
         #    leaves the unit sitting on that scene, so this walks all eight in order.
         for index, hears_lane in enumerate(LANE_SCENES):
             scene = Scene(index)
-            qc.set_param(Mixer(row), param="LEVEL A", scene=scene,
-                               value=0.0 if hears_lane else UNITY_LEVEL)
-            qc.set_param(Mixer(row), param="LEVEL B", scene=scene,
-                               value=UNITY_LEVEL if hears_lane else 0.0)
+            qc.set_param(Mixer(row), "LEVEL A", scene=scene, Encoded(0.0 if hears_lane else UNITY_LEVEL))
+            qc.set_param(Mixer(row), "LEVEL B", scene=scene, Encoded(UNITY_LEVEL if hears_lane else 0.0))
             qc.set_scene_label(index, "Lane" if hears_lane else "Main")
             time.sleep(0.4)
 

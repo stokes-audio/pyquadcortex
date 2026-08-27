@@ -24,6 +24,7 @@ from pyquadcortex.protocol.errors import ControlNotDrivable
 from pyquadcortex.protocol.targets import (Block, LaneInput, LaneOutput,
                                            Mixer, Splitter)
 from pyquadcortex.protocol.units import UNITY_LEVEL, db_to_lane_level
+from pyquadcortex.protocol.values import Db, Encoded, Real
 
 #: A read straight after a write returns the PREVIOUS value on this firmware.
 #: This trap has produced two wrong conclusions in this project, one of which
@@ -70,7 +71,7 @@ def _restore(qc, was, row=ROW):
     else:
         qc.clear_expression(LaneOutput(row), param="VOLUME")
     time.sleep(0.3)
-    qc.set_param(LaneOutput(row), param="VOLUME", value=was["value"])
+    qc.set_param(LaneOutput(row), "VOLUME", Encoded(was["value"]))
 
 
 def test_reads_and_writes_agree_on_which_row(qc, restores):
@@ -85,7 +86,7 @@ def test_reads_and_writes_agree_on_which_row(qc, restores):
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
     landmark = 0.3125                       # not a default, not unity, not 0.71
-    qc.set_param(LaneOutput(ROW), param="VOLUME", value=landmark)
+    qc.set_param(LaneOutput(ROW), "VOLUME", Encoded(landmark))
     time.sleep(SETTLE)
 
     chains = qc.read_current_preset().chains
@@ -160,12 +161,12 @@ def test_the_lane_volume_speaks_dB_through_real(qc, restores):
     was = _snapshot(qc)
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
-    qc.set_param(LaneOutput(ROW), param="VOLUME", real=-3.1)
+    qc.set_param(LaneOutput(ROW), "VOLUME", Real(-3.1))
     time.sleep(SETTLE)
     assert _volume(qc).param_values[0].float_value == pytest.approx(
         db_to_lane_level(-3.1), abs=2e-4)
 
-    qc.set_param(LaneOutput(ROW), param="VOLUME", real=0.0)
+    qc.set_param(LaneOutput(ROW), "VOLUME", Real(0.0))
     time.sleep(SETTLE)
     assert _volume(qc).param_values[0].float_value == pytest.approx(
         UNITY_LEVEL, abs=2e-4), "0 dB is not unity"

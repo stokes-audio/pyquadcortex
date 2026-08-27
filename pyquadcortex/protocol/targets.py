@@ -295,7 +295,7 @@ class Block(ChainTarget):
     they are deliberately the same type - what you read is what you write to::
 
         for block in protocol.blocks(preset):
-            qc.set_param(block, "GAIN", real=-6.0)
+            qc.set_param(block, "GAIN", Real(-6.0))
 
     ``chain.models[]``, keyed by COLUMN rather than by hash. ``model_id`` is the
     only part of an address that cannot be derived from the address itself -

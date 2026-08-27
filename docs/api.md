@@ -140,6 +140,18 @@ bottom of the travel, which is silence.
 Same number, opposite results. That is why you have to say which, and why a bare
 `0.0` is refused rather than guessed at.
 
+Which line a value is on also decides whether the catalog is consulted at all:
+
+```mermaid
+flowchart LR
+    U["Db(-3.1)<br/>Hertz(217)<br/>Percent(35)"] -->|"claims a unit,<br/>checked against the catalog"| R["Real(-3.1)<br/>the screen's line"]
+    R -->|"converted using the catalog's<br/>min, max and skew"| W["the device's line<br/>0.0 to 1.0"]
+    E["Encoded(0.71)<br/>the device's line"] -->|"written as it is,<br/>no catalog needed"| W
+```
+
+That is also why `Encoded` is the only one that works with no device attached:
+the other two need the catalog, and the catalog comes from the unit.
+
 ### Naming the unit gets it checked
 
 `Db(-3.1)` means the same as `Real(-3.1)` and adds a claim: this parameter had
@@ -391,7 +403,7 @@ them without a catalog - `real=` reads the device's own description, so it fetch
 one.
 
 Use `set_metronome_muted` and not the volume to silence a click:
-`set_metronome_volume(0.0)` is **-60 dB, quiet but still audible**, not silence.
+`set_metronome_volume(Encoded(0.0))` is **-60 dB, quiet but still audible**, not silence.
 
 The metronome's list controls have named enums, so nothing needs a magic number:
 

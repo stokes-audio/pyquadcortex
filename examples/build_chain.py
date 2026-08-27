@@ -22,6 +22,7 @@ import time
 
 from pyquadcortex import protocol
 from pyquadcortex.protocol import (Block, BlockRefused, Input, Instrument, LaneOutput,
+from pyquadcortex.protocol.values import Db, Encoded, Real
                                    Output, Scene, Setlist, UNITY_LEVEL, blocks,
                                    field_present, free_rows, models)
 
@@ -80,14 +81,14 @@ def main():
         # 2. A parameter in its own units rather than a 0..1 fraction. Naming the
         #    parameter is safer than an index, since indices are positional and not
         #    every one is a knob you can see.
-        qc.set_param(Block(row, 0, amp), param="MASTER", real=5.0)
+        qc.set_param(Block(row, 0, amp), "MASTER", Real(5.0))
 
         # 3. The row's own level, then one scene that silences it. UNITY_LEVEL is
         #    the wire value meaning "no attenuation"; `real=0.0` would say the same
         #    in dB, and wire 0.0 is the Off detent below the bottom of that scale.
         #    Naming a scene leaves the unit sitting on it.
-        qc.set_param(LaneOutput(row), param="VOLUME", value=UNITY_LEVEL)
-        qc.set_param(LaneOutput(row), param="VOLUME", value=0.0,
+        qc.set_param(LaneOutput(row), "VOLUME", Encoded(UNITY_LEVEL))
+        qc.set_param(LaneOutput(row), "VOLUME", Encoded(0.0),
                            scene=SILENT_SCENE)
 
         time.sleep(2.0)
