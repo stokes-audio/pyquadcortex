@@ -35,7 +35,7 @@ from typing import NamedTuple
 
 from pyquadcortex.protocol import catalog, enums, registry, targets
 from pyquadcortex.protocol import options as options_module
-from pyquadcortex.protocol import values
+from pyquadcortex.protocol import values as values_module
 from pyquadcortex.protocol import units as units_module
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
@@ -699,12 +699,12 @@ class QuadCortex:
             value = 1.0 if value else 0.0
         elif isinstance(value, str):
             pass                      # a string is itself; written below
-        elif isinstance(value, values.Encoded):
+        elif isinstance(value, values_module.Encoded):
             # The device's own scale, so there is nothing to convert and no
             # catalog to fetch. This is what keeps an index-addressed write free
             # of a round trip.
             value = float(value)
-        elif isinstance(value, values.Real):
+        elif isinstance(value, values_module.Real):
             if spec is None:
                 spec = target.spec_at(index, self._get_catalog)
             if spec is not None:
@@ -1197,7 +1197,7 @@ class QuadCortex:
                 index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
         spec = self.catalog[self.TEMPO_CONTROL].parameters[index]
         return self.set_param(Tempo(), index,
-                              values.Encoded(spec.option_to_value(option)))
+                              values_module.Encoded(spec.option_to_value(option)))
 
     def set_tempo_subdivision(self, subdivision: "TempoSubdivision"):
         """Set the metronome's SUBDIVISIONS, by name rather than by number.
@@ -1279,7 +1279,7 @@ class QuadCortex:
     def set_tempo_led(self, on: bool):
         """Turn this preset's TEMPO LED on or off."""
         return self.set_param(Tempo(), "LED LIGHT",
-                              values.Encoded(1.0 if on else 0.0))
+                              values_module.Encoded(1.0 if on else 0.0))
 
     def set_metronome_running(self, running: bool):
         """Start or stop this preset's metronome.
@@ -1299,7 +1299,7 @@ class QuadCortex:
         "Settings only your ears can verify" in the API guide.
         """
         return self.set_param(Tempo(), "START",
-                              values.Encoded(1.0 if running else 0.0))
+                              values_module.Encoded(1.0 if running else 0.0))
 
     def set_metronome_muted(self, muted: bool):
         """Mute or unmute this preset's metronome - the unit's own MUTE control.
@@ -2745,7 +2745,7 @@ class QuadCortex:
                 f"convert quietly."
             )
         return self.set_param(block, index,
-                              values.Encoded(option_value(names, option)))
+                              values_module.Encoded(option_value(names, option)))
 
     def set_output_mute(self, output_port_id: int, muted: bool = True):
         """Mute or unmute an output port.
@@ -3119,7 +3119,7 @@ class QuadCortex:
                 result = self.set_param(cell, index, value)
             else:
                 result = self.set_param(cell, index,
-                                        values.Encoded(float(value)))
+                                        values_module.Encoded(float(value)))
         return result
 
     IR_LIBRARY = "local_ir_root"
@@ -3860,15 +3860,15 @@ def param_state(p: preset.BinaryPreset, cell, param_index: int) -> ParamState:
     """
     row, column = cell.row, cell.column
     prm = p.chains[row].models[column].params[param_index]
-    values = []
+    stored = []
     for pv in prm.param_values:
         if pv.HasField("string_value"):
-            values.append(pv.string_value)
+            stored.append(pv.string_value)
         elif pv.HasField("float_value"):
-            values.append(pv.float_value)
+            stored.append(values_module.Encoded(pv.float_value))
         else:
-            values.append(None)
-    return ParamState(scene_mode=bool(prm.scene_mode), values=tuple(values))
+            stored.append(None)
+    return ParamState(scene_mode=bool(prm.scene_mode), values=tuple(stored))
 
 
 def row_status(p: preset.BinaryPreset) -> list:

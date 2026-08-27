@@ -136,3 +136,46 @@ def test_a_unit_with_no_type_falls_back_to_real(unit):
     """One or two parameters each does not earn a public name."""
     got = values.of_unit(unit, 1.0)
     assert type(got) is values.Real
+
+
+# -- reads hand back the same types -------------------------------------------
+
+
+def test_a_read_says_which_units_it_is_in():
+    """`to_real` returns the type the catalog's unit implies, so a value read
+    back from the device carries the same information as one written to it."""
+    volume = _param("dB", name="VOLUME", low=-40.0, high=12.0)
+    got = volume.to_real(1.0)
+    assert isinstance(got, values.Db)
+    assert float(got) == pytest.approx(12.0)
+    assert repr(got) == "Db(12.0)"
+
+
+def test_a_unitless_read_is_a_plain_real():
+    gain = _param("", name="GAIN", low=0.0, high=10.0)
+    got = gain.to_real(0.5)
+    assert type(got) is values.Real
+    assert float(got) == pytest.approx(5.0)
+
+
+def test_a_read_round_trips_through_a_write():
+    """The point of typing both directions: what comes back can go straight
+    back out without a caller having to remember what it meant."""
+    volume = _param("dB", name="VOLUME", low=-40.0, high=12.0)
+    back = volume.to_real(0.71)
+    assert volume.to_normalized(back) == pytest.approx(0.71, abs=1e-9)
+
+
+def test_a_floor_is_typed_whether_it_was_measured_or_derived():
+    """Both branches of `floor`, because they used to disagree: the measured
+    one handed back a bare float and the derived one a typed value."""
+    measured = catalog.Parameter(
+        index=0, name="LEVEL", minimum=-40.0, maximum=6.0, default=0.0,
+        units="dB", type="float", skew=4.9594844, floor_wire=0.01,
+        floor_display=-21.8)
+    assert isinstance(measured.floor, values.Db)
+    assert float(measured.floor) == pytest.approx(-21.8)
+
+    derived = _param("dB", name="GAIN", low=-12.0, high=12.0)
+    assert isinstance(derived.floor, values.Db)
+    assert float(derived.floor) == pytest.approx(-12.0)
