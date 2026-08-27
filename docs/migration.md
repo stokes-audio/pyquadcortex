@@ -17,6 +17,37 @@ while that is true, and this file is the cost of doing it.
 
 ## 0.40.0 to the next release
 
+### DANGEROUS: `MetronomeBeat.OFF` now means the OPPOSITE of what it meant
+
+Read this before the rest. It is the only break here where a name survives, the
+type-checker stays quiet, and the meaning inverts.
+
+```python
+qc.set_beat(3, MetronomeBeat.OFF)     # before: beat 3 is SILENT
+                                      # after:  beat 3 is an ordinary CLICK
+```
+
+The four states were named by ear in an earlier session and two were backwards.
+Driven properly on 2026-08-27 - one bar at 60 bpm with all four states on the
+four beats, listened to and looked at - they are the device's own words:
+
+| index | now | before | sounds like | drawn as |
+|---|---|---|---|---|
+| 0 | `OFF` | `NORMAL` | the plain click | solid circle |
+| 1 | `MUTE` | `OFF` | silent | outlined circle |
+| 2 | `DOWN` | `ACCENT` | the big accent | solid circle, dot ABOVE |
+| 3 | `ON` | `QUIET` | a small accent | solid circle, dot BELOW |
+
+`OFF` and `ON` are about the ACCENT, not about whether the beat sounds. **To
+silence a beat, use `MUTE`.**
+
+`NORMAL`, `ACCENT` and `QUIET` are gone, so code using those fails at import,
+which is what you want. Only `OFF` is the trap: it still exists, it moved from
+1 to 0, and it flipped from silent to audible. Search for it.
+
+Note `QUIET` was the worst of the four - it named index 3, which is the LOUDER
+of the two ordinary states.
+
 ### `to_real` and `to_normalized` return DIFFERENT NUMBERS for 615 parameters
 
 Read this one first, because nothing about it is visible at a call site: the

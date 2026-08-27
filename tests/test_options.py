@@ -139,24 +139,18 @@ def test_the_labels_are_stripped_but_otherwise_verbatim(enum_type):
 def test_the_metronome_beats_get_no_enum_here():
     """`stepNames` is the device's internal vocabulary, not always the screen's.
 
-    The catalog calls the per-beat cells `OFF,MUTE,DOWN,ON`. `enums.MetronomeBeat`
-    - traced on hardware by touching a cell and listening, with ACCENT
-    corroborated by a factory 4/4 carrying it on beat 1 and nothing else - calls
-    them `NORMAL,OFF,ACCENT,QUIET`. They disagree at every position.
+    `enums.MetronomeBeat` already publishes exactly these four words, with the
+    hardware evidence attached: driven on the unit 2026-08-27, one bar at 60 bpm
+    with the four states on the four beats, listened to and looked at. Two
+    identical enums on one control would be one too many, so the generator skips
+    this list rather than duplicating it.
 
-Measured 2026-08-27: in 4/4 the unit holds index 2 on beat 1 and index 0
-    on beats 2 to 4, and the owner confirms all four are AUDIBLE with an accent
-    on the first. So index 0 is an ordinary click, the catalog's "OFF" there is
-    not silence, and these words are not the ones the screen means.
-
-    Indexes 1 and 3 are still open - see enums.MetronomeBeat. Publishing the
-    catalog's list would put two disagreeing enums on one control, so it is
-    recorded and not published.
-
-    This test exists so nobody "fixes" MetronomeBeat to match the catalog.
+    Worth remembering how that went. This module briefly claimed the catalog's
+    words were wrong here, on the strength of a half-measurement. They were
+    right and the hand-chosen names were wrong - see enums.MetronomeBeat.
     """
     from pyquadcortex.protocol import enums
 
-    assert [m.name for m in enums.MetronomeBeat] == ["NORMAL", "OFF", "ACCENT", "QUIET"]
+    assert [m.name for m in enums.MetronomeBeat] == ["OFF", "MUTE", "DOWN", "ON"]
     assert not [e for e in options.OPTION_LABELS
                 if options.OPTION_LABELS[e] == ("OFF", "MUTE", "DOWN", "ON")]

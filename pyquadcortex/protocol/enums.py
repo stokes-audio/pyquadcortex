@@ -388,39 +388,60 @@ class GlobalEQFilter(IntEnum):
 class MetronomeBeat(IntEnum):
     """How ONE beat of the metronome sounds - the per-beat cells on the Tempo page.
 
-    Each beat of the bar can be set independently, and these are the four states a
-    cell cycles through. Traced on hardware: touching a cell walks the wire value
-    UP by 1/3 and wraps, so the numbering here IS the on-screen cycle order. Four
-    touches return a cell to where it started, which is how the count of exactly
-    four was established rather than assumed.
+    Each beat of the bar can be set independently, and these are the four states
+    a cell cycles through. Touching a cell walks the wire value UP by 1/3 and
+    wraps, so the numbering here IS the on-screen cycle order; four touches
+    return a cell to where it started, which is how the count of exactly four
+    was established rather than assumed.
 
-    The unit does not label these in words - it draws them - so the names are the
-    owner's, matched to what he heard and saw.
+    **These are the device's own words, and they took a second look to earn.**
+    They come from the catalog's ``stepNames``. An earlier version of this enum
+    used four names chosen by ear - ``NORMAL, OFF, ACCENT, QUIET`` - and two of
+    them were WRONG, in the direction that matters: what it called ``NORMAL``
+    is the quietest audible state and what it called ``QUIET`` is the louder of
+    the two ordinary ones. Exactly backwards.
 
-    **The catalog disagrees, and only half of it is settled.** ``stepNames`` on
-    these cells reads ``OFF,MUTE,DOWN,ON``. Measured on the unit 2026-08-27 in
-    4/4: beat 1 holds index 2 and beats 2 to 4 hold index 0, and the owner
-    confirms all four are AUDIBLE with an accent on the first. So:
+    Driven on the unit 2026-08-27, one bar at 60 bpm in 4/4 with the four states
+    on the four beats, listened to and looked at:
 
-    * index 2 is the accented beat, and the two vocabularies agree on it -
-      "DOWN" is the downbeat. :attr:`ACCENT` stands.
-    * index 0 is an ordinary audible click, so the catalog's "OFF" there cannot
-      mean silent. :attr:`NORMAL` stands.
-    * **indexes 1 and 3 are NOT settled.** The owner heard silent and softer;
-      the catalog says "MUTE" and "ON". If MUTE means soft rather than silent -
-      which is the reading that makes it differ from OFF at all - then
-      :attr:`OFF` and :attr:`QUIET` may be the wrong way round. Nobody has
-      driven those two cells and listened, and until somebody does, these two
-      names are the owner's ear and not a fact.
+    ==========  =====  ===============================  ========================
+    this enum   index  what it sounds like              how it is drawn
+    ==========  =====  ===============================  ========================
+    ``OFF``     0      the plain click                  solid circle
+    ``MUTE``    1      silent                           outlined circle
+    ``DOWN``    2      the big accent                   solid circle, dot ABOVE
+    ``ON``      3      a small accent                   solid circle, dot BELOW
+    ==========  =====  ===============================  ========================
 
-    Which beat is which lives in :attr:`QuadCortex.TEMPO_BEATS`, indices 10 to 22
-    (the catalog's ``STEPSTATE0`` to ``STEPSTATE12``) for beats 1 to 13.
+    So there are three levels and a silence - plain, small accent, big accent -
+    and the drawing says the same thing: hollow is silent, a bare circle is
+    plain, and a dot lifts it a little or a lot. The loudness ladder is
+    ``MUTE < OFF < ON < DOWN``.
+
+    A factory 4/4 uses exactly two of them: one ``DOWN`` on beat 1, and ``OFF``
+    on the rest. That is what makes ``OFF`` the ordinary state rather than a
+    quiet one - it only sounded quiet in the test bar because it was next to
+    two accents.
+
+    **What the names mean, and this part is inference.** ``OFF`` and ``ON``
+    read as the ACCENT being off or on rather than the beat sounding or not -
+    which is the only reading under which all four words are true at once, and
+    it explains why ``OFF`` is audible. ``MUTE`` is the one that silences a
+    beat. ``DOWN`` is the downbeat, the strongest. Nothing states this; it is
+    the reading that fits every observation above.
+
+    **If you want a beat silent, that is** :attr:`MUTE`, **not** :attr:`OFF`.
+
+    Which beat is which lives in :attr:`QuadCortex.TEMPO_BEATS`, indices 10 to
+    22 (the catalog's ``STEPSTATE0`` to ``STEPSTATE12``) for beats 1 to 13.
     """
 
-    NORMAL = 0        #: The ordinary unaccented click. The 4/4 default for beats 2-4.
-    OFF = 1           #: Silent. The beat is skipped.
-    ACCENT = 2        #: Emphasized - louder. The 4/4 default for beat 1.
-    QUIET = 3         #: De-emphasized - softer than NORMAL, but still audible.
+    OFF = 0     #: Accent off: the plain click, and the default for every beat
+                #: that is not the downbeat. Drawn as a solid circle.
+    MUTE = 1    #: Silent - the beat is skipped. Drawn as an outlined circle.
+    DOWN = 2    #: The downbeat: the big accent. A solid circle with a dot ABOVE.
+    ON = 3      #: Accent on: a small accent, between OFF and DOWN. A solid
+                #: circle with a dot BELOW it.
 
 
 class TempoMode(IntEnum):

@@ -3313,10 +3313,10 @@ def test_set_beat_writes_the_traced_wire_values():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     # exactly the four values the unit wrote, and the indices it wrote them to
     for beat, state, index, value in (
-            (3, MetronomeBeat.OFF, 12, 1 / 3),
-            (4, MetronomeBeat.QUIET, 13, 1.0),
-            (1, MetronomeBeat.ACCENT, 10, 2 / 3),
-            (2, MetronomeBeat.NORMAL, 11, 0.0)):
+            (3, MetronomeBeat.MUTE, 12, 1 / 3),
+            (4, MetronomeBeat.ON, 13, 1.0),
+            (1, MetronomeBeat.DOWN, 10, 2 / 3),
+            (2, MetronomeBeat.OFF, 11, 0.0)):
         qc.set_beat(beat, state)
         got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
         assert got.index == index
@@ -3330,7 +3330,7 @@ def test_set_beat_rejects_a_beat_the_unit_cannot_store():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     for bad in (0, 14, -1):
         with pytest.raises(ValueError, match="beat must be 1 to 13"):
-            qc.set_beat(bad, MetronomeBeat.ACCENT)
+            qc.set_beat(bad, MetronomeBeat.DOWN)
     with pytest.raises(ValueError):
         qc.set_beat(1, 4)          # not one of the four states
     assert qc._t.sent == []
@@ -3341,16 +3341,16 @@ def test_set_beats_writes_consecutive_beats_and_leaves_the_rest():
 
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    qc.set_beats([B.ACCENT, B.NORMAL, B.OFF, B.QUIET])
+    qc.set_beats([B.DOWN, B.OFF, B.MUTE, B.ON])
     assert len(qc._t.sent) == 4
     indices = [m.preset.tempoProgramData[0].params[0].index for m in qc._t.sent]
     assert indices == [10, 11, 12, 13]        # only the four given; 14-22 untouched
     with pytest.raises(ValueError, match="stores only 13"):
-        qc.set_beats([B.NORMAL] * 14)
+        qc.set_beats([B.OFF] * 14)
 
 
 def test_beats_reads_the_states_back_as_the_enum():
-    """The end state of the traced session: ENFD on beats 1-4."""
+    """The end state of the traced session, in the device's own words."""
     from pyquadcortex.protocol.enums import MetronomeBeat as B
 
     p = preset.BinaryPreset()
@@ -3362,13 +3362,13 @@ def test_beats_reads_the_states_back_as_the_enum():
     for value in values:
         tp.params.add().param_values.add().float_value = value
     got = client.beats(p)
-    assert got[1] == B.ACCENT
-    assert got[2] == B.NORMAL
-    assert got[3] == B.OFF
-    assert got[4] == B.QUIET
+    assert got[1] == B.DOWN
+    assert got[2] == B.OFF
+    assert got[3] == B.MUTE
+    assert got[4] == B.ON
     # all 13 are always present whatever the signature - stored, simply not sounded
     assert len(got) == 13
-    assert all(got[b] == B.NORMAL for b in range(5, 14))
+    assert all(got[b] == B.OFF for b in range(5, 14))
 
 
 def test_beats_returns_a_raw_float_it_cannot_place_rather_than_rounding():

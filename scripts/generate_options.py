@@ -42,23 +42,18 @@ from pyquadcortex.protocol import catalog  # noqa: E402
 #: ``False``; no enum is emitted.
 BOOLEAN_LISTS = {("off", "on")}
 
-#: Lists the catalog names but whose names are NOT what the screen means, so
-#: publishing them would put two disagreeing enums on one control.
+#: Lists that are already published as a hand-written enum carrying evidence a
+#: generator cannot, so emitting a second identical one would be one too many.
 #:
-#: One entry, and it is a warning about `stepNames` in general: for the
-#: metronome's per-beat cells the catalog says `OFF,MUTE,DOWN,ON` while
-#: `enums.MetronomeBeat` - traced on hardware by touching a cell and listening,
-#: with ACCENT corroborated by a factory 4/4 carrying it on beat 1 alone - says
-#: `NORMAL,OFF,ACCENT,QUIET`.
+#: One entry: the metronome's per-beat cells. `enums.MetronomeBeat` publishes
+#: exactly these four words, with the hardware behind them - driven on the unit
+#: 2026-08-27, one bar at 60 bpm with all four states on the four beats,
+#: listened to AND looked at, so it records the sound and the on-screen symbol
+#: for each.
 #:
-#: Measured 2026-08-27: in 4/4 the unit holds index 2 on beat 1 and index 0 on
-#: beats 2 to 4, and the owner confirms all four are AUDIBLE with an accent on
-#: the first. So index 0 is an ordinary click and the catalog's "OFF" there is
-#: not silence - which is enough to know these words are not the screen's.
-#: Indexes 1 and 3 remain unsettled either way.
-#:
-#: So `stepNames` is the device's INTERNAL vocabulary, and usually but not
-#: always the screen's. See docs/domain-model.md.
+#: This list briefly existed for the opposite reason - to keep the catalog's
+#: words out because they were thought wrong. They were right; the hand-chosen
+#: names were wrong, two of them backwards. See docs/domain-model.md.
 NOT_THE_SCREENS_WORDS = {
     ("OFF", "MUTE", "DOWN", "ON"): "the metronome beats - see enums.MetronomeBeat",
 }

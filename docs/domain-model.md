@@ -1417,41 +1417,49 @@ On `<Model>`, `blob` is also unexplained: a same-length string of letters that
 **changes between fetches**. Two dumps of one unit taken minutes apart differed
 on 338 models and on nothing else. A per-fetch token of some kind, not content.
 
-### `stepNames` is the device's internal vocabulary, not always the screen's
+### `stepNames` was right and our hand-chosen names were wrong
 
-Usually the two agree, and 110 of the 113 fixed option lists are published as
-enums on that basis. One does not, and it is worth knowing before trusting the
-rest.
+Worth keeping because of how it went, not just how it ended.
 
-The metronome's per-beat cells (`STEPSTATE0` to `STEPSTATE12`) carry
-`stepNames="OFF,MUTE,DOWN,ON"`. `enums.MetronomeBeat` calls the same four
-positions `NORMAL, OFF, ACCENT, QUIET`, and that was traced on hardware: touching
-a cell walks the wire value up by 1/3 and wraps, four touches return it to where
-it started, and `ACCENT` is corroborated by a factory 4/4 carrying it on beat 1
-and nothing else.
+The metronome's per-beat cells carry `stepNames="OFF,MUTE,DOWN,ON"`.
+`enums.MetronomeBeat` called the same four positions `NORMAL, OFF, ACCENT,
+QUIET` - names chosen by ear in an earlier session. They disagree at every
+position, and this document briefly concluded that `stepNames` must therefore be
+the device's *internal* vocabulary rather than the screen's, on the strength of
+one half-measurement: in a factory 4/4 the unit holds index 0 on beats 2 to 4,
+those beats are audible, so index 0 could not mean "OFF".
 
-They disagree at every position, and **half of it is now settled**. Measured
-2026-08-27, in 4/4: beat 1 holds index 2, beats 2 to 4 hold index 0, and the
-owner confirms all four are audible with an accent on the first.
+That inference was wrong, and it was wrong in the ordinary way - it assumed the
+word `OFF` had to be about **sound**.
 
-| index | catalog | owner | settled? |
-|---|---|---|---|
-| 0 | `OFF` | `NORMAL` | **yes** - audible ordinary click, so "OFF" is not silence |
-| 1 | `MUTE` | `OFF` | no |
-| 2 | `DOWN` | `ACCENT` | **yes** - both mean the same thing; a downbeat IS the accent |
-| 3 | `ON` | `QUIET` | no |
+Driven properly on 2026-08-27, one bar at 60 bpm in 4/4 with all four states on
+the four beats, listened to and looked at:
 
-So the catalog's words for this control are recorded here and deliberately not
-published - see `NOT_THE_SCREENS_WORDS` in `scripts/generate_options.py`.
+| index | catalog | sounds like | drawn as | old name |
+|---|---|---|---|---|
+| 0 | `OFF` | the plain click | solid circle | `NORMAL` |
+| 1 | `MUTE` | silent | outlined circle | `OFF` |
+| 2 | `DOWN` | the big accent | solid circle, dot ABOVE | `ACCENT` |
+| 3 | `ON` | a small accent | solid circle, dot BELOW | `QUIET` |
 
-**Open.** If `MUTE` means soft rather than silent - the reading that makes it
-differ from `OFF` at all - then the owner's `OFF` and `QUIET` may be the wrong
-way round. Settling it needs somebody to set a beat to index 1, listen, then to
-index 3 and listen. Two readings.
+`OFF` and `ON` are about the **accent**, not about whether the beat sounds. Under
+that reading every one of the device's four words is true: `MUTE` silences,
+`DOWN` is the downbeat, and the pair `OFF`/`ON` is the accent off or on. The
+drawing agrees - hollow is silent, a bare circle is plain, a dot lifts it.
 
-What this costs elsewhere is unknown: nothing has audited the other 112 lists
-against the screen, and most are ordinary words that plainly match. This one was
-caught only because a hand-written enum already existed to disagree with it.
+Two of the four hand-chosen names were not merely different, they were
+**backwards**: what we called `NORMAL` is the quietest audible state and what we
+called `QUIET` is the louder of the two ordinary ones. A caller reaching for
+`QUIET` got the opposite of what they asked for.
+
+So the enum now uses the device's words, and the lesson is the one ADR-0015 is
+already about: the device's description of itself beat four names arrived at by
+listening, and the way to find that out was to drive all four states at once
+rather than reason about the two we had.
+
+**What this does not license.** Nothing has audited the other 112 option lists
+against the screen. This one was checked only because a hand-written enum
+existed to disagree with it, and the disagreement turned out to be ours.
 
 ### `expAssignable` says something, and not what it looks like
 

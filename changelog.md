@@ -20,6 +20,26 @@ correction.
 
 ## Unreleased
 
+### BREAKING: the metronome beat names were wrong, two of them backwards
+
+`MetronomeBeat` is now the device's own `OFF`, `MUTE`, `DOWN`, `ON`, replacing
+`NORMAL`, `OFF`, `ACCENT`, `QUIET`.
+
+```python
+qc.set_beat(1, MetronomeBeat.DOWN)    # the big accent, as a factory 4/4 has
+qc.set_beat(3, MetronomeBeat.MUTE)    # silence beat 3 - this used to be OFF
+```
+
+The old names were chosen by ear. Driving all four states in one bar and both
+listening and looking showed two were the wrong way round: what was called
+`NORMAL` is the plain click and what was called `QUIET` is a small accent -
+louder, not quieter. `OFF` and `ON` turn out to be about the ACCENT rather than
+about whether the beat sounds, which is why `OFF` is audible and `MUTE` is the
+one that silences.
+
+**`MetronomeBeat.OFF` survives the rename with its meaning inverted**, so it is
+the one to search for. See `docs/migration.md`.
+
 ### The device was publishing every parameter's scale, and we were not reading it
 
 `catalog.py` read 8 of the 24 attributes the unit puts on each parameter. Four of
@@ -675,6 +695,10 @@ beats(qc.read_current_preset())    # {1: ACCENT, 2: NORMAL, 3: OFF, 4: QUIET, ..
 `MetronomeBeat` is `NORMAL`, `OFF`, `ACCENT`, `QUIET`, numbered in the order a cell cycles
 when touched - which is NOT a loudness order, so do not read meaning into the sequence.
 Wire values are `option / 3`.
+
+> **Superseded.** Two of those four names were backwards, and they are now the device's own
+> `OFF`, `MUTE`, `DOWN`, `ON`. See the Unreleased section at the top; `MetronomeBeat.OFF` in
+> particular means the opposite of what it meant here.
 
 **Set the time signature before the beats.** Changing it rewrites them, because the device
 re-lays the accent pattern out for the new bar.
