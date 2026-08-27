@@ -44,6 +44,45 @@ from dataclasses import dataclass, field, replace
 # different `file_name` strings.
 _CAPTURE_CATEGORY_IDS = frozenset({14, 20})
 
+#: A knob linear in its own units. The catalog spells this three ways - the
+#: name, ``1`` and ``1.0`` - and 583 parameters use one of them.
+LIN_SKEW = 1.0
+
+#: ``LOG_SKEW`` is NOT a logarithmic sweep, despite the name. It is the same
+#: power law every other parameter uses, at skew 0.3.
+#:
+#: Solved on hardware 2026-08-26 from two readings on an Envelope Filter, chosen
+#: because its two ``LOG_SKEW`` knobs cover different ranges in different units:
+#: ``FREQ`` (100..10000 Hz) read **197 Hz** at wire 0.25 and ``RESO`` (1..10)
+#: read **4.45** at wire 0.75. Those give exponents 3.3366 and 3.3330
+#: independently, both ``1/0.3``. A true log sweep would have shown 316 Hz and
+#: 5.62; a linear one, 2575 and 7.75.
+#:
+#: The name is the device's, and it is misleading. Do not "fix" this to a log
+#: law without driving one of the 16 parameters that carry it.
+LOG_SKEW = 0.3
+
+
+def parse_skew(raw: str | None) -> float:
+    """The taper from the catalog's ``skew`` attribute, as a positive float.
+
+    Anything unrecognised falls back to :data:`LIN_SKEW`, which is what an absent
+    attribute means. The shipped catalog needs that tolerance: two parameters
+    carry ``" 0.4"`` with a leading space and two carry ``""``.
+    """
+    if raw is None:
+        return LIN_SKEW
+    text = raw.strip()
+    if text == "LIN_SKEW":
+        return LIN_SKEW
+    if text == "LOG_SKEW":
+        return LOG_SKEW
+    try:
+        value = float(text)
+    except ValueError:
+        return LIN_SKEW
+    return value if value > 0.0 else LIN_SKEW
+
 
 @dataclass(frozen=True)
 class Parameter:
@@ -63,6 +102,10 @@ class Parameter:
     units: str = ""
     type: str = ""
     steps: int | None = None
+    #: The taper, from the XML's ``skew``. ``real = min + (max - min) * wire **
+    #: (1 / skew)``. 1.0 is a straight line, which is what an absent attribute
+    #: means; 617 parameters carry something else. See :func:`parse_skew`.
+    skew: float = LIN_SKEW
 
     @property
     def option_count(self) -> int | None:
@@ -144,9 +187,11 @@ class Parameter:
     def to_normalized(self, real: float) -> float:
         """Convert a value in this parameter's own units to the wire's 0..1.
 
-        Confirmed on hardware: the wire carries a normalized float. Sending 1.0
-        to a THRESHOLD whose catalog range is -60..+12 dB made the unit read
-        +12.0 dB. Values outside the range are clamped.
+        Applies the parameter's :attr:`skew`, so this is a straight line only
+        where the catalog says it is. Confirmed on hardware: the wire carries a
+        normalized float. Sending 1.0 to a THRESHOLD whose catalog range is
+        -60..+12 dB made the unit read +12.0 dB. Values outside the range are
+        clamped.
 
         Raises ``ValueError`` when :attr:`range_is_placeholder`, rather than
         returning a number that would quietly mean something else.
@@ -156,10 +201,17 @@ class Parameter:
         span = self.maximum - self.minimum
         if span == 0:
             return 0.0
-        return min(1.0, max(0.0, (real - self.minimum) / span))
+        fraction = min(1.0, max(0.0, (real - self.minimum) / span))
+        return fraction ** self.skew
 
     def to_real(self, normalized: float) -> float:
         """Convert a wire 0..1 value back into this parameter's own units.
+
+        ``real = min + (max - min) * wire ** (1 / skew)``. Confirmed on hardware
+        2026-08-26 over three unrelated blocks in two different units: a cab
+        LEVEL at skew 4.9594844 (wire 0.01/0.50/1.00 read -21.8/0.0/6.0 dB), a
+        Low-High Cut HPF FREQ at skew 0.3 (wire 0.25 read 217 Hz), and the same
+        block's OUTPUT with no skew (wire 0.25 read -10.0 dB).
 
         Raises ``ValueError`` when :attr:`range_is_placeholder` - see there.
         """
@@ -168,7 +220,8 @@ class Parameter:
         span = self.maximum - self.minimum
         if span == 0:
             return self.minimum
-        return self.minimum + min(1.0, max(0.0, normalized)) * span
+        clamped = min(1.0, max(0.0, normalized))
+        return self.minimum + span * clamped ** (1.0 / self.skew)
 
 
 @dataclass(frozen=True)
@@ -330,6 +383,7 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                     units=p.get("units", ""),
                     type=p.get("type", ""),
                     steps=_as_int(p.get("steps")),
+                    skew=parse_skew(p.get("skew")),
                 )
                 for i, p in enumerate(element.findall("Parameter"))
             )

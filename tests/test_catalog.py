@@ -334,3 +334,88 @@ def test_option_helpers_reject_a_non_list_parameter_and_a_bad_option(cat):
         routing.option_to_value(5)
     with pytest.raises(ValueError, match="5 options"):
         routing.option_to_value(-1)
+
+
+# --- The taper -------------------------------------------------------------
+#
+# The catalog publishes a `skew` attribute on 1,184 parameters and this library
+# ignored it for several releases, converting every one of them as a straight
+# line. 617 carry a non-linear value, so 617 conversions were wrong.
+
+
+@pytest.mark.parametrize("raw, expected", [
+    (None, 1.0),
+    ("LIN_SKEW", 1.0),
+    ("1", 1.0),
+    ("1.0", 1.0),
+    ("LOG_SKEW", 0.3),
+    ("0.3", 0.3),
+    ("4.9594844", 4.9594844),
+    (" 0.4", 0.4),      # the shipped catalog carries a leading space, twice
+    ("", 1.0),          # and nothing at all, twice
+    ("nonsense", 1.0),
+    ("0", 1.0),         # a zero skew would divide by zero downstream
+    ("-2", 1.0),
+])
+def test_parse_skew_cleans_what_the_device_actually_ships(raw, expected):
+    assert catalog.parse_skew(raw) == pytest.approx(expected)
+
+
+def test_log_skew_is_not_a_log_sweep():
+    """The name is the device's and it is misleading.
+
+    Confirmed on hardware 2026-08-26 - see the constant's docstring. Guarding
+    the value here because the obvious "fix" is to make it logarithmic, and the
+    unit says otherwise.
+    """
+    assert catalog.LOG_SKEW == 0.3
+
+
+def _knob(minimum, maximum, skew, units=""):
+    return catalog.Parameter(index=0, name="X", minimum=minimum, maximum=maximum,
+                             default=0.0, units=units, type="float", skew=skew)
+
+
+@pytest.mark.parametrize("minimum, maximum, skew, wire, screen, tol", [
+    # Low-High Cut HPF FREQ, read 217 Hz on screen at wire 0.25.
+    (20.0, 20000.0, 0.3, 0.25, 217.0, 0.5),
+    # The same block's LPF FREQ, read 7678 Hz at wire 0.75.
+    (20.0, 20000.0, 0.3, 0.75, 7678.0, 0.5),
+    # The same block's OUTPUT, which carries no skew, read -10.0 dB at 0.25.
+    (-20.0, 20.0, 1.0, 0.25, -10.0, 0.05),
+    # An Envelope Filter's LOG_SKEW knobs: FREQ read 197 Hz, RESO read 4.45.
+    (100.0, 10000.0, 0.3, 0.25, 197.0, 0.5),
+    (1.0, 10.0, 0.3, 0.75, 4.45, 0.005),
+    # A cab LEVEL, whose taper took three days to fit and one attribute to read.
+    (-40.0, 6.0, 4.9594844, 0.01, -21.8, 0.05),
+    (-40.0, 6.0, 4.9594844, 0.50, 0.0, 0.05),
+    (-40.0, 6.0, 4.9594844, 1.00, 6.0, 0.05),
+])
+def test_to_real_reproduces_what_the_screen_showed(
+        minimum, maximum, skew, wire, screen, tol):
+    """Every row was read off the unit's own display. See docs/protocol.md."""
+    assert _knob(minimum, maximum, skew).to_real(wire) == pytest.approx(screen, abs=tol)
+
+
+def test_to_normalized_is_the_inverse_of_to_real():
+    knob = _knob(20.0, 20000.0, 0.3)
+    for wire in (0.0, 0.01, 0.25, 0.5, 0.75, 1.0):
+        assert knob.to_normalized(knob.to_real(wire)) == pytest.approx(wire, abs=1e-9)
+
+
+def test_a_linear_knob_is_untouched_by_the_change():
+    """The 2,609 parameters with no `skew` attribute must convert as before."""
+    knob = _knob(-60.0, 12.0, 1.0, units="dB")
+    assert knob.to_real(1.0) == pytest.approx(12.0)
+    assert knob.to_real(0.5) == pytest.approx(-24.0)
+    assert knob.to_normalized(-24.0) == pytest.approx(0.5)
+
+
+def test_the_parser_reads_skew_off_the_xml():
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="FREQ" type="float" min="20" max="20000"'
+           ' units="Hz" skew="0.3" defaultValue="0"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.skew == pytest.approx(0.3)
+    assert round(p.to_real(0.25)) == 217
