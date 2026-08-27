@@ -32,7 +32,7 @@ around, and put in a list. Nothing here talks to a device.
 from dataclasses import dataclass
 
 from pyquadcortex.protocol.errors import ControlNotDrivable
-from pyquadcortex.protocol.units import MEASURED_SPANS, measured_to_wire
+
 
 #: Catalog model ids for the containers whose model never varies.
 CABSIM_LAYOUT = 12000
@@ -161,20 +161,14 @@ class ParamTarget:
     def normalize(self, index, real, get_catalog, spec=None):
         """Convert ``real``, in the parameter's own units, to the wire's 0..1.
 
-        Takes the lazy ``get_catalog`` rather than a spec, because a target that
-        knows its own measured span needs no catalog at all - see `Tempo`, whose
-        TEMPO is bpm and never looks one up. ``spec`` is a hint from
-        :meth:`index_of` when a name was resolved, so a name costs one fetch.
+        The catalog answers this, so ``get_catalog`` is taken lazily rather than
+        as a spec: an indexed write with ``value=`` never fetches one. ``spec``
+        is a hint from :meth:`index_of` when a name was resolved, so naming a
+        parameter costs one fetch rather than two.
         """
-        span = MEASURED_SPANS.get((self.model_id, index))
-        if span is not None:
-            # A placeholder range whose true span WAS measured. Looked up by
-            # index, so this costs no catalog fetch - see `MEASURED_SPANS`.
-            return measured_to_wire(span, real)
-        span = self._layout_span(index, get_catalog)
-        if span is not None:
-            return measured_to_wire(span, real)
         spec = spec if spec is not None else self.spec_at(index, get_catalog)
+        if spec is None:
+            spec = self._layout_spec(index, get_catalog)
         if spec is None and self.model_id is None:
             raise TypeError(
                 f"real= on {self.describe()} needs model=<model id or catalog "
@@ -191,28 +185,29 @@ class ParamTarget:
             )
         return spec.to_normalized(real)
 
-    def _layout_span(self, index, get_catalog):
-        """A span belonging to this model's shared LAYOUT rather than to itself.
+    def _layout_spec(self, index, get_catalog):
+        """A parameter belonging to this model's shared LAYOUT, not to itself.
 
         Only cabs need this, and they need it because the catalog
-        under-describes them: a cab model lists its two mic selectors while the
-        wire carries the whole `Default Cabsim` layout, so a measurement of that
-        layout is what applies.
+        under-describes them: most cab models list two mic selectors while the
+        wire carries the whole `Default Cabsim` layout, so `Default Cabsim`'s own
+        entry for that index is what applies.
 
         The taper it borrows is confirmed on three blocks in three different
         categories - a Cabsim Bass, a Cabsim Guitar, and Parallax, which is a
         Bass Overdrive carrying its own cab section. So it belongs to the cab
         SECTION wherever that appears, not to one cab model, and applying it
-        across the category is no longer an extrapolation.
-
-        This is also the ONE conversion path that costs a catalog fetch, and only
-        on the miss path: an indexed write with ``value=`` never reaches here,
-        nor does any parameter whose own span is measured.
+        across the category is no longer an extrapolation. The catalog agrees:
+        every one of those LEVEL entries carries the same skew=4.9594844 and the
+        same MIN_CABSIM_DB bound.
         """
         source = self.model(get_catalog)
         if source is None or source.category not in CABSIM_CATEGORIES:
             return None
-        return MEASURED_SPANS.get((CABSIM_LAYOUT, index))
+        layout = get_catalog().get(CABSIM_LAYOUT)
+        if layout is None or index >= len(layout.parameters):
+            return None
+        return layout.parameters[index]
 
     def refuse_if_unassignable(self, spec):
         """Raise :class:`ControlNotDrivable` if a pedal cannot be assigned here."""

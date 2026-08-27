@@ -1693,7 +1693,7 @@ def test_clear_expression_is_row_column_keyed_and_resets_the_range():
 LANE_OUTPUT_CATEGORY = """
 <Category id="23" name="Lane Output">
   <Model blob="loc" id="23000" name="LaneOutputControl" internal="true">
-    <Parameter defaultValue="0.769" max="1" min="0" name="VOLUME" type="float" units="dB"/>
+    <Parameter defaultValue="0.769" max="MAX_MIXER_DB" min="MIN_MIXER_DB" name="VOLUME" type="float" units="dB" min_string="OFF"/>
     <Parameter defaultValue="0.5" max="1" min="0" name="PAN" type="float" units=""/>
     <Parameter defaultValue="0" max="1" min="0" name="MUTE" type="switch"/>
     <Parameter defaultValue="0" max="1" min="0" name="SOLO" type="switch"/>
@@ -1703,7 +1703,7 @@ LANE_OUTPUT_CATEGORY = """
   <Model blob="rec" id="20000" name="NC_Recorder" skip_self_test="true">
     <Parameter defaultValue="0" max="1" min="0" name="A" type="float"/>
     <Parameter defaultValue="0" max="1" min="0" name="B" type="float"/>
-    <Parameter defaultValue="0.5" max="1" min="0" name="OUT LEVEL" type="float" units="dB"/>
+    <Parameter defaultValue="MAX_INPUT_TRIM" max="MAX_INPUT_TRIM" min="MIN_INPUT_TRIM" name="OUT LEVEL" type="float" units="dB" steps="41"/>
   </Model>
 </Category>
 """
@@ -1840,17 +1840,17 @@ def test_set_lane_output_real_puts_unity_at_the_documented_value():
     assert prm.param_values[0].float_value == pytest.approx(client.UNITY_LEVEL)
 
 
-def test_an_unmeasured_placeholder_range_still_refuses_real():
-    """31 of the 52 placeholder parameters are still unmeasured - #26.
+def test_a_bound_nobody_has_measured_still_refuses_real():
+    """The recorder's OUT LEVEL, and it is now the ONLY one.
 
-    The point of this test is that measuring some of them did not quietly
-    loosen the rule for the rest. The recorder's OUT LEVEL is the case to watch
-    now: the cab LEVEL and then the Send LEVEL each held this role until they
-    got measured, and the cab turned out to be on a completely different scale
-    AND a different shape from the lane levels it shares a bucket with.
+    Reading the whole catalog resolved every other symbolic bound, so this is
+    what is left: a parameter whose block crashes the unit when placed, which
+    means nobody can read its ends off the screen. It refuses rather than
+    converting against a number somebody made up - see units.UNMEASURED_BOUNDS
+    and units.DO_NOT_PROBE.
     """
     qc = _lane_client()
-    with pytest.raises(ValueError, match="placeholder"):
+    with pytest.raises(ValueError, match="nobody has measured"):
         qc.set_param(Block(0, 1, 20000), param="OUT LEVEL", real=-3.0)
 
 
@@ -3107,13 +3107,15 @@ def test_tempo_bpm_refuses_a_tempo_the_unit_does_not_have():
 
 
 def test_set_tempo_param_takes_real_as_bpm_for_index_zero():
-    """The one index where ``real=`` comes from a measurement, not the catalog.
+    """TEMPO converts through the catalog like everything else now.
 
-    Every other tempo parameter converts through the catalog, which refuses TEMPO
-    because its published range is a placeholder. No catalog is loaded here, which
-    is the point: if this path went through the catalog it would raise.
+    It used to be the one index served by a hand-measured span, which let it
+    work with no catalog loaded. It is not special: the device publishes
+    min="MIN_TEMPO" max="MAX_TEMPO" and steps="201", and the numbers behind
+    those names are in units.FIRMWARE_CONSTANTS. Needing a catalog to speak bpm
+    is the honest cost - protocol.bpm_to_tempo is the offline route.
     """
-    qc = client.QuadCortex(FakeTransport())
+    qc = _lane_client()
     qc.set_param(Tempo(), "TEMPO", real=111.0)
     sent = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
     assert sent.index == 0

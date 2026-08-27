@@ -30,6 +30,10 @@ import tarfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 
+# The numbers behind the catalog's symbolic bounds. `units` imports nothing from
+# this module, so this direction is the only one and there is no cycle.
+from pyquadcortex.protocol import units
+
 # Categories holding Neural Captures, kept out of the generated constants.
 #
 # These ids are capture BLOCK types, not individual captures. A block's model id says
@@ -96,8 +100,11 @@ class Parameter:
 
     index: int
     name: str
-    minimum: float
-    maximum: float
+    #: ``None`` where the catalog names a bound nobody has measured - see
+    #: :data:`~pyquadcortex.protocol.units.UNMEASURED_BOUNDS`. Such a parameter
+    #: refuses to convert rather than answering with an invented number.
+    minimum: float | None
+    maximum: float | None
     default: float
     units: str = ""
     type: str = ""
@@ -106,6 +113,23 @@ class Parameter:
     #: (1 / skew)``. 1.0 is a straight line, which is what an absent attribute
     #: means; 617 parameters carry something else. See :func:`parse_skew`.
     skew: float = LIN_SKEW
+    #: The lowest wire position with a NUMERIC display, where the bottom of the
+    #: range is an OFF detent instead. 0.0 where every position is a number. See
+    #: :data:`~pyquadcortex.protocol.units.FLOOR_WIRE`, which is where the
+    #: measurement lives.
+    floor_wire: float = 0.0
+
+    @property
+    def floor(self) -> float | None:
+        """The lowest value this parameter will actually DISPLAY.
+
+        Usually :attr:`minimum`, but not where the bottom of the scale is an Off
+        position: a cab LEVEL's law runs to -40 dB and its quietest real setting
+        is -21.8 dB.
+        """
+        if self.minimum is None or self.maximum is None:
+            return None
+        return self.to_real(self.floor_wire)
 
     @property
     def option_count(self) -> int | None:
@@ -157,52 +181,56 @@ class Parameter:
             raise ValueError(f"{self.name!r} is not a list parameter")
         return 0 if count == 1 else round(value * (count - 1))
 
-    @property
-    def range_is_placeholder(self) -> bool:
-        """Whether this parameter's catalog range supports no conversion.
-
-        Some parameters are published with the range ``0.0..1.0`` while carrying a
-        real-world unit: a Send's ``LEVEL`` is ``0..1`` "dB", for instance. That
-        range is the wire's own normalized scale rather than the span the
-        parameter covers, so there is nothing to convert between, and the true
-        span is not recoverable FROM THE CATALOG.
-
-        It can be recovered by MEASUREMENT, and for 25 of them it has been - see
-        ``units.MEASURED_SPANS``, which ``real=`` consults before falling back
-        here. For the rest, pass ``value=`` - the normalized 0..1 the wire
-        carries - rather than ``real=``. :data:`pyquadcortex.protocol.UNITY_LEVEL` is the value the level
-        parameters hold when nothing is attenuated.
-        """
-        return self.minimum == 0.0 and self.maximum == 1.0 and bool(self.units)
-
-    def _reject_placeholder(self):
-        raise ValueError(
-            f"{self.name!r} publishes the placeholder range 0.0..1.0 "
-            f"{self.units!r}: that is the wire's own normalized scale, not the "
-            f"span this parameter covers, so no conversion exists. Pass value= "
-            f"with the normalized 0..1 instead of real= "
-            f"(pyquadcortex.protocol.UNITY_LEVEL is unity for the level parameters)."
-        )
-
     def to_normalized(self, real: float) -> float:
         """Convert a value in this parameter's own units to the wire's 0..1.
 
         Applies the parameter's :attr:`skew`, so this is a straight line only
         where the catalog says it is. Confirmed on hardware: the wire carries a
         normalized float. Sending 1.0 to a THRESHOLD whose catalog range is
-        -60..+12 dB made the unit read +12.0 dB. Values outside the range are
-        clamped.
+        -60..+12 dB made the unit read +12.0 dB.
 
-        Raises ``ValueError`` when :attr:`range_is_placeholder`, rather than
-        returning a number that would quietly mean something else.
+        A value the knob has no position for is REFUSED rather than clamped -
+        see :meth:`_reject_outside_range`.
+
+        Raises ``ValueError`` for a parameter whose bounds the catalog names
+        and nobody has measured, rather than returning a number that would
+        quietly mean something else - see :meth:`_reject_unmeasured`.
         """
-        if self.range_is_placeholder:
-            self._reject_placeholder()
+        if isinstance(real, bool):
+            raise TypeError(
+                f"a real value is a number, not {real!r}. A bool IS an int in "
+                f"Python, so without this True would quietly write the top of "
+                f"{self.name!r}'s range and look deliberate."
+            )
+        self._reject_unmeasured()
         span = self.maximum - self.minimum
         if span == 0:
             return 0.0
+        self._reject_outside_range(real)
         fraction = min(1.0, max(0.0, (real - self.minimum) / span))
         return fraction ** self.skew
+
+    def _reject_outside_range(self, real: float):
+        """Refuse a value the knob has no position for, rather than clamping.
+
+        A silently clamped write looks like it worked and lands somewhere else,
+        so asking for a setting the unit does not have is an error rather than a
+        nudge to the nearest one.
+
+        The bottom of the range is :attr:`floor`, not :attr:`minimum`, and the
+        difference is the whole reason this is here: a cab LEVEL's law runs to
+        -40 dB while its quietest real position is -21.8 dB, so -30 dB converts
+        to wire 0.0005 and MUTES the microphone.
+        """
+        low, high = self.floor, self.maximum
+        if low is None or low <= real <= high:
+            return
+        unit = f" {self.units}" if self.units else ""
+        hint = f" ({units.OFF_HINT})" if self.floor_wire > 0.0 else ""
+        raise ValueError(
+            f"{self.name!r} runs {round(low, 1):g}..{high:g}{unit} on the unit; "
+            f"{real:g}{unit} does not exist there.{hint}"
+        )
 
     def to_real(self, normalized: float) -> float:
         """Convert a wire 0..1 value back into this parameter's own units.
@@ -213,15 +241,25 @@ class Parameter:
         Low-High Cut HPF FREQ at skew 0.3 (wire 0.25 read 217 Hz), and the same
         block's OUTPUT with no skew (wire 0.25 read -10.0 dB).
 
-        Raises ``ValueError`` when :attr:`range_is_placeholder` - see there.
+        Raises ``ValueError`` for a parameter whose bounds the catalog names and
+        nobody has measured - see :meth:`_reject_unmeasured`.
         """
-        if self.range_is_placeholder:
-            self._reject_placeholder()
+        self._reject_unmeasured()
         span = self.maximum - self.minimum
         if span == 0:
             return self.minimum
         clamped = min(1.0, max(0.0, normalized))
         return self.minimum + span * clamped ** (1.0 / self.skew)
+
+    def _reject_unmeasured(self):
+        """Refuse rather than convert against a bound nobody has measured."""
+        if self.minimum is None or self.maximum is None:
+            raise ValueError(
+                f"{self.name!r} has a bound the catalog names but nobody has "
+                f"measured, so there is nothing honest to convert with - see "
+                f"units.UNMEASURED_BOUNDS. Pass the normalized 0..1 the wire "
+                f"carries instead."
+            )
 
 
 @dataclass(frozen=True)
@@ -328,10 +366,47 @@ class ModelCatalog:
 
 
 def _as_float(value, fallback=0.0) -> float:
+    """A lenient number, for attributes where a string is legitimate.
+
+    ``defaultValue`` is the reason this stays lenient: on a cab it is an IR
+    name, not a number ("NG_412 Plini Cab_Dynamic 57"), and 58 parameters carry
+    an empty one. Nothing converts with a default, so a fallback costs nothing.
+    Bounds are different - see :func:`_as_bound`.
+    """
     try:
         return float(value)
     except (TypeError, ValueError):
+        pass
+    return units.FIRMWARE_CONSTANTS.get(str(value).strip(), fallback)
+
+
+def _as_bound(value, fallback, where: str):
+    """A parameter's ``min`` or ``max``, which must never be guessed.
+
+    Returns ``None`` for a bound the device names and nobody has measured; the
+    parameter then refuses to convert rather than converting against a made-up
+    number. Raises for a name this build has never heard of, because silently
+    falling back to ``0.0`` and ``1.0`` is exactly what invented the
+    "placeholder range" bug - see :data:`~pyquadcortex.protocol.units.FIRMWARE_CONSTANTS`.
+    """
+    if value is None:
         return fallback
+    text = str(value).strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    if text in units.FIRMWARE_CONSTANTS:
+        return units.FIRMWARE_CONSTANTS[text]
+    if text in units.UNMEASURED_BOUNDS:
+        return None
+    raise ValueError(
+        f"the catalog names a bound this build has no number for: {text!r} "
+        f"on {where}. Measure it and add it to units.FIRMWARE_CONSTANTS with "
+        f"the evidence, or record it in units.UNMEASURED_BOUNDS with the "
+        f"reason nobody can. Falling back to 0..1 is what created the "
+        f"placeholder-range bug this replaced."
+    )
 
 
 def _as_int(value):
@@ -377,13 +452,16 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 Parameter(
                     index=i,
                     name=p.get("name", ""),
-                    minimum=_as_float(p.get("min")),
-                    maximum=_as_float(p.get("max"), 1.0),
+                    minimum=_as_bound(p.get("min"), 0.0,
+                                      f"{element.get('name')!r} {p.get('name')!r}"),
+                    maximum=_as_bound(p.get("max"), 1.0,
+                                      f"{element.get('name')!r} {p.get('name')!r}"),
                     default=_as_float(p.get("defaultValue")),
                     units=p.get("units", ""),
                     type=p.get("type", ""),
                     steps=_as_int(p.get("steps")),
                     skew=parse_skew(p.get("skew")),
+                    floor_wire=units.FLOOR_WIRE.get(str(p.get("min")).strip(), 0.0),
                 )
                 for i, p in enumerate(element.findall("Parameter"))
             )

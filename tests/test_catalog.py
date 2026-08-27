@@ -11,12 +11,16 @@ import tarfile
 
 import pytest
 
-from pyquadcortex.protocol import catalog
+from pyquadcortex.protocol import catalog, units
 
 # A miniature ModelRepo covering every case the parser must handle: a plain
 # factory model with parameters, a purchasable one (sku/plugin_id), a hidden
 # one, an internal one, a model in a hidden category, and a Neural Capture
 # (user content, whose ids are not stable across devices).
+#
+# The bounds are the device's OWN spellings. MIXER LEVEL and TEMPO carry
+# symbolic ones because that is what the unit ships, and a fixture that wrote
+# 0..1 there would be reproducing the bug this parser was fixed for.
 SAMPLE_XML = """<?xml version="1.0" ?><Models>
 <Category id="0" name="Guitar Overdrive">
   <Model blob="aaa" id="1" name="Myth Drive" tm="Based on Klon&#174; Centaur&#174;">
@@ -42,14 +46,14 @@ SAMPLE_XML = """<?xml version="1.0" ?><Models>
 </Category>
 <Category id="11" name="Mixer">
   <Model blob="mmm" id="11000" name="Mixer" internal="true">
-    <Parameter defaultValue="0.769" max="1" min="0" name="MIXER LEVEL" type="float" units="dB"/>
+    <Parameter defaultValue="0.769" max="MAX_MIXER_DB" min="MIN_MIXER_DB" name="MIXER LEVEL" type="float" units="dB" min_string="OFF"/>
     <Parameter defaultValue="5" max="10" min="0" name="PAN A" type="float" units=""/>
     <Parameter defaultValue="0" max="1" min="0" name="DUMMY" type="empty"/>
   </Model>
 </Category>
 <Category id="25" name="Tempo">
   <Model blob="ttt" id="25000" name="TempoControl" internal="true">
-    <Parameter defaultValue="0.5" max="1" min="0" name="TEMPO" type="float" units="BPM"/>
+    <Parameter defaultValue="DEFAULT_TEMPO" max="MAX_TEMPO" min="MIN_TEMPO" name="TEMPO" type="float" units="BPM" steps="201" showAsInteger="true"/>
     <Parameter defaultValue="0" max="1" min="0" name="TYPE" type="switch"/>
     <Parameter defaultValue="1" max="1" min="0" name="LED LIGHT" type="switch"/>
     <Parameter defaultValue="0.6" max="9" min="-60" name="VOLUME" type="float" units="dB"/>
@@ -204,11 +208,21 @@ def test_parameter_converts_normalized_back_to_real_units(cat):
     assert thr.to_real(0.5) == pytest.approx(-24.0)
 
 
-def test_real_unit_conversion_clamps_out_of_range(cat):
+def test_real_unit_conversion_refuses_out_of_range(cat):
+    """Refused, not clamped. A clamped write looks like it worked.
+
+    This used to clamp. Both behaviours were in the library at once - the
+    catalog path clamped and the measured-span path refused - and unifying them
+    on the catalog meant picking one. Refusing is the project's rule: a setting
+    the unit does not have is a mistake, not a request to round.
+    """
     thr = catalog.Parameter(index=0, name="THRESHOLD", minimum=-60.0,
                             maximum=12.0, default=-40.0, units="dB")
-    assert thr.to_normalized(999.0) == pytest.approx(1.0)
-    assert thr.to_normalized(-999.0) == pytest.approx(0.0)
+    assert thr.to_normalized(12.0) == pytest.approx(1.0)
+    assert thr.to_normalized(-60.0) == pytest.approx(0.0)
+    for outside in (999.0, -999.0):
+        with pytest.raises(ValueError, match="does not exist there"):
+            thr.to_normalized(outside)
 
 
 def test_degenerate_range_does_not_divide_by_zero(cat):
@@ -241,39 +255,74 @@ def test_superseded_models_are_still_factory_and_still_resolvable(cat):
     assert cat[24003].name == "Envelope Filter"
 
 
-# -- placeholder ranges -------------------------------------------------------
-# Some parameters are published as 0..1 with a real-world unit: the mixer,
-# splitter and lane-output LEVEL controls are 0..1 "dB", and TEMPO is 0..1 "BPM".
-# That is the wire's own normalized scale, not the span the control covers, so
-# there is nothing to convert and the true span is not in the catalog. Measured:
-# those level parameters read 0.76923077 (10/13, i.e. 0 dB on -40..+12) on every
-# row carrying one across 17 factory presets.
+# -- symbolic bounds ----------------------------------------------------------
+# This library spent months believing in a "placeholder range": a parameter
+# published as 0..1 with a real-world unit and therefore unconvertible. There is
+# no such thing. Zero parameters in the shipped catalog are published that way.
+#
+# What actually happens is that `min` and `max` are sometimes a NAME -
+# min="MIN_CABSIM_DB" - and the parser's float conversion fell back to 0.0 and
+# 1.0 for anything it could not read. That fallback invented the concept, and
+# a table of hand-measured spans grew for months to work around it.
 
 
-def test_a_zero_to_one_range_with_a_unit_is_flagged_as_a_placeholder(cat):
-    level = cat[11000].parameter("MIXER LEVEL")
-    assert level.minimum == 0.0 and level.maximum == 1.0 and level.units == "dB"
-    assert level.range_is_placeholder is True
+def test_a_symbolic_bound_resolves_to_its_firmware_number():
+    xml = ('<Models><Category id="12" name="Cabsim Guitar (M)">'
+           '<Model id="12000" name="Default Cabsim">'
+           '<Parameter name="LEVEL" type="float" units="dB" defaultValue="0.5"'
+           ' min="MIN_CABSIM_DB" max="MAX_CABSIM_DB" skew="4.9594844"'
+           ' min_string="OFF"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[12000].parameters[0]
+    assert (p.minimum, p.maximum) == (-40.0, 6.0)
 
 
-def test_a_real_range_is_not_a_placeholder(cat):
-    assert cat[5005].parameter("THRESHOLD").range_is_placeholder is False
+def test_a_symbolic_bound_nobody_has_measured_becomes_None():
+    """It then refuses to convert, rather than answering against a guess."""
+    xml = ('<Models><Category id="20" name="Neural Capture Internal">'
+           '<Model id="20000" name="NC_Recorder">'
+           '<Parameter name="OUT LEVEL" type="float" units="dB" steps="41"'
+           ' min="MIN_INPUT_TRIM" max="MAX_INPUT_TRIM"'
+           ' defaultValue="MAX_INPUT_TRIM"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[20000].parameters[0]
+    assert p.minimum is None and p.maximum is None
+    with pytest.raises(ValueError, match="nobody has measured"):
+        p.to_real(0.5)
 
 
-def test_a_zero_to_one_range_without_a_unit_is_not_a_placeholder(cat):
-    # A unitless 0..1 is a genuine fraction - a switch, a mix control - and
-    # converts fine, so only the ones claiming a real-world unit are suspect.
-    plain = catalog.Parameter(index=0, name="PHASE", minimum=0.0, maximum=1.0,
-                              default=0.0, units="", type="switch", steps=2)
-    assert plain.range_is_placeholder is False
+def test_a_bound_this_build_has_never_heard_of_is_loud():
+    """A firmware update adding a constant must fail, not silently become 0..1.
+
+    Falling back is exactly what created the placeholder-range bug, so the
+    parser refuses rather than inventing a span.
+    """
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="Widget">'
+           '<Parameter name="Z" type="float" min="MIN_FUTURE_THING" max="1"'
+           ' defaultValue="0"/>'
+           '</Model></Category></Models>')
+    with pytest.raises(ValueError, match="MIN_FUTURE_THING"):
+        catalog.parse_model_repo(make_payload(xml))
 
 
-def test_placeholder_conversions_refuse_rather_than_mislead(cat):
-    level = cat[11000].parameter("MIXER LEVEL")
-    with pytest.raises(ValueError, match="placeholder range"):
-        level.to_real(0.76923077)
-    with pytest.raises(ValueError, match="value="):
-        level.to_normalized(0.0)
+def test_a_measured_family_carries_its_floor_from_the_units_table():
+    """min_string="OFF" says the bottom is a word; only measurement says where
+    the numbers resume."""
+    xml = ('<Models><Category id="12" name="Cabsim Guitar (M)">'
+           '<Model id="12000" name="Default Cabsim">'
+           '<Parameter name="LEVEL" type="float" units="dB" defaultValue="0.5"'
+           ' min="MIN_CABSIM_DB" max="MAX_CABSIM_DB" skew="4.9594844"'
+           ' min_string="OFF"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[12000].parameters[0]
+    assert p.floor_wire == 0.01
+    assert p.floor == pytest.approx(-21.8, abs=0.05)
+
+
+def test_the_placeholder_concept_is_gone():
+    """There was never such a thing - see ADR-0015."""
+    assert not hasattr(catalog.Parameter, "range_is_placeholder")
+    assert not hasattr(units, "MEASURED_SPANS")
 
 
 def test_a_unitless_parameter_on_the_same_model_still_converts(cat):
