@@ -189,7 +189,7 @@ class Parameter:
     show_as_integer: bool = False
 
     @property
-    def floor(self):
+    def floor(self) -> "values.Real | None":
         """The lowest value this parameter is KNOWN to reach, as a typed value.
 
         Usually :attr:`minimum`, but not where the bottom of the scale is an Off
@@ -335,7 +335,7 @@ class Parameter:
             f"{real:g}{unit} does not exist there.{hint}"
         )
 
-    def to_real(self, normalized: float) -> float:
+    def to_real(self, normalized: float) -> "values.Real":
         """Convert a wire 0..1 value back into this parameter's own units.
 
         ``real = min + (max - min) * wire ** (1 / skew)``. Confirmed on hardware

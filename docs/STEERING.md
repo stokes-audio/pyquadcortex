@@ -88,6 +88,11 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0009 | Persistent listeners run on the RX thread, which may not read from the device |
 | ADR-0010 | A control with no known wire path gets a bounded search before it is modelled as refused |
 | ADR-0011 | A push merges, a read replaces, and anything the cache cannot place forces one read |
+| ADR-0012 | A grid push is noted and re-read, not merged, and the model publishes what it noticed |
+| ADR-0013 | The translation boundary is a package, and what it may reach for is two lists |
+| ADR-0014 | A parameter is addressed by a target, and the target owns what differs |
+| ADR-0015 | The catalog is the source of truth for a parameter's scale; measurements are tests |
+| ADR-0016 | Parameter values carry their own scale, and the protocol layer may speak the device's units |
 
 ## 8. Open Questions
 
@@ -126,6 +131,43 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-27 - A parameter value carries its own scale (ADR-0016)
+
+**What changed:**
+- `pyquadcortex/protocol/values.py`: NEW public module. `Encoded` is the device's
+  0..1, `Real` is the parameter's own scale, and eight unit types subclass `Real`
+  with a claim checked against the catalog.
+- `pyquadcortex/protocol/client.py`: `set_param` takes ONE positional value.
+  `value=`, `real=` and `text=` are gone.
+- `docs/STEERING.md` §5: the translation-boundary row's exception now says the
+  protocol layer keeps raw COORDINATES. Its scales come from the catalog.
+
+**Why:** `real=-3.1` was dB on an EQ band and milliseconds on a delay, and
+nothing at the call site said which. The pair that forced the issue: on a lane
+VOLUME, `real=0.0` is unity and `value=0.0` is silence.
+
+**What to watch:** the check and the conversion must read the SAME catalog
+parameter. They did not at first - on a cab the check read the model's own entry
+and the conversion used the shared layout, so on 157 of 174 cab models the check
+was inert. `ParamTarget.spec_for_conversion` is now the single place that
+decides.
+
+### 2026-08-27 - The catalog is the source of truth for scales (ADR-0015)
+
+**What changed:**
+- `pyquadcortex/protocol/catalog.py`: reads `skew`, `stepNames`, `dynamic`,
+  `min_string`, `expAssignable` and resolves symbolic `min`/`max` bounds.
+- `pyquadcortex/protocol/units.py`: `MEASURED_SPANS` removed; `FIRMWARE_CONSTANTS`
+  holds the 14 numbers the catalog names but does not spell out.
+- `pyquadcortex/protocol/options.py`: NEW generated module, 110 option enums.
+
+**Why:** the device publishes 24 attributes per parameter and the library read 7.
+`skew` is the taper, and 615 parameters were converting as straight lines.
+
+**What to watch:** a bound the catalog names needs a `FIRMWARE_CONSTANTS` entry
+with its evidence. An unknown name raises rather than falling back, because
+falling back is what created the "placeholder range" that never existed.
 
 ### 2026-08-14 - The model keeps its own copy of what the unit is doing (ADR-0011)
 

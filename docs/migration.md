@@ -48,7 +48,7 @@ inverts a volume.
 `Bpm` are `Real` plus a claim that gets checked: hand `Db` to a parameter the
 catalog calls Hz and you get a `TypeError` rather than a wrong write. Use plain
 `Real` where you do not want the check, or where the parameter has no unit -
-2,315 of them do not.
+1,780 of them do not.
 
 Only `Encoded` works with no device attached. The other two read the parameter's
 scale from the catalog, and the catalog comes from the unit.
@@ -121,7 +121,7 @@ dB; asking for -30 dB used to convert to wire 0.0005 and mute the microphone.
 
 ### Converting real units now needs a catalog
 
-`real=` reads the device's own description of the parameter, so it fetches one.
+A real value reads the device's own description of the parameter, so it fetches one.
 Previously a handful of parameters were served by a hand-measured table and
 worked with no device attached - `Tempo()` in particular.
 
@@ -129,7 +129,7 @@ If you convert without a device, use the standalone helpers, which are unchanged
 `protocol.bpm_to_tempo`, `protocol.tempo_bpm`, `protocol.db_to_lane_level`,
 `protocol.lane_level_db`, `protocol.input_level_db`, `protocol.db_to_input_level`.
 
-Addressing a parameter by wire INDEX and writing `value=` still needs no catalog.
+Addressing a parameter by wire INDEX and writing `Encoded` still needs no catalog.
 
 ### Removed: the placeholder-range machinery
 
@@ -177,17 +177,20 @@ parameter lives:
 
 | before | after |
 |---|---|
-| `set_param(row, column, param_index=i, value=v)` | `set_param(Block(row, column), i, value=v)` |
-| `set_param(row, column, param="X", model=m, real=r)` | `set_param(Block(row, column, m), "X", real=r)` |
-| `set_lane_output(row, param, value=v)` | `set_param(LaneOutput(row), param, value=v)` |
-| `set_input_gate(row, param, value=v)` | `set_param(LaneInput(row), param, value=v)` |
-| `set_mixer_param(row, param, value=v)` | `set_param(Mixer(row), param, value=v)` |
-| `set_splitter_param(row, param, value=v)` | `set_param(Splitter(row), param, value=v)` |
-| `set_tempo_param(param, value=v)` | `set_param(Tempo(), param, value=v)` |
+| `set_param(row, column, param_index=i, value=v)` | `set_param(Block(row, column), i, Encoded(v))` |
+| `set_param(row, column, param="X", model=m, real=r)` | `set_param(Block(row, column, m), "X", Db(r))` |
+| `set_lane_output(row, param, value=v)` | `set_param(LaneOutput(row), param, Encoded(v))` |
+| `set_input_gate(row, param, value=v)` | `set_param(LaneInput(row), param, Encoded(v))` |
+| `set_mixer_param(row, param, value=v)` | `set_param(Mixer(row), param, Encoded(v))` |
+| `set_splitter_param(row, param, value=v)` | `set_param(Splitter(row), param, Encoded(v))` |
+| `set_tempo_param(param, value=v)` | `set_param(Tempo(), param, Encoded(v))` |
 | `set_param_scene_mode(row, column, i, on)` | `set_param_scene_mode(Block(row, column), i, on)` |
 | `set_lane_output_scene_mode(row, i, on)` | `set_param_scene_mode(LaneOutput(row), i, on)` |
 | `set_expression(row, column, param, ...)` | `set_expression(Block(row, column), param, ...)` |
 | `clear_expression(row, column, param)` | `clear_expression(Block(row, column), param)` |
+
+Both changes ship in the same release, so the "after" column shows the FINAL
+form - there is no intermediate state to migrate through.
 
 `param_index=` is gone; the parameter is the second positional argument, and
 `param=` still works as a keyword. `model=` moves onto the `Block`, because the

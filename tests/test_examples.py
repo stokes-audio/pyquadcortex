@@ -39,9 +39,34 @@ def test_the_example_imports_what_it_uses(path):
         elif isinstance(node, ast.Import):
             imported.update((a.asname or a.name).split(".")[0] for a in node.names)
     used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
-    for name in ("Db", "Encoded", "Real", "Hertz", "Percent", "Bpm"):
+    # Derived from the module, not a hand-listed subset - the first version
+    # named six types, so an example using Milliseconds unimported passed.
+    from pyquadcortex.protocol import values
+
+    for name in values.__all__:
         if name in used:
             assert name in imported, f"{path.name} uses {name} without importing it"
+
+
+@pytest.mark.parametrize("path", EXAMPLES, ids=lambda p: p.name)
+def test_the_example_uses_what_it_imports(path):
+    """The other direction, which the migration itself got wrong.
+
+    Rewriting these left `UNITY_LEVEL` imported and unused in two of them, and
+    the test written to catch example breakage did not catch the breakage it
+    was written alongside.
+    """
+    tree = ast.parse(path.read_text())
+    used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    used |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    used |= {n.value.id for n in ast.walk(tree)
+             if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            name = alias.asname or alias.name
+            assert name in used, f"{path.name} imports {name} and never uses it"
 
 
 # -- Encoded is available, and never advertised -------------------------------
@@ -68,7 +93,18 @@ def test_an_example_reaching_for_encoded_says_why(path):
     for i, line in enumerate(lines):
         if not re.search(r"\bEncoded\(", line) or line.strip().startswith("#"):
             continue
-        window = "\n".join(lines[max(0, i - 6):i + 1])
-        assert "#" in window, (
+        # A comment must be nearby AND say something. The first version of this
+        # asserted `"#" in window`, which any stray hash satisfied - including
+        # one inside a string. It tested that a hash existed, not that a reason
+        # was written down.
+        comments = [l.split("#", 1)[1].strip()
+                    for l in lines[max(0, i - 6):i + 1]
+                    if l.lstrip().startswith("#")]
+        prose = " ".join(comments).lower()
+        assert len(prose.split()) >= 8, (
             f"{path.name}:{i + 1} writes the device's own scale with no comment "
             f"saying why a unit type will not do")
+        assert any(word in prose for word in
+                   ("detent", "off", "catalog", "index", "scale", "wire")), (
+            f"{path.name}:{i + 1} has a comment nearby, but it does not explain "
+            f"the choice of the device's scale")

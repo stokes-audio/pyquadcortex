@@ -18,7 +18,7 @@ import sys
 import time
 
 from pyquadcortex import protocol
-from pyquadcortex.protocol import (UNITY_LEVEL, Block, BlockRefused, Mixer, Scene,
+from pyquadcortex.protocol import (Block, BlockRefused, Mixer, Scene,
                                    Setlist, blocks, field_present, free_rows, models,
                                    splits)
 from pyquadcortex.protocol.values import Db, Encoded

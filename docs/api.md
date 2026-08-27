@@ -166,7 +166,7 @@ qc.set_param(block, "HPF FREQ", Hertz(217))              # fine
 
 The types are `Db`, `Percent`, `Hertz`, `Milliseconds`, `Seconds`, `Semitones`,
 `Cents` and `Bpm`. Use plain `Real` when you do not want the check, or when the
-parameter has no unit at all - 2,315 of them do not, like that drive's `GAIN`:
+parameter has no unit at all - 1,780 of them do not, like that drive's `GAIN`:
 
 ```python
 qc.set_param(block, "GAIN", Real(5.0))    # 5 of 0..10, no unit involved
@@ -284,15 +284,15 @@ qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, Encoded(0.0), scene=Scene.C)
 A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which is
 what every mixer, splitter and lane level in the factory content sits at when nothing
 is attenuated. Their span is **-40..+12 dB**, which the catalog names as
-`MIN_MIXER_DB` / `MAX_MIXER_DB` and this library supplies the numbers for, so `real=`
-takes dB directly. The helpers remain for converting without a device in hand:
+`MIN_MIXER_DB` / `MAX_MIXER_DB` and this library supplies the numbers for, so `Db(...)`
+is taken directly. The helpers remain for converting without a device in hand:
 
 ```python
 from pyquadcortex.protocol import db_to_lane_level, lane_level_db
 
 qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Db(-6.0))
 qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME,
-             value=db_to_lane_level(-6.0))                             # the same
+             Encoded(db_to_lane_level(-6.0)))                          # the same
 lane_level_db(0.76923077)     # 0.0
 
 # A pedal as a volume and mute control: silence at the heel, +3.2 dB at the toe.
@@ -399,8 +399,8 @@ qc.set_param(Tempo(), "TIME SIGNATURE", Encoded(0.1))   # a list index; see opti
 
 `TEMPO` runs 40..240 bpm, which the catalog names as `MIN_TEMPO` / `MAX_TEMPO`.
 `tempo_bpm()` and `bpm_to_tempo()` convert if you need the numbers directly, or want
-them without a catalog - `real=` reads the device's own description, so it fetches
-one.
+them without a catalog - a real value reads the device's own description, so it
+fetches one.
 
 Use `set_metronome_muted` and not the volume to silence a click:
 `set_metronome_volume(Encoded(0.0))` is **-60 dB, quiet but still audible**, not silence.

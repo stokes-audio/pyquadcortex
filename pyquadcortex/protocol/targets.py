@@ -158,38 +158,49 @@ class ParamTarget:
             return None
         return source.parameters[index]
 
+    def spec_for_conversion(self, index, get_catalog, spec=None):
+        """The catalog parameter a conversion at ``index`` will ACTUALLY use.
+
+        One place decides, because two places disagreed. `set_param` used to
+        check a value's unit against :meth:`spec_at` while `normalize` converted
+        against :meth:`_layout_spec`, and on a cab those are different
+        parameters - so on 157 of the 174 cab models the unit check was reading
+        a spec that was not there (``spec_at`` returns ``None``) and silently
+        doing nothing, while `Db`, `Hertz` and `Percent` all wrote the same
+        number. On 12 more it refused a correct `Db` because the cab's own entry
+        calls index 2 `POSITION`.
+
+        Returns ``None`` where the catalog describes neither, which is a real
+        case: the wire carries more parameters than the catalog documents.
+        """
+        layout = self._layout_spec(index, get_catalog)
+        if layout is not None:
+            return layout
+        return spec if spec is not None else self.spec_at(index, get_catalog)
+
     def normalize(self, index, real, get_catalog, spec=None):
         """Convert ``real``, in the parameter's own units, to the wire's 0..1.
 
         The catalog answers this, so ``get_catalog`` is taken lazily rather than
-        as a spec: an indexed write with ``value=`` never fetches one. ``spec``
+        as a spec: an indexed write with ``Encoded`` never fetches one. ``spec``
         is a hint from :meth:`index_of` when a name was resolved, so naming a
         parameter costs one fetch rather than two.
         """
-        # The LAYOUT wins where there is one. A cab's own catalog entry does not
-        # describe the wire: 12 of the 174 cab models list something else
-        # entirely at index 2 - a Plini Cab calls it POSITION over 0..1 - while
-        # the wire carries `Default Cabsim`'s LEVEL, -40..6 dB and tapered.
-        # Converting -3.0 dB against POSITION would refuse it as out of range,
-        # and a value inside 0..1 would be written on the wrong scale in silence.
-        layout = self._layout_spec(index, get_catalog)
-        if layout is not None:
-            spec = layout
-        elif spec is None:
-            spec = self.spec_at(index, get_catalog)
+        spec = self.spec_for_conversion(index, get_catalog, spec)
         if spec is None and self.model_id is None:
             raise TypeError(
-                f"real= on {self.describe()} needs model=<model id or catalog "
-                f"Model>, because the conversion depends on WHICH block is in "
-                f"the cell. Use the Block that blocks() handed you - it carries "
-                f"model_id - or pass value= with the normalized 0..1."
+                f"a real value on {self.describe()} needs model=<model id or "
+                f"catalog Model>, because the conversion depends on WHICH block "
+                f"is in the cell. Use the Block that blocks() handed you - it "
+                f"carries model_id - or pass Encoded() with the device's own "
+                f"0..1."
             )
         if spec is None:
             raise ValueError(
-                f"real= needs a parameter the catalog describes, and it does not "
-                f"describe index {index} on {self.describe()} (that is real - the "
-                f"wire carries more parameters than the catalog documents). Pass "
-                f"value= with the normalized 0..1 instead."
+                f"a real value needs a parameter the catalog describes, and it "
+                f"does not describe index {index} on {self.describe()} (that is "
+                f"real - the wire carries more parameters than the catalog "
+                f"documents). Pass Encoded() with the device's own 0..1 instead."
             )
         return spec.to_normalized(real)
 

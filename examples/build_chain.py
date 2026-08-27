@@ -22,7 +22,7 @@ import time
 
 from pyquadcortex import protocol
 from pyquadcortex.protocol import (Block, BlockRefused, Input, Instrument, LaneOutput,
-                                   Output, Scene, Setlist, UNITY_LEVEL, blocks,
+                                   Output, Scene, Setlist, blocks,
                                    field_present, free_rows, models)
 from pyquadcortex.protocol.values import Db, Encoded, Real
 

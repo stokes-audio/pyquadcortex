@@ -81,7 +81,7 @@ def test_real_claims_nothing_so_it_fits_anywhere():
 
 
 def test_a_unit_type_on_a_unitless_parameter_is_refused():
-    """2,315 parameters have no unit. Db on one of those is a real mistake."""
+    """1,780 parameters have no unit. Db on one of those is a real mistake."""
     with pytest.raises(TypeError, match="no unit"):
         values.Db(1.0).check_unit(_param(""))
 

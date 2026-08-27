@@ -622,15 +622,28 @@ class QuadCortex:
         because what is in a cell is whatever the player put there; every other
         target knows its own model.
 
-        Give the value as ``value=`` (the normalized 0..1 the wire carries),
-        ``real=`` (the parameter's own units - dB, ms, Hz, bpm), or ``text=``
-        for a string-valued parameter such as a cab's microphone. ``real=``
-        converts through the catalog's own description of the parameter - its
-        ``min``, ``max`` and ``skew`` - so it applies any taper and refuses a
-        value the knob has no position for rather than clamping to the nearest
-        one. It needs a catalog, which comes from the device.
+        **The value says which SCALE it is on**, because every knob has two:
+        the one the screen shows and the device's own 0.0 to 1.0. See
+        :mod:`pyquadcortex.protocol.values`.
 
-        One parameter refuses ``real=`` outright: ``NC_Recorder``'s ``OUT
+        * :class:`~pyquadcortex.protocol.values.Real` and the unit types -
+          ``Db``, ``Percent``, ``Hertz``, ``Milliseconds``, ``Seconds``,
+          ``Semitones``, ``Cents``, ``Bpm`` - are the screen's scale. They
+          convert through the catalog's own description of the parameter, so
+          they apply any taper and REFUSE a value the knob has no position for
+          rather than clamping. A unit type also checks itself against the
+          catalog's unit. They need a catalog, which comes from the device.
+        * :class:`~pyquadcortex.protocol.values.Encoded` is the device's scale.
+          It converts nothing and needs no catalog, which is what keeps an
+          index-addressed write free of a round trip.
+        * A plain ``str`` writes a string-valued parameter, such as a cab's
+          microphone.
+
+        A bare number is refused: on a lane VOLUME ``Real(0.0)`` is unity and
+        ``Encoded(0.0)`` is silence, and nothing in a plain ``0.0`` says which
+        was meant.
+
+        One parameter refuses a real value outright: ``NC_Recorder``'s ``OUT
         LEVEL``, whose bounds the catalog names and nobody can measure, because
         placing that block crashes the unit.
 
@@ -698,15 +711,48 @@ class QuadCortex:
                 )
             value = 1.0 if value else 0.0
         elif isinstance(value, str):
-            pass                      # a string is itself; written below
+            # A string is itself - but check the parameter actually takes one.
+            # Collapsing text= into the positional removed the caller's
+            # declaration of intent, so a value that arrives as a string from
+            # argv or JSON would otherwise take the string path onto a dB knob
+            # and be sent. The catalog publishes type="string" for exactly the
+            # 396 parameters that want it.
+            if spec is None:
+                try:
+                    spec = target.spec_at(index, self._get_catalog)
+                except Exception:
+                    spec = None
+            if spec is not None and spec.type != "string":
+                raise TypeError(
+                    f"{spec.name!r} is a {spec.type or 'plain'} parameter, not a "
+                    f"string one, so {value!r} is not a value it can hold. If "
+                    f"that string came from a file or a command line, convert it "
+                    f"first and say which scale it is on - Real({value!r}) or "
+                    f"Encoded({value!r})."
+                )
         elif isinstance(value, values_module.Encoded):
             # The device's own scale, so there is nothing to convert and no
             # catalog to fetch. This is what keeps an index-addressed write free
             # of a round trip.
+            #
+            # 0..1 is the one invariant true of all 3,809 parameters, so it is
+            # the only bound checkable without asking the device anything. NaN
+            # fails this comparison too, which is deliberate: four factory
+            # presets store NaN, and passing one through would write it.
+            if not 0.0 <= float(value) <= 1.0:
+                raise ValueError(
+                    f"the device's scale is 0.0 to 1.0 and {value!r} is outside "
+                    f"it. If that number is in the parameter's own units, it is "
+                    f"Real({float(value)!r}) rather than Encoded."
+                )
             value = float(value)
         elif isinstance(value, values_module.Real):
-            if spec is None:
-                spec = target.spec_at(index, self._get_catalog)
+            # The SAME spec for the check and the conversion. Resolving them
+            # separately meant the check read a cab's own catalog entry while
+            # the conversion used the shared layout, which are different
+            # parameters - so the check was inert on most cabs and refused
+            # correct calls on the rest.
+            spec = target.spec_for_conversion(index, self._get_catalog, spec)
             if spec is not None:
                 value.check_unit(spec)
             value = target.normalize(index, float(value), self._get_catalog, spec)
@@ -1329,7 +1375,8 @@ class QuadCortex:
         headphones. True silence is not reachable with this control;
         stop the transport instead with :meth:`set_metronome_running`.
 
-        Pass ``value=`` for the wire 0..1 or ``real=`` for dB::
+        Takes a typed value like any other parameter - ``Db`` for decibels,
+        ``Encoded`` for the device's own 0..1::
 
             qc.set_metronome_volume(Db(-20.0))       # -20 dB
         """

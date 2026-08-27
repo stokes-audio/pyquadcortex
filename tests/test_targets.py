@@ -367,3 +367,71 @@ def test_a_non_cab_does_not_borrow_the_cabsim_layout():
     """The alias is not a back door into every model near a cab."""
     get = _scale_catalog()
     assert Block(0, 1, 5005)._layout_spec(2, get) is None
+
+
+# -- the check and the conversion must read the SAME spec ---------------------
+
+
+def _diverging_cab_catalog():
+    """A cab whose own entry disagrees with the layout at the same index.
+
+    This is not hypothetical: 157 of the 174 cab models list only their mic
+    selectors, so their own index 2 is absent, and 12 more call it `POSITION`
+    while the wire carries `LEVEL` in dB.
+    """
+    from tests.test_catalog import SAMPLE_XML, make_payload
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model blob="lay" id="12000" name="Default Cabsim" internal="true">
+    <Parameter defaultValue="0" max="1" min="0" name="bypass" type="switch"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir" type="string"/>
+    <Parameter defaultValue="0.5" max="MAX_CABSIM_DB" min="MIN_CABSIM_DB" name="LEVEL" type="float" units="dB" skew="4.9594844" min_string="OFF"/>
+  </Model>
+  <Model blob="bare" id="12001" name="Bare Cab">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector 2" type="string"/>
+  </Model>
+  <Model blob="pos" id="12053" name="Named Cab">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector 2" type="string"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="POSITION" type="float"/>
+  </Model>
+</Category>
+""" + "</Models>")
+    cat = catalog.parse_model_repo(make_payload(xml))
+    return lambda: cat
+
+
+def test_the_conversion_spec_is_the_layouts_where_a_cab_has_one():
+    """157 cab models describe no index 2 at all, so `spec_at` is None there."""
+    get = _diverging_cab_catalog()
+    bare = Block(0, 5, 12001)
+    assert bare.spec_at(2, get) is None
+    assert bare.spec_for_conversion(2, get).name == "LEVEL"
+
+
+def test_the_layout_wins_over_the_cabs_own_disagreeing_entry():
+    """12 cabs call index 2 POSITION while the wire carries LEVEL in dB."""
+    get = _diverging_cab_catalog()
+    named = Block(0, 5, 12053)
+    assert named.spec_at(2, get).name == "POSITION"
+    assert named.spec_for_conversion(2, get).name == "LEVEL"
+
+
+def test_a_unit_check_reads_the_spec_the_conversion_will_use():
+    """The bug this exists for.
+
+    `set_param` checked the unit against `spec_at` and converted against
+    `_layout_spec`. On a cab those are different parameters, so the check was
+    reading a spec that was not there and doing nothing at all: Db, Hertz and
+    Percent every one wrote the same wire value.
+    """
+    from pyquadcortex.protocol import values
+
+    get = _diverging_cab_catalog()
+    for model_id in (12001, 12053):
+        spec = Block(0, 5, model_id).spec_for_conversion(2, get)
+        assert spec.units == "dB", model_id
+        values.Db(-3.0).check_unit(spec)                 # must not raise
+        with pytest.raises(TypeError, match="dB"):
+            values.Hertz(-3.0).check_unit(spec)

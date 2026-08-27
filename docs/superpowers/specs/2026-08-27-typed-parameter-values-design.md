@@ -48,8 +48,8 @@ Counted from the shipped catalog, 3,809 parameters:
 
 | what | count | takes |
 |---|---|---|
-| a unit and no option list | 1,490 | a unit type |
-| unitless, with a real range | 2,315 | `Real` - see below |
+| a unit, no option list | 1,490 | a unit type |
+| unitless, with a real range | 1,780 | `Real` - see below |
 | an option list | 539 | an enum or a bool, unchanged |
 | bounds nobody has measured | 1 | `Encoded` only |
 
@@ -78,7 +78,7 @@ qc.set_param(block, IR_PATH_SLOT_1, "/media/...")  # a string is itself
 
 ### `Real` is the general case; a unit type is a checkable claim on top
 
-The 2,315 unitless parameters are the corner that shapes this. A drive's `GAIN`
+The 1,780 unitless parameters are the corner that shapes this. A drive's `GAIN`
 runs 0..10 with no unit. `Db` is wrong, `Encoded` is wrong (it is not a 0..1
 control), and a bare `5.0` is genuinely ambiguous - on a unitless 0..1 control
 it could equally mean the wire.

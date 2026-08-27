@@ -3973,3 +3973,43 @@ def test_a_bare_number_is_refused_and_the_message_rewrites_the_call():
     assert "Real(-3.1)" in message
     assert "Encoded(-3.1)" in message
     assert "two number lines" in message
+
+
+def test_a_string_on_a_number_parameter_is_refused():
+    """Collapsing text= into the positional removed the declaration of intent.
+
+    A value that arrives as a string from argv or JSON would otherwise take the
+    string path onto a dB knob and be sent, which the device accepts silently.
+    """
+    qc = _option_client()
+    with pytest.raises(TypeError, match="not a string one"):
+        qc.set_param(Block(0, 1, 5005), "THRESHOLD", "0.5")
+
+
+def test_an_encoded_value_outside_the_devices_scale_is_refused():
+    """0..1 is the one bound true of all 3,809 parameters, so it is the only
+    one checkable without asking the device anything."""
+    qc = client.QuadCortex(FakeTransport())
+    for bad in (5.0, -1.0, float("nan")):
+        with pytest.raises(ValueError, match="0.0 to 1.0"):
+            qc.set_param(Block(0, 1), 3, Encoded(bad))
+    assert not qc._t.sent
+
+
+def test_a_unit_check_reads_the_spec_the_conversion_uses_on_a_cab(monkeypatch):
+    """The blocker from the #37 triage, through the public entry point.
+
+    A cab's own catalog entry and the shared layout describe different
+    parameters at the same index. The check read one and the conversion used the
+    other, so on 157 of 174 cab models Db, Hertz and Percent all wrote the same
+    wire value.
+    """
+    from tests.test_targets import _diverging_cab_catalog
+    from pyquadcortex.protocol.values import Hertz
+
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = _diverging_cab_catalog()()
+    qc.set_param(Block(0, 5, 12001), 2, Db(-3.0))         # the layout is dB
+    assert qc._t.sent
+    with pytest.raises(TypeError, match="dB"):
+        qc.set_param(Block(0, 5, 12001), 2, Hertz(-3.0))

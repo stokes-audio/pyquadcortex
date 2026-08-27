@@ -25,11 +25,17 @@ convenience: a bare ``0.0`` would be a coin flip between them.
 same thing as ``Real(-3.1)`` and adds a claim: this parameter had better be in
 dB. Hand it to one the catalog calls Hz and you get a ``TypeError`` instead of a
 silently wrong write. Use ``Real`` when you do not want the check, or when the
-parameter has no unit at all - 2,315 of them do not::
+parameter has no unit at all - 1,780 of them do not::
 
     qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))    # checked
     qc.set_param(block, "GAIN", Real(5.0))             # 5 of 0..10, no unit
     qc.set_param(block, 21, Encoded(0.5))              # an index the catalog omits
+
+**The numbers, and what they are counted over.** The catalog holds 3,809
+parameters. 539 carry an option list and take an enum or a bool rather than any
+of this. Of the 3,270 that remain, 1,490 carry a unit and 1,780 do not - which
+is why ``Real`` is the general case and the unit types narrow it, rather than a
+wall of units with a hole in it.
 
 **Two smaller things worth knowing.**
 
@@ -50,9 +56,18 @@ class Value(float):
     """A parameter value that knows which scale it is on.
 
     A ``float`` subclass, so ``float(Db(-3.1))`` works and arithmetic works.
-    What distinguishes a typed value from a bare number is the CLASS, which is
-    why :meth:`~pyquadcortex.protocol.QuadCortex.set_param` tests
-    ``isinstance(v, Value)`` rather than testing for a number.
+    What distinguishes a typed value from a bare number is the CLASS.
+    :meth:`~pyquadcortex.protocol.QuadCortex.set_param` tests for
+    :class:`Encoded` and :class:`Real` specifically rather than for this base,
+    because the two take different paths - so a bare ``Value`` is refused along
+    with a bare number, which is the safe answer for a type that says nothing.
+
+    **Two values of different types compare EQUAL if their numbers match.**
+    ``Db(1) == Hertz(1)`` is ``True``, and they hash together. That is inherited
+    from ``float`` and is not worth fighting, but it means a test asserting a
+    type with ``==`` would not fail - use ``isinstance`` or ``type(x) is``.
+    Arithmetic strips the type instead: ``Db(1) + 1`` is a plain ``float``,
+    which ``set_param`` then refuses, and that failure is loud.
     """
 
     __slots__ = ()
@@ -82,8 +97,8 @@ class Real(Value):
 
     Use this where the parameter has no unit - a drive's ``GAIN`` runs 0..10 and
     means nothing more specific - or where you do not want the unit checked.
-    2,315 of the catalog's parameters are unitless with a real range, so this is
-    the general case rather than a fallback.
+    1,780 of the 3,270 parameters that take a value at all are unitless with a
+    real range, so this is the general case rather than a fallback.
 
     Where the parameter does have a unit, the matching subclass says so and gets
     it checked.
@@ -181,7 +196,7 @@ def of_unit(units: str, value: float) -> Real:
     """``value`` as the type matching the catalog's ``units`` string.
 
     Falls back to :class:`Real` for a unit with no type of its own, and for a
-    parameter with no unit at all - which is 2,315 of them.
+    parameter with no unit at all - which is 1,780 of the 3,270 that take a value.
     """
     return BY_CATALOG_UNIT.get(units, Real)(value)
 
