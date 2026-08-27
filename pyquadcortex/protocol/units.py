@@ -256,6 +256,12 @@ MEASURED_SPANS = {
     (11000, 5): _LEVEL,             # Mixer MIXER LEVEL
     (10004, 3): _LEVEL,             # Splitter LEVEL TO A
     (10004, 4): _LEVEL,             # Splitter LEVEL TO B
+    # "Splitter AB" (10000) is the READ-ONLY VIEW of the same two controls -
+    # `chain.splitter[]` against `chain.combined_splitter[]`, documented in
+    # `docs/protocol.md` as one state seen twice. Not separately measured, and
+    # it would be odd to: measuring it would be measuring the same knob.
+    (10000, 0): _LEVEL,             # Splitter AB LEVEL TO A, the read-side view
+    (10000, 1): _LEVEL,             # Splitter AB LEVEL TO B, the read-side view
     # The per-preset tempo: bpm = 40 + 200 * wire, from three screen readings.
     (25000, 0): Span(40.0, 240.0, unit="bpm"),   # TempoControl TEMPO
     # Cab LEVEL, per mic. The ONLY tapered control measured so far, and the one

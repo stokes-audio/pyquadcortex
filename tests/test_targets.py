@@ -599,3 +599,16 @@ def test_the_recorder_is_recorded_as_off_limits_rather_than_merely_unmeasured():
     assert (20000, 2) in units.DO_NOT_PROBE
     assert (20000, 2) not in units.MEASURED_SPANS
     assert "crash" in units.DO_NOT_PROBE[(20000, 2)].lower()
+
+
+def test_the_legacy_splitter_view_shares_the_splitters_span():
+    """`chain.splitter[]` (model 10000) is a read-only view of `combined_splitter`.
+
+    One state seen through two model entries, so it is the same knob and the same
+    span. Keyed rather than measured, because measuring it would be measuring the
+    control that was already measured.
+    """
+    from pyquadcortex.protocol import units
+
+    assert units.MEASURED_SPANS[(10000, 0)] is units.MEASURED_SPANS[(10004, 3)]
+    assert units.MEASURED_SPANS[(10000, 1)] is units.MEASURED_SPANS[(10004, 4)]
