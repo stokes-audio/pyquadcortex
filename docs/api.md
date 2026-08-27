@@ -212,9 +212,9 @@ qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, value=0.0, scene=Scene.C)
 
 A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which is
 what every mixer, splitter and lane level in the factory content sits at when nothing
-is attenuated. The catalog publishes these with a placeholder `0..1` range that claims
-to be dB, but their true span **has been measured** - -40..+12 dB - so `real=` takes dB
-directly. The helpers remain for reading a stored value back:
+is attenuated. Their span is **-40..+12 dB**, which the catalog names as
+`MIN_MIXER_DB` / `MAX_MIXER_DB` and this library supplies the numbers for, so `real=`
+takes dB directly. The helpers remain for converting without a device in hand:
 
 ```python
 from pyquadcortex.protocol import db_to_lane_level, lane_level_db
@@ -326,9 +326,10 @@ qc.set_metronome_muted(True)            # silence the click - the unit's own MUT
 qc.set_param(Tempo(), "TIME SIGNATURE", value=0.1)
 ```
 
-`TEMPO` is the one tempo parameter whose `real=` comes from a measurement rather than
-the catalog, which publishes a placeholder range for it. `tempo_bpm()` and
-`bpm_to_tempo()` convert if you need the numbers directly.
+`TEMPO` runs 40..240 bpm, which the catalog names as `MIN_TEMPO` / `MAX_TEMPO`.
+`tempo_bpm()` and `bpm_to_tempo()` convert if you need the numbers directly, or want
+them without a catalog - `real=` reads the device's own description, so it fetches
+one.
 
 Use `set_metronome_muted` and not the volume to silence a click:
 `set_metronome_volume(0.0)` is **-60 dB, quiet but still audible**, not silence.

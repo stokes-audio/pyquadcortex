@@ -48,7 +48,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 - `tests/` - the fully offline suite and its fixtures
 - `examples/` - runnable scripts, also used as hardware-verification shapes
 - `docs/` - protocol record, architecture, coverage, this file
-- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`
+- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`, `generate_params.py`, `generate_options.py`, `extract_scale_fixture.py`
 - `.github/workflows/` - CI
 
 ## 5. Patterns in Use

@@ -59,7 +59,7 @@ confirming each finding live against hardware.
 - [Grid blocks](#grid-blocks)
   - [A placement can be refused for want of DSP capacity](#a-placement-can-be-refused-for-want-of-dsp-capacity)
 - [The model catalog (ModelRepo)](#the-model-catalog-modelrepo)
-  - [Some catalog ranges are placeholders (mostly recovered by measurement)](#some-catalog-ranges-are-placeholders-mostly-recovered-by-measurement)
+  - [A parameter's scale is in the catalog, and we were not reading it](#a-parameters-scale-is-in-the-catalog-and-we-were-not-reading-it)
   - [`param_values` can contain NaN](#param_values-can-contain-nan)
   - [Adding a block rewrites comboBox values on rows you never wrote to](#adding-a-block-rewrites-combobox-values-on-rows-you-never-wrote-to)
 - [Open questions](#open-questions)
@@ -2918,55 +2918,131 @@ Parameter values on the wire are **normalized 0..1**, confirmed on hardware:
 sending `1.0` to a `THRESHOLD` whose catalog range is -60..+12 dB made the unit
 display +12.0 dB.
 
-### Some catalog ranges are placeholders (mostly recovered by measurement)
+### A parameter's scale is in the catalog, and we were not reading it
 
-A parameter published as **`min="0" max="1"` with a real-world unit** is not
-describing its own span - that is just the wire's normalized scale, and the true span
-is not in the catalog. Affected on the observed unit: Mixer (`11000`) `LEVEL A`,
-`LEVEL B`, `MIXER LEVEL`; Splitter (`10004`) `LEVEL TO A`, `LEVEL TO B`, `FREQUENCY`;
-LaneOutputControl (`23000`) `VOLUME`; TempoControl (`25000`) `TEMPO`. All are internal
-models, so none has a generated constant and nobody had reason to check.
+The device publishes **25 attributes** on each `<Parameter>`. This library read
+eight of them until 2026-08-26, and four of the seventeen it discarded carry facts
+the project had spent days measuring off the unit's screen.
 
-Converting against such a range yields a number that means something else, so
-`Parameter.to_real()` and `to_normalized()` raise `ValueError` for them
-(`Parameter.range_is_placeholder` is the test) and `real=` is refused. Pass `value=`
-with the normalized 0..1 instead.
+#### One law covers every parameter
 
-**Four families have since been measured, so the placeholder no longer blocks
-them:** the level parameters below, and `TEMPO`, which is **40 to 240 bpm** -
-`bpm = 40 + 200 * value`. Three screen readings against simultaneous wire reads, each
-landing on the displayed integer exactly: 59 bpm at `0.095`, 111 at `0.355`, 120 at
-`0.400`. `tempo_bpm()` / `bpm_to_tempo()` convert, and `set_param(Tempo(), "TEMPO",
-real=...)` takes bpm - the one index where `real=` comes from a measurement rather
-than from the catalog. The 59 is what makes the fit worth trusting: 111 and 120 are 9
-bpm apart, and the lane-level story below is what happens when a span is fitted from
-points too close together. The endpoints are the fit's rather than separate
-measurements - neither extreme was driven - and they land on the 40-240 range the
-unit's manual documents, so the two agree.
+```
+real = min + (max - min) * wire ** (1 / skew)
+```
 
-**Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on a -40..+12
-dB span. Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on
-every one of the 34 rows carrying them across 17 factory presets, and lane `VOLUME` on
-52 of 68 rows. So that value is the default, not attenuation somebody dialled in -
-which is what makes a `LEVEL B` of 0.0 next to it recognisable as a deliberately
-silenced lane. `pyquadcortex.protocol.UNITY_LEVEL` holds it.
+`skew` has three spellings: a number, `LIN_SKEW` (1.0), and `LOG_SKEW`. **`LOG_SKEW`
+is not a logarithmic sweep** despite the name - it is the same power law at skew 0.3.
+Two dirty values ship in the catalog: `" 0.4"` with a leading space, on two
+parameters, and `""` on two more. Both fall back to linear.
 
-The span itself comes from a later three-point screen-vs-wire fit of a row's VOLUME:
--3.1 dB at 0.71, +12.0 dB at 1.0, -39.5 dB at 0.01. So `dB = -40 + 52 * value`, and
-`lane_level_db()` / `db_to_lane_level()` convert. Two releases said -100..+30 dB, and
-the error is a sharper instance of the two-clean-points lesson above: both spans put
-0 dB at exactly 10/13 (100/130 = 40/52), so the unity measurement - however many rows
-it covered - could never distinguish them. A span needs at least one point AWAY from
-the reference.
+Confirmed on hardware 2026-08-26, over three unrelated blocks in two different units:
 
-The bottom of these knobs is a detent, not the end of the scale: -39.5 dB (wire 0.01)
-is the lowest numeric step, below which the screen reads "Off" - wire 0.0. So 0.0 is
-an Off position rather than -40 dB, which the earlier observation that 0.0 is silence
-already reflected.
+| block | parameter | skew | wire | predicted | screen |
+|---|---|---|---|---|---|
+| any cab | `MIC n LEVEL` | 4.9594844 | 0.01 / 0.50 / 1.00 | -21.82 / 0.00 / 6.00 dB | -21.8 / 0.0 / 6.0 |
+| Low-High Cut | `HPF FREQ` | 0.3 | 0.25 | 216.7 Hz | 217 Hz |
+| Low-High Cut | `LPF FREQ` | 0.3 | 0.75 | 7678.3 Hz | 7678 Hz |
+| Low-High Cut | `OUTPUT` | none | 0.25 | -10.0 dB | -10.0 dB |
+| Envelope Filter | `FREQ` | LOG_SKEW | 0.25 | 197.4 Hz | 197 Hz |
+| Envelope Filter | `RESO` | LOG_SKEW | 0.75 | 4.450 | 4.45 |
 
-Note the ranges that ARE genuine on those same models, and do convert: Input Gate
-`NOISE REDUCTION` is 0..100 "%", `INPUT GAIN` is -24..+24 "dB", TempoControl `VOLUME`
-is -60..+9 "dB", and unitless 0..1 parameters (switches, `PHASE`) are real fractions.
+The two `LOG_SKEW` readings solve independently to exponent 3.3366 and 3.3330, both
+`1/0.3`. A true log sweep would have shown 316 Hz and 5.62; linear, 2575 and 7.75.
+
+**617 parameters carry a non-linear skew**, and every one of them converted as a
+straight line before this was read.
+
+#### There is no such thing as a placeholder range
+
+This document said, for several releases, that a parameter published as `min="0"
+max="1"` with a real-world unit was a "placeholder" whose true span was not in the
+catalog. **Zero parameters in the shipped catalog are published that way.**
+
+What actually happens is that `min` and `max` are sometimes a NAME:
+
+```xml
+<Parameter name="LEVEL" units="dB" min="MIN_CABSIM_DB" max="MAX_CABSIM_DB"
+           skew="4.9594844" min_string="OFF"/>
+```
+
+The parser handed those to a float conversion that fell back to `0.0` and `1.0`. That
+fallback invented the concept, and a table of hand-measured spans grew for months to
+work around it. Eight families, 55 parameters:
+
+| constant | count | parameters | value | how it is known |
+|---|---|---|---|---|
+| `EQ_DB` | 16 | the 8 band gains | -12..12 | `steps=241` fixes 0.1 dB steps; measured at four points |
+| `CABSIM_DB` | 12 | cab `LEVEL` | -40..6 | a PCOM cab spells the same knob out literally |
+| `FXLOOP_OUT_GAIN_DB` | 9 | `LEVEL`, `SEND LEV`, `THRU` | -40..0 | measured at five points; tops out at unity - a send cannot boost |
+| `FXLOOP_IN_GAIN_DB` | 6 | `LEVEL`, `RET LEV` | -40..12 | measured at three points; a return can boost |
+| `MIXER_DB` | 8 | `LEVEL A/B`, `LEVEL TO A/B`, `MIXER LEVEL`, `VOLUME` | -40..12 | measured; and `LEVEL TO A/B` sit at 10/13, which is 0 dB on that span |
+| `TEMPO` | 1 | `TEMPO` | 40..240 | `steps=201` fixes whole bpm; measured at three points |
+| `EQ_FREQ` | 2 | Splitter Crossover `FREQUENCY` | 20..20000 | solved, see below |
+| `INPUT_TRIM` | 1 | `NC_Recorder OUT LEVEL` | **unknown** | placing the block crashes the unit |
+
+The numbers live in `units.FIRMWARE_CONSTANTS`, each with its evidence. A name this
+build has never met now **raises** rather than falling back, because falling back is
+what created the bug.
+
+`MIN_EQ_FREQ` needed no screen at all. The catalog states `defaultValue="400.0"` and
+`skew="0.17722914651016206"`, and the unit was holding wire `0.49547526240348816` for
+that knob. Solving the law for `max` with `min=20` gives **20000.000** to three
+decimals: two catalog facts and one wire reading pin both ends.
+
+The recorder's bound stays unknown on purpose. `Parameter.minimum` and `.maximum` are
+`None` there, and converting refuses rather than answering against a made-up number.
+
+#### The bottom of a scale is sometimes a word
+
+`min_string` is set on 254 parameters - `OFF` on 191, and also `-Inf` and `L`. It says
+the bottom of the range shows a word rather than a number. It does **not** say where
+the numbers resume, and only measurement knows that: a cab LEVEL's law runs to -40 dB
+while its quietest real position is **-21.8 dB at wire 0.01**, with OFF below.
+
+That gap is not cosmetic. Without a floor, asking a cab for -30 dB converts to wire
+0.0005 and **mutes the microphone** - a write that looks like it worked and did
+something else. `units.FLOOR_WIRE` holds the measured floors, keyed by the same
+family names, and a value below one is refused. For silence, write the wire's `0.0`.
+
+**Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on -40..+12.
+Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on every one
+of the 34 rows carrying them across 17 factory presets, and lane `VOLUME` on 52 of 68
+rows. So that value is the default, not attenuation somebody dialled in - which is
+what makes a `LEVEL B` of 0.0 next to it recognisable as a deliberately silenced lane.
+`pyquadcortex.protocol.UNITY_LEVEL` holds it.
+
+Two releases said the level span was -100..+30 dB, and the error is worth keeping:
+both spans put 0 dB at exactly 10/13 (100/130 = 40/52), so the unity measurement -
+however many rows it covered - could never distinguish them. **A span needs at least
+one point away from the reference**, and three points in one half are not enough
+either: three in the cab LEVEL's upper half fit a straight line beautifully and are
+12 dB wrong at wire 0.01.
+
+#### The option names were there all along
+
+`stepNames` carries them, on 539 parameters. `set_param_option`'s docstring said the
+names were "not in the catalog - they are in the preset, per block"; that is true of
+the **12** parameters marked `dynamic="true"`, whose list includes one entry per block
+earlier in the chain, and false for the other 527.
+
+Those 527 use only **113 distinct lists**, of which two - `Off,On` and `OFF,ON` - cover
+247 parameters. `pyquadcortex.protocol.options` publishes the other 111 as enums;
+Off/On parameters take a `bool`. Confirmed on hardware: wire 0.25 on a Low-High Cut's
+`HPF SLOPE`, option 2 of 9, showed `-12 dB/o`.
+
+The device's own spelling is preserved on the wire. Sixteen `INVERT` parameters offer
+`Noral,Inverted`; the enum member reads `NORMAL` and `options.OPTION_LABELS` keeps
+`Noral`, which is what a dynamic list matches against.
+
+#### `expAssignable` is the unit's rule, not the host's
+
+Fourteen parameters carry `expAssignable="false"`. **It does not govern a host write.**
+ADR-0010 capture, 2026-08-26: a Pattern Tremolo's `STEPS` (one of the 14) and `DEPTH`
+(not) both took a pedal identically - `(1, 0.15, 0.85)` - and both survived a
+disconnect and a fresh read. It is published as `Parameter.exp_assignable` and nothing
+in the library acts on it. What it most likely governs is which knobs the touchscreen
+offers for assignment, and that is a guess; whether the unit ACTS on the stored
+assignment is a separate unknown that needs audio, not a wire read.
 
 ### Two parameters that never round-trip, and one mirror
 

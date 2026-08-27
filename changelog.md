@@ -20,98 +20,104 @@ correction.
 
 ## Unreleased
 
-### `real=` speaks real units for every placeholder parameter but one
+### The device was publishing every parameter's scale, and we were not reading it
 
-The device publishes 52 parameters with a real-world unit and the meaningless
-range `0.0..1.0`. **51 of them now convert**; the 52nd is off limits and says so.
+`catalog.py` read 8 of the 25 attributes the unit puts on each parameter. Four of
+the seventeen it discarded carry facts this project had spent days measuring off
+the screen.
 
-```python
-qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, real=-3.1)   # dB
-qc.set_param(Block(0, 1, eq), "1 GAIN", real=6.0)                       # dB
-qc.set_param(block, params.Cabsim.MIC_1_LEVEL, real=-3.0)               # dB, tapered
-qc.set_param(Block(0, 2, send), "LEVEL", real=-10.0)                    # dB
-qc.set_param(Tempo(), params.TempoParam.TEMPO, real=120)                # bpm
+**`skew` is the taper, and 617 parameters converted wrongly without it.** One law
+covers the whole catalog:
+
+```
+real = min + (max - min) * wire ** (1 / skew)
 ```
 
-| family | law | span |
+Confirmed on hardware over three unrelated blocks in two different units. A
+Low-High Cut's `HPF FREQ` at wire 0.25 reads **217 Hz** on the unit; this library
+used to say 5015.
+
+**There is no such thing as a placeholder range.** Zero parameters are published
+as `0..1` with a real unit. What happens is that `min` and `max` are sometimes a
+NAME - `min="MIN_CABSIM_DB"` - and the parser fell back to `0.0` and `1.0` for
+anything it could not read. Eight families, 55 parameters. Seven families have
+numbers with their evidence; the eighth is the recorder, whose block crashes the
+unit when placed, so it refuses rather than converting against a guess.
+
+`units.MEASURED_SPANS` - 42 hand-measured entries covering 23 models - becomes 14
+numbers covering all 533. The readings that built it are now the tests that prove
+the catalog reproduces the screen, exactly at the display's own precision.
+
+**Option names were in the catalog all along.** `set_param_option` said they were
+not; that is true of 12 dynamic lists and false for the other 527. Those use 113
+distinct lists, so there are now enums:
+
+```python
+qc.set_param_option(block, "DYN MODE", options.DynMode3.GATE)
+qc.set_param_option(block, "HPF SLOPE", options.HpfSlope.MINUS_12)
+qc.set_param(block, "SYNC", True)          # 247 parameters are just Off/On
+```
+
+`source=` is needed only for a dynamic list now. The device's own spelling still
+goes on the wire: 16 `INVERT` parameters offer `Noral`, so the member reads
+`NORMAL` and `options.OPTION_LABELS` keeps `Noral`.
+
+**Three behaviour changes worth checking your code against**, all in
+`docs/migration.md`: conversions return different numbers for 617 parameters, an
+out-of-range value is refused rather than clamped, and `real=` now needs a
+catalog where a few parameters used to work without one.
+
+`expAssignable` marks 14 parameters and turned out not to govern a host write at
+all - both halves of a differential capture took the pedal - so it is published
+as information and nothing acts on it. See ADR-0015.
+
+
+### The measurement campaign that found it
+
+Three entries stood here describing a months-long effort to measure, off the
+unit's screen, the spans of 52 parameters the catalog was thought not to
+describe. That effort produced the right numbers by the wrong route, and none of
+it shipped, so the entries are collapsed into this one rather than left to
+contradict the section above.
+
+What it established, and what survives:
+
+| family | span | now sourced from |
 |---|---|---|
-| lane / mixer / splitter / FX-return LEVEL | `-40 + 52 * wire` | -40..+12 dB |
-| FX-loop SEND side | `-40 + 40 * wire` | -40..0 dB, cannot boost |
-| block EQ band GAIN | `-12 + 24 * wire` | -12..+12 dB |
-| cab section per-mic LEVEL | `-39.96 + 45.96 * wire^0.202` | tapered, -21.8..+6 dB |
-| per-preset TEMPO | `40 + 200 * wire` | 40..240 bpm |
+| lane / mixer / splitter / FX-return LEVEL | -40..+12 dB | `MIN_MIXER_DB`, `MIN_FXLOOP_IN_GAIN_DB` |
+| FX-loop SEND side | -40..0 dB, cannot boost | `MIN_FXLOOP_OUT_GAIN_DB` |
+| block EQ band GAIN | -12..+12 dB | `MIN_EQ_DB` |
+| cab per-mic LEVEL | -40..+6 dB, tapered | `MIN_CABSIM_DB` and `skew` |
+| per-preset TEMPO | 40..240 bpm | `MIN_TEMPO` |
 
-Every span was measured against the unit's screen at three or more points
-**including both ends**, and each is held to its readings by a test, so a future
-edit cannot drift away from the device.
+Every reading taken is now a row in `tests/test_scales.py`, asserting that the
+catalog reproduces what the display showed. They are better tests than they were
+a source.
 
-**A span knows where the knob stops.** Its `low` is often a fit parameter below
-anything reachable - the cab's law extrapolates to -39.96 dB while its quietest
-real setting is -21.8 dB, with OFF below. Asking for -30 dB there would have
-returned a wire value the unit reads as OFF, so `real=` refuses below the floor
-and points at `value=0.0`.
+Two findings from it are worth keeping in their own right, because the catalog
+does NOT supply them:
+
+**Wire 0.0 is an OFF detent, not the bottom of the scale.** `min_string="OFF"`
+says the bottom shows a word; only measurement says where the numbers resume. A
+cab LEVEL's law runs to -40 dB and its quietest real position is -21.8 dB, so
+asking for -30 dB would return a wire value the unit reads as OFF and mute the
+microphone. `units.FLOOR_WIRE` holds the measured floors and `real=` refuses
+below them.
 
 **One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable
 only by placing the internal Neural Capture recorder on the grid, and that
-**crashes the unit**. It is recorded in `units.DO_NOT_PROBE` with the reason, so
-it does not look merely unmeasured to whoever reads the table next.
+**crashes the unit**. It is in `units.DO_NOT_PROBE` with the reason, so it does
+not look merely unmeasured to whoever reads the table next.
 
+And one warning the cab earned. Three well-separated points in its upper half fit
+a straight line beautifully and are **12 dB wrong at wire 0.01**. It was written
+up as having no closed form, on eight points and three failed laws, before four
+more points produced a taper - which the catalog had been publishing all along as
+`skew="4.9594844"`. Take the extremes, and read the source before fitting.
 
-### `real=` speaks dB for the EQ bands, the mixer and the splitter
-
-Four more families of parameter now take a value in the units the screen shows,
-because their spans were measured rather than inherited:
-
-```python
-qc.set_param(Block(0, 1, models.Equalizer.PARAMETRIC_8), "1 GAIN", real=6.0)
-qc.set_param(Mixer(0), params.MixerParam.MIXER_LEVEL, real=-6.0)
-qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_B, real=-3.1)
-```
-
-- **Block EQ band gains** are `dB = -12 + 24 * wire`. Measured on the
-  Parametric-8 at four points including both ends, and separately on the
-  Parametric-3 and Output Equalizer, which are different catalog entries and so
-  were not assumed to inherit it.
-- **The mixer and splitter levels** are `dB = -40 + 52 * wire`, all five of them
-  - `LEVEL A`, `LEVEL B`, `MIXER LEVEL`, `LEVEL TO A`, `LEVEL TO B`. The library
-  has claimed this for several releases on the strength of a measurement of the
-  lane VOLUME; it is now measured on those controls themselves, and the claim
-  held.
-
-**Wire 0.0 is an OFF detent, not -40 dB.** The splitter's `LEVEL TO A` displays
-"OFF" there, exactly as the lane VOLUME does - so that belongs to the whole level
-family. For silence write `value=0.0`.
-
-### Cab LEVEL takes dB too, and it is TAPERED
-
-```python
-qc.set_param(block, params.Cabsim.MIC_1_LEVEL, real=-3.0)   # block from blocks()
-```
-
-`dB = -39.96 + 45.96 * wire^0.202`, measured at twelve points and accurate to
-0.034 dB - inside the display's own rounding. Two of those points were predicted
-from the law and then found on the unit before being fitted to.
-
-This is the first control here that is not linear in its own units, and it is a
-warning about the standard used for the others. Three well-separated points in
-its upper half fit a straight line beautifully and are **12 dB wrong at wire
-0.01**. It was written up as having no closed form, on the strength of eight
-points and three failed laws, before four more points and a taper exponent
-produced the fit.
-
-A cab is chosen by its `models.*` id and driven through the shared `Cabsim`
-layout, so the conversion follows that layout rather than the cab's own catalog
-entry - which lists two parameters where the wire carries 22.
-
-Note what this rules out: cab LEVEL sits in the same `0..1 "dB"` placeholder
-bucket as the lane and mixer levels and is **not** their -40..+12 linear scale.
-Unity is at wire 0.5 rather than 10/13, and full travel is +6 dB rather than +12.
-
-Everything else still refuses `real=`, which is the honest answer for a span
-nobody has measured. Two things worth knowing before relying on EQ gain: a band's
-TYPE decides whether GAIN does anything at all (Lo Pass and Hi Pass disable it,
-and a gain written there is stored and ignored), and `N BYPASS = 1` means the
-band is **ON** - a disabled band displays `0.0 dB` whatever it stores.
+Also established while measuring, and unaffected: a band's TYPE decides whether
+its GAIN does anything (Lo Pass and Hi Pass disable it, and a gain written there
+is stored and ignored), and `N BYPASS = 1` means the band is **ON**.
 
 
 ### BREAKING: one `set_param` for everything, addressed by a target

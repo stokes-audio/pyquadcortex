@@ -1555,9 +1555,9 @@ def test_copy_scene_documents_that_the_colour_travels_too():
 
 
 def test_set_mixer_param_now_takes_real_because_its_span_was_measured():
-    # MIXER LEVEL is published as 0..1 "dB" - a placeholder - and real= used to
-    # refuse it. The span was measured on 2026-08-25 (-24.4 dB at 0.30, +12.0 at
-    # 1.0), so it converts through units.MEASURED_SPANS instead of the catalog.
+    # MIXER LEVEL's bounds are MIN_MIXER_DB / MAX_MIXER_DB, which the catalog
+    # names and units.FIRMWARE_CONSTANTS supplies: -40..+12 dB, so 0.0 dB is
+    # 10/13. Measured on 2026-08-25 at -24.4 dB at 0.30 and +12.0 at 1.0.
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     qc.set_param(Mixer(0), param="MIXER LEVEL", real=0.0)

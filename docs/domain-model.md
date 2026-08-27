@@ -1393,6 +1393,46 @@ the n/a rows below where they intersect the API at all.
 
 ---
 
+## Catalog attributes we can see and cannot yet explain
+
+The device puts 25 attributes on each `<Parameter>`. Ten are parsed; these are the
+rest, recorded so the next person does not have to rediscover that they exist. None
+is guessed at, per the rule that a control we do not understand is omitted with the
+reason written down.
+
+- **`toggleOn`, `toggleOff`, `toggleStep`** - 212 parameters. `toggleOn` carries a
+  number (`4`, `5`, `6`) on `float` parameters like a tremolo's `LEVEL`, and
+  `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`, `"2,3"`). The obvious
+  reading is the two values a footswitch toggle alternates between, which is why it
+  is not written anywhere as fact: it is obvious and untested. Driving one and
+  watching the screen would settle it.
+- **`displayPos`** - the order the unit lays knobs out on screen, which is not wire
+  order. Nothing in the library needs it yet; a UI would.
+- **`isplayPos`** - the same attribute with the `d` missing, on a small number of
+  parameters. The device's own typo. Preserved here rather than corrected, because
+  a parser that silently accepted both would hide that the catalog has a defect.
+- **`align`** - a layout hint, presumably paired with `displayPos`.
+- **`selfTestValue`** - a value the unit uses during its self test. Sometimes an IR
+  name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`).
+- **`tooltip`** - the help text the unit shows. Real prose, occasionally load-bearing:
+  a Vibrato's `MODE` warns that changing it causes a brief mute.
+- **`blob`** on a `<Model>` - a same-length string of letters that CHANGES BETWEEN
+  FETCHES. Two dumps of one unit taken minutes apart differed on 338 models and on
+  nothing else. A per-fetch token of some kind; not content.
+
+### `expAssignable` says something, and not what it looks like
+
+Fourteen parameters carry `expAssignable="false"`, and it does **not** govern a host
+expression assignment. ADR-0010 capture, 2026-08-26: a Pattern Tremolo's `STEPS` (one
+of the fourteen) and `DEPTH` (not one) both accepted a pedal identically, and both
+survived a disconnect and a fresh read.
+
+So the flag is published as `Parameter.exp_assignable` and nothing acts on it. The
+likely reading - that it governs which knobs the unit's own touchscreen offers for
+assignment - is a guess and stays one. A second, separate unknown: whether the unit
+ACTS on an assignment stored against such a parameter. That needs audio, not a wire
+read, so it is not something this suite can settle.
+
 ## Deferred by design (recorded, not planned)
 
 - **An exclusive-use fast mode** - a connection mode where the caller promises no
