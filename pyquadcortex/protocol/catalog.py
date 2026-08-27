@@ -88,6 +88,20 @@ def parse_skew(raw: str | None) -> float:
     return value if value > 0.0 else LIN_SKEW
 
 
+def parse_options(raw: str | None) -> tuple[str, ...]:
+    """A list parameter's option names, from the catalog's ``stepNames``.
+
+    Whitespace is stripped because the device pads some lists to align them on
+    screen - a Low-High Cut's SLOPE ships ``"Flat,   -6, -12, ..."``. The
+    spelling is otherwise left exactly as the device gives it, typos included:
+    16 INVERT parameters offer ``"Noral"`` where they mean Normal, and that is
+    the string the wire matches on.
+    """
+    if not raw:
+        return ()
+    return tuple(name.strip() for name in raw.split(","))
+
+
 @dataclass(frozen=True)
 class Parameter:
     """One knob of a model, at its wire index.
@@ -118,6 +132,34 @@ class Parameter:
     #: :data:`~pyquadcortex.protocol.units.FLOOR_WIRE`, which is where the
     #: measurement lives.
     floor_wire: float = 0.0
+    #: This list parameter's option names, in wire order, exactly as the device
+    #: spells them - typos included. Empty for a parameter that is not a list.
+    #:
+    #: These come from the XML's ``stepNames``, which this library long believed
+    #: did not exist: ``set_param_option``'s docstring said the names were "not
+    #: in the catalog - they are in the preset, per block". That is true only of
+    #: the 12 parameters marked :attr:`dynamic`.
+    options: tuple[str, ...] = ()
+    #: Whether this list's entries depend on the PRESET rather than the model.
+    #: Such a list can include one entry per block earlier in the chain, so its
+    #: length changes with the preset and :attr:`steps` overstates it - a
+    #: Doubler's TRIGGER publishes 45 while the real list is 19 to 25. Read
+    #: those from the preset with
+    #: :func:`~pyquadcortex.protocol.client.param_options`.
+    dynamic: bool = False
+    #: What the screen shows at the bottom of the range instead of a number,
+    #: from ``min_string``: "OFF" on 191 parameters, and also "-Inf" and "L".
+    #: Says THAT the bottom is a word, not where the numbers resume - see
+    #: :attr:`floor_wire` for that.
+    min_label: str = ""
+    #: The same at the top, from ``max_string``.
+    max_label: str = ""
+    #: Whether the device declares that an expression pedal can be assigned
+    #: here. False on 14 parameters, none of them yet tested against hardware -
+    #: see ``docs/domain-model.md``.
+    exp_assignable: bool = True
+    #: Whether the screen shows this without a decimal point.
+    show_as_integer: bool = False
 
     @property
     def floor(self) -> float | None:
@@ -155,6 +197,11 @@ class Parameter:
         :meth:`QuadCortex.set_tempo_option` despite the count sitting right there
         in the catalog.
         """
+        if self.options and not self.dynamic:
+            # The names themselves, which is the authority where they exist and
+            # the list is fixed. `steps` agrees on every one of the 527 fixed
+            # lists in the shipped catalog; this is simply the better source.
+            return len(self.options)
         if self.type in ("comboBox", "switch", "rotarySwitch", "empty") and self.steps:
             return self.steps
         return None
@@ -462,6 +509,12 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                     steps=_as_int(p.get("steps")),
                     skew=parse_skew(p.get("skew")),
                     floor_wire=units.FLOOR_WIRE.get(str(p.get("min")).strip(), 0.0),
+                    options=parse_options(p.get("stepNames")),
+                    dynamic=p.get("dynamic") == "true",
+                    min_label=p.get("min_string", ""),
+                    max_label=p.get("max_string", ""),
+                    exp_assignable=p.get("expAssignable") != "false",
+                    show_as_integer=p.get("showAsInteger") == "true",
                 )
                 for i, p in enumerate(element.findall("Parameter"))
             )

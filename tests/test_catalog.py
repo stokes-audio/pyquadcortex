@@ -468,3 +468,67 @@ def test_the_parser_reads_skew_off_the_xml():
     p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
     assert p.skew == pytest.approx(0.3)
     assert round(p.to_real(0.25)) == 217
+
+
+# -- the attributes we used to discard -----------------------------------------
+#
+# The parser read 8 of the 25 attributes the device puts on a <Parameter>. These
+# are the rest of the ones we can name a use for; the others are recorded in
+# docs/domain-model.md's appendix rather than guessed at.
+
+
+def test_option_names_come_from_the_catalog():
+    """`set_param_option` said they do not. They always did.
+
+    Its docstring read "the option names are not in the catalog - they are in
+    the preset, per block". That is true of the 12 dynamic lists and of nothing
+    else.
+    """
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="MODE" type="comboBox" min="0" max="2" steps="3"'
+           ' defaultValue="1" stepNames="Normal,Vibrato,Vibrato Bright Off"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.options == ("Normal", "Vibrato", "Vibrato Bright Off")
+    assert p.dynamic is False
+    assert p.option_count == 3
+    assert p.option_to_value(2) == pytest.approx(1.0)
+
+
+def test_padding_in_an_option_list_is_stripped():
+    """The device pads some lists to line them up on screen."""
+    assert catalog.parse_options("Flat,   -6, -12") == ("Flat", "-6", "-12")
+
+
+def test_a_dynamic_list_is_marked_so_the_preset_stays_authoritative():
+    """Its entries include one per upstream block, so `steps` overstates it."""
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="SOURCE" type="comboBox" dynamic="true" min="0"'
+           ' max="44" steps="45" defaultValue="0" stepNames="Off,In 1,R1C1"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.dynamic is True
+    # `steps` wins for a dynamic list, because the names are only a snapshot.
+    assert p.option_count == 45
+
+
+def test_the_labels_and_flags_are_read():
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="STEPS" type="float" min="1" max="16" steps="16"'
+           ' defaultValue="1" expAssignable="false" showAsInteger="true"'
+           ' min_string="OFF" max_string="MAX"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.exp_assignable is False
+    assert p.show_as_integer is True
+    assert (p.min_label, p.max_label) == ("OFF", "MAX")
+
+
+def test_assignability_defaults_to_allowed():
+    """Only 14 parameters in the shipped catalog say otherwise."""
+    xml = ('<Models><Category id="1" name="x"><Model id="1" name="y">'
+           '<Parameter name="GAIN" type="float" min="0" max="10"'
+           ' defaultValue="5"/>'
+           '</Model></Category></Models>')
+    p = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    assert p.exp_assignable is True
