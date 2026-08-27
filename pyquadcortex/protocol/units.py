@@ -269,7 +269,14 @@ MEASURED_SPANS = {
     #   0.75  +3.4   0.95  +5.5   1.00  +6.0
     #
     # dB = -39.96 + 45.96 * wire**0.202, worst error 0.034 dB - inside the
-    # display's own 0.1 dB rounding. Two of those points, 0.15 and 0.60, were
+    # display's own 0.1 dB rounding.
+    #
+    # CONFIRMED ON THREE BLOCKS, in three different categories. Fitted on a
+    # 212 Darkglass Neo (M), a Cabsim Bass; then predicted and found on a
+    # 412 CA Stand OS S V30 90s (M), a Cabsim Guitar (0.20 -> -6.7, 0.85 ->
+    # +4.5); then predicted and found inside Parallax, a Bass Overdrive with an
+    # embedded cab section (0.50 -> 0.0, 0.25 -> -5.2). So the taper belongs to
+    # the CAB SECTION wherever it appears, not to cab models. Two of those points, 0.15 and 0.60, were
     # PREDICTED from the law and then found, before being fitted to; the lab used
     # the same standard for the lane VOLUME's +3.2 dB at 0.830769.
     #
@@ -306,6 +313,13 @@ MEASURED_SPANS = {
     (13008, 1): _LEVEL,             # FX Loop 1/2 RET LEV
     (12000, 2): _CAB_LEVEL,         # cab LEVEL, mic 1
     (12000, 10): _CAB_LEVEL,        # cab LEVEL, mic 2
+    # Parallax carries its own two-mic CAB SECTION - bypass / ir selector /
+    # LEVEL / PAN / DISTANCE / POSITION / phi / GRID MODE, twice - and its
+    # LEVELs follow the same taper. Confirmed by prediction: 0.50 -> 0.0 dB and
+    # 0.25 -> -5.2 dB, both as the law says. It is a Bass Overdrive, not a
+    # Cabsim, so `_layout_span` cannot reach it and it is keyed here.
+    (3008, 16): _CAB_LEVEL,         # Parallax cab section, mic 1 LEVEL
+    (3008, 24): _CAB_LEVEL,         # Parallax cab section, mic 2 LEVEL
 }
 
 #: Block EQ band gains: dB = -12 + 24 * wire. Measured 2026-08-25 on the
@@ -336,6 +350,24 @@ del _model, _bands, _band
 #: cab entry - a control can be perfectly regular and still defeat every law you
 #: happen to try first.
 UNCONVERTIBLE = {}
+
+#: Parameters that will NOT be measured, and why. Distinct from an unmeasured
+#: span: nobody is going to look, so a later session should not spend a session
+#: rediscovering the reason.
+DO_NOT_PROBE = {
+    # NC_Recorder is the internal recorder the Neural Capture wizard drives, not
+    # a block. Placing it on the grid to measure OUT LEVEL CRASHED the unit -
+    # "Something went wrong ... Cancel / Reboot" - and required a reboot,
+    # 2026-08-26. Its `internal` and `hidden` flags are both false, which is what
+    # made it look placeable; the category name "Neural Capture Internal" was the
+    # real signal and was not read carefully enough. The same two blocks placed
+    # again without it did not crash.
+    #
+    # This is the second time probing capture/IR machinery has taken the unit
+    # down - CLAUDE.md already records that IR-import probing killed the USB link
+    # and needed a power cycle. One unmeasured parameter is the better trade.
+    (20000, 2): "NC_Recorder OUT LEVEL - placing this block crashes the unit",
+}
 
 #: The wire value a cab LEVEL holds at unity, which IS worth naming even though
 #: the taper around it is not expressible.

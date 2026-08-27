@@ -2751,6 +2751,14 @@ The constants are probably the design intent -40 -> +6 with a fifth-root taper;
 `-40 + 46 * wire^0.2` fits to 0.17 dB, which the display can just about resolve,
 so the measured values are what ships.
 
+**Confirmed on three blocks in three categories.** Fitted on a `212 Darkglass
+Neo (M)` (Cabsim Bass); then PREDICTED and found on a `412 CA Stand OS S V30 90s
+(M)` (Cabsim Guitar): 0.20 -> -6.7 and 0.85 -> +4.5. Then predicted and found
+inside **Parallax**, a Bass Overdrive carrying its own two-mic cab section:
+0.50 -> 0.0 and 0.25 -> -5.2. So the taper belongs to the **cab section wherever
+it appears**, not to cab models, and Parallax is keyed explicitly because the
+category aliasing cannot reach a Bass Overdrive.
+
 It shares the lane VOLUME's STRUCTURE - a numeric floor at wire 0.01 with the Off
 detent below it - but not its values: -21.8 dB here against the lane's -39.5 dB
 at the same wire position.
@@ -2761,9 +2769,17 @@ is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
 20 dB wrong on the wire.
 
 Everything NOT in that table still refuses `real=`. That is the honest answer:
-an unmeasured span cannot be converted, only guessed. What is left - the
-recorder's OUT LEVEL and Parallax's two LEVELs, three parameters - is tracked on
-the placeholder-ranges issue.
+an unmeasured span cannot be converted, only guessed.
+
+**One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable
+only by placing the internal Neural Capture recorder on the grid, and doing that
+**crashed the unit** - "Something went wrong", requiring a reboot. Its `internal`
+and `hidden` flags are both false, which is what made it look like an ordinary
+block; the category name "Neural Capture Internal" was the real signal. The same
+session then placed a cab and Parallax without it and nothing went wrong, so the
+recorder is the cause. It is recorded in `units.DO_NOT_PROBE` rather than left
+looking merely unmeasured, so nobody repeats it. This is the second time probing
+capture/IR machinery has taken the unit down.
 
 **Five FX-loop parameters turned out to be TWO scales, not one and not five.**
 Worth the method note: they were grouped by setting all five to the SAME wire

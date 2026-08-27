@@ -266,7 +266,6 @@ def test_an_unmeasured_placeholder_still_refuses():
     from pyquadcortex.protocol import units
 
     assert (20000, 2) not in units.MEASURED_SPANS, "recorder OUT LEVEL is not measured"
-    assert (3008, 16) not in units.MEASURED_SPANS, "Parallax LEVEL is not measured"
 
 
 def test_all_five_mixer_and_splitter_levels_are_measured():
@@ -567,3 +566,36 @@ def test_both_fx_loop_scales_have_the_off_detent():
         assert span.floor == pytest.approx(floor, abs=0.05)
         with pytest.raises(ValueError, match="does not exist"):
             units.measured_to_wire(span, -40.0)
+
+
+def test_the_cab_taper_is_confirmed_across_three_categories():
+    """Fitted on a Cabsim Bass; predicted and found on a Cabsim Guitar and in
+    Parallax, a Bass Overdrive with its own embedded cab section.
+
+    Parallax is keyed explicitly because it is NOT a Cabsim, so the category
+    aliasing cannot reach it - and because it is the evidence that the taper
+    belongs to the cab section rather than to cab models.
+    """
+    from pyquadcortex.protocol import units
+
+    cab = units.MEASURED_SPANS[(12000, 2)]
+    for key in ((3008, 16), (3008, 24)):
+        assert units.MEASURED_SPANS[key] is cab
+    assert units.measured_from_wire(cab, 0.50) == pytest.approx(0.0, abs=0.05)
+    assert units.measured_from_wire(cab, 0.25) == pytest.approx(-5.2, abs=0.05)
+    assert units.measured_from_wire(cab, 0.20) == pytest.approx(-6.75, abs=0.06)
+    assert units.measured_from_wire(cab, 0.85) == pytest.approx(4.5, abs=0.05)
+
+
+def test_the_recorder_is_recorded_as_off_limits_rather_than_merely_unmeasured():
+    """Placing NC_Recorder to measure it CRASHED the unit and forced a reboot.
+
+    Its `internal` and `hidden` flags are both false, which is what made it look
+    placeable. Without this entry the next session sees an unmeasured parameter,
+    reaches the same conclusion, and crashes the unit again.
+    """
+    from pyquadcortex.protocol import units
+
+    assert (20000, 2) in units.DO_NOT_PROBE
+    assert (20000, 2) not in units.MEASURED_SPANS
+    assert "crash" in units.DO_NOT_PROBE[(20000, 2)].lower()
