@@ -410,6 +410,64 @@ def test_a_push_that_lands_during_a_proactive_read_is_not_lost(link):
     assert cache.needs_read("identity") is True
 
 
+def test_a_grid_push_that_lands_during_a_preset_read_is_not_lost_either(link):
+    """The same window, for the push that says nothing but means everything.
+
+    A `Grid` carries no field the preset entry keeps, so it counts as an arrival
+    on the strength of voiding the copy alone. It is the case a guard written as
+    "count it if it applied something" would drop, and dropping it loses an edit
+    made on the touchscreen while the model was reading.
+    """
+    transport, cache = link
+
+    def preset_but_a_grid_first(triggering=None):
+        transport.push(grid_push())
+        return recall_push(triggering)
+
+    transport.broadcasts["RecallPresetMessage"] = preset_but_a_grid_first
+    cache.value("preset", "preset")
+
+    assert cache.needs_read("preset") is True
+
+
+def test_the_unit_asking_a_question_back_is_not_a_push_that_landed(link):
+    """A `Version` READ is answered by TWO messages, and still costs one read.
+
+    Measured on the unit 2026-08-27 (d14e), ten host reads out of ten: a
+    `Version{READ}` is answered by a `Version{UPDATE}` carrying the unit's
+    fifteen fields and then, 0.5-0.8 ms later, by a `Version{READ}` of the
+    unit's own - the protocol is symmetric, and that one is the unit asking US
+    for Cortex Control's version. It carries `action` and nothing else.
+
+    So it says nothing: not a field the entry keeps, not a field it does not
+    keep. It cannot have made our copy stale, and counting it as a message that
+    landed while we were reading marks the entry for a re-read the unit never
+    asked for. That mark cost the hardware suite a failing test in about one run
+    in three, because whether the question arrives before the reading thread
+    wakes is a race over half a millisecond.
+
+    The loopback pushes the RETURNED reply last, so the follow-up is pushed
+    from inside the answer here rather than after it. The read path counts what
+    arrived rather than ordering it, so the two orders are the same measurement.
+    """
+    transport, cache = link
+
+    def answers_and_then_asks_back():
+        transport.push(pa.VersionMessage(action=pa.MessageAction.READ))
+        return full_version_reply()
+
+    transport.replies["VersionMessage"] = answers_and_then_asks_back
+    cache.mark_for_reread("identity", "this test wants a cold read")
+
+    assert cache.value("identity", "app_fw_version") == "d14e"
+    assert cache.value("identity", "device_serial_number") == "QCS0000001"
+
+    assert transport.reads["VersionMessage"] == 1, (
+        "the unit asking a question back was counted as a push that landed "
+        "during the read, so the second field went to the unit again")
+    assert cache.needs_read("identity") is False
+
+
 # -- the tempo stream ---------------------------------------------------------
 
 

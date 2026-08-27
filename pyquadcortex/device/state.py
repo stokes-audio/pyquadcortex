@@ -64,9 +64,19 @@ class _Slot:
         #: Set when a message named something this entry does not keep. Cleared
         #: by a read, not by another push.
         self.needs_read = False
-        #: How many messages for this entry the listener has handled. The read
-        #: path uses the difference across a read to tell its own answer apart
-        #: from a push that arrived while it was waiting.
+        #: How many messages that TOLD THIS ENTRY SOMETHING the listener has
+        #: handled. The read path uses the difference across a read to tell its
+        #: own answer apart from a push that arrived while it was waiting.
+        #:
+        #: Not every message of a tracked type says something. The protocol is
+        #: symmetric, so the unit asks questions of its own down the same pipe,
+        #: and a question carries neither a field this entry keeps nor a field
+        #: it does not - measured, a host `Version{READ}` is answered by the
+        #: unit's `Version{UPDATE}` and then, half a millisecond later, by a
+        #: `Version{READ}` of the unit's own asking for Cortex Control's
+        #: version. Counting that as an arrival made one read of two fields
+        #: cost two round trips whenever the question won the race, which is
+        #: what :meth:`_apply_one` skips it for.
         #:
         #: Drawn from a counter rather than written `+= 1`, which is the
         #: transport's idiom for the same job (`Transport._ids`). It also keeps
@@ -79,7 +89,7 @@ class _Slot:
         self.witnessed = 0
 
     def arrived(self) -> None:
-        """Note that one more message for this entry has been handled."""
+        """Note that one more message has told this entry something."""
         self.witnessed = next(self._arrivals)
 
 
@@ -197,12 +207,20 @@ class DeviceState:
     def _apply_one(self, entry, plan, message) -> None:
         applied = fields_applied(message, plan)
         unkept = unkept_fields(message, plan)
+        why = self._why_untrusted(plan, unkept, message)
         announce = []
         with self._lock:
             if self._closed:
                 return
             slot = self._slots[entry.name]
-            slot.arrived()
+            if applied or why is not None:
+                # Counted only when the message said something: it set a field
+                # we keep, or it made our copy untrusted. A message of a
+                # tracked type that did neither cannot have made our copy
+                # stale, so a read in flight must not be told one landed. The
+                # unit's own `Version{READ}` is exactly that message - see
+                # :class:`_Slot`.
+                slot.arrived()
             was_empty = not slot.fields
             # Worked out BEFORE the update, and against the values we held,
             # because a caller tracking changes wants the ones that are
@@ -228,7 +246,6 @@ class DeviceState:
                 log.debug("push.applied %s %s", entry.name, sorted(applied))
             if moved:
                 announce.append(Changed(entry.name, moved))
-            why = self._why_untrusted(plan, unkept, message)
             # The unit telling us everything this entry holds is the same
             # thing a read returns, so it replaces rather than merges and
             # there is nothing left to ask about. That is what makes the
@@ -366,12 +383,19 @@ class DeviceState:
                 slot.fields = dict(answer)
                 # Our own answer came back through the listener too - listeners
                 # see a reply before the thread that asked for it wakes (ADR-
-                # 0009) - so exactly one message is expected here, every entry's
-                # read being one request and one reply. Anything beyond that is
-                # a push that landed while we waited, and clearing the mark
-                # regardless would throw it away with nothing left to recover it
-                # from. An entry whose read provokes a stream will have to say
-                # how many messages that is; see `StateEntry`.
+                # 0009) - so exactly one message is expected to have SAID
+                # SOMETHING here, every entry's read being one request and one
+                # reply. Anything beyond that is a push that landed while we
+                # waited, and clearing the mark regardless would throw it away
+                # with nothing left to recover it from.
+                #
+                # Said something, rather than arrived: the unit answers a
+                # `Version` READ and then asks one of its own, and a question
+                # is not news about the unit's state. `_Slot.witnessed` is
+                # where that is decided, because the read path cannot tell the
+                # two apart after the fact. An entry whose read provokes a
+                # stream of ANSWERS will still have to say how many messages
+                # that is; see `StateEntry`.
                 extra = slot.witnessed - witnessed_before
                 retracted = slot.needs_read and extra <= 1
                 slot.needs_read = extra > 1

@@ -175,10 +175,10 @@ def test_nothing_the_burst_delivered_is_read_again_on_first_access(
 def test_the_burst_does_not_warm_what_the_unit_never_announces(burst_warmed):
     """The other half, and the reason the read path exists.
 
-    The unit sends a ``Version`` of its own during the handshake, but it is a
-    READ asking US for Cortex Control's version and it carries none of the
-    unit's own fields. So identity is exactly the case section 9's third column
-    is for: where the unit does not tell us, we ask.
+    The unit does send a ``Version`` during the handshake, but it is the answer
+    to our version announce - it sets ``cortex_control_version_valid`` and none
+    of the unit's own fields. So identity is exactly the case section 9's third
+    column is for: where the unit does not tell us, we ask.
     """
     assert burst_warmed["identity"] == {}, (
         f"the burst carried the unit's own identity after all, which is worth "
@@ -188,7 +188,16 @@ def test_the_burst_does_not_warm_what_the_unit_never_announces(burst_warmed):
 
 def test_state_the_unit_never_announces_costs_one_read_and_then_none(
         model_cache, counted):
-    """No model property ships with a staleness caveat, so it asks - once."""
+    """No model property ships with a staleness caveat, so it asks - once.
+
+    Once is harder than it looks, and this test is what caught it. The protocol
+    is symmetric, so a ``Version`` READ is answered by the unit's reply and then,
+    0.5-0.8 ms later, by a ``Version`` READ of the unit's own asking for Cortex
+    Control's version. The cache used to count that question as a push that had
+    landed mid-read and kept the entry marked, so the second field below went
+    back to the unit - measured at 7 reads in 40 before the fix and 0 in 60
+    after, which reached this suite as a failure about one run in three.
+    """
     model_cache.mark_for_reread("identity", "this test wants a cold read")
 
     firmware = model_cache.value("identity", "app_fw_version")

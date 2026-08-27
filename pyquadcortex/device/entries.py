@@ -104,12 +104,17 @@ class StateEntry:
             never the RX thread.
         feeds: message class -> :class:`FieldPlan`.
 
-    Every entry's :attr:`read` is one request and one reply, which the read path
-    relies on to tell its own answer apart from a push that arrived while it was
-    waiting. An entry whose read provokes a STREAM instead - a ``File``
-    enumeration, a preset dump - has to say how many messages that is, and this
-    class does not carry that yet because nothing needs it. It lands with the
-    first such entry, along with the test that a number other than one works.
+    Every entry's :attr:`read` is one request and one ANSWER, which the read
+    path relies on to tell its own answer apart from a push that arrived while
+    it was waiting. One answer is not the same as one message: a ``Version``
+    READ is answered by the unit's reply and then by a question of the unit's
+    own, and the read path survives that because a message saying nothing this
+    entry keeps and nothing it does not is not counted at all
+    (``_Slot.witnessed``). An entry whose read provokes a STREAM OF ANSWERS
+    instead - a ``File`` enumeration, a preset dump - has to say how many
+    messages that is, and this class does not carry that yet because nothing
+    needs it. It lands with the first such entry, along with the test that a
+    number other than one works.
     """
 
     name: str
@@ -234,11 +239,20 @@ def _carries_unknown_fields(message) -> bool:
 #: ``CLAUDE.md``). That is an inference from scope rather than a measurement,
 #: which is why the read is still the fallback rather than a one-time fill.
 #:
-#: The unit does not announce this. It sends a ``Version`` READ of its own during
-#: the connect handshake - asking US for Cortex Control's version - and that
-#: message carries none of the unit's own fields, so the burst does not warm this
-#: entry and first access reads. That is the case section 9's third column exists
-#: for: where the unit does not tell us, we ask.
+#: The unit does not announce this. The one ``Version`` the connect burst carries
+#: is the unit's answer to our version announce - it sets
+#: ``cortex_control_version_valid`` and none of the unit's own fields - so the
+#: burst does not warm this entry and first access reads. That is the case
+#: section 9's third column exists for: where the unit does not tell us, we ask.
+#:
+#: **The read costs two messages, and only one of them says anything.** The
+#: protocol is symmetric, so the unit answers a ``Version`` READ and then asks
+#: one of its own, wanting Cortex Control's version: measured 2026-08-27 on
+#: d14e, ten reads out of ten came back as a ``Version{UPDATE}`` of fifteen
+#: fields followed 0.5-0.8 ms later by a ``Version{READ}`` carrying ``action``
+#: alone. The question is not news about the unit and the cache does not count
+#: it - see ``_Slot.witnessed`` in ``device/state.py``, where counting it made
+#: one read of two fields cost two round trips about a sixth of the time.
 _VERSION_FOR_IDENTITY = FieldPlan(
     kept=frozenset({"app_fw_version", "device_serial_number"}),
 )

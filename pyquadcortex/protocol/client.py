@@ -270,9 +270,17 @@ class QuadCortex:
         )
         # Announce our (Cortex Control) version - the device gates push
         # behaviour on a valid cortex_control_version. We do NOT also issue a
-        # Version READ here: the device sends its own Version READ to us, and a
-        # redundant host READ would race with a caller's later version request
-        # (READ replies carry no request_id to disambiguate).
+        # Version READ here: a redundant host READ would race with a caller's
+        # later version request, since READ replies carry no request_id to
+        # disambiguate and _dispatch gives an id-less reply to whichever waiter
+        # is first in line.
+        #
+        # Skipping it costs nothing and quietens the link: the device's own
+        # Version READ is the tail of its answer to a host Version READ, so with
+        # none sent here it asks nothing back. Measured 2026-08-27 on d14e - one
+        # inbound Version through connect and the whole burst, an UPDATE
+        # carrying cortex_control_version_valid in answer to this announce, and
+        # none at all while idle.
         self._t.send(
             pa.VersionMessage(
                 action=pa.MessageAction.UPDATE, cortex_control_version=self.CC_VERSION

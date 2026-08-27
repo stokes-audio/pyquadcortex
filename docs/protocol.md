@@ -352,9 +352,15 @@ and `Param.index` is absent too - a parameter's index is its POSITION in the
 `params` list.
 
 **The protocol is symmetric.** The same message types flow in both directions.
-The device sends the host its own `Version` READ during connect, and it
+The device answers a host `Version` READ and then asks one of its own, and it
 broadcasts `Scene`, `SceneLabel`, `SceneColor`, `SceneCopy`, `Grid`, and
 `RecallPreset` messages when the user operates the unit's own touchscreen.
+
+That symmetry is not free for a listener. A message of a type the host tracks is
+not necessarily news about the device: the device's own `Version` READ carries
+`action` and nothing else, so anything counting inbound messages per type has to
+tell a question apart from an answer (`_Slot.witnessed` in
+`pyquadcortex/device/state.py`).
 
 ## 4. The connect handshake
 
@@ -383,7 +389,11 @@ As Cortex Control performs it:
 1. host: `ResetCommsBuffers{request_id: 0, session_id: <fresh 32 hex chars>}`.
    The device echoes the same `session_id` back.
 2. host: `Version{action: READ}`. The device replies with its full version blob.
-3. device: `Version{action: READ}` to the host. Cortex Control answers
+3. device: `Version{action: READ}` to the host. This is the TAIL OF STEP 2's
+   ANSWER, not a separate handshake step: measured 2026-08-27 on `d14e`, ten
+   host READs out of ten were answered by a `Version{UPDATE}` carrying fifteen
+   fields and then, 0.5-0.8 ms later, by the device's own `Version{READ}`
+   carrying `action` alone. Cortex Control answers
    `Version{action: UPDATE, cortex_control_version: "4.0.1"}`. The device keeps
    talking even if its own READ is never answered, but the UPDATE is what opens
    the push gate.
@@ -399,9 +409,15 @@ appears to want the whole set before it considers the client fully connected.
 
 `QuadCortex._hello()`, which `pyquadcortex.protocol.connect()` runs for you, does the
 same thing with one deliberate difference: it does **not** issue a host
-`Version` READ. The device sends its own `Version` READ anyway, and a redundant
-host READ would race a caller's later version request, since READ replies carry
-no `request_id` to disambiguate them.
+`Version` READ, because a redundant host READ would race a caller's later
+version request - READ replies carry no `request_id` to disambiguate them, so
+the transport hands a `Version` with no id to whichever waiter is first in line.
+
+Skipping it also means the device asks nothing back. Measured 2026-08-27 on
+`d14e`: a connect through `_hello()` and its whole burst produce exactly one
+inbound `Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer
+to the announce, and an idle connection produces none at all. So step 3 above is
+a consequence of step 2 rather than something the device does on connecting.
 
 After the burst the device needs a moment before it treats the client as
 connected; a command sent too soon gets no push (observed as flaky preset-read
@@ -2617,7 +2633,7 @@ visually on the device's own screen.
 | Operation | Wire shape (brief) | Verified by | Notes |
 |---|---|---|---|
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
-| version read | `Version{action: READ}` | read-back | serial and firmware returned |
+| version read | `Version{action: READ}` | read-back | serial and firmware returned. TWO messages come back: the `UPDATE` with fifteen fields, then the device's own `Version{READ}` 0.5-0.8 ms later |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply, which carries `reason` beside the preset |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured. A READ names no slot - an UPDATE that did would recall it |
