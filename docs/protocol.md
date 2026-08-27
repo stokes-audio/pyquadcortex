@@ -2639,7 +2639,7 @@ visually on the device's own screen.
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_param(Tempo(), ...)` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. A DEVICE setting, not a preset one - nothing to save. No change event is emitted when the switch moves, but the value rides the ambient params push; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
-| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, through the measured -40..+12 span rather than the catalog's placeholder - one of 25 placeholder parameters now measured |
+| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, over the -40..+12 span the catalog names as `MIN_MIXER_DB` |
 | `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
 | `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
 | `set_expression_bypass` | `Grid{UPDATE, ..., models{bypass_expression, expression_bypass_info}}` | read-back + on-unit | `type` is `ExpressionSwitchMode`, all three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2. The mode decides which other controls exist - SWITCH greys out the delay, HEEL_TOE greys out latch emulation |
@@ -2688,12 +2688,15 @@ visually on the device's own screen.
 | `catalog` | `ModelRepo{READ}` then `ModelRepo{model_repo_payload}` | read-back | payload is gzip(tar(ModelRepo.xml)): the unit's full block catalog |
 | `GridMove` | `GridMove{move{from_col, to_col, is_drop}, grid{rows{modelIds} x4}}` | captured only | observed in a Cortex Control session; no client method, not driven host-to-device by this library. Its `grid` snapshot is ADVISORY - replaying it with a cell zeroed does NOT delete a block, and the device echoes back only the `move` element |
 
-### Spans recovered behind the catalog's placeholder ranges
+### Every reading taken off the screen, and what it proves
 
-The catalog publishes some parameters with a real-world unit and the range
-`0.0..1.0` - a placeholder, the wire's own scale rather than the span the
-parameter covers. 52 parameters across 23 models are like this. Each span below
-was measured against the unit's screen at three or more well-separated points
+These are the measurements behind the firmware constants above. They were taken
+before anyone noticed the catalog names its own bounds, so at the time they were
+the ONLY source for these spans; now they are the evidence that the catalog's
+numbers are right, and `tests/test_scales.py` holds each one to the display's own
+precision.
+
+Each was read against the unit's screen at three or more well-separated points
 INCLUDING BOTH ENDS, because two close points cannot distinguish spans - that is
 how the lane levels shipped `-100..+30` for two releases.
 
@@ -2763,8 +2766,8 @@ It shares the lane VOLUME's STRUCTURE - a numeric floor at wire 0.01 with the Of
 detent below it - but not its values: -21.8 dB here against the lane's -39.5 dB
 at the same wire position.
 
-Note what this rules out. Cab LEVEL sits in the same `0..1 "dB"` placeholder
-bucket as the lane and mixer levels and is **not** their -40..+12 scale - unity
+Note what this rules out. Cab LEVEL sits in the same dB family
+as the lane and mixer levels and is **not** their -40..+12 scale - unity
 is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
 20 dB wrong on the wire.
 
@@ -3182,12 +3185,22 @@ Stated explicitly so nobody builds on a guess:
 - **DSP cost per model** is not published anywhere reachable, and `CPULoad` never
   arrives (see [above](#a-placement-can-be-refused-for-want-of-dsp-capacity)), so
   whether a block will fit can only be discovered by placing it.
-- **The true spans behind the placeholder 0..1 ranges** are not recoverable from the
-  catalog. 52 parameters across 23 models are affected; 25 of them have since
-  been measured off the screen: the mixer/splitter/lane levels at -40..+12 dB, and
-  `TEMPO` at 40..240 bpm (2026-08-12, three points). **Splitter `FREQUENCY` is the one
-  still unrecovered.** In both measured cases the endpoints are the fit's rather than
-  driven, so a caller who needs an extreme exactly should drive it.
+- ~~**The true spans behind the placeholder 0..1 ranges**~~ - ANSWERED, and the
+  question was wrong. There are no placeholder ranges: `min` and `max` are
+  sometimes a NAME the parser could not read, and it fell back to `0..1`. Seven of
+  the eight families now have numbers; splitter `FREQUENCY` was the last holdout
+  and fell to arithmetic rather than a screen reading, from the catalog's own
+  `defaultValue` and `skew` against one wire value. **`NC_Recorder`'s `OUT LEVEL`
+  is the one bound still unknown**, and permanently so: placing the block crashes
+  the unit.
+- **What `expAssignable="false"` actually governs** is unknown. It marks 14
+  parameters and demonstrably does NOT stop a host expression write - both halves
+  of a differential capture took the pedal. The touchscreen's own assignment menu
+  is the obvious candidate and has not been checked. Separately, whether the unit
+  ACTS on an assignment stored against such a parameter needs audio, not a wire
+  read.
+- **What `toggleOn` / `toggleOff` / `toggleStep` mean**, on 212 parameters. The
+  obvious reading is a footswitch toggle's two values; obvious and untested.
 - **Whether a capture id denotes different content on a different unit** is untested
   here, needing a second unit.
 - ~~**Whether a preset's descriptive `tags` can be set at all**~~ - ANSWERED: no. The
