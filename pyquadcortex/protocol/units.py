@@ -72,6 +72,15 @@ _CAB_LEVEL = Span(-39.96, 6.0, exponent=0.202, floor_wire=0.01, unit="dB",
 #: A block EQ band's GAIN. Every position is reachable, so no floor.
 _EQ_GAIN = Span(-12.0, 12.0, unit="dB")
 
+#: The SEND side of the FX loop: a Send block's LEVEL and THRU, and an FX Loop's
+#: SEND LEV. Measured 2026-08-26 at five points including both ends - -39.6 at
+#: 0.01, -36.0 at 0.10, -20.0 at 0.50, -10.0 at 0.75, 0.0 at 1.00 - and every one
+#: is exact. It tops out at UNITY rather than +12: a send cannot boost.
+#:
+#: `Send.LEVEL`, `Send.THRU` and `FX Loop.SEND LEV` were each measured and agree,
+#: so this is three controls confirmed rather than one generalised.
+_SEND = Span(-40.0, 0.0, floor_wire=0.01, unit="dB", hint=_LEVEL_HINT)
+
 #: The wire value the mixer, splitter and lane-output LEVEL parameters hold when
 #: nothing is attenuated - 10/13, which is 0 dB on the -40..+12 dB span those
 #: controls cover. The catalog publishes them as 0..1 "dB" (see
@@ -247,6 +256,12 @@ MEASURED_SPANS = {
     (11000, 5): _LEVEL,             # Mixer MIXER LEVEL
     (10004, 3): _LEVEL,             # Splitter LEVEL TO A
     (10004, 4): _LEVEL,             # Splitter LEVEL TO B
+    # "Splitter AB" (10000) is the READ-ONLY VIEW of the same two controls -
+    # `chain.splitter[]` against `chain.combined_splitter[]`, documented in
+    # `docs/protocol.md` as one state seen twice. Not separately measured, and
+    # it would be odd to: measuring it would be measuring the same knob.
+    (10000, 0): _LEVEL,             # Splitter AB LEVEL TO A, the read-side view
+    (10000, 1): _LEVEL,             # Splitter AB LEVEL TO B, the read-side view
     # The per-preset tempo: bpm = 40 + 200 * wire, from three screen readings.
     (25000, 0): Span(40.0, 240.0, unit="bpm"),   # TempoControl TEMPO
     # Cab LEVEL, per mic. The ONLY tapered control measured so far, and the one
@@ -260,15 +275,57 @@ MEASURED_SPANS = {
     #   0.75  +3.4   0.95  +5.5   1.00  +6.0
     #
     # dB = -39.96 + 45.96 * wire**0.202, worst error 0.034 dB - inside the
-    # display's own 0.1 dB rounding. Two of those points, 0.15 and 0.60, were
+    # display's own 0.1 dB rounding.
+    #
+    # CONFIRMED ON THREE BLOCKS, in three different categories. Fitted on a
+    # 212 Darkglass Neo (M), a Cabsim Bass; then predicted and found on a
+    # 412 CA Stand OS S V30 90s (M), a Cabsim Guitar (0.20 -> -6.7, 0.85 ->
+    # +4.5); then predicted and found inside Parallax, a Bass Overdrive with an
+    # embedded cab section (0.50 -> 0.0, 0.25 -> -5.2). So the taper belongs to
+    # the CAB SECTION wherever it appears, not to cab models. Two of those points, 0.15 and 0.60, were
     # PREDICTED from the law and then found, before being fitted to; the lab used
     # the same standard for the lane VOLUME's +3.2 dB at 0.830769.
     #
     # The design intent is probably -40 -> +6 with a fifth-root taper: those
     # constants fit to 0.17 dB, which the display can just about resolve, so the
     # measured values are what ships and this note is why they look untidy.
+    # The FX loop family, measured 2026-08-26. FIVE parameters across three
+    # blocks turned out to be TWO scales, not one and not five: everything on the
+    # send side is -40..0 and everything on the return side is -40..+12, the same
+    # scale the lane, mixer and splitter levels use. Established by setting all
+    # five to one wire value and reading them together, twice, at 0.10 and 0.50 -
+    # so the grouping is not two laws crossing at a point.
+    #
+    # Both show OFF at wire 0.0, hence the floor on each.
+    #
+    # Measured on Send 1, Return 1 and FX Loop 2. The 1/2 and second-port
+    # siblings below are the same control on another port and are NOT separately
+    # measured; each group already has two independently measured members, which
+    # is why extending it is a small step rather than the cab's one-model leap.
+    (13000, 0): _SEND,              # Send 1 LEVEL
+    (13000, 1): _SEND,              # Send 1 THRU
+    (13001, 0): _SEND,              # Send 2 LEVEL
+    (13001, 1): _SEND,              # Send 2 THRU
+    (13006, 0): _SEND,              # Send 1/2 LEVEL
+    (13006, 1): _SEND,              # Send 1/2 THRU
+    (13004, 0): _SEND,              # FX Loop 1 SEND LEV
+    (13005, 0): _SEND,              # FX Loop 2 SEND LEV
+    (13008, 0): _SEND,              # FX Loop 1/2 SEND LEV
+    (13002, 0): _LEVEL,             # Return 1 LEVEL
+    (13003, 0): _LEVEL,             # Return 2 LEVEL
+    (13007, 0): _LEVEL,             # Return 1/2 LEVEL
+    (13004, 1): _LEVEL,             # FX Loop 1 RET LEV
+    (13005, 1): _LEVEL,             # FX Loop 2 RET LEV
+    (13008, 1): _LEVEL,             # FX Loop 1/2 RET LEV
     (12000, 2): _CAB_LEVEL,         # cab LEVEL, mic 1
     (12000, 10): _CAB_LEVEL,        # cab LEVEL, mic 2
+    # Parallax carries its own two-mic CAB SECTION - bypass / ir selector /
+    # LEVEL / PAN / DISTANCE / POSITION / phi / GRID MODE, twice - and its
+    # LEVELs follow the same taper. Confirmed by prediction: 0.50 -> 0.0 dB and
+    # 0.25 -> -5.2 dB, both as the law says. It is a Bass Overdrive, not a
+    # Cabsim, so `_layout_span` cannot reach it and it is keyed here.
+    (3008, 16): _CAB_LEVEL,         # Parallax cab section, mic 1 LEVEL
+    (3008, 24): _CAB_LEVEL,         # Parallax cab section, mic 2 LEVEL
 }
 
 #: Block EQ band gains: dB = -12 + 24 * wire. Measured 2026-08-25 on the
@@ -299,6 +356,24 @@ del _model, _bands, _band
 #: cab entry - a control can be perfectly regular and still defeat every law you
 #: happen to try first.
 UNCONVERTIBLE = {}
+
+#: Parameters that will NOT be measured, and why. Distinct from an unmeasured
+#: span: nobody is going to look, so a later session should not spend a session
+#: rediscovering the reason.
+DO_NOT_PROBE = {
+    # NC_Recorder is the internal recorder the Neural Capture wizard drives, not
+    # a block. Placing it on the grid to measure OUT LEVEL CRASHED the unit -
+    # "Something went wrong ... Cancel / Reboot" - and required a reboot,
+    # 2026-08-26. Its `internal` and `hidden` flags are both false, which is what
+    # made it look placeable; the category name "Neural Capture Internal" was the
+    # real signal and was not read carefully enough. The same two blocks placed
+    # again without it did not crash.
+    #
+    # This is the second time probing capture/IR machinery has taken the unit
+    # down - CLAUDE.md already records that IR-import probing killed the USB link
+    # and needed a power cycle. One unmeasured parameter is the better trade.
+    (20000, 2): "NC_Recorder OUT LEVEL - placing this block crashes the unit",
+}
 
 #: The wire value a cab LEVEL holds at unity, which IS worth naming even though
 #: the taper around it is not expressible.

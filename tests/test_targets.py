@@ -265,8 +265,6 @@ def test_an_unmeasured_placeholder_still_refuses():
     """
     from pyquadcortex.protocol import units
 
-    assert (13000, 0) not in units.MEASURED_SPANS, "Send 1 LEVEL is not measured"
-    assert (13004, 0) not in units.MEASURED_SPANS, "FX Loop SEND LEV is not measured"
     assert (20000, 2) not in units.MEASURED_SPANS, "recorder OUT LEVEL is not measured"
 
 
@@ -396,9 +394,11 @@ def test_a_cab_converts_through_the_shared_cabsim_layout():
     <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
   </Model>
 </Category>
-<Category id="13" name="Send">
-  <Model blob="sd" id="13000" name="Send 1" internal="true">
-    <Parameter defaultValue="0.5" max="1" min="0" name="LEVEL" type="float" units="dB"/>
+<Category id="20" name="Neural Capture Internal">
+  <Model blob="rec" id="20000" name="NC_Recorder" skip_self_test="true">
+    <Parameter defaultValue="0" max="1" min="0" name="A" type="float"/>
+    <Parameter defaultValue="0" max="1" min="0" name="B" type="float"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="OUT LEVEL" type="float" units="dB"/>
   </Model>
 </Category>
 <Category id="12" name="Cabsim Guitar (M)">
@@ -419,7 +419,7 @@ def test_a_cab_converts_through_the_shared_cabsim_layout():
     # A NON-cab whose own span is unmeasured still refuses, so the alias is not
     # a back door that sweeps in every placeholder range near a measured one.
     with pytest.raises(ValueError, match="placeholder"):
-        Block(0, 1, 13000).normalize(0, -3.0, get)
+        Block(0, 1, 20000).normalize(2, -3.0, get)
 
 
 # -- `low` is a fit parameter; `floor` is where the knob actually stops --------
@@ -490,3 +490,125 @@ def test_the_worst_taper_error_is_what_the_docs_claim():
     worst = max(abs(d - units.measured_from_wire(span, v))
                 for v, d in CAB_LEVEL_READINGS)
     assert worst == pytest.approx(0.034, abs=0.001)
+
+
+# -- the FX loop family: five parameters, two scales --------------------------
+
+SEND_READINGS = [(0.01, -39.6), (0.10, -36.0), (0.50, -20.0), (0.75, -10.0),
+                 (1.00, 0.0)]
+RETURN_READINGS = [(0.01, -39.5), (0.10, -34.8), (0.50, -14.0), (1.00, 12.0)]
+
+
+@pytest.mark.parametrize("wire,screen", SEND_READINGS)
+def test_the_send_side_reproduces_every_reading(wire, screen):
+    """`dB = -40 + 40 * wire`. It tops out at UNITY - a send cannot boost."""
+    from pyquadcortex.protocol import units
+
+    span = units.MEASURED_SPANS[(13000, 0)]
+    assert units.measured_from_wire(span, wire) == pytest.approx(screen, abs=0.05)
+
+
+@pytest.mark.parametrize("wire,screen", RETURN_READINGS)
+def test_the_return_side_reproduces_every_reading(wire, screen):
+    from pyquadcortex.protocol import units
+
+    span = units.MEASURED_SPANS[(13002, 0)]
+    assert units.measured_from_wire(span, wire) == pytest.approx(screen, abs=0.05)
+
+
+def test_the_return_side_is_the_same_scale_as_the_lane_levels():
+    """Four families now share -40..+12: lane, mixer, splitter and FX return."""
+    from pyquadcortex.protocol import units
+
+    assert units.MEASURED_SPANS[(13002, 0)] is units.MEASURED_SPANS[(23000, 0)]
+
+
+def test_the_send_side_is_a_different_scale_from_the_return_side():
+    """Five parameters across three blocks turned out to be TWO scales.
+
+    Established by setting all five to one wire value and reading them together,
+    twice, at 0.10 and 0.50 - so the grouping is not two laws crossing at a
+    point. Pooling them would have put a send 12 dB out at full travel.
+    """
+    from pyquadcortex.protocol import units
+
+    send = units.MEASURED_SPANS[(13000, 0)]
+    ret = units.MEASURED_SPANS[(13002, 0)]
+    assert send.high == 0.0 and ret.high == 12.0
+    assert send.low == ret.low == -40.0
+
+
+@pytest.mark.parametrize("key", [
+    (13000, 0), (13000, 1), (13001, 0), (13001, 1), (13006, 0), (13006, 1),
+    (13004, 0), (13005, 0), (13008, 0),
+])
+def test_every_send_side_parameter_is_keyed(key):
+    from pyquadcortex.protocol import units
+
+    assert units.MEASURED_SPANS[key] is units.MEASURED_SPANS[(13000, 0)]
+
+
+@pytest.mark.parametrize("key", [
+    (13002, 0), (13003, 0), (13007, 0), (13004, 1), (13005, 1), (13008, 1),
+])
+def test_every_return_side_parameter_is_keyed(key):
+    from pyquadcortex.protocol import units
+
+    assert units.MEASURED_SPANS[key] is units.MEASURED_SPANS[(13002, 0)]
+
+
+def test_both_fx_loop_scales_have_the_off_detent():
+    """Both read OFF at wire 0.0, so -40 dB is not a position either one has."""
+    from pyquadcortex.protocol import units
+
+    for key, floor in (((13000, 0), -39.6), ((13002, 0), -39.5)):
+        span = units.MEASURED_SPANS[key]
+        assert span.floor == pytest.approx(floor, abs=0.05)
+        with pytest.raises(ValueError, match="does not exist"):
+            units.measured_to_wire(span, -40.0)
+
+
+def test_the_cab_taper_is_confirmed_across_three_categories():
+    """Fitted on a Cabsim Bass; predicted and found on a Cabsim Guitar and in
+    Parallax, a Bass Overdrive with its own embedded cab section.
+
+    Parallax is keyed explicitly because it is NOT a Cabsim, so the category
+    aliasing cannot reach it - and because it is the evidence that the taper
+    belongs to the cab section rather than to cab models.
+    """
+    from pyquadcortex.protocol import units
+
+    cab = units.MEASURED_SPANS[(12000, 2)]
+    for key in ((3008, 16), (3008, 24)):
+        assert units.MEASURED_SPANS[key] is cab
+    assert units.measured_from_wire(cab, 0.50) == pytest.approx(0.0, abs=0.05)
+    assert units.measured_from_wire(cab, 0.25) == pytest.approx(-5.2, abs=0.05)
+    assert units.measured_from_wire(cab, 0.20) == pytest.approx(-6.75, abs=0.06)
+    assert units.measured_from_wire(cab, 0.85) == pytest.approx(4.5, abs=0.05)
+
+
+def test_the_recorder_is_recorded_as_off_limits_rather_than_merely_unmeasured():
+    """Placing NC_Recorder to measure it CRASHED the unit and forced a reboot.
+
+    Its `internal` and `hidden` flags are both false, which is what made it look
+    placeable. Without this entry the next session sees an unmeasured parameter,
+    reaches the same conclusion, and crashes the unit again.
+    """
+    from pyquadcortex.protocol import units
+
+    assert (20000, 2) in units.DO_NOT_PROBE
+    assert (20000, 2) not in units.MEASURED_SPANS
+    assert "crash" in units.DO_NOT_PROBE[(20000, 2)].lower()
+
+
+def test_the_legacy_splitter_view_shares_the_splitters_span():
+    """`chain.splitter[]` (model 10000) is a read-only view of `combined_splitter`.
+
+    One state seen through two model entries, so it is the same knob and the same
+    span. Keyed rather than measured, because measuring it would be measuring the
+    control that was already measured.
+    """
+    from pyquadcortex.protocol import units
+
+    assert units.MEASURED_SPANS[(10000, 0)] is units.MEASURED_SPANS[(10004, 3)]
+    assert units.MEASURED_SPANS[(10000, 1)] is units.MEASURED_SPANS[(10004, 4)]

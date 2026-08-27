@@ -199,12 +199,11 @@ class ParamTarget:
         wire carries the whole `Default Cabsim` layout, so a measurement of that
         layout is what applies.
 
-        **The taper was measured on ONE cab**, a 212 Darkglass Neo (M). Every cab
-        provably shares the LAYOUT - `tests/hardware/test_generated_constants.py`
-        holds that against the live catalog - but sharing a layout is not the
-        same as sharing a taper, and nobody has checked a second cab. Applying it
-        to all of them is the one extrapolation in this module, and it is here
-        rather than in `MEASURED_SPANS` so it is visible.
+        The taper it borrows is confirmed on three blocks in three different
+        categories - a Cabsim Bass, a Cabsim Guitar, and Parallax, which is a
+        Bass Overdrive carrying its own cab section. So it belongs to the cab
+        SECTION wherever that appears, not to one cab model, and applying it
+        across the category is no longer an extrapolation.
 
         This is also the ONE conversion path that costs a catalog fetch, and only
         on the miss path: an indexed write with ``value=`` never reaches here,

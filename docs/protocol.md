@@ -2701,6 +2701,8 @@ how the lane levels shipped `-100..+30` for two releases.
 |---|---|---|
 | Lane / mixer / splitter LEVEL | `dB = -40 + 52 * wire` | lane VOLUME: -3.1 at 0.71, +12.0 at 1.0, -39.5 at 0.01. Splitter `LEVEL TO B`: -3.1 at 0.71, +12.0 at 1.0. `MIXER LEVEL`: -24.4 at 0.30, +12.0 at 1.0. Mixer `LEVEL A`: -24.4 at 0.30, +12.0 at 1.0. Mixer `LEVEL B`: -3.1 at 0.71, +12.0 at 1.0. Splitter `LEVEL TO A` agrees at 0.30 and reads OFF at 0.0 |
 | Block EQ band GAIN (`4000`, `4001`, `4004`) | `dB = -12 + 24 * wire` | Parametric-8 at four points: -12.0 at 0.0, -9.6 at 0.10, 0.0 at 0.50, +12.0 at 1.00. Parametric-3 and Output Equalizer measured at both ends each |
+| FX loop SEND side (`Send.LEVEL`, `Send.THRU`, `FX Loop.SEND LEV`) | `dB = -40 + 40 * wire` | five points, every one exact: -39.6 at 0.01, -36.0 at 0.10, -20.0 at 0.50, -10.0 at 0.75, 0.0 at 1.00. Tops out at UNITY - a send cannot boost |
+| FX loop RETURN side (`Return.LEVEL`, `FX Loop.RET LEV`) | `dB = -40 + 52 * wire` | -39.5 at 0.01, -34.8 at 0.10, -14.0 at 0.50, +12.0 at 1.00. **The same scale as the lane, mixer and splitter levels** |
 | Per-preset TEMPO | `bpm = 40 + 200 * wire` | 59 at 0.095, 111 at 0.355, 120 at 0.400 |
 | Input port gain | `dB = -12 + 72 * wire` | four owner trims read on screen against the wire |
 
@@ -2749,6 +2751,14 @@ The constants are probably the design intent -40 -> +6 with a fifth-root taper;
 `-40 + 46 * wire^0.2` fits to 0.17 dB, which the display can just about resolve,
 so the measured values are what ships.
 
+**Confirmed on three blocks in three categories.** Fitted on a `212 Darkglass
+Neo (M)` (Cabsim Bass); then PREDICTED and found on a `412 CA Stand OS S V30 90s
+(M)` (Cabsim Guitar): 0.20 -> -6.7 and 0.85 -> +4.5. Then predicted and found
+inside **Parallax**, a Bass Overdrive carrying its own two-mic cab section:
+0.50 -> 0.0 and 0.25 -> -5.2. So the taper belongs to the **cab section wherever
+it appears**, not to cab models, and Parallax is keyed explicitly because the
+category aliasing cannot reach a Bass Overdrive.
+
 It shares the lane VOLUME's STRUCTURE - a numeric floor at wire 0.01 with the Off
 detent below it - but not its values: -21.8 dB here against the lane's -39.5 dB
 at the same wire position.
@@ -2759,9 +2769,24 @@ is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
 20 dB wrong on the wire.
 
 Everything NOT in that table still refuses `real=`. That is the honest answer:
-an unmeasured span cannot be converted, only guessed. The remaining families -
-send/return and FX-loop levels, the recorder's OUT LEVEL, Parallax's LEVELs -
-are tracked on the placeholder-ranges issue.
+an unmeasured span cannot be converted, only guessed.
+
+**One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable
+only by placing the internal Neural Capture recorder on the grid, and doing that
+**crashed the unit** - "Something went wrong", requiring a reboot. Its `internal`
+and `hidden` flags are both false, which is what made it look like an ordinary
+block; the category name "Neural Capture Internal" was the real signal. The same
+session then placed a cab and Parallax without it and nothing went wrong, so the
+recorder is the cause. It is recorded in `units.DO_NOT_PROBE` rather than left
+looking merely unmeasured, so nobody repeats it. This is the second time probing
+capture/IR machinery has taken the unit down.
+
+**Five FX-loop parameters turned out to be TWO scales, not one and not five.**
+Worth the method note: they were grouped by setting all five to the SAME wire
+value and reading them together, twice, at 0.10 and 0.50. Two readings agreeing
+at one point could be two laws crossing; agreeing at two points is a family. The
+send side tops out at unity and the return side at +12, so pooling them would
+have put a send 12 dB out at full travel.
 
 ### What a host can assign an expression pedal to
 

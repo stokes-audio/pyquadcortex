@@ -20,6 +20,43 @@ correction.
 
 ## Unreleased
 
+### `real=` speaks real units for every placeholder parameter but one
+
+The device publishes 52 parameters with a real-world unit and the meaningless
+range `0.0..1.0`. **51 of them now convert**; the 52nd is off limits and says so.
+
+```python
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, real=-3.1)   # dB
+qc.set_param(Block(0, 1, eq), "1 GAIN", real=6.0)                       # dB
+qc.set_param(block, params.Cabsim.MIC_1_LEVEL, real=-3.0)               # dB, tapered
+qc.set_param(Block(0, 2, send), "LEVEL", real=-10.0)                    # dB
+qc.set_param(Tempo(), params.TempoParam.TEMPO, real=120)                # bpm
+```
+
+| family | law | span |
+|---|---|---|
+| lane / mixer / splitter / FX-return LEVEL | `-40 + 52 * wire` | -40..+12 dB |
+| FX-loop SEND side | `-40 + 40 * wire` | -40..0 dB, cannot boost |
+| block EQ band GAIN | `-12 + 24 * wire` | -12..+12 dB |
+| cab section per-mic LEVEL | `-39.96 + 45.96 * wire^0.202` | tapered, -21.8..+6 dB |
+| per-preset TEMPO | `40 + 200 * wire` | 40..240 bpm |
+
+Every span was measured against the unit's screen at three or more points
+**including both ends**, and each is held to its readings by a test, so a future
+edit cannot drift away from the device.
+
+**A span knows where the knob stops.** Its `low` is often a fit parameter below
+anything reachable - the cab's law extrapolates to -39.96 dB while its quietest
+real setting is -21.8 dB, with OFF below. Asking for -30 dB there would have
+returned a wire value the unit reads as OFF, so `real=` refuses below the floor
+and points at `value=0.0`.
+
+**One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable
+only by placing the internal Neural Capture recorder on the grid, and that
+**crashes the unit**. It is recorded in `units.DO_NOT_PROBE` with the reason, so
+it does not look merely unmeasured to whoever reads the table next.
+
+
 ### `real=` speaks dB for the EQ bands, the mixer and the splitter
 
 Four more families of parameter now take a value in the units the screen shows,
