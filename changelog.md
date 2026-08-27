@@ -20,6 +20,24 @@ correction.
 
 ## Unreleased
 
+### `has_unsaved_changes` could stay true through a recall
+
+A read of the model's cache threw away anything that had marked the same part of
+it while the read was in flight, unless the unit had SENT a message about it. A
+recall marks the unsaved-changes flag without one - the unit clears the flag and
+says nothing, which is why the model re-reads instead of waiting - so a recall
+landing inside a `has_unsaved_changes` read (the read takes 2 to 11 ms) left
+`has_unsaved_changes` reporting edits the recall had discarded. It stayed wrong
+until something else marked it: the unit announces every CHANGE of the flag, so
+the first edit to the recalled preset puts it right, and so does the next
+recall. Saving, or reading it to decide whether to warn somebody, happens inside
+the wrong window.
+
+The other way in is a write whose echo never arrives: the timeout marks the part
+of the cache the write touched, and a read in flight discarded that mark too.
+Nothing in the package writes through the cache yet, so this half was reachable
+only by a caller using `DeviceState` directly.
+
 ### BREAKING: the metronome beat names were wrong, two of them backwards
 
 `MetronomeBeat` is now the device's own `OFF`, `MUTE`, `DOWN`, `ON`, replacing
