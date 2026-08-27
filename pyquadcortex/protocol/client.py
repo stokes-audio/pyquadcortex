@@ -653,6 +653,21 @@ class QuadCortex:
                 "real= (the parameter's own units) or text= (a string-valued "
                 "parameter)"
             )
+        if isinstance(value, bool):
+            # A bool is the natural way to write a two-option switch, and 247
+            # parameters are exactly Off/On. It is NOT a safe way to write a
+            # longer list: True is wire 1.0, which selects the LAST option, so
+            # True on a three-way MODE would silently choose the third. Refused
+            # where the spec is already in hand; an indexed write with no
+            # catalog is left alone rather than made to fetch one.
+            if spec is not None and (spec.option_count or 2) != 2:
+                raise TypeError(
+                    f"{spec.name!r} offers {spec.option_count} options, so True "
+                    f"and False cannot say which one. True is the wire's 1.0, "
+                    f"which would pick the last. Use an enum from "
+                    f"pyquadcortex.protocol.options with set_param_option."
+                )
+            value = 1.0 if value else 0.0
         if scene is not None:
             if not target.supports_scenes:
                 raise TypeError(
@@ -2552,45 +2567,69 @@ class QuadCortex:
         return self._t.send(msg)
 
     def set_param_option(self, block, param, option,
-                         source: preset.BinaryPreset):
-        """Choose a list-valued parameter's option by NAME.
+                         source: preset.BinaryPreset = None):
+        """Choose a list-valued parameter's option.
 
-        List (comboBox) parameters store ``index / (count - 1)``, and the option
-        names are not in the catalog - they are in the preset, per block. So this
-        needs a preset to read them from: pass the one you got from
-        :meth:`read_preset` for the currently loaded preset.
+        List parameters store ``index / (count - 1)``, so choosing one means
+        knowing its position. Pass an enum from
+        :mod:`pyquadcortex.protocol.options`, which names them::
 
-        This is how a side-chain SOURCE is set, which is an ordinary parameter
-        rather than the ``sidechain_source_flag`` it looks like it should be::
+            qc.set_param_option(Block(0, 1), "DYN MODE", options.DynMode3.GATE)
+
+        An option NAME or a bare index works too. A name is matched against the
+        device's own spelling, typos included - see ``options.OPTION_LABELS``.
+
+        **``source=`` is only needed for a DYNAMIC list.** Twelve parameters
+        build their options from the preset, because the list can include one
+        entry per block earlier in the chain, and the catalog's ``steps``
+        overstates it. A side-chain SOURCE is the case to know::
 
             p = qc.read_preset(Setlist.USER, "30A")
-            qc.set_param_option(Block(1, 0), param="SOURCE",
-                                option="Input 2", source=p)
+            qc.set_param_option(Block(1, 0), "SOURCE", "Input 2", source=p)
 
-        ``param`` may be a wire index or a parameter NAME - the block's model is
-        taken from ``source``, so no ``model=`` is needed. On a "Solid State Comp
-        (S/C)" the catalog calls index 6 ``SOURCE``, of type ``comboBox``.
+        Everything else reads its options from the catalog. This docstring used
+        to say the names were "not in the catalog - they are in the preset, per
+        block", and that was wrong for 527 of the 539 lists; ``stepNames`` had
+        them all along.
+
+        ``param`` may be a wire index or a parameter NAME. With ``source=``, the
+        block's model is taken from the preset, so no ``model=`` is needed.
 
         Confirmed on hardware both ways: the unit stored 0.2 for "Input 2" out of
         16 options when set on screen, and a host write of 3/17 out of 18 options
-        read back as "Input 2".
-
-        Note the option list is per PRESET, because such a list can include one
-        entry per block earlier in the chain - the last two entries of a
-        side-chain SOURCE list were the two blocks ahead of it.
+        read back as "Input 2". Confirmed for a fixed list on 2026-08-26: wire
+        0.25 on a Low-High Cut's HPF SLOPE, option 2 of 9, showed "-12 dB/o".
         """
+        model_id = block.model_id
+        if model_id is None and source is not None:
+            model_id = next((b.model_id for b in blocks(source)
+                             if b.row == block.row and b.column == block.column),
+                            None)
         index = param
         if isinstance(param, str):
-            model_id = block.model_id or next(
-                (b.model_id for b in blocks(source)
-                 if b.row == block.row and b.column == block.column), None)
             if model_id is None:
                 raise ValueError(
                     f"no block at row {block.row} column {block.column} in "
                     f"the preset given as source=")
             index = self.catalog[model_id].parameter(param).index
-        options = param_options(source, block, index)
-        return self.set_param(block, index, value=option_value(options, option))
+
+        # The preset first when one was given: it is authoritative for a dynamic
+        # list, it agrees with the catalog on the rest, and reading it costs
+        # nothing. The catalog comes over USB, so a caller who already handed us
+        # the answer should not pay for a round trip.
+        names = tuple(param_options(source, block, index)) if source else ()
+        if not names and model_id is not None:
+            model = self.catalog.get(model_id)
+            if model is not None and index < len(model.parameters):
+                names = model.parameters[index].options
+        if not names:
+            raise ValueError(
+                f"index {index} on row {block.row} column {block.column} offers "
+                f"no options here. A dynamic list - one whose entries include "
+                f"the blocks ahead of it - is only in the preset, so pass "
+                f"source=<the preset you read>."
+            )
+        return self.set_param(block, index, value=option_value(names, option))
 
     def set_output_mute(self, output_port_id: int, muted: bool = True):
         """Mute or unmute an output port.

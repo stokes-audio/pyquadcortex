@@ -10,6 +10,7 @@ fix is to regenerate and read the diff before committing it:
 
     python scripts/generate_models.py
     python scripts/generate_params.py
+    python scripts/generate_options.py
 
 Read the diff. A renumbered parameter is a real protocol change and belongs in
 `docs/protocol.md`; a new model is routine.
@@ -37,7 +38,7 @@ def live_catalog(qc):
     return catalog.parse_model_repo(qc._fetch_model_repo())
 
 
-@pytest.mark.parametrize("name", ["models", "params"])
+@pytest.mark.parametrize("name", ["models", "params", "options"])
 def test_the_committed_file_matches_this_unit(live_catalog, name):
     """Read-only: nothing is written to the unit, so no restore is needed."""
     generated = _generator(name).render(live_catalog)

@@ -3609,3 +3609,75 @@ def test_add_and_remove_listener_pass_straight_through_to_the_transport():
     qc.add_listener(seen.append)
     assert qc.remove_listener(seen.append) is True
     assert fake.listeners == []
+
+
+# -- picking an option by enum -------------------------------------------------
+# The names live in the catalog's stepNames, which this library read for the
+# first time on 2026-08-26. set_param_option used to require a preset to read
+# them from; that is true of 12 dynamic lists and of nothing else.
+
+
+def _option_client():
+    """A client whose catalog carries a fixed list and a two-option switch."""
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="4" name="Equalizer">
+  <Model blob="lhc" id="4003" name="Low-High Cut">
+    <Parameter defaultValue="0" max="8" min="0" name="HPF SLOPE" steps="9" type="rotarySwitch" units="dB/oct" stepNames="Flat,   -6, -12, -18, -24, -30, -36, -42, -48"/>
+    <Parameter defaultValue="0" max="1" min="0" name="SYNC" steps="2" type="switch" stepNames="Off,On"/>
+  </Model>
+</Category>
+""" + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    return qc
+
+
+def test_an_option_enum_selects_by_its_wire_position():
+    """Confirmed on hardware: wire 0.25 on this knob showed '-12 dB/o'."""
+    from pyquadcortex.protocol import options
+
+    qc = _option_client()
+    qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", options.HpfSlope.MINUS_12)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.index == 0
+    assert written.param_values[0].float_value == pytest.approx(0.25)
+
+
+def test_an_option_name_still_works_and_matches_the_devices_spelling():
+    qc = _option_client()
+    qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", "-12")
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.25)
+
+
+def test_a_fixed_list_needs_no_preset():
+    """The whole point: 527 of the 539 lists are in the catalog."""
+    qc = _option_client()
+    qc.set_param_option(Block(0, 2, 4003), "HPF SLOPE", 8)      # no source=
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(1.0)
+
+
+def test_a_parameter_with_no_options_says_to_pass_the_preset():
+    qc = _option_client()
+    with pytest.raises(ValueError, match="dynamic list"):
+        qc.set_param_option(Block(0, 1, 5005), "THRESHOLD", 0)
+
+
+def test_a_two_option_switch_takes_a_bool():
+    qc = _option_client()
+    qc.set_param(Block(0, 2, 4003), "SYNC", True)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(1.0)
+    qc.set_param(Block(0, 2, 4003), "SYNC", False)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.0)
+
+
+def test_a_bool_on_a_longer_list_is_refused_rather_than_picking_the_last():
+    """True is wire 1.0, which on a nine-way switch means '-48', not 'on'."""
+    qc = _option_client()
+    with pytest.raises(TypeError, match="offers 9 options"):
+        qc.set_param(Block(0, 2, 4003), "HPF SLOPE", True)
