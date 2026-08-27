@@ -54,7 +54,8 @@ WATCHDOG_THREAD_NAME = "pyquadcortex-watchdog"
 class _Slot:
     """One entry's copy of the unit's state, and how much we trust it."""
 
-    __slots__ = ("fields", "needs_read", "witnessed", "_arrivals")
+    __slots__ = ("fields", "needs_read", "witnessed", "marks", "_arrivals",
+                 "_marks")
 
     def __init__(self):
         #: field name -> value, holding only what the unit has actually said.
@@ -88,10 +89,25 @@ class _Slot:
         #: rule. Do not simplify this back.
         self._arrivals = itertools.count(1)
         self.witnessed = 0
+        #: How many times a path OTHER than the listener has said this copy
+        #: cannot be trusted: `mark_for_reread` and everything that calls it -
+        #: a recall's `resets`, the write watchdog giving up, a caller of its
+        #: own. Counted separately because none of those is a message to THIS
+        #: entry at all, so no amount of care about what :attr:`witnessed`
+        #: counts can see them, and the read path must not clear a mark it
+        #: never had the answer to. Same counter idiom, for the same reason as
+        #: above.
+        self._marks = itertools.count(1)
+        self.marks = 0
 
     def arrived(self) -> None:
         """Note that one more message has told this entry something."""
         self.witnessed = next(self._arrivals)
+
+    def marked(self) -> None:
+        """Note one mark set by something other than an inbound message."""
+        self.needs_read = True
+        self.marks = next(self._marks)
 
 
 class DeviceState:
@@ -301,6 +317,13 @@ class DeviceState:
                 # confirmed by anything. Section 10 only asks for a log line
                 # here; leaving it at that is how the one path that means "we
                 # have a bug" ends up the one that cleans up least.
+                #
+                # Counted, so it survives a read of the same entry that is in
+                # flight - which costs one more round trip when the settling
+                # echo IS that read's answer, since the answer had already
+                # replaced every field. Left conservative on purpose: the watch
+                # is gone once it settles, so the next read consumes the mark,
+                # and this is the path that means we have a bug.
                 self.mark_for_reread(
                     watch.entry,
                     f"the unit disagreed with a write of {sorted(watch.sent)}")
@@ -369,6 +392,7 @@ class DeviceState:
                 if not slot.needs_read and field in slot.fields:
                     return slot.fields[field]
                 witnessed_before = slot.witnessed
+                marks_before = slot.marks
                 client = self._client
             if client is None:
                 raise RuntimeError(
@@ -400,12 +424,40 @@ class DeviceState:
                 # entry whose read provokes a stream of ANSWERS will still have
                 # to say how many messages that is; see `StateEntry`.
                 extra = slot.witnessed - witnessed_before
-                retracted = slot.needs_read and extra <= 1
-                slot.needs_read = extra > 1
-                if slot.needs_read:
+                # And the marks that came from something OTHER than a
+                # message to this entry, which the count above cannot see
+                # however carefully it counts: a recall's `resets`, the
+                # watchdog giving up on a write, any caller of
+                # `mark_for_reread`. Snapshotted at the start of the read for
+                # the same reason `witnessed` is - a mark set BEFORE it is the
+                # one this read went to answer, and clearing that is the whole
+                # point. What must survive is a mark set SINCE, because the
+                # unit composed this answer without knowing about it. Not quite
+                # every one: a mark landing in the microseconds between the
+                # snapshot and the request going out is kept although the unit
+                # might have accounted for it. `witnessed_before` has had the
+                # same gap since it was written, and both err by re-reading. The obvious
+                # `slot.needs_read or extra > 1` does not work: the read's own
+                # reply re-arms the mark through the listener from the fields
+                # this entry does not keep, so the entry would never cache
+                # anything again.
+                marked_since = slot.marks - marks_before
+                was_marked = slot.needs_read
+                slot.needs_read = extra > 1 or marked_since > 0
+                if extra > 1:
                     log.info("push.forced_reread %s - %d message(s) arrived "
                              "while it was being read", entry_name, extra)
-                elif retracted:
+                elif slot.needs_read:
+                    # The mirror of the line below, at info rather than its
+                    # debug: a surviving mark costs a real round trip, where a
+                    # consumed one is the ordinary case. `mark_for_reread` has
+                    # already logged WHY; this says the mark outlived the read,
+                    # which is what a reader asking "why is this STILL
+                    # re-reading" needs.
+                    log.info("cache.mark_survived %s - marked while it was "
+                             "being read, by something this answer cannot have "
+                             "accounted for", entry_name)
+                elif was_marked:
                     # The read consumed a mark, which is ADR-0011's rule. Said
                     # out loud because the mark may have been ANNOUNCED to a
                     # caller as `Invalidated`, and a subscriber acting on it
@@ -466,10 +518,16 @@ class DeviceState:
             return self._slots[self._entry(entry_name).name].needs_read
 
     def mark_for_reread(self, entry_name: str, why: str) -> None:
-        """Stop trusting this entry's copy; the next read goes to the unit."""
+        """Stop trusting this entry's copy; the next read goes to the unit.
+
+        Counted as well as set, because a read already in flight would
+        otherwise overwrite this on the way out - see :meth:`value`. Every path
+        that marks an entry for a reason other than an inbound message for that
+        entry comes through here, which is what makes one counter enough.
+        """
         with self._lock:
             self._check_open()
-            self._slots[self._entry(entry_name).name].needs_read = True
+            self._slots[self._entry(entry_name).name].marked()
         log.info("cache.forced_reread %s - %s", entry_name, why)
 
     # -- what we tell the unit ------------------------------------------------

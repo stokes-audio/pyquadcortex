@@ -11,6 +11,7 @@ methods that run on hardware rather than stubs of them.
 real RX thread, which is the only place the "never reads from the RX thread"
 rule can actually be exercised.
 """
+import ast
 import collections
 import logging
 import pathlib
@@ -474,6 +475,209 @@ def test_the_unit_asking_a_question_back_is_not_a_push_that_landed(link):
         "the unit asking a question back was counted as a push that landed "
         "during the read, so the second field went to the unit again")
     assert cache.needs_read("identity") is False
+
+
+def test_a_recall_landing_during_a_read_of_the_dirty_flag_is_not_lost(link):
+    """The same window, reached by a path the arrival count cannot see.
+
+    The test above counts messages for the entry being read. A recall marks the
+    `dirty` entry through `LOADED.resets`, and a `SetlistPosition` is not a
+    message the `dirty` entry is fed by, so it never reaches that count. The
+    unit sends NO `PresetDirty` after a recall (measured; see `_A_RECALL_RESETS`),
+    so nothing else corrects it: a read that dropped this mark would go on
+    reporting edits the recall discarded, which is the one thing `resets` exists
+    to prevent. The window is the 2-11 ms `preset_dirty()` read.
+    """
+    transport, cache = link
+    cache.apply_push(recalled_elsewhere(position=9))
+
+    def reply_but_a_recall_first():
+        transport.push(recalled_elsewhere(position=17))
+        return dirty_push(True)
+
+    transport.replies["PresetDirtyMessage"] = reply_but_a_recall_first
+    assert cache.value("dirty", "is_dirty") is True
+
+    assert cache.needs_read("dirty") is True, (
+        "the recall cleared the flag on the unit and said nothing about it, so "
+        "the model is now reporting edits that no longer exist")
+
+
+def test_a_watchdog_timeout_during_a_read_of_that_entry_is_not_lost(link):
+    """And by a path on another thread entirely.
+
+    The watchdog gives up on a write from its own thread, which is not the RX
+    thread and is counted nowhere. Its mark means "a write of ours may or may
+    not have landed"; the answer to the read in flight was composed at an
+    unknown moment, possibly before the write reached the unit, so it cannot
+    stand in for the re-read the timeout asked for.
+
+    The push before the read is only there to make the read happen at all: a
+    write leaves the entry warm on its own value, so without a mark there would
+    be nothing to read. It names `uboot_version`, which the entry does not keep,
+    and carries nothing the watcher is waiting for.
+
+    The patience is the one number here that is a trade rather than a fact. The
+    watchdog has to fire while the read is in flight, so the read must start
+    first, and what has to happen in between is two adjacent statements against
+    a stub - microseconds. 0.5 s buys about five orders of magnitude of margin
+    for half a second of suite time; the assert below is what makes the
+    remaining risk a loud failure rather than a quiet pass.
+    """
+    transport, cache = link
+    watch = cache.write_through("identity", {"app_fw_version": "MINE"},
+                                send=lambda: None, patience=0.5)
+    transport.push(version_reply(uboot_version="2019.04"))
+    assert watch.outcome is None, "the watchdog fired before the read started"
+
+    def reply_after_the_watchdog_gave_up():
+        assert watch.settled(timeout=5.0)
+        assert watch.outcome is WatchOutcome.TIMED_OUT
+        return full_version_reply()
+
+    transport.replies["VersionMessage"] = reply_after_the_watchdog_gave_up
+    cache.value("identity", "app_fw_version")
+
+    assert cache.needs_read("identity") is True, (
+        "the write was never confirmed and the read that discarded the mark "
+        "may predate it"
+    )
+
+
+#: Qualified function name -> how many times it assigns `needs_read` by hand,
+#: and why each of those assignments is safe where it is. Everything else has to
+#: go through `mark_for_reread`, which COUNTS the mark, or a read already in
+#: flight will discard it - see the two tests above.
+#:
+#: A COUNT rather than a name, because two of these live in the same function
+#: for different reasons, and a third assignment added beside them would
+#: otherwise inherit an argument that does not cover it.
+MAY_SET_THE_MARK_BY_HAND = {
+    # A fresh slot starts trusted. Nothing has been read yet, so there is
+    # nothing to discard.
+    "_Slot.__init__": 1,
+    # The counted setter itself. `mark_for_reread` is its only caller.
+    "_Slot.marked": 1,
+    # Two, and they are not the same argument.
+    #
+    # The per-field mark, which is safe uncounted because the message that
+    # forced it is itself one of the arrivals a read weighs - together with the
+    # read's own answer, which is the SECOND, and both are needed to clear the
+    # `extra > 1` bar. `test_a_marking_push_during_any_entrys_read_survives_it`
+    # is what holds that second arrival, per entry, because PR #34 made "a
+    # message of a tracked type that said nothing" a real category and a read
+    # answered by one would leave the bar at one arrival. It must STAY
+    # uncounted: counting it would re-arm the mark from the read's own reply and
+    # the entry would cache nothing again.
+    #
+    # And the `answered` clear, whose argument is ADR-0012's - a push carrying
+    # every field an entry keeps is what a read returns, so there is nothing
+    # left to ask about. That one is not covered by the arrival count at all,
+    # and it is the assignment that could wipe a COUNTED mark with the read's
+    # own reply. `marked_since` is what puts it back.
+    "DeviceState._apply_one": 2,
+    # The read path, which is what decides a mark's fate from the two counters.
+    "DeviceState.value": 1,
+}
+
+
+def _assigns_the_mark(node) -> bool:
+    """Whether ``node`` is an assignment whose target is some `.needs_read`."""
+    if isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+        targets = [node.target]
+    elif isinstance(node, ast.Assign):
+        targets = node.targets
+    else:
+        return False
+    return any(isinstance(found, ast.Attribute) and found.attr == "needs_read"
+               for target in targets for found in ast.walk(target))
+
+
+def _mark_setters(tree) -> dict:
+    """Qualified function name -> how many times it assigns `.needs_read`.
+
+    Tracks the INNERMOST enclosing function, so a nested `def` is reported
+    under its own name rather than hiding inside an allowlisted one, and
+    anything outside a function at all is reported under ``<module>``.
+    """
+    counts = collections.Counter()
+
+    def scan(node, prefix, inside):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                scan(child, f"{prefix}{child.name}.", inside)
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                scan(child, prefix, f"{prefix}{child.name}")
+            else:
+                if _assigns_the_mark(child):
+                    counts[inside] += 1
+                scan(child, prefix, inside)
+
+    scan(tree, "", "<module>")
+    return dict(counts)
+
+
+def test_nothing_else_sets_the_mark_without_counting_it():
+    """The two tests above are one window each; this is the rule behind them.
+
+    A new path that set `needs_read` by hand would be dropped by a read in
+    flight - silently, and only inside a window of a few milliseconds, which is
+    how both cases above went unnoticed. Said out loud here rather than left to
+    the next author to infer from a comment.
+
+    Where this stops seeing: it reads `state.py` alone, which is the only module
+    that touches `needs_read` at all - `_Slot` and `DeviceState._slots` are both
+    private, and nothing outside can reach a slot to assign to one. Within that
+    file it sees a plain, augmented or annotated assignment whose target names
+    `needs_read`, at any depth, in a function or out of one, `async` or not, a
+    tuple target included. It does NOT see `setattr(slot, "needs_read", True)`,
+    nor an assignment made through another reference to the same slot.
+    """
+    counts = _mark_setters(ast.parse(pathlib.Path(state.__file__).read_text()))
+
+    differs = {name: (counts.get(name, 0), MAY_SET_THE_MARK_BY_HAND.get(name, 0))
+               for name in set(counts) | set(MAY_SET_THE_MARK_BY_HAND)
+               if counts.get(name) != MAY_SET_THE_MARK_BY_HAND.get(name)}
+    assert not differs, (
+        f"{differs} sets an entry's mark a different number of times than this "
+        f"file accounts for (found, accounted for). Call `mark_for_reread` "
+        f"instead, or account for it above with the reason a read in flight "
+        f"may throw the mark away")
+
+
+@pytest.mark.parametrize("entry", entries.ENTRIES, ids=lambda entry: entry.name)
+def test_a_marking_push_during_any_entrys_read_survives_it(entry, link):
+    """Every entry's read answer COUNTS, which the rule above depends on.
+
+    The uncounted mark in `_apply_one` is safe because the marking push and the
+    read's own answer are two arrivals, and the read path's bar is more than
+    one. That needs the answer to count, and since PR #34 a message of a tracked
+    type counts only if it said something - so an entry whose read were answered
+    by a message carrying nothing would sit at one arrival, and a push that
+    marked it mid-read would be dropped exactly as the two tests above describe.
+
+    True of all five entries today. Pinned per entry rather than argued once,
+    because it is a property of each entry's read and the next entry inherits
+    nothing.
+    """
+    transport, cache = link
+    marking = with_an_unknown_field(next(iter(entry.feeds))())
+
+    def marks_first(canned):
+        def pushing(*args):
+            transport.push(marking)
+            return canned(*args) if callable(canned) else canned
+        return pushing
+
+    for table in (transport.replies, transport.broadcasts):
+        for name, canned in list(table.items()):
+            table[name] = marks_first(canned)
+
+    cache.value(entry.name, sorted(entry.fields())[0])
+
+    assert cache.needs_read(entry.name) is True, (
+        "the answer to this entry's read did not count as an arrival, so the "
+        "push that marked it mid-read was thrown away")
 
 
 # -- the tempo stream ---------------------------------------------------------
