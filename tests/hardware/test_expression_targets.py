@@ -152,10 +152,10 @@ def test_the_two_unassignable_parameters_refuse_rather_than_failing_silently(qc,
 def test_the_lane_volume_speaks_dB_through_real(qc, restores):
     """`real=` converts through the MEASURED -40..+12 dB span.
 
-    The catalog publishes this parameter as ``0..1 "dB"`` - a placeholder - so
-    the conversion cannot come from there. It is the one placeholder parameter
-    whose true span has been measured at both ends; every other one still
-    refuses `real=`.
+    The catalog NAMES this parameter's bounds - ``min="MIN_MIXER_DB"`` - rather
+    than giving numbers, and `units.FIRMWARE_CONSTANTS` supplies them: -40..+12
+    dB, measured at both ends. So the conversion does come from the catalog,
+    which is the whole point of ADR-0015.
     """
     was = _snapshot(qc)
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
@@ -258,3 +258,66 @@ def test_a_block_switch_parameter_takes_one_too(qc, restores):
     assert now.expression == 1, (
         f"{spec.name} is a {spec.type} and the device took the assignment - "
         f"being a switch is NOT what makes a parameter unassignable")
+
+
+# -- expAssignable is the unit's OWN rule, not one the host is held to ---------
+
+
+def test_a_parameter_the_catalog_calls_unassignable_still_takes_a_host_pedal(
+        qc, restores):
+    """The catalog marks 14 parameters ``expAssignable="false"``. It is advice.
+
+    ADR-0010's differential capture, run 2026-08-26 on a Pattern Tremolo placed
+    for the purpose. ``STEPS`` (index 10) is one of the 14; ``DEPTH`` (index 4)
+    is not, and sits in the same block, so a refusal would show as a DIFFERENCE
+    between two writes in one session rather than as an absence.
+
+    Both took the pedal, identically, and both survived a disconnect and a fresh
+    read: (1, 0.15, 0.85). So the flag does not govern a host write, and it is
+    published as information rather than turned into a refusal.
+
+    What it most likely governs is the unit's own assignment UI - which knobs
+    the touchscreen offers - and that is a guess, which is exactly why nothing
+    in the library acts on it. Whether the unit ACTS on the stored assignment is
+    also unknown: proving that needs audio, not a wire read.
+
+    This test exists so the next person does not spend a session rediscovering
+    that the obvious refusal is not there.
+    """
+    cell = Block(1, 1, 7040)          # Pattern Tremolo on the scratch lane
+    was = [b for b in blocks(qc.read_current_preset())
+           if b.row == 1 and b.column == 1]
+    restores("Pattern Tremolo scratch block",
+             lambda: qc.set_block(was[0], verify=False) if was
+             else qc.remove_block(Block(1, 1)))
+
+    qc.set_block(cell, verify=False)
+    time.sleep(SETTLE)
+
+    steps = qc.catalog[7040].parameters[10]
+    depth = qc.catalog[7040].parameters[4]
+    assert (steps.name, steps.exp_assignable) == ("STEPS", False)
+    assert (depth.name, depth.exp_assignable) == ("DEPTH", True)
+
+    for index in (4, 10):
+        qc.set_expression(cell, index, pedal=1, minimum=0.15, maximum=0.85)
+    time.sleep(SETTLE)
+
+    got = _block_params(qc, 1, 1)
+    for index, spec in ((4, depth), (10, steps)):
+        assert got[index].expression == 1, (
+            f"{spec.name} did not take the pedal, which would make "
+            f"expAssignable enforceable after all - update ADR-0007")
+        assert got[index].expression_max == pytest.approx(0.85, abs=1e-3)
+
+
+def _block_params(qc, row, column):
+    """A grid block's parameters as the unit currently reports them."""
+    preset = qc.read_current_preset()
+    for i, chain in enumerate(preset.chains):
+        if i != row:
+            continue
+        for j, model in enumerate(chain.models):
+            if j == column:
+                return model.params
+    raise AssertionError(f"no block at row {row} column {column}")

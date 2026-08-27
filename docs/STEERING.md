@@ -39,7 +39,7 @@ Inside the protocol layer, a strict one-concern-per-file layering: `cli` → `se
 
 The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. It does carry one hook for a caller who wants to be told rather than to ask - `Transport.add_listener`, a subscription that sees every message the unit pushes for the life of the connection (ADR-0009) - but the transport stores none of it.
 
-The model layer holds the state (design in [`domain-model.md`](domain-model.md) sections 9 and 10, decided in ADR-0011). `pyquadcortex/device/state.py` is a write-through cache above `protocol/client.py`, fed by one persistent listener registered before the connect handshake so it hears the handshake's burst. It applies what the unit pushes as data rather than as an invalidation signal, asks the unit directly for what the unit never announces, and stops trusting a part of its copy when a message names a field the model does not keep. Reads happen on the caller's thread; the RX thread only ever merges and marks. What is tracked is a registry in `device/entries.py` rather than code, and it currently holds two of section 9's rows - the unit's identity and the unsaved-changes flag. The rest arrive with the surfaces that read them, so callers still hold whatever state the model does not yet cover.
+The model layer holds the state (design in [`domain-model.md`](domain-model.md) sections 9 and 10, decided in ADR-0011). `pyquadcortex/device/state.py` is a write-through cache above `protocol/client.py`, fed by one persistent listener registered before the connect handshake so it hears the handshake's burst. It applies what the unit pushes as data rather than as an invalidation signal, asks the unit directly for what the unit never announces, and stops trusting a part of its copy when a message names a field the model does not keep. Reads happen on the caller's thread; the RX thread only ever merges and marks. What is tracked is a registry in `device/entries.py` rather than code, and it currently holds five of section 9's rows - the unit's identity, the unsaved-changes flag, which preset is loaded, what is on the grid, and the active scene. The rest arrive with the surfaces that read them, so callers still hold whatever state the model does not yet cover.
 
 ## 4. Owned Paths
 
@@ -48,7 +48,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 - `tests/` - the fully offline suite and its fixtures
 - `examples/` - runnable scripts, also used as hardware-verification shapes
 - `docs/` - protocol record, architecture, coverage, this file
-- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`
+- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`, `generate_params.py`, `generate_options.py`, `extract_scale_fixture.py`
 - `.github/workflows/` - CI
 
 ## 5. Patterns in Use
@@ -326,7 +326,7 @@ log events this code emits are named for #16 to pick up, but nothing reads them 
 - ADR.md: ADR-0010 - a control with no known wire path gets a differential state capture before it is recorded as having none. ADR-0007's rule is unchanged and now has no instance, which is the healthy state for it
 - `docs/domain-model.md`: `Tempo.mode` stops being refused and becomes an ordinary property; §13's *Genuinely open* loses its first entry and the *Closed* table records where the answer lives; both appendix tempo rows updated. `manual-coverage.md` gains a MODE row and its tally moves to 104 / 65 yes
 - `docs/capture.md` gains "Diff the whole state, do not hunt for a field" - the method that found it, and the four things in the harness that are load-bearing. Its listener chapter, which used this claim as its exemplar, now carries the ending
-- **`TEMPO`'s span fits 40..240 bpm**, from three INTERIOR screen-vs-wire points measured during the same session, exact to the displayed integer at each. The endpoints are the fit's, not driven. `real=` on that parameter now takes bpm, via `tempo_bpm()` / `bpm_to_tempo()`; `protocol.md`'s placeholder-span list now has two of its eight parameters' spans measured and seven covered; splitter `FREQUENCY` is the one still unrecovered
+- **`TEMPO`'s span fits 40..240 bpm**, from three INTERIOR screen-vs-wire points measured during the same session, exact to the displayed integer at each. The endpoints are the fit's, not driven. `real=` on that parameter now takes bpm, via `tempo_bpm()` / `bpm_to_tempo()`. SUPERSEDED by ADR-0015: the catalog names these bounds `MIN_TEMPO` / `MAX_TEMPO` and `steps=201` fixes the width, so the reading is now the test rather than the source. Splitter `FREQUENCY`, recorded here as unrecovered, was solved from the catalog's own `defaultValue` and one wire value
 - `tests/hardware/state_snapshot.py` is the harness, reusable for the next control of this kind. It subscribes through `Transport.add_listener` (ADR-0009), which landed in the same release and is exactly the hook it needs - the first version predated it and monkey-patched `_dispatch`; `tests/test_state_snapshot.py` proves offline that it can see an unknown field number, a presence-tracked zero, and a value in only one of two message shapes
 
 **Why:**

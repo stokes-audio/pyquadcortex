@@ -59,8 +59,10 @@ def test_a_listener_registered_before_connecting_sees_the_handshake_burst(
     """The burst is what makes a push-fed cache warm for free.
 
     Note what the wait below says about the hook: ``connect()`` returns about 2 s
-    in, with only the ResetCommsBuffers echo and the unit's own Version READ
-    recorded, and the state burst starts arriving about 5 s in. So a listener
+    in, with only the ResetCommsBuffers echo and one Version recorded - the
+    unit's UPDATE answering our version announce, not a READ of its own
+    (``docs/protocol.md`` section 4) - and the state burst starts arriving about
+    5 s in. So a listener
     registered on the client ``connect()`` hands back is already too late, which
     is the whole reason ``before_handshake`` exists.
 

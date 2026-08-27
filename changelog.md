@@ -32,6 +32,143 @@ If nothing Neural DSP is plugged in, `DeviceNotFoundError` now says hidapi saw
 no Neural DSP HID interface, instead of quoting the Quad Cortex-only `0x880A`
 fallback as 'VID/PID not found'.
 
+### `has_unsaved_changes` could stay true through a recall
+
+A read of the model's cache threw away anything that had marked the same part of
+it while the read was in flight, unless the unit had SENT a message about it. A
+recall marks the unsaved-changes flag without one - the unit clears the flag and
+says nothing, which is why the model re-reads instead of waiting - so a recall
+landing inside a `has_unsaved_changes` read (the read takes 2 to 11 ms) left
+`has_unsaved_changes` reporting edits the recall had discarded. It stayed wrong
+until something else marked it: the unit announces every CHANGE of the flag, so
+the first edit to the recalled preset puts it right, and so does the next
+recall. Saving, or reading it to decide whether to warn somebody, happens inside
+the wrong window.
+
+The other way in is a write whose echo never arrives: the timeout marks the part
+of the cache the write touched, and a read in flight discarded that mark too.
+Nothing in the package writes through the cache yet, so this half was reachable
+only by a caller using `DeviceState` directly.
+
+### BREAKING: the metronome beat names were wrong, two of them backwards
+
+`MetronomeBeat` is now the device's own `OFF`, `MUTE`, `DOWN`, `ON`, replacing
+`NORMAL`, `OFF`, `ACCENT`, `QUIET`.
+
+```python
+qc.set_beat(1, MetronomeBeat.DOWN)    # the big accent, as a factory 4/4 has
+qc.set_beat(3, MetronomeBeat.MUTE)    # silence beat 3 - this used to be OFF
+```
+
+The old names were chosen by ear. Driving all four states in one bar and both
+listening and looking showed two were the wrong way round: what was called
+`NORMAL` is the plain click and what was called `QUIET` is a small accent -
+louder, not quieter. `OFF` and `ON` turn out to be about the ACCENT rather than
+about whether the beat sounds, which is why `OFF` is audible and `MUTE` is the
+one that silences.
+
+**`MetronomeBeat.OFF` survives the rename with its meaning inverted**, so it is
+the one to search for. See `docs/migration.md`.
+
+### The device was publishing every parameter's scale, and we were not reading it
+
+`catalog.py` read 8 of the 24 attributes the unit puts on each parameter. Four of
+the seventeen it discarded carry facts this project had spent days measuring off
+the screen.
+
+**`skew` is the taper, and 615 parameters converted wrongly without it.** One law
+covers the whole catalog:
+
+```
+real = min + (max - min) * wire ** (1 / skew)
+```
+
+Confirmed on hardware over three unrelated blocks in two different units. A
+Low-High Cut's `HPF FREQ` at wire 0.25 reads **217 Hz** on the unit; this library
+used to say 5015.
+
+**There is no such thing as a placeholder range.** Zero parameters are published
+as `0..1` with a real unit. What happens is that `min` and `max` are sometimes a
+NAME - `min="MIN_CABSIM_DB"` - and the parser fell back to `0.0` and `1.0` for
+anything it could not read. Eight families, 55 parameters. Seven families have
+numbers with their evidence; the eighth is the recorder, whose block crashes the
+unit when placed, so it refuses rather than converting against a guess.
+
+`units.MEASURED_SPANS` - 44 hand-measured entries covering 19 models - becomes 14
+numbers covering all 533. The readings that built it are now the tests that prove
+the catalog reproduces the screen, exactly at the display's own precision.
+
+**Option names were in the catalog all along.** `set_param_option` said they were
+not; that is true of 12 dynamic lists and false for the other 527. Those use 113
+distinct lists, so there are now enums:
+
+```python
+qc.set_param_option(block, "DYN MODE", options.DynMode3.GATE)
+qc.set_param_option(block, "HPF SLOPE", options.HpfSlope.MINUS_12)
+qc.set_param(block, "SYNC", True)          # 247 parameters are just Off/On
+```
+
+`source=` is needed only for a dynamic list now. The device's own spelling still
+goes on the wire: 16 `INVERT` parameters offer `Noral`, so the member reads
+`NORMAL` and `options.OPTION_LABELS` keeps `Noral`.
+
+**Three behaviour changes worth checking your code against**, all in
+`docs/migration.md`: conversions return different numbers for 615 parameters, an
+out-of-range value is refused rather than clamped, and `real=` now needs a
+catalog where a few parameters used to work without one.
+
+`expAssignable` marks 14 parameters and turned out not to govern a host write at
+all - both halves of a differential capture took the pedal - so it is published
+as information and nothing acts on it. See ADR-0015.
+
+
+### The measurement campaign that found it
+
+Three entries stood here describing a months-long effort to measure, off the
+unit's screen, the spans of 52 parameters the catalog was thought not to
+describe. That effort produced the right numbers by the wrong route, and none of
+it shipped, so the entries are collapsed into this one rather than left to
+contradict the section above.
+
+What it established, and what survives:
+
+| family | span | now sourced from |
+|---|---|---|
+| lane / mixer / splitter / FX-return LEVEL | -40..+12 dB | `MIN_MIXER_DB`, `MIN_FXLOOP_IN_GAIN_DB` |
+| FX-loop SEND side | -40..0 dB, cannot boost | `MIN_FXLOOP_OUT_GAIN_DB` |
+| block EQ band GAIN | -12..+12 dB | `MIN_EQ_DB` |
+| cab per-mic LEVEL | -40..+6 dB, tapered | `MIN_CABSIM_DB` and `skew` |
+| per-preset TEMPO | 40..240 bpm | `MIN_TEMPO` |
+
+Every reading taken is now a row in `tests/test_scales.py`, asserting that the
+catalog reproduces what the display showed. They are better tests than they were
+a source.
+
+Two findings from it are worth keeping in their own right, because the catalog
+does NOT supply them:
+
+**Wire 0.0 is an OFF detent, not the bottom of the scale.** `min_string="OFF"`
+says the bottom shows a word; only measurement says where the numbers resume. A
+cab LEVEL's law runs to -40 dB and its quietest real position is -21.8 dB, so
+asking for -30 dB would return a wire value the unit reads as OFF and mute the
+microphone. `units.FLOOR_WIRE` holds the measured floors and `real=` refuses
+below them.
+
+**One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable
+only by placing the internal Neural Capture recorder on the grid, and that
+**crashes the unit**. It is in `units.DO_NOT_PROBE` with the reason, so it does
+not look merely unmeasured to whoever reads the table next.
+
+And one warning the cab earned. Three well-separated points in its upper half fit
+a straight line beautifully and are **12 dB wrong at wire 0.01**. It was written
+up as having no closed form, on eight points and three failed laws, before four
+more points produced a taper - which the catalog had been publishing all along as
+`skew="4.9594844"`. Take the extremes, and read the source before fitting.
+
+Also established while measuring, and unaffected: a band's TYPE decides whether
+its GAIN does anything (Lo Pass and Hi Pass disable it, and a gain written there
+is stored and ignored), and `N BYPASS = 1` means the band is **ON**.
+
 ### BREAKING: one `set_param` for everything, addressed by a target
 
 Six ways to set a parameter became one. Say WHERE it lives:
@@ -587,6 +724,10 @@ beats(qc.read_current_preset())    # {1: ACCENT, 2: NORMAL, 3: OFF, 4: QUIET, ..
 `MetronomeBeat` is `NORMAL`, `OFF`, `ACCENT`, `QUIET`, numbered in the order a cell cycles
 when touched - which is NOT a loudness order, so do not read meaning into the sequence.
 Wire values are `option / 3`.
+
+> **Superseded.** Two of those four names were backwards, and they are now the device's own
+> `OFF`, `MUTE`, `DOWN`, `ON`. See the Unreleased section at the top; `MetronomeBeat.OFF` in
+> particular means the opposite of what it meant here.
 
 **Set the time signature before the beats.** Changing it rewrites them, because the device
 re-lays the accent pattern out for the new bar.
