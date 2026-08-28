@@ -411,7 +411,14 @@ def test_the_conversion_spec_is_the_layouts_where_a_cab_has_one():
 
 
 def test_the_layout_wins_over_the_cabs_own_disagreeing_entry():
-    """12 cabs call index 2 POSITION while the wire carries LEVEL in dB."""
+    """12 cabs call index 2 POSITION while the wire carries LEVEL in dB.
+
+    Confirmed on hardware 2026-08-27, because guessing this backwards would
+    have been worse than the bug it fixes. A `Plini Cab (M)` took a wire value
+    the two specs read differently and the screen showed `LEVEL -3.0 dB` - the
+    layout's answer - with its own `POSITION` untouched at 0.50. The reading is
+    in `tests/test_scales.py`.
+    """
     get = _diverging_cab_catalog()
     named = Block(0, 5, 12053)
     assert named.spec_at(2, get).name == "POSITION"

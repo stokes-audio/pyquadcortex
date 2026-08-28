@@ -170,6 +170,14 @@ class ParamTarget:
         number. On 12 more it refused a correct `Db` because the cab's own entry
         calls index 2 `POSITION`.
 
+        Which of the two is right was CONFIRMED on hardware, because getting it
+        backwards would have been worse than the bug: a `Plini Cab (M)` (12053,
+        one of the 12) took a wire value the two specs read differently, and the
+        screen showed ``LEVEL -3.0 dB`` - the layout's answer exactly, where the
+        cab's own entry predicted 0.34. The block's own `POSITION` knob sat
+        untouched beside it at its 0.50 default, so the layout is right about
+        the NAME too. Recorded in `tests/test_scales.py`.
+
         Returns ``None`` where the catalog describes neither, which is a real
         case: the wire carries more parameters than the catalog documents.
         """
@@ -217,8 +225,12 @@ class ParamTarget:
         Bass Overdrive carrying its own cab section. So it belongs to the cab
         SECTION wherever that appears, rather than to one cab model.
 
+        A fourth reading settled a narrower question the other three could not:
+        on the 12 models whose OWN entry names index 2 something else, the
+        layout still wins - see :meth:`spec_for_conversion`.
+
         Applying it across the category is still an EXTRAPOLATION, and saying
-        otherwise would overstate it - all three of those blocks are mono, and
+        otherwise would overstate it - all four of those blocks are mono, and
         86 of the 174 models in these categories are stereo. What the catalog
         adds is worth more than a fourth screen reading, though: of the 16 cab
         models that describe a LEVEL of their own, every single one carries
