@@ -649,6 +649,8 @@ class QuadCortex:
 
         **Per-scene values.** Name a ``scene`` to change that scene alone::
 
+            # index 0 with no model id, so the catalog cannot be asked what
+            # scale this knob is on - the device's own is all there is
             qc.set_param(Block(2, 5), 0, Encoded(0.8), scene=Scene.D)
 
         Three things had to line up for this, all confirmed on hardware:
@@ -3914,7 +3916,8 @@ def param_state(p: preset.BinaryPreset, cell, param_index: int) -> ParamState:
     """A preset's stored values for one block parameter, all scenes.
 
     The read-side counterpart of :meth:`QuadCortex.set_param`. ``values`` holds
-    one entry per scene slot - floats for ordinary parameters, strings for
+    one entry per scene slot - `Encoded` values for ordinary parameters (the
+    device's own 0..1, which is what the preset stores), strings for
     string-valued ones (capture ``file_name``, IR references, cab mic), ``None``
     where a slot carries neither.
 

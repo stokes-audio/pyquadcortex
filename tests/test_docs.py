@@ -208,3 +208,41 @@ def test_no_snippet_passes_set_param_a_bare_number(path):
                 f"{path.name}: set_param(..., {value.value!r}) is refused - "
                 f"every knob has two number lines, so the value must say which"
             )
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "pyquadcortex").rglob("*.py")),
+                         ids=lambda p: str(p.relative_to(ROOT)))
+def test_a_docstring_reaching_for_encoded_says_why(path):
+    """ADR-0016's "never advertised" rule, held where it is checkable.
+
+    `tests/test_examples.py` holds it for `examples/`. This holds it for the
+    other place a reader copies from: a code block inside a docstring, which
+    `help()` prints. Both ask the same thing - a use of the device's own scale
+    where a unit type would serve has to say why it will not.
+
+    What NEITHER covers, and the rule text says so rather than implying
+    otherwise: prose in `docs/`, and the error messages that OFFER `Encoded` as
+    the way out. Offering the escape hatch to someone who has just been refused
+    is the message's whole job.
+    """
+    if path.name == "values.py":
+        # Where the two scales are DEFINED and set against each other. A rule
+        # that forbade naming `Encoded` here would forbid documenting it.
+        pytest.skip("the module that defines the type")
+    for snippet in _python_snippets(path):
+        lines = snippet.split("\n")
+        for i, line in enumerate(lines):
+            if "Encoded(" not in line or line.lstrip().startswith("#"):
+                continue
+            prose = " ".join(l.split("#", 1)[1].strip()
+                             for l in lines[max(0, i - 4):i + 1]
+                             if l.lstrip().startswith("#")).lower()
+            # Four words, not eight: "an index the catalog omits" is a complete
+            # reason and the reason WORD below is what does the real work - a
+            # bare "# ok" or "# the same" fails on that, whatever its length.
+            assert len(prose.split()) >= 4 and any(
+                w in prose for w in ("detent", "off", "catalog", "index",
+                                     "scale", "wire")), (
+                f"{path.name}: a docstring writes the device's own scale with "
+                f"no comment saying why a unit type will not do"
+            )

@@ -20,7 +20,6 @@ import pytest
 from pyquadcortex.protocol import blocks, field_present
 from pyquadcortex.protocol.enums import Input
 from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
-from pyquadcortex.protocol.values import Db, Encoded, Real
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "presets" / "structural_preset.bin"
 

@@ -26,7 +26,7 @@ from pyquadcortex import protocol
 from pyquadcortex.device import translate
 from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
 from pyquadcortex.protocol.targets import Block, Tempo
-from pyquadcortex.protocol.values import Db, Encoded, Real
+from pyquadcortex.protocol.values import Real
 
 
 # -- rows: 1-4 on screen, 0-3 on the wire ------------------------------------

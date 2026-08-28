@@ -403,7 +403,8 @@ them without a catalog - a real value reads the device's own description, so it
 fetches one.
 
 Use `set_metronome_muted` and not the volume to silence a click:
-`set_metronome_volume(Encoded(0.0))` is **-60 dB, quiet but still audible**, not silence.
+`set_metronome_volume(Db(-60.0))` is **quiet but still audible**, not silence -
+and it is the bottom of the knob, so there is nothing quieter to ask for.
 
 The metronome's list controls have named enums, so nothing needs a magic number:
 

@@ -72,10 +72,6 @@ def test_the_example_uses_what_it_imports(path):
 # -- Encoded is available, and never advertised -------------------------------
 
 
-def _mentions_encoded(text):
-    return [line for line in text.split("\n") if re.search(r"\bEncoded\(", line)]
-
-
 @pytest.mark.parametrize("path", EXAMPLES, ids=lambda p: p.name)
 def test_an_example_reaching_for_encoded_says_why(path):
     """`Encoded` is an escape hatch, not a route - ADR-0016.

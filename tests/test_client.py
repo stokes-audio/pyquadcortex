@@ -646,7 +646,22 @@ def test_set_param_accepts_a_value_in_real_units():
     assert param.param_values[0].float_value == pytest.approx(0.5)
 
 
-def test_set_param_real_units_require_param_and_model():
+def test_a_real_value_on_a_block_with_no_model_is_refused():
+    """The conversion depends on WHICH block is in the cell.
+
+    This passed for the wrong reason for a while: it put `Real(-20)` in the
+    PARAM position, so it hit "set_param needs a value" and never reached the
+    refusal it is named after. With the value in the value position it does,
+    and the message is the one a confused caller has to act on.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="which model is there"):
+        qc.set_param(Block(0, 1), 0, Real(-20))
+    assert not qc._t.sent
+
+
+def test_set_param_with_no_value_at_all_is_refused():
+    """The other half of what the test above used to be accidentally testing."""
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError):
         qc.set_param(Block(0, 1), Real(-20))
@@ -1942,10 +1957,19 @@ def test_set_param_can_write_a_string_value():
     assert not val.HasField("float_value")
 
 
-def test_set_param_rejects_text_and_real_together():
+def test_set_param_takes_exactly_one_value():
+    """There is one value argument now, so "both at once" is arity, not a guard.
+
+    This test used to pass `("x", Real(1.0))` against the old `text=`/`real=`
+    pair and assert TypeError. It kept passing after those were removed, on
+    "takes from 3 to 4 positional arguments but 5 were given" - green for an
+    API that no longer exists. Asserting the message is what makes it mean
+    something again.
+    """
     qc = client.QuadCortex(FakeTransport())
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="positional argument"):
         qc.set_param(Block(0, 0), 0, "x", Real(1.0))
+    assert not qc._t.sent
 
 
 def test_param_options_reads_the_list_the_catalog_lacks():

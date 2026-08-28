@@ -5,6 +5,9 @@ the claim each type makes about its unit, and the fact that two scales exist and
 are not interchangeable.
 """
 
+import pathlib
+import re
+
 import pytest
 
 from pyquadcortex.protocol import catalog, values
@@ -179,3 +182,83 @@ def test_a_floor_is_typed_whether_it_was_measured_or_derived():
     derived = _param("dB", name="GAIN", low=-12.0, high=12.0)
     assert isinstance(derived.floor, values.Db)
     assert float(derived.floor) == pytest.approx(-12.0)
+
+
+# -- against the device's own spellings ----------------------------------------
+#
+# Everything above builds its own `Parameter`, so it proves the types are
+# internally consistent and nothing more. If the device spelled a unit
+# differently from what a type claims, every test above would still pass and
+# every real call would be refused.
+#
+# `params.py` is generated FROM the device's catalog and committed, so it is
+# real spellings available offline. Its trailing comments carry them.
+
+PARAMS_PY = pathlib.Path(__file__).parent.parent / "pyquadcortex" / "protocol" / "params.py"
+
+#: Spellings the catalog uses that no type claims, with the reason. Two
+#: parameters each does not earn a public name, and `Real` is not a worse
+#: answer for them - only a less specific one. A NEW spelling appearing here is
+#: the signal to decide, not to widen this list by reflex.
+UNTYPED_SPELLINGS = {
+    "x": "a ratio multiplier, 2 parameters",
+    "bits": "a bit depth, 2 parameters, and both carry an option list",
+    "dB/oct": "a filter slope, 2 parameters, and both carry an option list",
+}
+
+
+def _spellings_the_device_publishes():
+    found = {}
+    for line in PARAMS_PY.read_text().splitlines():
+        match = re.match(r"^    [A-Z][A-Z0-9_]* = \d+\s+#\s*(\w[\w/]*)"
+                         r"(?:\s+(\S+))?\s*$", line)
+        if match and match.group(2):
+            found[match.group(2)] = found.get(match.group(2), 0) + 1
+    return found
+
+
+def test_the_generator_still_annotates_units_at_all():
+    """Every check below is vacuous if the comment format changes."""
+    found = _spellings_the_device_publishes()
+    # Only the unit-CARRYING constants are counted here; params.py annotates
+    # about 2,445 in all and roughly 1,030 of those name a unit.
+    assert sum(found.values()) > 900, found
+    assert found.get("dB", 0) > 300
+
+
+def test_every_unit_the_device_publishes_is_claimed_or_declined():
+    """The one that would catch a firmware spelling change.
+
+    A renamed unit would make `Db` refuse a correct call on every parameter
+    carrying it, with the whole suite green - because nothing else here reads
+    a spelling the device actually published.
+    """
+    for spelling in _spellings_the_device_publishes():
+        assert (spelling in values.BY_CATALOG_UNIT
+                or spelling in UNTYPED_SPELLINGS), (
+            f"the catalog publishes units={spelling!r} and no value type claims "
+            f"it. Give it a type, or add it to UNTYPED_SPELLINGS with the "
+            f"reason - do not let it fall through to Real unremarked."
+        )
+
+
+def test_no_type_claims_a_spelling_the_device_never_uses():
+    """The other direction: a claim nothing can satisfy is dead weight, and
+    reads as coverage the library does not have."""
+    published = set(_spellings_the_device_publishes())
+    for spelling in values.BY_CATALOG_UNIT:
+        assert spelling in published, (
+            f"{spelling!r} is claimed by a value type and appears on no "
+            f"parameter in the shipped catalog"
+        )
+
+
+def test_the_two_double_spellings_are_both_really_there():
+    """`Cents`/`cents` and `Semitones`/`st` are the case a type exists to fix,
+    so the suite should fail if the device stops doing it rather than quietly
+    keeping a collapse nothing needs."""
+    published = _spellings_the_device_publishes()
+    for pair in (("Cents", "cents"), ("Semitones", "st")):
+        for spelling in pair:
+            assert spelling in published, spelling
+        assert values.BY_CATALOG_UNIT[pair[0]] is values.BY_CATALOG_UNIT[pair[1]]
