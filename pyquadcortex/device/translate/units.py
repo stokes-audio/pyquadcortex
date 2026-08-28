@@ -130,13 +130,17 @@ def tuner_reference_hz(offset: float) -> float:
     return CONCERT_A_HZ + _a_number(offset, "a tuner reference offset")
 
 
-def hz_to_tuner_reference(hz: float) -> float:
+def hz_to_tuner_reference(hz: float) -> "protocol.Hertz":
     """A reference pitch in Hz as the offset from 440 the wire carries.
 
     Inverse of :func:`tuner_reference_hz`; see it for the evidence and for why
     no range is enforced.
+
+    Returns :class:`~pyquadcortex.protocol.Hertz`, because the OFFSET is in Hz
+    too and that is what :meth:`~pyquadcortex.protocol.QuadCortex.set_tuner_reference`
+    now takes - so what this hands back goes straight there.
     """
-    return _a_number(hz, "a tuner reference pitch") - CONCERT_A_HZ
+    return protocol.Hertz(_a_number(hz, "a tuner reference pitch") - CONCERT_A_HZ)
 
 
 def hold_timing_ms(index: int) -> int:

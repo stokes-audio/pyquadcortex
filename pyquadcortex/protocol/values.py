@@ -111,14 +111,20 @@ class Real(Value):
     CATALOG_UNITS: frozenset = frozenset()
 
     def check_unit(self, spec) -> None:
-        """Raise ``TypeError`` if the catalog disagrees about the unit."""
+        """Raise ``TypeError`` if ``spec`` disagrees about the unit.
+
+        Usually a catalog `Parameter`, but not always: a few SETTINGS have a
+        real scale the catalog never mentions, and they describe it the same
+        way so this check works unchanged. That is why the message names the
+        parameter rather than crediting the catalog for knowing.
+        """
         if not self.CATALOG_UNITS or spec.units in self.CATALOG_UNITS:
             return
         claimed = sorted(self.CATALOG_UNITS)[0]
         raise TypeError(
-            f"{self!r} says this value is in {claimed}, and the catalog says "
-            f"{spec.name!r} is in {spec.units or 'no unit'}. Use the matching "
-            f"type, or Real({float(self)!r}) to make no claim about the unit."
+            f"{self!r} says this value is in {claimed}, and {spec.name!r} is in "
+            f"{spec.units or 'no unit'}. Use the matching type, or "
+            f"Real({float(self)!r}) to make no claim about the unit."
         )
 
 

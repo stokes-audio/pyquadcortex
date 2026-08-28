@@ -108,6 +108,139 @@ USER_SETLIST_ROOT = "/media/p4/Presets"
 SCENE_UNLABELLED = " "
 
 
+# -- typed values for the SETTINGS writes -------------------------------------
+#
+# `set_param` addresses a knob the catalog describes, so the scale comes from
+# there. Nothing below is a catalog model: an input port, the Global EQ, the
+# master volume and the USB port are all settings the catalog never mentions.
+# ADR-0016's rule still applies to them - a value says which line it is on -
+# but the scale has to come from somewhere else, and for most of them it does
+# not exist yet. Three cases, and the difference is worth keeping visible:
+#
+#   * a wire 0..1 whose real scale IS known - `_INPUT_GAIN`, `_GLOBAL_EQ_GAIN`;
+#   * a wire 0..1 whose real scale is NOT known - `Encoded` only, and the
+#     refusal says what would have to be measured;
+#   * a setting with no 0..1 line at all, where the wire carries the real
+#     number - the hold threshold in ms, the tuner offset in Hz. `Encoded` is
+#     meaningless there and is refused.
+
+def _setting_scale(name: str, span_key: str, unit: str):
+    """A `Parameter` for a scale the device has and its catalog does not publish.
+
+    A real `Parameter` rather than a private conversion, so these get the ONE
+    law from ADR-0015, the unit check, and the out-of-range refusal, instead of
+    a second implementation that could drift from all three.
+    """
+    low, high = units_module.SETTING_SPANS[span_key]
+    return catalog.Parameter(index=-1, name=name, minimum=low, maximum=high,
+                             default=0.0, units=unit, type="float")
+
+
+#: -12..+60 dB, measured. See ``units.SETTING_SPANS``.
+_INPUT_GAIN = _setting_scale("an input port's GAIN", "INPUT_GAIN_DB", "dB")
+
+#: -12..+12 dB, the MANUAL's span on two points. See ``units.SETTING_SPANS``.
+_GLOBAL_EQ_GAIN = _setting_scale("a Global EQ band's GAIN",
+                                 "GLOBAL_EQ_GAIN_DB", "dB")
+
+
+def _bare_number(value, what, *, encoded=True, unit_example=None):
+    """The message for a bare number, rewritten for the setting in hand."""
+    lines = [f"{what} needs a value that says which scale it is on; you passed "
+             f"{value!r}."]
+    if unit_example:
+        lines.append(f"  {unit_example}   the screen's line")
+    if encoded:
+        lines.append(f"  Encoded({value!r})  the device's line, 0.0 to 1.0")
+    lines.append("See docs/api.md, 'the two number lines'.")
+    return TypeError("\n".join(lines))
+
+
+def _setting_wire(value, what, scale=None, unit_example=None):
+    """A typed value for a setting -> the wire's 0..1.
+
+    ``scale`` is the real scale where one is known, and ``None`` where nobody
+    has measured it - in which case a real value is REFUSED rather than
+    converted against a number somebody made up. That is ADR-0007's shape:
+    modelled, and refuses out loud.
+    """
+    if isinstance(value, values_module.Encoded):
+        if not 0.0 <= float(value) <= 1.0:
+            raise ValueError(
+                f"the device's scale is 0.0 to 1.0 and {value!r} is outside it. "
+                f"If that number is what the screen shows, it is not Encoded."
+            )
+        return float(value)
+    if isinstance(value, values_module.Real):
+        if scale is None:
+            raise ControlNotDrivable(
+                control=what,
+                evidence=(
+                    "nothing in the device's catalog describes this setting, "
+                    "and nobody has read its screen against its wire value - so "
+                    "there is no span to convert against. Inventing one is the "
+                    "guess ADR-0015 exists to prevent"
+                ),
+                workaround=(
+                    f"pass Encoded(...) with the device's own 0..1, or measure "
+                    f"the scale and add it to units.SETTING_SPANS"
+                ),
+            )
+        value.check_unit(scale)
+        return scale.to_normalized(float(value))
+    raise _bare_number(value, what, unit_example=unit_example)
+
+
+def _setting_real(value, what, unit_cls):
+    """A setting whose only number line is the screen's.
+
+    The hold threshold is milliseconds and the tuner offset is Hz - the wire
+    carries the real number (or an index derived from it), not a 0..1 position.
+    `Encoded` has nothing to mean here and says so rather than being quietly
+    accepted.
+    """
+    if isinstance(value, values_module.Encoded):
+        raise TypeError(
+            f"{what} has no 0..1 device scale, so Encoded({float(value)!r}) "
+            f"cannot say anything about it - the wire carries the real number "
+            f"itself. Pass {unit_cls.__name__}({float(value)!r})."
+        )
+    if isinstance(value, values_module.Real):
+        value.check_unit(catalog.Parameter(
+            index=-1, name=what, minimum=None, maximum=None, default=0.0,
+            units=next(iter(sorted(unit_cls.CATALOG_UNITS))), type="float"))
+        return float(value)
+    raise _bare_number(value, what, encoded=False,
+                       unit_example=f"{unit_cls.__name__}({value!r})")
+
+
+def _sweep_wire(value, target, index, spec, get_catalog, what):
+    """A sweep endpoint -> the wire's 0..1.
+
+    An expression sweep runs between two POSITIONS of the parameter it is
+    assigned to, so its scale is that parameter's and the catalog already knows
+    it. This is `set_param`'s numeric dispatch over again for that reason - the
+    same spec, the same unit check, the same one law - rather than a private
+    conversion that could disagree with what a write to the same knob does.
+    """
+    if isinstance(value, values_module.Encoded):
+        if not 0.0 <= float(value) <= 1.0:
+            raise ValueError(
+                f"the device's scale is 0.0 to 1.0 and {value!r} is outside it. "
+                f"If that number is in the parameter's own units, it is "
+                f"Real({float(value)!r}) rather than Encoded."
+            )
+        return float(value)
+    if isinstance(value, values_module.Real):
+        if spec is None:
+            spec = target.spec_at(index, get_catalog)
+        if spec is not None:
+            _reject_number_on_a_string_parameter(spec, value)
+            value.check_unit(spec)
+        return target.normalize(index, float(value), get_catalog, spec)
+    raise _bare_number(value, what, unit_example=f"Db({value!r})")
+
+
 class QuadCortex:
     """Ergonomic control surface over a request/response transport."""
 
@@ -826,19 +959,30 @@ class QuadCortex:
         return self._t.send(msg)
 
     def set_expression(self, target, param, pedal: int = 1,
-                       minimum: float = 0.0, maximum: float = 1.0):
+                       minimum=values_module.Encoded(0.0),
+                       maximum=values_module.Encoded(1.0)):
         """Assign an expression pedal to one parameter, wherever it lives.
 
         ``pedal`` is 1 or 2, matching EXP 1 and EXP 2 on the back panel.
-        ``minimum`` and ``maximum`` are the normalized 0..1 ends of the sweep;
-        setting minimum above maximum reverses the pedal, which is how the manual
-        describes inverting a parameter. The unit DISPLAYS them as percentages -
-        0.830769 shows as 83.08%.
+        ``minimum`` and ``maximum`` are the two ends of the sweep, and they are
+        POSITIONS OF THE PARAMETER being assigned - so they take the same typed
+        values a write to that parameter takes, converted through the same
+        catalog spec. Setting minimum above maximum reverses the pedal, which is
+        how the manual describes inverting a parameter. The unit DISPLAYS them as
+        percentages of travel - wire 0.830769 shows as 83.08% - which is a
+        display, not a third scale.
 
-        A volume pedal on a row that reaches a physical output::
+        A volume pedal on a row that reaches a physical output, in dB rather
+        than in wire values::
 
+            # the heel is the Off detent, which sits BELOW the dB scale, so
+            # the device's own 0.0 is the only thing that names it
             qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
-                              minimum=0.0, maximum=db_to_lane_level(3.2))
+                              minimum=Encoded(0.0), maximum=Db(3.2))
+
+        ``Encoded(0.0)`` rather than ``Db(-40.0)`` for the heel, because the
+        bottom of that knob is an Off detent below the dB scale - the same
+        reason :meth:`set_param` refuses -40 dB there.
 
         Confirmed on hardware against every container the unit has - blocks, the
         input gate, the mixer, the splitter and the lane output - on both float
@@ -862,12 +1006,16 @@ class QuadCortex:
             spec = spec or target.spec_at(index, self._get_catalog)
         if spec is not None:
             target.refuse_if_unassignable(spec)
+        low = _sweep_wire(minimum, target, index, spec, self._get_catalog,
+                          "an expression sweep's minimum")
+        high = _sweep_wire(maximum, target, index, spec, self._get_catalog,
+                           "an expression sweep's maximum")
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         prm = target.container(msg).params.add()
         prm.index = index
         prm.expression = int(pedal)
-        prm.expression_min = minimum
-        prm.expression_max = maximum
+        prm.expression_min = low
+        prm.expression_max = high
         return self._t.send(msg)
 
     def clear_expression(self, target, param):
@@ -1937,11 +2085,14 @@ class QuadCortex:
 
     HOLD_TIMING_MS = (500, 600, 700, 800, 900, 1000)
 
-    def set_hold_timing(self, milliseconds: int):
+    def set_hold_timing(self, milliseconds):
         """How long a press must last before it counts as a HOLD gesture.
 
-        Takes MILLISECONDS - one of 500, 600, 700, 800, 900 or 1000, the six values
-        the unit offers - and writes the index the device actually stores.
+        Takes ``Milliseconds(800)`` - one of 500, 600, 700, 800, 900 or 1000, the
+        six values the unit offers - and writes the index the device actually
+        stores. There is no 0..1 line here at all, so ``Encoded`` is refused
+        rather than quietly accepted: the wire carries an INDEX derived from the
+        milliseconds, not a position along a range.
         ``GeneralSettings.hold_timing`` is that index, confirmed by reading 3 while
         the screen showed 800 ms, so ``ms = 500 + 100 * index``.
 
@@ -1962,6 +2113,8 @@ class QuadCortex:
         and 5000 as happily as a real index, so this rejects anything outside the
         six rather than letting a meaningless value through.
         """
+        milliseconds = _setting_real(milliseconds, "the HOLD threshold",
+                                     values_module.Milliseconds)
         try:
             index = self.HOLD_TIMING_MS.index(int(milliseconds))
         except ValueError:
@@ -2023,7 +2176,7 @@ class QuadCortex:
         return self._read_state(pa.IOSettingsMessage,
                                 lambda m: len(m.settings.in_port) > 0, timeout)
 
-    def set_input_port(self, input_port_id: int, level: float = None,
+    def set_input_port(self, input_port_id: int, level=None,
                        impedance: float = None, input_type: float = None,
                        ground_lift: float = None, confirm: bool = False,
                        timeout: float = 20.0):
@@ -2039,9 +2192,12 @@ class QuadCortex:
         "Return 1" writes the combined Input 1/2 entry instead - an easy and
         expensive mistake, so pass ``Input.RETURN_1`` rather than a number.
 
-        ``level`` (the gain: -12..+60 dB, see :func:`input_level_db`),
+        ``level`` (the gain) says which scale it is on - ``Db(24.0)`` for the
+        screen's **-12..+60 dB**, ``Encoded(0.5)`` for the device's 0..1.
         ``impedance``, ``input_type`` (the manual's Instrument/Mic switch) and
-        ``ground_lift`` are all confirmed writable.
+        ``ground_lift`` are SELECTORS rather than values on a scale, so they
+        stay plain the way an option list does - ADR-0016 types values, not
+        switches. All four are confirmed writable.
 
         **Each field is sent in its own message**, because the device drops some
         fields that share a port entry with another: `mute` on an output and
@@ -2061,6 +2217,9 @@ class QuadCortex:
         every field written (float32-tolerant), raising ``TimeoutError`` -
         explaining the stale-read behaviour - if it never does.
         """
+        if level is not None:
+            level = _setting_wire(level, "an input port's GAIN", _INPUT_GAIN,
+                                  unit_example="Db(24.0)")
         given = (("level", level), ("input_zmode", impedance),
                  ("input_type", input_type), ("ground_lift", ground_lift))
         result = self._io_port_fields("in_port", "input_port_id", input_port_id,
@@ -2089,17 +2248,22 @@ class QuadCortex:
             f"read io_settings() again before concluding anything."
         )
 
-    def set_output_port(self, output_port_id: int, level: float = None,
+    def set_output_port(self, output_port_id: int, level=None,
                         ground_lift: float = None, mute: bool = None):
         """Change one output port's settings, sparsely.
 
         ``level``, ``ground_lift`` and ``mute`` are all confirmed writable.
+        ``level`` takes ``Encoded`` only: nobody has read an output port's
+        screen against its wire value, so no dB span is known for it. A `Db`
+        raises rather than converting against a guess.
 
         **Each field is sent in its own message.** The device drops ``mute`` when it
         shares a port entry with another field, which is why an earlier version of
         this library reported mute as unwritable. Sending one at a time avoids having
         to know which combinations are safe.
         """
+        if level is not None:
+            level = _setting_wire(level, "an output port's LEVEL")
         return self._io_port_fields(
             "out_port", "output_port_id", output_port_id,
             (("level", level), ("ground_lift", ground_lift), ("mute", mute)))
@@ -2122,19 +2286,22 @@ class QuadCortex:
             setattr(port, name, value)
             self._t.send(msg)
 
-    def set_usb_port(self, level: float = None, hp_select: float = None,
+    def set_usb_port(self, level=None, hp_select: float = None,
                      dry_wet: float = None):
         """Change the USB audio settings. All three fields confirmed writable.
 
         ``dry_wet`` chooses whether USB outputs carry clean DI or processed audio,
         ``hp_select`` which USB channels feed the headphones, and ``level`` the USB
-        output level.
+        output level. The first two are selectors and stay plain; ``level`` takes
+        ``Encoded``, since no dB span has been measured for it.
 
         **One field per message, like the other I/O ports.** Sending ``level`` and
         ``dry_wet`` in a single message applied the level and silently dropped the
         dry/wet; sent separately both land. So this sends one message per field
         given, in the order listed above.
         """
+        if level is not None:
+            level = _setting_wire(level, "the USB output LEVEL")
         given = [(name, value) for name, value in
                  (("level", level), ("hp_select", hp_select), ("dry_wet", dry_wet))
                  if value is not None]
@@ -2321,8 +2488,15 @@ class QuadCortex:
         return self._read_state(pa.LooperMessage, lambda m: m.HasField("status"),
                                 timeout)
 
-    def set_input_level(self, input_port_id: int, level: float):
-        """Set an input port's gain, as the normalized 0..1 the wire carries.
+    def set_input_level(self, input_port_id: int, level):
+        """Set an input port's gain.
+
+        ``level`` says which scale it is on, like every other value in this
+        library: ``Db(24.0)`` for the screen's, ``Encoded(0.5)`` for the
+        device's. The span is **-12..+60 dB** and it is measured - see
+        :func:`input_level_db`::
+
+            qc.set_input_level(Input.INPUT_1, Db(24.0))
 
         Sparse and keyed by ``input_port_id``, so other ports are untouched -
         confirmed on hardware, where writing one input's level left the other
@@ -2332,8 +2506,15 @@ class QuadCortex:
         """
         return self.set_input_port(input_port_id, level=level)
 
-    def set_output_level(self, output_port_id: int, level: float):
-        """Set an output port's level, as the normalized 0..1 the wire carries."""
+    def set_output_level(self, output_port_id: int, level):
+        """Set an output port's level.
+
+        ``Encoded`` only, and that is a statement about what is known rather
+        than a preference: nobody has read an output port's screen against its
+        wire value, so there is no span to convert dB against. A `Db` here
+        raises :class:`ControlNotDrivable` naming what would settle it, instead
+        of answering with an invented number.
+        """
         return self.set_output_port(output_port_id, level=level)
 
     def global_eq(self, timeout: float = 10.0):
@@ -2632,8 +2813,13 @@ class QuadCortex:
             msg.global_bypass_ir.CopyFrom(current.global_bypass_ir)
         return self._t.send(msg)
 
-    def set_global_eq_band(self, parameter_index: int, value: float):
+    def set_global_eq_band(self, parameter_index: int, value):
         """Set one Global EQ parameter, by its wire index.
+
+        ``Encoded`` only, and necessarily so: this addresses a parameter by a
+        raw index whose MEANING is not established, so there is nothing to say
+        what scale it would be on. :meth:`set_global_eq` knows which offset is
+        a band's GAIN and takes ``Db`` there.
 
         The Global EQ reports 28 ``parameters`` entries, each
         ``{parameter_index, value}``. Confirmed writable and sparse: writing index
@@ -2644,7 +2830,8 @@ class QuadCortex:
         msg = pa.GlobalEQMessage(action=pa.MessageAction.UPDATE)
         prm = msg.parameters.add()
         prm.parameter_index = parameter_index
-        prm.value = value
+        prm.value = _setting_wire(
+            value, f"Global EQ parameter {parameter_index}")
         return self._t.send(msg)
 
     def set_mode_cycle(self, slots):
@@ -2826,8 +3013,11 @@ class QuadCortex:
         """
         return self.set_output_port(output_port_id, mute=muted)
 
-    def set_tuner_reference(self, offset_hz: float):
+    def set_tuner_reference(self, offset_hz):
         """Set the tuner's reference pitch, as an OFFSET in Hz from 440.
+
+        Takes ``Hertz(2.0)``. The wire carries the Hz offset itself rather than
+        a 0..1 position, so ``Encoded`` has nothing to mean here and is refused.
 
         ``Tuner.frequency`` is not the absolute reference pitch: changing FREQ from
         440 to 442 on the unit broadcast ``frequency: 1.99999809``. So pass 2.0 for
@@ -2838,6 +3028,8 @@ class QuadCortex:
         observed pair (442 -> 2.0); it has not been checked against a second value
         on screen.
         """
+        offset_hz = _setting_real(offset_hz, "the tuner reference offset",
+                                  values_module.Hertz)
         return self._t.send(pa.TunerMessage(action=pa.MessageAction.UPDATE,
                                             frequency=offset_hz))
 
@@ -2875,8 +3067,15 @@ class QuadCortex:
         return self._read_state(pa.MasterVolumeMessage,
                                 lambda m: m.HasField("volume"), timeout)
 
-    def set_master_volume(self, volume: float):
-        """Set the Master Volume, normalized 0..1.
+    def set_master_volume(self, volume):
+        """Set the Master Volume.
+
+        ``Encoded`` only. The unit displays 0-100 with no unit, and nobody has
+        established what that number IS - a percentage of travel, or a dB
+        taper - so there is no screen scale to convert. That is also why the
+        typed value earns its keep here more than anywhere: the classic mistake
+        is passing 30 meaning "30 on screen", and now the argument has to say
+        which line it is on before it is looked at.
 
         The whole write is ``MasterVolume{UPDATE, volume}``. It lands on its own
         with no companion field, and it is a real level change: a host write of
@@ -2899,9 +3098,9 @@ class QuadCortex:
         :meth:`set_master_volume_assignment` to choose which outputs it governs.
 
         Out-of-range values are REJECTED rather than sent. The wire is 0..1 while
-        the unit displays 0-100, so ``set_master_volume(30)`` meaning "30 on
-        screen" is the obvious mistake, and what the device does with 30.0 is
-        unknown on a control that feeds an amplifier. Same reasoning as
+        the unit displays 0-100, so ``set_master_volume(Encoded(30))`` is the
+        obvious mistake, and what the device does with 30.0 is unknown on a
+        control that feeds an amplifier. Same reasoning as
         :meth:`set_hold_timing`: a field the device does not range-check itself is
         one this library range-checks for it.
 
@@ -2911,14 +3110,18 @@ class QuadCortex:
            waits for the owner to sweep the knob and tap SAVE. This method never
            sends it.
         """
-        level = float(volume)
-        if not 0.0 <= level <= 1.0:
-            hint = ""
-            if 1.0 < level <= 100.0:
-                hint = (f" The unit displays round(volume * 100), so pass "
-                        f"{level / 100:.2f} for {level:.0f} on screen.")
+        # The screen-number mistake gets its own message BEFORE the generic
+        # 0..1 check, because "Encoded(30)" is a caller who read 30 off the
+        # unit rather than one who is out of range by accident.
+        if (isinstance(volume, values_module.Encoded)
+                and 1.0 < float(volume) <= 100.0):
             raise ValueError(
-                f"master volume is normalized 0..1, not {volume!r}.{hint}")
+                f"master volume is normalized 0..1, not {volume!r}. The unit "
+                f"displays round(volume * 100), so pass "
+                f"Encoded({float(volume) / 100:.2f}) for {float(volume):.0f} "
+                f"on screen."
+            )
+        level = _setting_wire(volume, "the master volume")
         msg = pa.MasterVolumeMessage(action=pa.MessageAction.UPDATE)
         msg.volume = level
         return self._t.send(msg)
@@ -3038,7 +3241,7 @@ class QuadCortex:
     GLOBAL_EQ_OUT_12 = 26
     GLOBAL_EQ_OUT_34 = 27
 
-    def set_global_eq_output(self, level: float = None, out12: bool = None,
+    def set_global_eq_output(self, level=None, out12: bool = None,
                              out34: bool = None):
         """Set the Global EQ's OUT tab: its overall level and which outputs it feeds.
 
@@ -3050,28 +3253,43 @@ class QuadCortex:
         is index 27, which is the only index left and was never seen written, so it
         is identified by elimination rather than observation.
 
-        ``level`` is index 25 and takes the normalized 0..1. Its dB mapping is NOT
+        ``level`` is index 25 and takes ``Encoded`` only. Its dB mapping is NOT
         established: the knob was watched moving continuously, so no value could be
         tied to a reading on screen.
         """
+        if level is not None:
+            level = values_module.Encoded(
+                _setting_wire(level, "the Global EQ's OUT LEVEL"))
         controls = [(self.GLOBAL_EQ_OUT_LEVEL, level),
-                    (self.GLOBAL_EQ_OUT_12, None if out12 is None else float(out12)),
-                    (self.GLOBAL_EQ_OUT_34, None if out34 is None else float(out34))]
+                    (self.GLOBAL_EQ_OUT_12,
+                     None if out12 is None else values_module.Encoded(float(out12))),
+                    (self.GLOBAL_EQ_OUT_34,
+                     None if out34 is None else values_module.Encoded(float(out34)))]
         controls = [(i, v) for i, v in controls if v is not None]
         if not controls:
             raise TypeError("set_global_eq_output needs level=, out12= or out34=")
         for index, value in controls:
             self.set_global_eq_band(index, value)
 
-    def set_global_eq(self, band: int, gain: float = None,
-                      frequency: float = None, q: float = None,
+    def set_global_eq(self, band: int, gain=None, frequency=None, q=None,
                       filter_type=None, enabled: bool = None):
         """Set one Global EQ band's controls, by band number rather than wire index.
 
-        ``band`` is 1 to 5 as the unit numbers them. Every value is the normalized
-        0..1 the wire carries; ``gain`` is 0.5 for 0 dB and 0.75 for +6 dB on the
-        -12..+12 dB range the manual gives. ``filter_type`` takes a
-        :class:`~pyquadcortex.protocol.enums.GlobalEQFilter`.
+        ``band`` is 1 to 5 as the unit numbers them.
+
+        ``gain`` takes ``Db`` or ``Encoded``. Its span is **-12..+12 dB**, and
+        that span is the MANUAL's rather than a measurement - what supports it
+        here is two points, wire 0.5 reading 0 dB and 0.75 reading +6 dB, which
+        a straight line over -12..+12 reproduces exactly. Recorded as the
+        weaker evidence it is in ``units.SETTING_SPANS``, and queued to be
+        driven on screen::
+
+            qc.set_global_eq(2, gain=Db(-3.0))
+
+        ``frequency`` and ``q`` take ``Encoded`` only - nothing ties either to a
+        reading on screen yet. ``filter_type`` takes a
+        :class:`~pyquadcortex.protocol.enums.GlobalEQFilter`, and ``enabled`` a
+        bool; both are selectors rather than values on a scale.
 
         The layout is **5 parameters per band**, at offsets ``0 GAIN``,
         ``1 FREQUENCY``, ``2 Q``, ``3 TYPE``, so band N's controls live at
@@ -3093,11 +3311,24 @@ class QuadCortex:
         if not 1 <= band <= self.GLOBAL_EQ_BANDS:
             raise ValueError(f"band must be 1 to {self.GLOBAL_EQ_BANDS}, got {band}")
         base = (band - 1) * self.GLOBAL_EQ_BAND_STRIDE
+        if gain is not None:
+            gain = values_module.Encoded(_setting_wire(
+                gain, "a Global EQ band's GAIN", _GLOBAL_EQ_GAIN,
+                unit_example="Db(-3.0)"))
+        if frequency is not None:
+            frequency = values_module.Encoded(_setting_wire(
+                frequency, "a Global EQ band's FREQUENCY"))
+        if q is not None:
+            q = values_module.Encoded(_setting_wire(q, "a Global EQ band's Q"))
+        # A selector and a switch, so the library builds their wire values
+        # itself - there is no caller number here to say a scale for.
         if filter_type is not None:
-            filter_type = int(filter_type) / 4
+            filter_type = values_module.Encoded(int(filter_type) / 4)
+        if enabled is not None:
+            enabled = values_module.Encoded(float(enabled))
         controls = [(offset, value) for offset, value in
                     ((0, gain), (1, frequency), (2, q), (3, filter_type),
-                     (4, None if enabled is None else float(enabled)))
+                     (4, enabled))
                     if value is not None]
         if not controls:
             raise TypeError("set_global_eq needs at least one control to set")

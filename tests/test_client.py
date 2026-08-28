@@ -16,7 +16,9 @@ from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSour
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 from pyquadcortex.protocol.targets import (Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo)
-from pyquadcortex.protocol.values import Db, Encoded, Hertz, Real
+from pyquadcortex.protocol import units as units_module
+from pyquadcortex.protocol.errors import ControlNotDrivable
+from pyquadcortex.protocol.values import Db, Encoded, Hertz, Milliseconds, Real
 
 
 class FakeTransport:
@@ -1187,7 +1189,7 @@ def test_set_input_port_confirm_polls_until_the_port_agrees():
             return io
 
     qc = client.QuadCortex(EventuallyConsistent())
-    got = qc.set_input_port(1, level=0.5, confirm=True, timeout=10.0)
+    got = qc.set_input_port(1, level=Encoded(0.5), confirm=True, timeout=10.0)
     assert qc._t.reads == 2                    # one stale read absorbed
     assert abs(got.settings.in_port[0].level - 0.5) < 1e-6
 
@@ -1204,7 +1206,7 @@ def test_set_input_port_confirm_timeout_explains_staleness():
 
     qc = client.QuadCortex(AlwaysStale())
     with pytest.raises(TimeoutError, match="eventually consistent"):
-        qc.set_input_port(1, level=0.5, confirm=True, timeout=2.0)
+        qc.set_input_port(1, level=Encoded(0.5), confirm=True, timeout=2.0)
 
 
 def test_preset_dirty_reads_and_treats_absent_as_false():
@@ -1705,7 +1707,8 @@ def test_set_stomp_momentary_can_clear_back_to_latching():
 
 def test_set_expression_is_row_column_keyed_with_a_range():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_expression(Block(0, 2), param=4, pedal=2, minimum=0.1, maximum=0.9)
+    qc.set_expression(Block(0, 2), param=4, pedal=2,
+                      minimum=Encoded(0.1), maximum=Encoded(0.9))
     chain = qc._t.sent[-1].preset.chains[0]
     assert chain.row == 0
     prm = chain.models[0].params[0]
@@ -1768,7 +1771,7 @@ def _lane_client():
 def test_set_lane_output_expression_writes_into_output_control_not_models():
     qc = _lane_client()
     qc.set_expression(LaneOutput(0), param="VOLUME", pedal=1,
-                                  minimum=0.0, maximum=0.830769)
+                      minimum=Encoded(0.0), maximum=Encoded(0.830769))
     chain = qc._t.sent[-1].preset.chains[0]
     assert chain.row == 0
     assert not chain.models, "must not touch models[]"
@@ -1798,7 +1801,7 @@ def test_set_lane_output_expression_does_not_send_scene_mode():
 def test_set_lane_output_expression_takes_pedal_two_and_a_reversed_sweep():
     qc = _lane_client()
     qc.set_expression(LaneOutput(2), param="PAN", pedal=2,
-                                  minimum=0.8, maximum=0.2)
+                      minimum=Encoded(0.8), maximum=Encoded(0.2))
     prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
     assert prm.index == 1
     assert prm.expression == 2
@@ -2281,11 +2284,11 @@ def test_add_favorite_explains_a_silent_mismatch_on_timeout():
 def test_set_hold_timing_writes_the_index_not_the_milliseconds():
     """The device stores an index; 800 ms is 3, which is what the unit showed."""
     qc = client.QuadCortex(FakeTransport())
-    qc.set_hold_timing(800)
+    qc.set_hold_timing(Milliseconds(800))
     assert qc._t.sent[-1].hold_timing == 3
-    qc.set_hold_timing(500)
+    qc.set_hold_timing(Milliseconds(500))
     assert qc._t.sent[-1].hold_timing == 0
-    qc.set_hold_timing(1000)
+    qc.set_hold_timing(Milliseconds(1000))
     assert qc._t.sent[-1].hold_timing == 5
 
 
@@ -2294,7 +2297,7 @@ def test_set_hold_timing_rejects_values_the_unit_does_not_offer(bad):
     """The field takes any integer unvalidated, so the check has to be here."""
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError, match="hold timing must be one of"):
-        qc.set_hold_timing(bad)
+        qc.set_hold_timing(Milliseconds(bad))
     assert qc._t.sent == []
 
 
@@ -2339,7 +2342,7 @@ def test_input_and_output_level_writes_are_sparse_and_port_keyed():
     # One port per message: writing one input's level left the other three
     # byte-identical on hardware.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_input_level(5, 0.25)
+    qc.set_input_level(5, Encoded(0.25))
     ports = qc._t.sent[-1].settings.in_port
     assert len(ports) == 1
     assert ports[0].input_port_id == 5
@@ -2347,7 +2350,7 @@ def test_input_and_output_level_writes_are_sparse_and_port_keyed():
     assert not qc._t.sent[-1].settings.out_port
     assert len(qc._t.sent) == 1
 
-    qc.set_output_level(9, 0.5)
+    qc.set_output_level(9, Encoded(0.5))
     out = qc._t.sent[-1].settings.out_port
     assert (out[0].output_port_id, round(out[0].level, 3)) == (9, 0.5)
 
@@ -2444,7 +2447,8 @@ def test_set_input_port_sends_one_field_per_message():
     assert not port.HasField("level")
 
     qc = client.QuadCortex(FakeTransport())
-    qc.set_input_port(2, level=0.4, impedance=0.875, input_type=0.5, ground_lift=0.0)
+    qc.set_input_port(2, level=Encoded(0.4), impedance=0.875, input_type=0.5,
+                      ground_lift=0.0)
     assert len(qc._t.sent) == 4, "four fields, four messages"
     for msg in qc._t.sent:
         port = msg.settings.in_port[0]
@@ -2455,7 +2459,7 @@ def test_set_input_port_sends_one_field_per_message():
 
 def test_set_input_level_still_works_and_delegates():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_input_level(5, 0.25)
+    qc.set_input_level(5, Encoded(0.25))
     port = qc._t.sent[-1].settings.in_port[0]
     assert (port.input_port_id, round(port.level, 3)) == (5, 0.25)
     assert not port.HasField("input_type")
@@ -2684,7 +2688,7 @@ def test_set_global_bypass_needs_four_rows_and_carries_the_other_one():
 
 def test_set_global_eq_band_is_sparse_by_parameter_index():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_global_eq_band(1, 0.6)
+    qc.set_global_eq_band(1, Encoded(0.6))
     params = qc._t.sent[-1].parameters
     assert len(params) == 1
     assert (params[0].parameter_index, round(params[0].value, 3)) == (1, 0.6)
@@ -2801,9 +2805,9 @@ def test_set_output_mute_sends_only_the_port_and_the_flag():
 def test_set_tuner_reference_writes_the_offset_from_440():
     # Changing FREQ 440 -> 442 on the unit broadcast frequency: 1.99999809.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_tuner_reference(2.0)
+    qc.set_tuner_reference(Hertz(2.0))
     assert qc._t.sent[-1].frequency == pytest.approx(2.0)
-    qc.set_tuner_reference(0.0)
+    qc.set_tuner_reference(Hertz(0.0))
     assert qc._t.sent[-1].frequency == pytest.approx(0.0)
 
 
@@ -2984,13 +2988,13 @@ def test_copy_preset_does_recall_the_source_which_changes_the_grid():
 
 def test_set_global_eq_maps_band_and_control_to_the_wire_index():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_global_eq(band=1, gain=0.75)
+    qc.set_global_eq(band=1, gain=Encoded(0.75))
     assert qc._t.sent[-1].parameters[0].parameter_index == 0
-    qc.set_global_eq(band=3, gain=0.75)
+    qc.set_global_eq(band=3, gain=Encoded(0.75))
     assert qc._t.sent[-1].parameters[0].parameter_index == 10
-    qc.set_global_eq(band=5, q=0.2)
+    qc.set_global_eq(band=5, q=Encoded(0.2))
     assert qc._t.sent[-1].parameters[0].parameter_index == 22
-    qc.set_global_eq(band=2, frequency=0.4)
+    qc.set_global_eq(band=2, frequency=Encoded(0.4))
     assert qc._t.sent[-1].parameters[0].parameter_index == 6
 
 
@@ -3009,7 +3013,7 @@ def test_set_global_eq_sends_the_filter_type_as_an_option_value():
 
 def test_set_global_eq_sends_only_the_controls_given():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_global_eq(band=2, gain=0.6, q=0.1)
+    qc.set_global_eq(band=2, gain=Encoded(0.6), q=Encoded(0.1))
     indices = [m.parameters[0].parameter_index for m in qc._t.sent]
     assert indices == [5, 7], "gain and Q only, no frequency or type write"
 
@@ -3018,7 +3022,7 @@ def test_set_global_eq_validates_the_band_and_needs_a_control():
     qc = client.QuadCortex(FakeTransport())
     for bad in (0, 6, -1):
         with pytest.raises(ValueError, match="band must be"):
-            qc.set_global_eq(band=bad, gain=0.5)
+            qc.set_global_eq(band=bad, gain=Encoded(0.5))
     with pytest.raises(TypeError):
         qc.set_global_eq(band=1)
     assert qc._t.sent == []
@@ -3041,7 +3045,7 @@ def test_set_global_eq_output_addresses_the_out_tab_indices():
     qc.set_global_eq_output(out12=True)
     p = qc._t.sent[-1].parameters[0]
     assert (p.parameter_index, p.value) == (26, pytest.approx(1.0))
-    qc.set_global_eq_output(level=0.5, out34=False)
+    qc.set_global_eq_output(level=Encoded(0.5), out34=False)
     indices = [m.parameters[0].parameter_index for m in qc._t.sent[-2:]]
     assert indices == [25, 27]
     with pytest.raises(TypeError):
@@ -3606,7 +3610,7 @@ def test_set_master_volume_sends_only_the_level():
     a level write needed - the answer being none.
     """
     qc = client.QuadCortex(FakeTransport())
-    qc.set_master_volume(0.30)
+    qc.set_master_volume(Encoded(0.30))
     sent = qc._t.sent[-1]
     assert sent.action == pa.MessageAction.UPDATE
     assert abs(sent.volume - 0.30) < 1e-6
@@ -3623,7 +3627,7 @@ def test_set_master_volume_rejects_the_screen_scale():
     """
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError) as caught:
-        qc.set_master_volume(30)
+        qc.set_master_volume(Encoded(30))
     assert "0.30" in str(caught.value)
     assert qc._t.sent == []
 
@@ -3632,14 +3636,14 @@ def test_set_master_volume_rejects_the_screen_scale():
 def test_set_master_volume_rejects_anything_outside_zero_to_one(bad):
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError):
-        qc.set_master_volume(bad)
+        qc.set_master_volume(Encoded(bad))
     assert qc._t.sent == []
 
 
 @pytest.mark.parametrize("edge", [0.0, 1.0])
 def test_set_master_volume_accepts_both_ends(edge):
     qc = client.QuadCortex(FakeTransport())
-    qc.set_master_volume(edge)
+    qc.set_master_volume(Encoded(edge))
     assert qc._t.sent[-1].volume == edge
 
 
@@ -4105,3 +4109,141 @@ def test_a_unit_check_reads_the_spec_the_conversion_uses_on_a_cab(monkeypatch):
     assert qc._t.sent
     with pytest.raises(TypeError, match="dB"):
         qc.set_param(Block(0, 5, 12001), 2, Hertz(-3.0))
+
+
+# -- typed values reach the SETTINGS writes too --------------------------------
+#
+# ADR-0016 made `set_param` refuse a bare number. Everything below writes a
+# value to the unit as well, and until now took a bare wire float - so "a value
+# says which scale it is on" was true of one method and not of the library.
+
+
+def test_an_input_gain_takes_db_and_converts_it():
+    """-12..+60 dB, measured. 0 dB is exactly 1/6, which is the check."""
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_input_level(Input.INPUT_1, Db(0.0))
+    assert qc._t.sent[-1].settings.in_port[0].level == pytest.approx(1 / 6)
+    qc.set_input_level(Input.INPUT_1, Db(24.0))
+    assert qc._t.sent[-1].settings.in_port[0].level == pytest.approx(0.5)
+
+
+def test_an_input_gain_outside_the_span_is_refused_not_clamped():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ValueError):
+        qc.set_input_level(Input.INPUT_1, Db(90.0))
+    assert qc._t.sent == []
+
+
+def test_a_setting_with_no_measured_scale_refuses_a_real_value():
+    """ADR-0007's shape rather than a silent guess.
+
+    Nothing in the catalog describes an output port, and nobody has read one's
+    screen against its wire value - so there is no span. Converting dB against
+    an invented one is exactly what ADR-0015 exists to stop, so it refuses and
+    the refusal says what would settle it.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ControlNotDrivable) as caught:
+        qc.set_output_level(9, Db(-3.0))
+    assert "measure" in caught.value.workaround
+    assert qc._t.sent == []
+    qc.set_output_level(9, Encoded(0.5))          # the honest way to say it
+    assert qc._t.sent[-1].settings.out_port[0].level == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("call", [
+    lambda qc: qc.set_input_level(Input.INPUT_1, 0.5),
+    lambda qc: qc.set_output_level(9, 0.5),
+    lambda qc: qc.set_usb_port(level=0.5),
+    lambda qc: qc.set_master_volume(0.3),
+    lambda qc: qc.set_global_eq_band(1, 0.6),
+    lambda qc: qc.set_global_eq(1, gain=0.75),
+    lambda qc: qc.set_global_eq_output(level=0.5),
+    lambda qc: qc.set_hold_timing(800),
+    lambda qc: qc.set_tuner_reference(2.0),
+    lambda qc: qc.set_expression(Block(0, 2), 4, minimum=0.1),
+])
+def test_a_bare_number_is_refused_by_every_settings_write(call):
+    """The rule is the library's now, not one method's."""
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="which scale it is on"):
+        call(qc)
+    assert qc._t.sent == []
+
+
+def test_a_global_eq_gain_takes_db_on_the_manuals_span():
+    """-12..+12 dB. Both documented points, which is all the evidence there is."""
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_global_eq(1, gain=Db(0.0))
+    assert qc._t.sent[-1].parameters[0].value == pytest.approx(0.5)
+    qc.set_global_eq(1, gain=Db(6.0))
+    assert qc._t.sent[-1].parameters[0].value == pytest.approx(0.75)
+
+
+def test_a_global_eq_frequency_has_no_scale_and_says_so():
+    """The band's GAIN is known and its FREQUENCY is not, in the same call."""
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ControlNotDrivable):
+        qc.set_global_eq(1, frequency=Hertz(400.0))
+    assert qc._t.sent == []
+
+
+def test_a_setting_with_no_wire_scale_refuses_encoded():
+    """The hold threshold has ONE number line and it is the screen's.
+
+    The wire carries an index derived from the milliseconds, so `Encoded(0.5)`
+    is not a quieter way of saying anything - it is meaningless, and saying so
+    beats accepting it.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="no 0..1 device scale"):
+        qc.set_hold_timing(Encoded(0.5))
+    with pytest.raises(TypeError, match="no 0..1 device scale"):
+        qc.set_tuner_reference(Encoded(0.5))
+    assert qc._t.sent == []
+
+
+def test_the_single_scale_settings_take_their_own_unit():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_hold_timing(Milliseconds(800))
+    assert qc._t.sent[-1].hold_timing == 3
+    qc.set_tuner_reference(Hertz(2.0))
+    assert qc._t.sent[-1].frequency == pytest.approx(2.0)
+
+
+def test_the_wrong_unit_on_a_single_scale_setting_is_refused():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="ms"):
+        qc.set_hold_timing(Hertz(800))
+    with pytest.raises(TypeError, match="Hz"):
+        qc.set_tuner_reference(Milliseconds(2.0))
+    assert qc._t.sent == []
+
+
+def test_an_expression_sweep_end_converts_through_the_target_parameter():
+    """The sweep runs between POSITIONS of the parameter it is assigned to, so
+    its scale is that parameter's and `Db` means the same thing it means in a
+    `set_param` to the same knob."""
+    qc = _scale_client()
+    qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
+                      minimum=Encoded(0.0), maximum=Db(3.2))
+    prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    assert prm.expression_min == pytest.approx(0.0)
+    assert prm.expression_max == pytest.approx(
+        units_module.db_to_lane_level(3.2))
+
+
+def test_an_expression_sweep_end_checks_its_unit_like_a_write_does():
+    qc = _scale_client()
+    with pytest.raises(TypeError, match="dB"):
+        qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
+                          maximum=Hertz(3.2))
+    assert not qc._t.sent
+
+
+def test_an_unassigned_expression_sweep_still_defaults_to_the_whole_range():
+    """The defaults are the library's own, so they did not become a break."""
+    qc = _scale_client()
+    qc.set_expression(LaneOutput(0), "VOLUME", pedal=1)
+    prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    assert (prm.expression_min, prm.expression_max) == (0.0, 1.0)

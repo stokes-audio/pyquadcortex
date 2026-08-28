@@ -206,24 +206,55 @@ def input_level_db(level: float) -> float:
     matches the hardware spec sheet's "MAX INPUT GAIN: +60dB".
 
     An input PORT is not a catalog model, so nothing in the catalog describes
-    this scale and this function is the only place it lives. Lane and mixer
-    levels run -40..+12 dB instead - :func:`lane_level_db` converts those.
+    this scale; the numbers live in ``SETTING_SPANS["INPUT_GAIN_DB"]``, with the
+    readings that produced them. Lane and mixer levels run -40..+12 dB instead -
+    :func:`lane_level_db` converts those.
     """
-    return -12.0 + 72.0 * level
+    low, high = SETTING_SPANS["INPUT_GAIN_DB"]
+    return low + (high - low) * level
 
 
 def db_to_input_level(db: float) -> float:
     """Convert displayed input-gain dB to the wire ``level`` an input port takes.
 
     Inverse of :func:`input_level_db`; see it for how the scale was measured.
-    Values outside -12..+60 dB do not exist on the unit and are refused rather
-    than silently clamped.
+    Values outside the span do not exist on the unit and are refused rather than
+    silently clamped.
     """
-    if not -12.0 <= db <= 60.0:
+    low, high = SETTING_SPANS["INPUT_GAIN_DB"]
+    if not low <= db <= high:
         raise ValueError(
-            f"input gain runs -12..+60 dB on the unit; {db} dB does not exist"
+            f"input gain runs {low:g}..{high:g} dB on the unit; {db} dB does "
+            f"not exist"
         )
-    return (db + 12.0) / 72.0
+    return (db - low) / (high - low)
+
+
+def global_eq_gain_db(value: float) -> float:
+    """Convert a Global EQ band's wire ``gain`` (0..1) to the dB it displays.
+
+    Linear over **-12 to +12 dB**, so ``dB = -12 + 24 * value``. The span is the
+    MANUAL's and rests on two points - see ``SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]``
+    for why that is weaker evidence than the input port's and what would settle
+    it. The Global EQ is not a catalog model, so nothing published describes
+    this scale.
+    """
+    low, high = SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]
+    return low + (high - low) * value
+
+
+def db_to_global_eq_gain(db: float) -> float:
+    """Convert Global EQ dB to the wire ``gain`` a band takes.
+
+    Inverse of :func:`global_eq_gain_db`. Outside the span is refused rather
+    than clamped, the same as every other converter here.
+    """
+    low, high = SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]
+    if not low <= db <= high:
+        raise ValueError(
+            f"a Global EQ band runs {low:g}..{high:g} dB; {db} dB does not exist"
+        )
+    return (db - low) / (high - low)
 
 
 def lane_level_db(value: float) -> float:
@@ -296,6 +327,32 @@ def bpm_to_tempo(bpm: float) -> float:
             f"the unit's tempo runs {low:g}..{high:g} bpm; {bpm} bpm does not exist"
         )
     return (bpm - low) / (high - low)
+
+
+#: The spans a SETTING has that no catalog model describes.
+#:
+#: Separate from :data:`FIRMWARE_CONSTANTS`, which resolves a name the catalog
+#: itself writes. Nothing in the catalog mentions an input port or the Global
+#: EQ at all, so these numbers have no name to resolve and their only home is
+#: here. Each records how it is known, and the two are known very differently -
+#: which is the point of writing it down rather than presenting one list.
+SETTING_SPANS = {
+    # An input port's gain. Solved from four owner-set trims read simultaneously
+    # on screen and on the wire - screen +17.2/+16.8/+24.0/0.0 against wire
+    # 0.40556/0.40043/0.50009/0.16667. Every point lands within display
+    # rounding, 0 dB is exactly 1/6, and it agrees with the hardware spec
+    # sheet's "MAX INPUT GAIN: +60dB". See :func:`input_level_db`.
+    "INPUT_GAIN_DB": (-12.0, 60.0),
+
+    # A Global EQ band's GAIN. WEAKER EVIDENCE, deliberately recorded as such:
+    # the span is the MANUAL's, and what supports it here is two consistent
+    # points - wire 0.5 reads 0 dB and 0.75 reads +6 dB, which a linear
+    # -12..+12 reproduces exactly. That is not a measurement campaign. Two close
+    # points could not tell -40..+12 from -100..+30 for the lane family (see
+    # MIN_MIXER_DB above), and the same caution applies here: these two are 6 dB
+    # apart on a span claimed to be 24 dB wide. Queued to be driven on screen.
+    "GLOBAL_EQ_GAIN_DB": (-12.0, 12.0),
+}
 
 
 #: Where user setlists live. They sit SIDE BY SIDE here rather than nested inside

@@ -67,7 +67,7 @@ def _restore(qc, was, row=ROW):
     if was["expression"]:
         qc.set_expression(
             row=row, param="VOLUME", pedal=was["expression"],
-            minimum=was["minimum"], maximum=was["maximum"])
+            minimum=Encoded(was["minimum"]), maximum=Encoded(was["maximum"]))
     else:
         qc.clear_expression(LaneOutput(row), param="VOLUME")
     time.sleep(0.3)
@@ -106,7 +106,7 @@ def test_a_pedal_assigns_to_the_lane_volume_and_clears_again(qc, restores):
     restores(f"row {ROW} lane VOLUME", lambda: _restore(qc, was))
 
     qc.set_expression(LaneOutput(ROW), param="VOLUME", pedal=1,
-                                  minimum=0.0, maximum=0.6)
+                      minimum=Encoded(0.0), maximum=Encoded(0.6))
     time.sleep(SETTLE)
     p = _volume(qc)
     assert p.expression == 1, "the pedal did not take"
@@ -209,13 +209,15 @@ def test_every_target_takes_an_expression_pedal(qc, restores, label, target, nam
     def restore():
         if before[0]:
             qc.set_expression(target, index, pedal=before[0],
-                              minimum=before[1], maximum=before[2])
+                              minimum=Encoded(before[1]),
+                              maximum=Encoded(before[2]))
         else:
             qc.clear_expression(target, index)
 
     restores(f"{label} {name} expression", restore)
 
-    qc.set_expression(target, name, pedal=1, minimum=0.15, maximum=0.85)
+    qc.set_expression(target, name, pedal=1,
+                      minimum=Encoded(0.15), maximum=Encoded(0.85))
     time.sleep(SETTLE)
     now = _params(qc, target)[index]
     assert now.expression == 1, f"{label}: {name} did not take the pedal"
@@ -252,7 +254,8 @@ def test_a_block_switch_parameter_takes_one_too(qc, restores):
              lambda: qc.clear_expression(block, spec.index))
 
     assert before == 0, "pick a preset where this parameter is unassigned"
-    qc.set_expression(block, spec.name, pedal=1, minimum=0.2, maximum=0.7)
+    qc.set_expression(block, spec.name, pedal=1,
+                      minimum=Encoded(0.2), maximum=Encoded(0.7))
     time.sleep(SETTLE)
     now = qc.read_current_preset().chains[block.row].models[block.column] \
             .params[spec.index]
@@ -301,7 +304,8 @@ def test_a_parameter_the_catalog_calls_unassignable_still_takes_a_host_pedal(
     assert (depth.name, depth.exp_assignable) == ("DEPTH", True)
 
     for index in (4, 10):
-        qc.set_expression(cell, index, pedal=1, minimum=0.15, maximum=0.85)
+        qc.set_expression(cell, index, pedal=1,
+                          minimum=Encoded(0.15), maximum=Encoded(0.85))
     time.sleep(SETTLE)
 
     got = _block_params(qc, 1, 1)

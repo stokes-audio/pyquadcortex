@@ -296,8 +296,10 @@ qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME,
 lane_level_db(0.76923077)     # 0.0
 
 # A pedal as a volume and mute control: silence at the heel, +3.2 dB at the toe.
+# The heel is the Off detent, which sits BELOW the dB scale, so the device's
+# own 0.0 is the only thing that names it; the toe is just dB.
 qc.set_expression(LaneOutput(0), params.LaneOutputParam.VOLUME, pedal=1,
-                  minimum=0.0, maximum=db_to_lane_level(3.2))
+                  minimum=Encoded(0.0), maximum=Db(3.2))
 ```
 
 The span is **-40 to +12 dB**. The knob's lowest numeric step is -39.5 dB; below it
