@@ -7,6 +7,10 @@ that **a successful run leaves the unit exactly as it found it**.
 pytest tests/hardware --hardware
 ```
 
+`pytest --hardware` from the repo root works too, since the rename described
+below, and it runs BOTH suites - the offline one and this one, against your unit.
+Name the directory unless you want that.
+
 Without `--hardware` nothing here runs. A hardware test that reports itself as a
 skip in an offline run is a test nobody notices has stopped running, so it is
 never a skip - which of the two stronger things happens depends on how the path

@@ -34,24 +34,35 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SUITE = ROOT / "tests" / "hardware"
 
 #: Every module in the hardware suite, spelled the way a developer would type it.
-#: Read from the directory rather than listed, so a module added tomorrow is
-#: gated by this file the day it lands.
+#: Read from the directory rather than listed, so a module added tomorrow is gated
+#: by this file the day it lands - #39's `test_settings_values.py` arrived that
+#: way. Recursive on purpose: the conftest hook filters on
+#: ``path.is_relative_to(SUITE)``, so it gates a module in a subdirectory too, and
+#: a flat glob here would quietly stop covering what the hook covers.
 MODULES = sorted(str(path.relative_to(ROOT))
-                 for path in SUITE.glob("test_*.py"))
+                 for path in SUITE.rglob("test_*.py"))
 
 
 def _pytest(poison, *args):
     """Run pytest from the repo root, exactly as a developer would.
 
-    ``PYTEST_ADDOPTS`` and ``PYTEST_PLUGINS`` are dropped rather than inherited.
-    Somebody in the middle of a hardware session plausibly has
-    ``PYTEST_ADDOPTS=--hardware`` exported, and this file would then report the
-    gate broken when it is not - measured: 5 of these 7 tests fail. The one file
-    whose job is to be believed does not get to be noisy for that reason.
+    The environment is scrubbed rather than inherited, because every assertion in
+    this file reads pytest's own words - ``no tests ran``, node-id lines, an
+    ``ERROR`` prefix - and the environment can change all three. Two ways in:
+
+    * ``PYTEST_ADDOPTS=--hardware`` is a plausible export for somebody in the
+      middle of a hardware session, and it makes this file report the gate broken
+      when it is not. Measured, at the 10 tests this file holds today: seven of
+      them fail.
+    * an output-rewriting plugin (pytest-sugar and friends) autoloads through
+      entry points and would do the same. Not measured - nothing of the kind is
+      installed here - so autoload is off on the reasoning that nothing in this
+      file needs a plugin, rather than on a reading.
     """
     env = dict(os.environ)
     for leaks in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
         env.pop(leaks, None)
+    env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     env["PYTHONPATH"] = os.pathsep.join(
         [str(poison), str(ROOT), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
     return subprocess.run(
@@ -160,8 +171,8 @@ def test_a_path_through_a_symlink_is_gated_too(_poisoned_hid, tmp_path):
     An absolute argument is what reaches that state: a RELATIVE one is joined to
     the working directory, which the OS has already resolved, so both sides come
     out physical whatever the developer typed. Measured with the item side left
-    unresolved, on ``tests/hardware/test_scales_on_unit.py`` rather than the one this
-    test happens to name: its 28 tests collected, exit 0.
+    unresolved, on ``tests/hardware/test_scales_on_unit.py`` rather than the one
+    this test happens to name: its 28 tests collected, exit 0.
     """
     link = tmp_path / "linked-repo"
     link.symlink_to(ROOT)
@@ -211,9 +222,12 @@ def test_one_hardware_path_refuses_the_whole_run(_poisoned_hid):
     The deliberate choice, pinned because it is the one a future reader is most
     likely to soften: it would be easy to drop the hardware items and run the
     rest, and that hands back a green run to somebody who asked to touch the unit
-    and was not told they did not. The pair below deliberately has no shared
-    basename - two files called the same thing collide in collection before this
-    gate is reached, which is the gap noted in ``tests/hardware/readme.md``.
+    and was not told they did not.
+
+    Any offline/hardware pair does now. When this was written the two files had to
+    be chosen with no shared basename, because a colliding pair died in collection
+    before the gate was reached; the rename in this branch removed the last such
+    pair, and ``test_the_whole_tree_collects_with_the_flag`` keeps it that way.
     """
     result = _pytest(_poisoned_hid, "tests/test_registry.py",
                      "tests/hardware/test_tempo_mode.py")
@@ -256,7 +270,10 @@ def test_the_whole_tree_collects_with_the_flag(_poisoned_hid):
         + result.stdout[-3000:] + result.stderr[-3000:])
     # Matched on pytest's own words for a collection failure, not on the
     # substring "error" - a test called `..._raises_keyerror` contains that.
-    assert "errors during collection" not in result.stdout, result.stdout[-3000:]
+    # Without the count: pytest writes "1 error during collection" in the
+    # singular, so the plural spelling misses the single-collision case, which is
+    # the one this test exists for.
+    assert "during collection" not in result.stdout, result.stdout[-3000:]
     reported = [line for line in result.stdout.splitlines()
                 if line.startswith("ERROR")]
     assert not reported, reported

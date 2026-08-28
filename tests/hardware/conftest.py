@@ -35,7 +35,8 @@ def pytest_ignore_collect(collection_path, config):
     # path given on the command line (`_pytest/main.py`, pytest 9.1.1). So this
     # covers `pytest`, `pytest tests/` and `pytest tests/hardware` - the last one
     # because the DIRECTORY is the initial path and its files still come through
-    # here - and nothing at all for `pytest tests/hardware/test_scales_on_unit.py`.
+    # here - and nothing at all for a file named outright, such as
+    # `pytest tests/hardware/test_scales_on_unit.py`.
     # The hook below catches that one.
     return not config.getoption("--hardware")
 
