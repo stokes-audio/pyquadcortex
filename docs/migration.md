@@ -17,6 +17,64 @@ while that is true, and this file is the cost of doing it.
 
 ## 0.40.0 to the next release
 
+### `set_param` takes one value, and it must say which scale it is on
+
+`value=`, `real=` and `text=` are gone.
+
+| before | after |
+|---|---|
+| `set_param(t, p, value=0.71)` | `set_param(t, p, Encoded(0.71))` |
+| `set_param(t, p, real=-3.1)` | `set_param(t, p, Db(-3.1))`, or `Real(-3.1)` |
+| `set_param(t, p, text="/media/x.wav")` | `set_param(t, p, "/media/x.wav")` |
+| `set_metronome_volume(real=-20.0)` | `set_metronome_volume(Db(-20.0))` |
+| `set_metronome_volume(0.5)` or `(value=0.5)` | `set_metronome_volume(Encoded(0.5))` |
+
+A bare number is refused, and the error shows the call rewritten.
+
+`scene` and `promote` are keyword-only now. Nobody plausibly passed them
+positionally past three `None`s, but if you did, name them.
+
+### Reads hand back a typed value, so `str()` changed
+
+Not just writes. `Parameter.to_real()`, `Parameter.floor` and `param_state()`'s
+`values` used to give plain floats and now give `Db`, `Real`, `Encoded` and the
+rest. They ARE floats - arithmetic, comparisons and `json.dumps` are unchanged -
+but `repr` says the type, and `str()` delegates to `repr` on a float subclass:
+
+```python
+str(p.to_real(0.5))     # was '-14.0',  is now 'Db(-14.0)'
+f"{p.floor}"            # was '-39.5',  is now 'Db(-39.5)'
+f"{p.floor:.1f}"        # '-39.5' either way - a format spec is unaffected
+```
+
+So a log line or a UI label built with `str()` or a bare `{}` will show the type
+name. Wrap it in `float()`, or give the f-string a format spec. This is the one
+change here that alters output without raising anything, which is why it has its
+own section rather than a table row.
+
+**Read this part before running a find-and-replace.** `real=` and `value=` are
+NOT the same number in different clothes. On a lane VOLUME, `-40..+12 dB`:
+
+```python
+set_param(LaneOutput(0), "VOLUME", Real(0.0))     # 0 dB - unity
+set_param(LaneOutput(0), "VOLUME", Encoded(0.0))  # the Off detent - silence
+```
+
+Every knob has two number lines - the screen's and the device's - and the type
+says which one your number is on. A mechanical migration is safe as long as
+`real=` becomes `Real`/a unit type and `value=` becomes `Encoded`, because that
+preserves which line each call was already using. Swapping them silently
+inverts a volume.
+
+`Db`, `Percent`, `Hertz`, `Milliseconds`, `Seconds`, `Semitones`, `Cents` and
+`Bpm` are `Real` plus a claim that gets checked: hand `Db` to a parameter the
+catalog calls Hz and you get a `TypeError` rather than a wrong write. Use plain
+`Real` where you do not want the check, or where the parameter has no unit -
+1,780 of them do not.
+
+Only `Encoded` works with no device attached. The other two read the parameter's
+scale from the catalog, and the catalog comes from the unit.
+
 ### DANGEROUS: `MetronomeBeat.OFF` now means the OPPOSITE of what it meant
 
 Read this before the rest. It is the only break here where a name survives, the
@@ -85,7 +143,7 @@ dB; asking for -30 dB used to convert to wire 0.0005 and mute the microphone.
 
 ### Converting real units now needs a catalog
 
-`real=` reads the device's own description of the parameter, so it fetches one.
+A real value reads the device's own description of the parameter, so it fetches one.
 Previously a handful of parameters were served by a hand-measured table and
 worked with no device attached - `Tempo()` in particular.
 
@@ -93,7 +151,7 @@ If you convert without a device, use the standalone helpers, which are unchanged
 `protocol.bpm_to_tempo`, `protocol.tempo_bpm`, `protocol.db_to_lane_level`,
 `protocol.lane_level_db`, `protocol.input_level_db`, `protocol.db_to_input_level`.
 
-Addressing a parameter by wire INDEX and writing `value=` still needs no catalog.
+Addressing a parameter by wire INDEX and writing `Encoded` still needs no catalog.
 
 ### Removed: the placeholder-range machinery
 
@@ -141,17 +199,20 @@ parameter lives:
 
 | before | after |
 |---|---|
-| `set_param(row, column, param_index=i, value=v)` | `set_param(Block(row, column), i, value=v)` |
-| `set_param(row, column, param="X", model=m, real=r)` | `set_param(Block(row, column, m), "X", real=r)` |
-| `set_lane_output(row, param, value=v)` | `set_param(LaneOutput(row), param, value=v)` |
-| `set_input_gate(row, param, value=v)` | `set_param(LaneInput(row), param, value=v)` |
-| `set_mixer_param(row, param, value=v)` | `set_param(Mixer(row), param, value=v)` |
-| `set_splitter_param(row, param, value=v)` | `set_param(Splitter(row), param, value=v)` |
-| `set_tempo_param(param, value=v)` | `set_param(Tempo(), param, value=v)` |
+| `set_param(row, column, param_index=i, value=v)` | `set_param(Block(row, column), i, Encoded(v))` |
+| `set_param(row, column, param="X", model=m, real=r)` | `set_param(Block(row, column, m), "X", Db(r))` |
+| `set_lane_output(row, param, value=v)` | `set_param(LaneOutput(row), param, Encoded(v))` |
+| `set_input_gate(row, param, value=v)` | `set_param(LaneInput(row), param, Encoded(v))` |
+| `set_mixer_param(row, param, value=v)` | `set_param(Mixer(row), param, Encoded(v))` |
+| `set_splitter_param(row, param, value=v)` | `set_param(Splitter(row), param, Encoded(v))` |
+| `set_tempo_param(param, value=v)` | `set_param(Tempo(), param, Encoded(v))` |
 | `set_param_scene_mode(row, column, i, on)` | `set_param_scene_mode(Block(row, column), i, on)` |
 | `set_lane_output_scene_mode(row, i, on)` | `set_param_scene_mode(LaneOutput(row), i, on)` |
 | `set_expression(row, column, param, ...)` | `set_expression(Block(row, column), param, ...)` |
 | `clear_expression(row, column, param)` | `clear_expression(Block(row, column), param)` |
+
+Both changes ship in the same release, so the "after" column shows the FINAL
+form - there is no intermediate state to migrate through.
 
 `param_index=` is gone; the parameter is the second positional argument, and
 `param=` still works as a keyword. `model=` moves onto the `Block`, because the

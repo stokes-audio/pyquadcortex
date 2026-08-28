@@ -52,6 +52,9 @@ from pyquadcortex.protocol.session import DeviceNotFoundError, connect, open_dev
 from pyquadcortex.protocol import models  # generated factory-block constants
 from pyquadcortex.protocol import params  # generated parameter constants
 from pyquadcortex.protocol import options  # generated option constants
+from pyquadcortex.protocol.values import (  # noqa: F401
+    Bpm, Cents, Db, Encoded, Hertz, Milliseconds, Percent, Real,
+    Seconds, Semitones, Value)
 from pyquadcortex.protocol.catalog import Model, ModelCatalog, Parameter
 
 __all__ = [
@@ -138,6 +141,9 @@ __all__ = [
     "models",
     "params",
     "options",
+    "Value", "Encoded", "Real",
+    "Db", "Percent", "Hertz", "Milliseconds", "Seconds",
+    "Semitones", "Cents", "Bpm",
     "Model",
     "ModelCatalog",
     "Parameter",

@@ -34,6 +34,7 @@ from dataclasses import dataclass, field, replace
 # The numbers behind the catalog's symbolic bounds. `units` imports nothing from
 # this module, so this direction is the only one and there is no cycle.
 from pyquadcortex.protocol import units
+from pyquadcortex.protocol import values
 
 # Categories holding Neural Captures, kept out of the generated constants.
 #
@@ -188,8 +189,8 @@ class Parameter:
     show_as_integer: bool = False
 
     @property
-    def floor(self) -> float | None:
-        """The lowest value this parameter is KNOWN to reach.
+    def floor(self) -> "values.Real | None":
+        """The lowest value this parameter is KNOWN to reach, as a typed value.
 
         Usually :attr:`minimum`, but not where the bottom of the scale is an Off
         detent: a cab LEVEL's law runs to -40 dB and its quietest real position
@@ -207,7 +208,7 @@ class Parameter:
         if self.minimum is None or self.maximum is None:
             return None
         if self.floor_display is not None:
-            return self.floor_display
+            return values.of_unit(self.units, self.floor_display)
         return self.to_real(self.floor_wire)
 
     @property
@@ -334,7 +335,7 @@ class Parameter:
             f"{real:g}{unit} does not exist there.{hint}"
         )
 
-    def to_real(self, normalized: float) -> float:
+    def to_real(self, normalized: float) -> "values.Real":
         """Convert a wire 0..1 value back into this parameter's own units.
 
         ``real = min + (max - min) * wire ** (1 / skew)``. Confirmed on hardware
@@ -361,8 +362,9 @@ class Parameter:
             )
         span = self.maximum - self.minimum
         if span == 0:
-            return self.minimum
-        return self.minimum + span * normalized ** (1.0 / self.skew)
+            return values.of_unit(self.units, self.minimum)
+        return values.of_unit(
+            self.units, self.minimum + span * normalized ** (1.0 / self.skew))
 
     def _reject_unmeasured(self):
         """Refuse rather than convert against a bound nobody has measured.

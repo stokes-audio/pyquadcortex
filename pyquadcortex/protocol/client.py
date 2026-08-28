@@ -35,6 +35,7 @@ from typing import NamedTuple
 
 from pyquadcortex.protocol import catalog, enums, registry, targets
 from pyquadcortex.protocol import options as options_module
+from pyquadcortex.protocol import values as values_module
 from pyquadcortex.protocol import units as units_module
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
@@ -588,19 +589,19 @@ class QuadCortex:
         """The catalog, fetched lazily - see `ParamTarget.model`."""
         return self.catalog
 
-    def set_param(self, target, param, value: float = None, real=None,
-                  text: str = None, scene=None, promote: bool = True):
+    def set_param(self, target, param, value=None, *, scene=None,
+                  promote: bool = True):
         """Set one parameter, wherever on the unit it lives.
 
         ``target`` says WHERE, and is one of the addresses in
         :mod:`pyquadcortex.protocol.targets`::
 
-            qc.set_param(Block(0, 2, model=5011), "GAIN", real=-6.0)
-            qc.set_param(LaneOutput(0), "VOLUME", real=-3.1)
-            qc.set_param(LaneInput(0), "INPUT GAIN", real=12.0)
-            qc.set_param(Mixer(0), "LEVEL A", value=UNITY_LEVEL)
-            qc.set_param(Splitter(0), "LEVEL TO B", value=0.25)
-            qc.set_param(Tempo(), "TEMPO", real=120)
+            qc.set_param(Block(0, 2, 1), "GAIN", Real(5.0))   # a Myth Drive
+            qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))
+            qc.set_param(LaneInput(0), "INPUT GAIN", Db(12.0))
+            qc.set_param(Mixer(0), "LEVEL A", Db(0.0))
+            qc.set_param(Splitter(0), "LEVEL TO B", Db(-27.0))
+            qc.set_param(Tempo(), "TEMPO", Bpm(120))
 
         :func:`blocks` hands back :class:`~pyquadcortex.protocol.targets.Block` values
         with ``model_id`` already filled in, so reading a preset gives you
@@ -621,21 +622,36 @@ class QuadCortex:
         because what is in a cell is whatever the player put there; every other
         target knows its own model.
 
-        Give the value as ``value=`` (the normalized 0..1 the wire carries),
-        ``real=`` (the parameter's own units - dB, ms, Hz, bpm), or ``text=``
-        for a string-valued parameter such as a cab's microphone. ``real=``
-        converts through the catalog's own description of the parameter - its
-        ``min``, ``max`` and ``skew`` - so it applies any taper and refuses a
-        value the knob has no position for rather than clamping to the nearest
-        one. It needs a catalog, which comes from the device.
+        **The value says which SCALE it is on**, because every knob has two:
+        the one the screen shows and the device's own 0.0 to 1.0. See
+        :mod:`pyquadcortex.protocol.values`.
 
-        One parameter refuses ``real=`` outright: ``NC_Recorder``'s ``OUT
+        * :class:`~pyquadcortex.protocol.values.Real` and the unit types -
+          ``Db``, ``Percent``, ``Hertz``, ``Milliseconds``, ``Seconds``,
+          ``Semitones``, ``Cents``, ``Bpm`` - are the screen's scale. They
+          convert through the catalog's own description of the parameter, so
+          they apply any taper and REFUSE a value the knob has no position for
+          rather than clamping. A unit type also checks itself against the
+          catalog's unit. They need a catalog, which comes from the device.
+        * :class:`~pyquadcortex.protocol.values.Encoded` is the device's scale.
+          It converts nothing and needs no catalog, which is what keeps an
+          index-addressed write free of a round trip.
+        * A plain ``str`` writes a string-valued parameter, such as a cab's
+          microphone.
+
+        A bare number is refused: on a lane VOLUME ``Real(0.0)`` is unity and
+        ``Encoded(0.0)`` is silence, and nothing in a plain ``0.0`` says which
+        was meant.
+
+        One parameter refuses a real value outright: ``NC_Recorder``'s ``OUT
         LEVEL``, whose bounds the catalog names and nobody can measure, because
         placing that block crashes the unit.
 
         **Per-scene values.** Name a ``scene`` to change that scene alone::
 
-            qc.set_param(Block(2, 5), 0, value=0.8, scene=Scene.D)
+            # index 0 with no model id, so the catalog cannot be asked what
+            # scale this knob is on - the device's own is all there is
+            qc.set_param(Block(2, 5), 0, Encoded(0.8), scene=Scene.D)
 
         Three things had to line up for this, all confirmed on hardware:
 
@@ -654,16 +670,12 @@ class QuadCortex:
         parameter that is not scene-following is its single global value and so
         appears in all eight.
         """
-        if text is not None and real is not None:
-            raise TypeError("pass text= or real=, not both")
         index, spec = target.index_of(param, self._get_catalog)
-        if real is not None:
-            value = target.normalize(index, real, self._get_catalog, spec)
-        if value is None and text is None:
+
+        if value is None:
             raise TypeError(
-                "set_param needs value= (the normalized 0..1 the wire carries), "
-                "real= (the parameter's own units) or text= (a string-valued "
-                "parameter)"
+                "set_param needs a value that says which scale it is on. See "
+                "docs/api.md, 'the two number lines'."
             )
         if isinstance(value, bool):
             # A bool is the natural way to write a two-option switch, and 247
@@ -677,16 +689,23 @@ class QuadCortex:
             # The spec is often not in hand here: an indexed write never fetches
             # one, and `Tempo` maps its screen names straight to indexes.
             if spec is None:
+                # KeyError alone: the catalog has no such model, so there is
+                # genuinely nothing to check against and the refusal below is
+                # the answer. Anything else - a read timeout, a closed
+                # transport, an OSError out of hid, ADR-0009's refusal to read
+                # on the RX thread - means we could not LOOK, which is a
+                # different thing, and swallowing it wrote the value unchecked.
                 try:
                     spec = target.spec_at(index, self._get_catalog)
-                except Exception:
+                except KeyError:
                     spec = None
             if spec is None:
                 raise TypeError(
                     f"True and False can only write a two-option switch, and "
                     f"this parameter is not one the catalog describes - so there "
-                    f"is no way to check. Pass 0.0 or 1.0 if you meant the wire "
-                    f"value, or connect so the catalog can be read."
+                    f"is no way to check. Pass Encoded(0.0) or Encoded(1.0) if "
+                    f"you meant the device's own scale, or connect so the "
+                    f"catalog can be read."
                 )
             if spec.option_count != 2:
                 offers = (f"offers {spec.option_count} options"
@@ -699,6 +718,75 @@ class QuadCortex:
                     f"set_param_option, or pass the number you want."
                 )
             value = 1.0 if value else 0.0
+        elif isinstance(value, str):
+            # A string is itself - but check the parameter actually takes one.
+            # Collapsing text= into the positional removed the caller's
+            # declaration of intent, so a value that arrives as a string from
+            # argv or JSON would otherwise take the string path onto a dB knob
+            # and be sent. The catalog publishes type="string" for exactly the
+            # 396 parameters that want it.
+            if spec is None:
+                # See the bool branch: only "the catalog does not describe this
+                # model" is swallowed. A failure to CONSULT the catalog used to
+                # become `spec = None`, and `spec is None` means "allow" here -
+                # so a disconnected device turned a checked write into an
+                # unchecked one.
+                try:
+                    spec = target.spec_at(index, self._get_catalog)
+                except KeyError:
+                    spec = None
+            if spec is not None and spec.type != "string":
+                raise TypeError(
+                    f"{spec.name!r} is a {spec.type or 'plain'} parameter, not a "
+                    f"string one, so {value!r} is not a value it can hold. If "
+                    f"that string came from a file or a command line, convert it "
+                    f"first and say which scale it is on - Real({value!r}) or "
+                    f"Encoded({value!r})."
+                )
+        elif isinstance(value, values_module.Encoded):
+            # The device's own scale, so there is nothing to convert and no
+            # catalog to fetch. This is what keeps an index-addressed write free
+            # of a round trip.
+            #
+            # 0..1 is the one invariant true of all 3,809 parameters, so it is
+            # the only bound checkable without asking the device anything. NaN
+            # fails this comparison too, which is deliberate: four factory
+            # presets store NaN, and passing one through would write it.
+            if not 0.0 <= float(value) <= 1.0:
+                raise ValueError(
+                    f"the device's scale is 0.0 to 1.0 and {value!r} is outside "
+                    f"it. If that number is in the parameter's own units, it is "
+                    f"Real({float(value)!r}) rather than Encoded."
+                )
+            # Only if a spec is already in hand - naming the parameter fetched
+            # one. Fetching here on purpose does not happen: an index-addressed
+            # `Encoded` write staying free of a round trip is this branch's
+            # whole reason to exist.
+            if spec is not None:
+                _reject_number_on_a_string_parameter(spec, value)
+            value = float(value)
+        elif isinstance(value, values_module.Real):
+            # `spec_at` is the one answer to "what sits at this wire index",
+            # and the check and the conversion both read it. They used to
+            # resolve it separately and disagree on a cab, where the model's own
+            # entry is not wire-indexed at all.
+            if spec is None:
+                spec = target.spec_at(index, self._get_catalog)
+            if spec is not None:
+                _reject_number_on_a_string_parameter(spec, value)
+                value.check_unit(spec)
+            value = target.normalize(index, float(value), self._get_catalog, spec)
+        else:
+            raise TypeError(
+                f"set_param needs a value that says which scale it is on; you "
+                f"passed {value!r}. Every knob has two number lines - the "
+                f"screen's and the device's - and a bare number cannot say "
+                f"which one you mean.\n"
+                f"  Real({value!r})     the screen's line, this knob's own units\n"
+                f"  Db({value!r})       the same, and checked against the catalog\n"
+                f"  Encoded({value!r})  the device's line, 0.0 to 1.0\n"
+                f"See docs/api.md, 'the two number lines'."
+            )
         if scene is not None:
             if not target.supports_scenes:
                 raise TypeError(
@@ -711,8 +799,8 @@ class QuadCortex:
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         prm = target.container(msg).params.add()
         prm.index = index
-        if text is not None:
-            prm.param_values.add().string_value = text
+        if isinstance(value, str):
+            prm.param_values.add().string_value = value
         else:
             prm.param_values.add().float_value = value
         return self._t.send(msg)
@@ -1174,7 +1262,8 @@ class QuadCortex:
             if index is None:
                 index = self.catalog[self.TEMPO_CONTROL].parameter(param).index
         spec = self.catalog[self.TEMPO_CONTROL].parameters[index]
-        return self.set_param(Tempo(), index, value=spec.option_to_value(option))
+        return self.set_param(Tempo(), index,
+                              values_module.Encoded(spec.option_to_value(option)))
 
     def set_tempo_subdivision(self, subdivision: "TempoSubdivision"):
         """Set the metronome's SUBDIVISIONS, by name rather than by number.
@@ -1255,7 +1344,8 @@ class QuadCortex:
 
     def set_tempo_led(self, on: bool):
         """Turn this preset's TEMPO LED on or off."""
-        return self.set_param(Tempo(), "LED LIGHT", value=1.0 if on else 0.0)
+        return self.set_param(Tempo(), "LED LIGHT",
+                              values_module.Encoded(1.0 if on else 0.0))
 
     def set_metronome_running(self, running: bool):
         """Start or stop this preset's metronome.
@@ -1274,7 +1364,8 @@ class QuadCortex:
         and ``False`` stopped it, with a person listening at the unit. An audible effect - see
         "Settings only your ears can verify" in the API guide.
         """
-        return self.set_param(Tempo(), "START", value=1.0 if running else 0.0)
+        return self.set_param(Tempo(), "START",
+                              values_module.Encoded(1.0 if running else 0.0))
 
     def set_metronome_muted(self, muted: bool):
         """Mute or unmute this preset's metronome - the unit's own MUTE control.
@@ -1294,7 +1385,7 @@ class QuadCortex:
         """
         return self.set_metronome_running(not muted)
 
-    def set_metronome_volume(self, value: float = None, real: float = None):
+    def set_metronome_volume(self, value):
         """Set this preset's metronome level. **Wire 0.0 is -60 dB, not silence.**
 
         The catalog's range for this control is genuine: **-60 to +9 dB**, linear
@@ -1304,11 +1395,12 @@ class QuadCortex:
         headphones. True silence is not reachable with this control;
         stop the transport instead with :meth:`set_metronome_running`.
 
-        Pass ``value=`` for the wire 0..1 or ``real=`` for dB::
+        Takes a typed value like any other parameter - ``Db`` for decibels,
+        ``Encoded`` for the device's own 0..1::
 
-            qc.set_metronome_volume(real=-20.0)      # -20 dB
+            qc.set_metronome_volume(Db(-20.0))       # -20 dB
         """
-        return self.set_param(Tempo(), "VOLUME", value=value, real=real)
+        return self.set_param(Tempo(), "VOLUME", value)
 
     #: Index of MODE inside the DEVICE tempo block. It is the catalog's ``TYPE``,
     #: which no control in the preset's own Tempo page writes - the preset copy of
@@ -2719,7 +2811,8 @@ class QuadCortex:
                 f"IntEnum member is an int, so without this the wrong one would "
                 f"convert quietly."
             )
-        return self.set_param(block, index, value=option_value(names, option))
+        return self.set_param(block, index,
+                              values_module.Encoded(option_value(names, option)))
 
     def set_output_mute(self, output_port_id: int, muted: bool = True):
         """Mute or unmute an output port.
@@ -3059,11 +3152,13 @@ class QuadCortex:
         applied once the capture is in::
 
             qc.set_capture(row=0, column=2, capture=c,
-                           params={4: 0.56})            # VOLUME, by wire index
+                           params={4: Db(-5.0)})        # VOLUME, by wire index
 
-        ``params`` maps parameter index to value - floats are written as values,
-        strings as text. Pass ``model=None`` to point an existing block at a new
-        capture without re-placing it.
+        ``params`` maps parameter index to value, and each one goes through
+        :meth:`set_param` exactly as if you had written it there - so it says
+        which scale it is on, and a bare number is refused here too. Pass
+        ``model=None`` to point an existing block at a new capture without
+        re-placing it.
 
         Parameters passed here survive the preset's first save. A BYPASS written
         to this block before that save does not - see :meth:`set_bypass` for the
@@ -3086,14 +3181,19 @@ class QuadCortex:
             )
         if model is not None:
             self.set_block(Block(row, column, model))
+        # Addressed by cell alone, with no model id, which is deliberate: it
+        # keeps this path free of a catalog round trip. The cost is that a
+        # `Real` in `params` cannot be converted here and says so - `set_param`
+        # raises naming the missing model rather than guessing a scale.
         cell = Block(row, column)
-        result = self.set_param(cell, self.CAPTURE_FILE_NAME_PARAM,
-                                text=f"{key}{name}")
+        result = self.set_param(cell, self.CAPTURE_FILE_NAME_PARAM, f"{key}{name}")
         for index, value in (params or {}).items():
-            if isinstance(value, str):
-                result = self.set_param(cell, index, text=value)
-            else:
-                result = self.set_param(cell, index, value=float(value))
+            # Passed through as they arrive. Wrapping them in `Encoded` here
+            # meant a caller who wrote `Real(0.5)` got the DEVICE's 0.5 - the
+            # exact swap ADR-0016 exists to close, performed by the library
+            # itself and reported as success. `set_param` refuses a bare number
+            # for this method's callers too.
+            result = self.set_param(cell, index, value)
         return result
 
     IR_LIBRARY = "local_ir_root"
@@ -3170,8 +3270,8 @@ class QuadCortex:
         if model is not None:
             self.set_block(Block(row, column, model))
         cell = Block(row, column)
-        self.set_param(cell, self.IR_PATH_PARAMS[slot], text=key)
-        return self.set_param(cell, self.IR_NAME_PARAMS[slot], text=name)
+        self.set_param(cell, self.IR_PATH_PARAMS[slot], key)
+        return self.set_param(cell, self.IR_NAME_PARAMS[slot], name)
 
     def show_capture_dialog(self, shown: bool = True):
         """Answer the device's request to open the Neural Capture dialog.
@@ -3812,6 +3912,23 @@ def bypass_state(p: preset.BinaryPreset, cell) -> BypassState:
                        scenes=tuple(bool(sb.bypass) for sb in cb.sceneBypass))
 
 
+def _reject_number_on_a_string_parameter(spec, value):
+    """The mirror of the string guard, which was one-directional.
+
+    A string was checked against a number's parameter and refused; a number on
+    a STRING parameter was converted and sent. `Real(0.5)` on a cab's
+    `ir selector`, whose catalog range is 0..999, became wire 0.0005 - a write
+    that looks like it worked and means nothing.
+    """
+    if spec.type != "string":
+        return
+    raise TypeError(
+        f"{spec.name!r} is a string parameter, so {value!r} is not a value it "
+        f"can hold. Pass the string itself - set_param(target, param, \"...\") "
+        f"- which is what a string-valued parameter takes."
+    )
+
+
 class ParamState(NamedTuple):
     """One parameter's stored state: its scene-mode flag and per-scene values."""
 
@@ -3823,7 +3940,8 @@ def param_state(p: preset.BinaryPreset, cell, param_index: int) -> ParamState:
     """A preset's stored values for one block parameter, all scenes.
 
     The read-side counterpart of :meth:`QuadCortex.set_param`. ``values`` holds
-    one entry per scene slot - floats for ordinary parameters, strings for
+    one entry per scene slot - `Encoded` values for ordinary parameters (the
+    device's own 0..1, which is what the preset stores), strings for
     string-valued ones (capture ``file_name``, IR references, cab mic), ``None``
     where a slot carries neither.
 
@@ -3834,15 +3952,15 @@ def param_state(p: preset.BinaryPreset, cell, param_index: int) -> ParamState:
     """
     row, column = cell.row, cell.column
     prm = p.chains[row].models[column].params[param_index]
-    values = []
+    stored = []
     for pv in prm.param_values:
         if pv.HasField("string_value"):
-            values.append(pv.string_value)
+            stored.append(pv.string_value)
         elif pv.HasField("float_value"):
-            values.append(pv.float_value)
+            stored.append(values_module.Encoded(pv.float_value))
         else:
-            values.append(None)
-    return ParamState(scene_mode=bool(prm.scene_mode), values=tuple(values))
+            stored.append(None)
+    return ParamState(scene_mode=bool(prm.scene_mode), values=tuple(stored))
 
 
 def row_status(p: preset.BinaryPreset) -> list:

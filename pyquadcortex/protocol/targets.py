@@ -8,7 +8,7 @@ for ``scene_mode`` and for expression assignment. Six ways to do one thing,
 differing only in where the parameter lives.
 
 A TARGET is that difference, made into a value. ``set_param(LaneOutput(0),
-"VOLUME", ...)`` and ``set_param(Block(0, 2), "GAIN", ..., model=5011)`` are the
+"VOLUME", ...)`` and ``set_param(Block(0, 2, 1), "GAIN", ...)`` are the
 same operation against different addresses, so there is one method again and a
 new container costs a class rather than a method per operation.
 
@@ -22,8 +22,8 @@ What a target knows, and why each part is needed:
   and that is the shape this library copies. Tempo is not on a chain at all;
 * **its catalog model**, so a parameter can be named rather than indexed. This
   is fixed for every target except a block, whose model depends on what the
-  player put in that cell - which is exactly why ``set_param`` has always made
-  the caller pass ``model=`` and the per-collection methods never did;
+  player put in that cell - which is exactly why a ``Block`` carries a
+  ``model_id`` and the other targets do not need one;
 * **what it refuses**, which is currently one target and two parameters.
 
 Targets are frozen and carry no device handle, so they are free to build, pass
@@ -130,16 +130,22 @@ class ParamTarget:
         keeps an index-addressed write working on a client that has never
         spoken to a device. Ask for :meth:`spec_at` when the spec is actually
         needed.
+
+        The name resolves against :meth:`wire_model`, not against the model's
+        own entry, because the index this returns is a WIRE index. On a cab
+        those are different lists - see that method - and resolving against the
+        model's own one returned a number that addressed a different knob.
         """
         if isinstance(param, str):
-            source = self.model(get_catalog, model)
+            source = self.wire_model(get_catalog, model)
             if source is None:
                 raise TypeError(
-                    f"naming a parameter on {self.describe()} needs "
-                    f"model=<model id or catalog Model>: what is in a grid cell "
-                    f"is whatever the player put there, so the address alone "
-                    f"cannot say. Pass a wire index instead, or use the Block "
-                    f"that blocks() handed you - it carries model_id."
+                    f"naming a parameter on {self.describe()} needs to know "
+                    f"which model is there: what is in a grid cell is whatever "
+                    f"the player put there, so the address alone cannot say. "
+                    f"Write Block(row, column, <model id>), or use the Block "
+                    f"that blocks() handed you - it carries model_id. A wire "
+                    f"index needs no model at all."
                 )
             spec = source.parameter(param)
             return spec.index, spec
@@ -148,81 +154,104 @@ class ParamTarget:
     def spec_at(self, index, get_catalog, model=None):
         """The catalog :class:`~pyquadcortex.protocol.catalog.Parameter` at ``index``.
 
+        ``index`` is a WIRE index, so this reads :meth:`wire_model` rather than
+        the model's own entry. There is one answer to "what sits at wire index
+        N" and every caller wants the same one - the unit check, the string
+        guard, the bool guard and the conversion. Two methods answering it two
+        ways is what ADR-0016's triage found twice.
+
         ``None`` when the catalog does not describe it, which is a real case:
         the wire carries more parameters than the catalog documents on several
         blocks. Such an index is still writable by value; it just cannot be
         converted from real units.
         """
-        source = self.model(get_catalog, model)
+        source = self.wire_model(get_catalog, model)
         if source is None or not 0 <= index < len(source.parameters):
             return None
         return source.parameters[index]
+
+    def wire_model(self, get_catalog, model=None):
+        """The catalog :class:`Model` whose parameter list is WIRE-INDEXED here.
+
+        Usually the block's own model. The exception is a cab, and the reason is
+        not that the catalog under-describes it - it is that a cab's own entry
+        is a LOCAL list, numbered from zero over the parameters that model
+        contributes, and those numbers do not address the wire.
+
+        `Plini Cab (M)` (12053) is the whole argument. Its own entry reads
+        ``0:ir selector 1:ir selector 2:POSITION 3:DISTANCE 4:POSITION
+        5:DISTANCE``, and the shared `Default Cabsim` layout reads
+        ``0:bypass 1:ir selector 2:LEVEL 3:PAN 4:DISTANCE 5:POSITION``. They are
+        not the same list with holes in it; they are different numberings of
+        overlapping parameters. Writing wire index 2 on that block and reading
+        the screen settled which one the wire speaks: it showed ``LEVEL
+        -3.0 dB``, the layout's answer, with the block's own POSITION untouched
+        beside it. Recorded in `tests/test_scales.py`. 12 cabs name their own
+        index 2 that way - 8 call it DISTANCE and 4 POSITION - and on the other
+        157 it is absent, which is why the disagreement was invisible for so
+        long: 157 of 174 fail quietly rather than wrongly.
+
+        So the test is whether the model's own list can be wire-indexed at all,
+        and LENGTH answers it. 169 of the 174 cab models describe 2, 4 or 6
+        parameters against the layout's 21, and a list that short cannot be
+        numbering wire positions from 0 - if it were, index 2 would have read
+        POSITION on the unit, and it read LEVEL. The other 5 describe 21 or 31
+        and start at ``0:bypass`` exactly as the layout does, so they number the
+        wire themselves and are left alone.
+
+        Leaving those 5 alone matters beyond tidiness: the three 31-parameter
+        cabs DIVERGE from the layout at index 19, where the layout says
+        `IR NAME` and they say `ROOM MIX`. Borrowing for a model that already
+        numbers the wire would be this same bug facing the other way.
+
+        What the catalog adds beyond the reading: of the 16 LEVEL parameters
+        the 5 self-describing cabs carry between them, every one has
+        ``MIN_CABSIM_DB`` and ``skew="4.9594844"``, and those 5 include stereo
+        models. So the device states the law wherever it states anything, and
+        the 169 that state nothing are exactly the ones that borrow. Applying it
+        across the category is still an EXTRAPOLATION and saying otherwise would
+        overstate it - all four blocks read on hardware are mono, and 86 of the
+        174 are stereo.
+
+        Only cabs need this. `Parallax` is a Bass Overdrive carrying a cab
+        section and describes that section itself, which is why it is outside
+        CABSIM_CATEGORIES and why its own LEVEL carries the cab law - see
+        `tests/test_scales.py`.
+        """
+        source = self.model(get_catalog, model)
+        if source is None or source.category not in CABSIM_CATEGORIES:
+            return source
+        layout = get_catalog().get(CABSIM_LAYOUT)
+        if layout is None or len(source.parameters) >= len(layout.parameters):
+            return source
+        return layout
 
     def normalize(self, index, real, get_catalog, spec=None):
         """Convert ``real``, in the parameter's own units, to the wire's 0..1.
 
         The catalog answers this, so ``get_catalog`` is taken lazily rather than
-        as a spec: an indexed write with ``value=`` never fetches one. ``spec``
+        as a spec: an indexed write with ``Encoded`` never fetches one. ``spec``
         is a hint from :meth:`index_of` when a name was resolved, so naming a
         parameter costs one fetch rather than two.
         """
-        # The LAYOUT wins where there is one. A cab's own catalog entry does not
-        # describe the wire: 12 of the 174 cab models list something else
-        # entirely at index 2 - a Plini Cab calls it POSITION over 0..1 - while
-        # the wire carries `Default Cabsim`'s LEVEL, -40..6 dB and tapered.
-        # Converting -3.0 dB against POSITION would refuse it as out of range,
-        # and a value inside 0..1 would be written on the wrong scale in silence.
-        layout = self._layout_spec(index, get_catalog)
-        if layout is not None:
-            spec = layout
-        elif spec is None:
+        if spec is None:
             spec = self.spec_at(index, get_catalog)
         if spec is None and self.model_id is None:
             raise TypeError(
-                f"real= on {self.describe()} needs model=<model id or catalog "
-                f"Model>, because the conversion depends on WHICH block is in "
-                f"the cell. Use the Block that blocks() handed you - it carries "
-                f"model_id - or pass value= with the normalized 0..1."
+                f"a real value on {self.describe()} needs to know which "
+                f"model is there, because the conversion depends on WHICH block "
+                f"is in the cell. Write Block(row, column, <model id>), or use "
+                f"the Block that blocks() handed you - it carries model_id - or "
+                f"pass Encoded() with the device's own 0..1."
             )
         if spec is None:
             raise ValueError(
-                f"real= needs a parameter the catalog describes, and it does not "
-                f"describe index {index} on {self.describe()} (that is real - the "
-                f"wire carries more parameters than the catalog documents). Pass "
-                f"value= with the normalized 0..1 instead."
+                f"a real value needs a parameter the catalog describes, and it "
+                f"does not describe index {index} on {self.describe()} (that is "
+                f"real - the wire carries more parameters than the catalog "
+                f"documents). Pass Encoded() with the device's own 0..1 instead."
             )
         return spec.to_normalized(real)
-
-    def _layout_spec(self, index, get_catalog):
-        """A parameter belonging to this model's shared LAYOUT, not to itself.
-
-        Only cabs need this, and they need it because the catalog
-        under-describes them: most cab models list two mic selectors while the
-        wire carries the whole `Default Cabsim` layout, so `Default Cabsim`'s own
-        entry for that index is what applies.
-
-        The taper it borrows is confirmed on three blocks in three different
-        categories - a Cabsim Bass, a Cabsim Guitar, and Parallax, which is a
-        Bass Overdrive carrying its own cab section. So it belongs to the cab
-        SECTION wherever that appears, rather than to one cab model.
-
-        Applying it across the category is still an EXTRAPOLATION, and saying
-        otherwise would overstate it - all three of those blocks are mono, and
-        86 of the 174 models in these categories are stereo. What the catalog
-        adds is worth more than a fourth screen reading, though: of the 16 cab
-        models that describe a LEVEL of their own, every single one carries
-        ``MIN_CABSIM_DB`` and ``skew="4.9594844"``, and that 16 includes the
-        stereo variants. So the device says the law is uniform wherever it says
-        anything, and the remaining 158 models describe no LEVEL at all - which
-        is exactly why they need this borrowing in the first place.
-        """
-        source = self.model(get_catalog)
-        if source is None or source.category not in CABSIM_CATEGORIES:
-            return None
-        layout = get_catalog().get(CABSIM_LAYOUT)
-        if layout is None or index >= len(layout.parameters):
-            return None
-        return layout.parameters[index]
 
     def refuse_if_unassignable(self, spec):
         """Raise :class:`ControlNotDrivable` if a pedal cannot be assigned here."""
@@ -295,7 +324,7 @@ class Block(ChainTarget):
     they are deliberately the same type - what you read is what you write to::
 
         for block in protocol.blocks(preset):
-            qc.set_param(block, "GAIN", real=-6.0)
+            qc.set_param(block, "GAIN", Real(-6.0))
 
     ``chain.models[]``, keyed by COLUMN rather than by hash. ``model_id`` is the
     only part of an address that cannot be derived from the address itself -

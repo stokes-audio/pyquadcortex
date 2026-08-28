@@ -2661,7 +2661,7 @@ visually on the device's own screen.
 | `splits` | reads `Chain.split_control_points` | read-back | branch and rejoin columns. `split == -1` means serial; `mix == -1` with `split >= 0` is a branch that never rejoins (`Split.rejoins`). Only rows 0 and 2 can carry one |
 | `set_param(Tempo(), ...)` | `Grid{UPDATE, preset{tempoProgramData{params{index, param_values}}}}` | read-back | per-preset tempo, LED and metronome level; NOT row-keyed yet applied |
 | `tempo_mode` / `set_tempo_mode` | `GlobalTempo{READ}`, and `GlobalTempo{UPDATE, params{index: 1, param_values}}` | read-back + on-unit | the Tempo menu's MODE switch: `0.0` PRESET, `1.0` GLOBAL. A DEVICE setting, not a preset one - nothing to save. No change event is emitted when the switch moves, but the value rides the ambient params push; the reader must match on a reply carrying PARAMETERS, since `GlobalTempo` alternates a clock shape with a params shape |
-| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `real=` takes dB for VOLUME, over the -40..+12 span the catalog names as `MIN_MIXER_DB` |
+| `set_param(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, param_values}}}}}` | read-back | VOLUME/PAN/MUTE/SOLO per row; PAN 0.5 -> 0.0 survived save and read-back. `Db(...)` takes dB for VOLUME, over the -40..+12 span the catalog names as `MIN_MIXER_DB` |
 | `move_block` | `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` | read-back | drivable host-to-device; a cross-row move makes the device create a branch |
 | `set_split` / `clear_split` | `Grid{UPDATE, preset{chains{row, split_control_points{split, mix}}}}` | read-back | activates or clears a row's branch; the splitter itself always exists |
 | `set_expression_bypass` | `Grid{UPDATE, ..., models{bypass_expression, expression_bypass_info}}` | read-back + on-unit | `type` is `ExpressionSwitchMode`, all three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2. The mode decides which other controls exist - SWITCH greys out the delay, HEEL_TOE greys out latch emulation |
@@ -2687,7 +2687,7 @@ visually on the device's own screen.
 | `set_expression(LaneOutput(row), ...)` | `Grid{UPDATE, preset{chains{row, output_control{hash: 23000, params{index, expression, expression_min, expression_max}}}}}` | read-back + on-unit + by ear | `set_lane_output`'s shape with the three expression fields. **VOLUME and PAN only** - the device SILENTLY DROPS the same message aimed at MUTE or SOLO, in both directions, so those refuse rather than lying. `scene_mode` is NOT sent: the unit does not set it when it assigns a pedal |
 | `clear_expression(LaneOutput(row), ...)` | same shape with `expression: 0` and the sweep back to `0.0..1.0` | read-back | unassigns; refuses MUTE and SOLO for the same reason |
 | `set_midi_out` / `set_preset_load_midi_out` | `MIDISettings{UPDATE, general_midi_messages` or `preset_load_messages{messages{source, msg}}}` | read-back | per-preset MIDI Out. A `Grid` update carrying the preset's own midi fields does nothing |
-| `set_param(text=...)` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
+| `set_param(..., "a string")` | `Grid{UPDATE, ..., params{index, param_values{string_value}}}` | read-back + on-unit | string-valued parameters, e.g. cab microphone selection |
 | `param_options` | reads `Param.dynamic_steps` | read-back | the option names of a list parameter, which the catalog does not carry |
 | `set_master_volume_assignment` | `GeneralSettings{UPDATE, master_volume_assignment{...}}` | read-back | which outputs the knob governs. Read-merge-write, because a submessage is replaced wholesale |
 | `set_master_volume` | `MasterVolume{UPDATE, volume}` | read-back + on-unit + by ear | normalized 0..1, displayed as `round(v * 100)`. Travels alone. The earlier "accepted and ignored" was a stale read. Never add `calibrate` - it opens the calibration dialog |
@@ -2742,12 +2742,12 @@ Check `Param.scene_mode` and index by the scene you mean;
 **Wire 0.0 is an OFF detent, not the bottom of the dB scale.** The splitter's
 `LEVEL TO A` displays "OFF" there, exactly as the lane VOLUME does, so this
 belongs to the level family rather than to one control. For silence write
-`value=0.0`; `real=-40` is the scale's floor and a different thing.
+`Encoded(0.0)`; `Db(-40)` is the scale's floor and a different thing.
 
 **A band's TYPE decides whether its GAIN means anything.** Lo Pass and Hi Pass
 disable the control, and a gain written to such a band is stored and ignored by
-the unit. Nothing in the wire says so, so `real=` will happily convert dB into a
-parameter that does nothing.
+the unit. Nothing in the wire says so, so `Db(...)` will happily convert dB into
+a parameter that does nothing.
 
 **`N BYPASS = 1` means the band is ON** for the block EQs, the same inverted
 polarity already recorded for the Global EQ. A disabled band displays `0.0 dB`
@@ -2793,7 +2793,7 @@ as the lane and mixer levels and is **not** their -40..+12 scale - unity
 is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
 20 dB wrong on the wire.
 
-Everything NOT in that table still refuses `real=`. That is the honest answer:
+Everything NOT in that table still refuses a `Real`. That is the honest answer:
 an unmeasured span cannot be converted, only guessed.
 
 **One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable

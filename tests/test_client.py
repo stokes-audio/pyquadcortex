@@ -16,6 +16,7 @@ from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSour
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 from pyquadcortex.protocol.targets import (Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo)
+from pyquadcortex.protocol.values import Db, Encoded, Hertz, Real
 
 
 class FakeTransport:
@@ -266,7 +267,7 @@ def test_set_param_sends_row_column_keyed_grid_update():
     # CONFIRMED capture shape: Grid{UPDATE, preset{chains{row, models{column,
     # params{index, param_values{float_value}}}}}}.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(Block(0, 1), param=1, value=0.4553)
+    qc.set_param(Block(0, 1), 1, Encoded(0.4553))
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert sent.action == pa.MessageAction.UPDATE
@@ -286,7 +287,7 @@ def test_set_param_sends_exactly_one_param_value():
     # 0, and so the parameter was zeroed in every scene. A construction test
     # cannot catch that. See test_set_param_refuses_a_nonzero_scene.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(Block(0, 1), param=1, value=0.5)
+    qc.set_param(Block(0, 1), 1, Encoded(0.5))
     param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert len(param.param_values) == 1, "no padding entries may be emitted"
     assert param.param_values[0].HasField("float_value")
@@ -614,7 +615,7 @@ def test_set_param_accepts_a_parameter_name_when_the_catalog_is_loaded():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     # row 0 / column 1 holds model 5005 in this grid, whose parameter 0 is
     # THRESHOLD; naming it must resolve to that index.
-    qc.set_param(Block(0, 1, 5005), param="THRESHOLD", value=0.25)
+    qc.set_param(Block(0, 1, 5005), "THRESHOLD", Encoded(0.25))
     param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert param.index == 0
     assert abs(param.param_values[0].float_value - 0.25) < 1e-6
@@ -624,7 +625,7 @@ def test_set_param_by_name_needs_a_known_model():
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     with pytest.raises(KeyError):
-        qc.set_param(Block(0, 1, 5005), param="NOPE", value=0.5)
+        qc.set_param(Block(0, 1, 5005), "NOPE", Encoded(0.5))
 
 
 def _sample_repo_payload():
@@ -640,15 +641,30 @@ def test_set_param_accepts_a_value_in_real_units():
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     comp = qc._catalog[5005]          # THRESHOLD spans -60..+12 dB
-    qc.set_param(Block(0, 1, comp), param="THRESHOLD", real=-24.0)
+    qc.set_param(Block(0, 1, comp), "THRESHOLD", Real(-24.0))
     param = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert param.param_values[0].float_value == pytest.approx(0.5)
 
 
-def test_set_param_real_units_require_param_and_model():
+def test_a_real_value_on_a_block_with_no_model_is_refused():
+    """The conversion depends on WHICH block is in the cell.
+
+    This passed for the wrong reason for a while: it put `Real(-20)` in the
+    PARAM position, so it hit "set_param needs a value" and never reached the
+    refusal it is named after. With the value in the value position it does,
+    and the message is the one a confused caller has to act on.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="which model is there"):
+        qc.set_param(Block(0, 1), 0, Real(-20))
+    assert not qc._t.sent
+
+
+def test_set_param_with_no_value_at_all_is_refused():
+    """The other half of what the test above used to be accidentally testing."""
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError):
-        qc.set_param(Block(0, 1), real=-20)
+        qc.set_param(Block(0, 1), Real(-20))
 
 
 # -- the per-scene write ceiling ----------------------------------------------
@@ -666,7 +682,7 @@ def test_set_param_writes_one_scene_by_promoting_then_switching():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(Block(2, 5), param=0, value=0.8, scene=Scene.D)
+    qc.set_param(Block(2, 5), 0, Encoded(0.8), scene=Scene.D)
 
     assert [type(m).__name__ for m in fake.sent] == [
         "GridMessage", "SceneMessage", "GridMessage"], "promote, switch, write"
@@ -688,7 +704,7 @@ def test_set_param_without_a_scene_writes_the_active_scene_only():
     # that is not scene-following this changes its single global value.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(Block(0, 1), param=5, value=0.25)
+    qc.set_param(Block(0, 1), 5, Encoded(0.25))
     assert [type(m).__name__ for m in fake.sent] == ["GridMessage"]
     p = fake.sent[0].preset.chains[0].models[0].params[0]
     assert len(p.param_values) == 1
@@ -700,14 +716,14 @@ def test_set_param_can_skip_promotion():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(Block(0, 1), param=5, value=0.5, scene=Scene.B, promote=False)
+    qc.set_param(Block(0, 1), 5, Encoded(0.5), scene=Scene.B, promote=False)
     assert [type(m).__name__ for m in fake.sent] == ["SceneMessage", "GridMessage"]
 
 
 def test_set_param_scene_mode_sends_the_flag_alone():
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param_scene_mode(Block(2, 5), param=1, enabled=True)
+    qc.set_param_scene_mode(Block(2, 5), 1, enabled=True)
     prm = fake.sent[-1].preset.chains[0].models[0].params[0]
     assert prm.scene_mode is True
     assert not prm.param_values, "a value alongside the flag makes the device drop it"
@@ -718,7 +734,7 @@ def test_set_lane_output_supports_per_scene_values():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(LaneOutput(0), param=0, value=0.0, scene=Scene.D)
+    qc.set_param(LaneOutput(0), 0, Encoded(0.0), scene=Scene.D)
     assert [type(m).__name__ for m in fake.sent] == [
         "GridMessage", "SceneMessage", "GridMessage"]
     promote = fake.sent[0].preset.chains[0].output_control[0]
@@ -829,7 +845,7 @@ def test_set_lane_output_writes_into_output_control_not_models():
     # reach, so VOLUME/PAN/MUTE/SOLO were unreachable through the API.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(LaneOutput(2), param=1, value=0.5)         # index, no catalog needed
+    qc.set_param(LaneOutput(2), 1, Encoded(0.5))         # index, no catalog needed
     sent = fake.sent[-1]
     chain = sent.preset.chains[0]
     assert chain.row == 2
@@ -880,7 +896,7 @@ def test_set_mixer_param_targets_the_mixer_collection():
     # collection has to be reachable to reproduce that behaviour.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(Mixer(0), param=0, value=0.769)
+    qc.set_param(Mixer(0), 0, Encoded(0.769))
     chain = fake.sent[-1].preset.chains[0]
     assert chain.row == 0
     assert not chain.models and not chain.splitter
@@ -897,7 +913,7 @@ def test_set_splitter_param_writes_combined_splitter_not_splitter():
     # which is why this looked impossible rather than merely undiscovered.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(Splitter(0), param=3, value=0.25)      # 3 = LEVEL TO A
+    qc.set_param(Splitter(0), 3, Encoded(0.25))      # 3 = LEVEL TO A
     chain = fake.sent[-1].preset.chains[0]
     assert chain.row == 0
     assert not chain.splitter, "the legacy field is the device's read-only view"
@@ -914,7 +930,7 @@ def test_splitter_param_per_scene_uses_promote_switch_write():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(Splitter(0), param=3, value=0.1, scene=Scene.B)
+    qc.set_param(Splitter(0), 3, Encoded(0.1), scene=Scene.B)
     assert [type(m).__name__ for m in fake.sent] == [
         "GridMessage", "SceneMessage", "GridMessage"]
     promote = fake.sent[0].preset.chains[0].combined_splitter[0].params[0]
@@ -927,7 +943,7 @@ def test_set_tempo_param_reaches_tempo_program_data():
     # applied - confirmed on hardware, which is what makes per-preset tempo reachable.
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(Tempo(), 2, value=0.0)
+    qc.set_param(Tempo(), 2, Encoded(0.0))
     sent = fake.sent[-1]
     assert isinstance(sent, pa.GridMessage)
     assert not sent.preset.chains, "not a chain edit"
@@ -942,7 +958,7 @@ def test_mixer_param_per_scene_uses_promote_switch_write():
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    qc.set_param(Mixer(0), param=0, value=0.0, scene=Scene.C)
+    qc.set_param(Mixer(0), 0, Encoded(0.0), scene=Scene.C)
     assert [type(m).__name__ for m in fake.sent] == [
         "GridMessage", "SceneMessage", "GridMessage"]
     promote = fake.sent[0].preset.chains[0].mixer[0].params[0]
@@ -1355,7 +1371,8 @@ def test_set_capture_applies_params_after_the_file_name():
     """Loading a capture resets the block's knobs, so order is data integrity."""
     qc = client.QuadCortex(EchoingTransport())
     # model_id on the cell is what to place, so this both places and points.
-    qc.set_capture(Block(0, 2, 14000), capture=_Capture(), params={4: 0.56})
+    qc.set_capture(Block(0, 2, 14000), capture=_Capture(),
+                   params={4: Encoded(0.56)})
     writes = []
     for msg in qc._t.sent:
         if isinstance(msg, pa.GridMessage):
@@ -1371,6 +1388,35 @@ def test_set_capture_applies_params_after_the_file_name():
     assert ("float", 4, 0.56) in writes
     # the parameter write must come AFTER the capture reference
     assert writes.index(("float", 4, 0.56)) > writes.index(("text", 5))
+
+
+def test_set_capture_does_not_rewrite_a_values_scale():
+    """It used to wrap every value in `Encoded`, whatever the caller wrote.
+
+    So `Real(0.5)` on a knob running -40..+12 dB was sent as the DEVICE's 0.5 -
+    the exact swap ADR-0016 exists to close, performed by the library and
+    reported as success.
+    """
+    qc = client.QuadCortex(EchoingTransport())
+    with pytest.raises(TypeError, match="which model is there"):
+        qc.set_capture(Block(0, 2, 14000), capture=_Capture(),
+                       params={4: Real(0.5)})
+    # Refusing is the honest answer: this path addresses the cell without a
+    # model id, so no scale is known. What must not happen is the old
+    # behaviour, where Real(0.5) was rewritten as the DEVICE's 0.5 and sent.
+    floats = [round(pv.float_value, 5)
+              for msg in qc._t.sent if isinstance(msg, pa.GridMessage)
+              for chain in msg.preset.chains for m in chain.models
+              for pr in m.params for pv in pr.param_values
+              if pr.index == 4 and pv.HasField("float_value")]
+    assert floats == []
+
+
+def test_set_capture_refuses_a_bare_number_like_set_param_does():
+    """The docstring taught `params={4: 0.56}` while `set_param` refused it."""
+    qc = client.QuadCortex(EchoingTransport())
+    with pytest.raises(TypeError, match="two number lines"):
+        qc.set_capture(Block(0, 2, 14000), capture=_Capture(), params={4: 0.56})
 
 
 def test_set_capture_refuses_params_that_would_clobber_the_reference():
@@ -1411,9 +1457,9 @@ def test_splitter_and_mixer_writes_refuse_an_odd_row():
     qc = client.QuadCortex(FakeTransport())
     for row in (1, 3):
         with pytest.raises(ValueError, match="row 0 or"):
-            qc.set_param(Splitter(row), param=3, value=0.5)
+            qc.set_param(Splitter(row), 3, Encoded(0.5))
         with pytest.raises(ValueError, match="row 0 or"):
-            qc.set_param(Mixer(row), param=0, value=0.5)
+            qc.set_param(Mixer(row), 0, Encoded(0.5))
     assert qc._t.sent == [], "nothing should reach the wire for a row without one"
 
 
@@ -1502,7 +1548,7 @@ def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():
 
 def test_set_input_gate_writes_a_row_keyed_update_into_input_control():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(LaneInput(0), param=1, value=1.0)          # BYPASS
+    qc.set_param(LaneInput(0), 1, Encoded(1.0))          # BYPASS
     msg = qc._t.sent[-1]
     assert msg.action == pa.MessageAction.UPDATE
     chain = msg.preset.chains[0]
@@ -1518,7 +1564,7 @@ def test_set_input_gate_promotes_then_switches_then_writes_for_a_scene():
     # Same three-message sequence as set_lane_output: the scene_mode flag must
     # travel alone, or the device treats the message as a plain value write.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(LaneInput(0), param=0, value=0.9, scene=2)
+    qc.set_param(LaneInput(0), 0, Encoded(0.9), scene=2)
     flag, switch, write = qc._t.sent[-3:]
     assert flag.preset.chains[0].input_control[0].params[0].scene_mode is True
     assert not flag.preset.chains[0].input_control[0].params[0].param_values
@@ -1560,10 +1606,10 @@ def test_set_mixer_param_now_takes_real_because_its_span_was_measured():
     # 10/13. Measured on 2026-08-25 at -24.4 dB at 0.30 and +12.0 at 1.0.
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    qc.set_param(Mixer(0), param="MIXER LEVEL", real=0.0)
+    qc.set_param(Mixer(0), "MIXER LEVEL", Real(0.0))
     written = qc._t.sent[-1].preset.chains[0].mixer[0].params[0]
     assert written.param_values[0].float_value == pytest.approx(client.UNITY_LEVEL)
-    qc.set_param(Mixer(0), param="MIXER LEVEL", value=client.UNITY_LEVEL)
+    qc.set_param(Mixer(0), "MIXER LEVEL", Encoded(client.UNITY_LEVEL))
     written = qc._t.sent[-1].preset.chains[0].mixer[0].params[0]
     assert written.param_values[0].float_value == pytest.approx(0.76923077)
 
@@ -1826,7 +1872,7 @@ def test_the_refusal_is_a_measured_list_and_not_a_rule_about_switches():
 
 def test_set_lane_output_real_converts_volume_through_the_measured_db_scale():
     qc = _lane_client()
-    qc.set_param(LaneOutput(0), param="VOLUME", real=-3.1)
+    qc.set_param(LaneOutput(0), "VOLUME", Real(-3.1))
     prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
     assert prm.param_values[0].float_value == pytest.approx(
         client.db_to_lane_level(-3.1))
@@ -1835,7 +1881,7 @@ def test_set_lane_output_real_converts_volume_through_the_measured_db_scale():
 
 def test_set_lane_output_real_puts_unity_at_the_documented_value():
     qc = _lane_client()
-    qc.set_param(LaneOutput(0), param="VOLUME", real=0.0)
+    qc.set_param(LaneOutput(0), "VOLUME", Real(0.0))
     prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
     assert prm.param_values[0].float_value == pytest.approx(client.UNITY_LEVEL)
 
@@ -1851,7 +1897,7 @@ def test_a_bound_nobody_has_measured_still_refuses_real():
     """
     qc = _lane_client()
     with pytest.raises(ValueError, match="nobody has measured"):
-        qc.set_param(Block(0, 1, 20000), param="OUT LEVEL", real=-3.0)
+        qc.set_param(Block(0, 1, 20000), "OUT LEVEL", Real(-3.0))
 
 
 # -- per-preset MIDI out ------------------------------------------------------
@@ -1905,16 +1951,25 @@ def test_midi_out_reader_maps_the_120_slots_to_ten_sources():
 def test_set_param_can_write_a_string_value():
     # A cab's microphone selection travels as string_value, not float_value.
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(Block(0, 5), param=1, text="NG_212 DG Neo_Condenser U47")
+    qc.set_param(Block(0, 5), 1, "NG_212 DG Neo_Condenser U47")
     val = qc._t.sent[-1].preset.chains[0].models[0].params[0].param_values[0]
     assert val.string_value == "NG_212 DG Neo_Condenser U47"
     assert not val.HasField("float_value")
 
 
-def test_set_param_rejects_text_and_real_together():
+def test_set_param_takes_exactly_one_value():
+    """There is one value argument now, so "both at once" is arity, not a guard.
+
+    This test used to pass `("x", Real(1.0))` against the old `text=`/`real=`
+    pair and assert TypeError. It kept passing after those were removed, on
+    "takes from 3 to 4 positional arguments but 5 were given" - green for an
+    API that no longer exists. Asserting the message is what makes it mean
+    something again.
+    """
     qc = client.QuadCortex(FakeTransport())
-    with pytest.raises(TypeError):
-        qc.set_param(Block(0, 0), param=0, text="x", real=1.0)
+    with pytest.raises(TypeError, match="positional argument"):
+        qc.set_param(Block(0, 0), 0, "x", Real(1.0))
+    assert not qc._t.sent
 
 
 def test_param_options_reads_the_list_the_catalog_lacks():
@@ -2693,7 +2748,7 @@ def test_set_param_option_resolves_the_name_through_the_preset():
     m.params[6].dynamic_steps.extend(["Off", "Follow Input", "Input 1", "Input 2"])
 
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param_option(Block(1, 0), param=6, option="Input 2", source=p)
+    qc.set_param_option(Block(1, 0), 6, option="Input 2", source=p)
     written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert written.index == 6
     assert written.param_values[0].float_value == pytest.approx(1.0)
@@ -2713,7 +2768,7 @@ def test_set_param_option_resolves_a_parameter_NAME_via_the_preset_block():
 
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    qc.set_param_option(Block(1, 0), param="THRESHOLD", option="On", source=p)
+    qc.set_param_option(Block(1, 0), "THRESHOLD", option="On", source=p)
     written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert written.index == 0
     assert written.param_values[0].float_value == pytest.approx(1.0)
@@ -2722,7 +2777,7 @@ def test_set_param_option_resolves_a_parameter_NAME_via_the_preset_block():
 def test_set_param_option_needs_the_block_to_be_in_the_source_preset():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError, match="no block at row"):
-        qc.set_param_option(Block(3, 7), param="SOURCE", option="Off",
+        qc.set_param_option(Block(3, 7), "SOURCE", option="Off",
                             source=preset.BinaryPreset())
 
 
@@ -3006,7 +3061,7 @@ def test_set_tempo_param_resolves_the_screen_names():
     for name, index in (("TEMPO", 0), ("LED LIGHT", 2), ("VOLUME", 3), ("START", 4),
                         ("PLAYBACK", 4), ("PAN", 5), ("TIME SIGNATURE", 6),
                         ("SUBDIVISIONS", 7), ("SOUND", 8), ("ROUTING", 9)):
-        qc.set_param(Tempo(), name, value=0.5)
+        qc.set_param(Tempo(), name, Encoded(0.5))
         got = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
         assert got.index == index, f"{name} should resolve to {index}"
 
@@ -3016,7 +3071,7 @@ def test_tempo_param_mute_is_refused_because_it_is_inverted():
     the name would silently do the opposite of what the caller asked."""
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(ValueError, match="INVERTED"):
-        qc.set_param(Tempo(), "MUTE", value=1.0)
+        qc.set_param(Tempo(), "MUTE", Encoded(1.0))
     assert qc._t.sent == []
 
 
@@ -3051,9 +3106,9 @@ def test_set_metronome_running_writes_the_transport_polarity():
 
 def test_tempo_param_names_are_case_and_space_tolerant():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(Tempo(), "routing", value=0.75)
+    qc.set_param(Tempo(), "routing", Encoded(0.75))
     assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 9
-    qc.set_param(Tempo(), " Sound ", value=0.2)
+    qc.set_param(Tempo(), " Sound ", Encoded(0.2))
     assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 8
 
 
@@ -3065,7 +3120,7 @@ def test_real_units_refused_for_a_tempo_param_the_catalog_does_not_describe():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     assert len(qc._catalog[25000].parameters) == 23
     with pytest.raises(ValueError, match="does not describe index 23"):
-        qc.set_param(Tempo(), 23, real=3)
+        qc.set_param(Tempo(), 23, Real(3))
     assert qc._t.sent == []
 
 
@@ -3117,7 +3172,7 @@ def test_set_tempo_param_takes_real_as_bpm_for_index_zero():
     is the honest cost - protocol.bpm_to_tempo is the offline route.
     """
     qc = _lane_client()
-    qc.set_param(Tempo(), "TEMPO", real=111.0)
+    qc.set_param(Tempo(), "TEMPO", Real(111.0))
     sent = qc._t.sent[-1].preset.tempoProgramData[0].params[0]
     assert sent.index == 0
     assert sent.param_values[0].float_value == pytest.approx(0.355, abs=1e-6)
@@ -3384,7 +3439,7 @@ def test_beats_returns_a_raw_float_it_cannot_place_rather_than_rounding():
 
 def test_a_raw_index_still_works():
     qc = client.QuadCortex(FakeTransport())
-    qc.set_param(Tempo(), 11, value=0.3)
+    qc.set_param(Tempo(), 11, Encoded(0.3))
     assert qc._t.sent[-1].preset.tempoProgramData[0].params[0].index == 11
 
 
@@ -3778,7 +3833,7 @@ def test_the_recorder_cannot_be_placed_on_the_grid():
 def test_set_param_real_applies_the_taper():
     """A cab LEVEL, through `qc.set_param`, not through the converter."""
     qc = _scale_client()
-    qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", real=0.0)
+    qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", Real(0.0))
     written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert written.param_values[0].float_value == pytest.approx(0.5, abs=1e-4)
 
@@ -3790,19 +3845,46 @@ def test_set_param_real_refuses_below_the_floor():
     """
     qc = _scale_client()
     with pytest.raises(ValueError, match="does not exist there"):
-        qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", real=-30.0)
+        qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", Real(-30.0))
 
 
 def test_set_param_real_refuses_a_value_off_the_top():
     qc = _scale_client()
     with pytest.raises(ValueError, match="does not exist there"):
-        qc.set_param(LaneOutput(0), "VOLUME", real=13.0)
+        qc.set_param(LaneOutput(0), "VOLUME", Real(13.0))
 
 
-def test_set_param_real_refuses_a_bool():
+def test_wrapping_a_bool_in_real_is_a_deliberate_one_point_oh():
+    """The old `real=True` footgun is gone, because the wrapper closes it.
+
+    `Real(True)` collapses to `Real(1.0)` when it is constructed, so the caller
+    has said in as many words that they mean the value 1.0 on this knob's own
+    scale. That is not the accident the guard was written for.
+
+    What IS still an accident is a BARE True on something that is not a
+    two-option switch, and that is refused a few lines below.
+    """
     qc = _scale_client()
+    qc.set_param(LaneOutput(0), "VOLUME", Real(True))
+    written = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    # 1.0 dB on a -40..+12 knob.
+    assert written.param_values[0].float_value == pytest.approx(0.788, abs=0.01)
+
+
+def test_a_bare_bool_on_a_continuous_knob_is_still_refused():
+    qc = _scale_client()
+    with pytest.raises(TypeError, match="not a list at all"):
+        qc.set_param(LaneOutput(0), "VOLUME", True)
+
+
+def test_the_converter_still_refuses_a_bool_for_its_own_callers():
+    """`to_normalized` is public and reachable without set_param."""
+    from pyquadcortex.protocol import catalog as catalog_module
+
+    spec = catalog_module.Parameter(index=0, name="X", minimum=0.0, maximum=10.0,
+                                    default=0.0, units="", type="float")
     with pytest.raises(TypeError, match="bool IS an int"):
-        qc.set_param(LaneOutput(0), "VOLUME", real=True)
+        spec.to_normalized(True)
 
 
 def test_set_param_real_refuses_the_one_unmeasurable_parameter():
@@ -3811,7 +3893,7 @@ def test_set_param_real_refuses_the_one_unmeasurable_parameter():
 
     qc = _lane_client()
     with pytest.raises(ControlNotDrivable) as excinfo:
-        qc.set_param(Block(0, 1, 20000), "OUT LEVEL", real=-3.0)
+        qc.set_param(Block(0, 1, 20000), "OUT LEVEL", Real(-3.0))
     assert "nobody has measured" in excinfo.value.evidence
     assert "normalized 0..1" in excinfo.value.workaround
 
@@ -3906,3 +3988,120 @@ def test_a_read_that_fails_does_not_swallow_the_refusal(monkeypatch):
     monkeypatch.setattr(qc, "read_current_preset", broken)
     with pytest.raises(client.BlockRefused):
         qc.set_block(Block(1, 1, 7040))
+
+
+# -- the two number lines, through the public entry point ----------------------
+
+
+def test_real_and_encoded_zero_are_opposite_ends_of_the_knob():
+    """The pair that makes the type mandatory rather than a convenience."""
+    qc = _scale_client()
+    qc.set_param(LaneOutput(0), "VOLUME", Real(0.0))
+    unity = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    qc.set_param(LaneOutput(0), "VOLUME", Encoded(0.0))
+    off = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
+    assert unity.param_values[0].float_value == pytest.approx(0.76923, abs=1e-4)
+    assert off.param_values[0].float_value == pytest.approx(0.0)
+
+
+def test_encoded_needs_no_catalog_at_all():
+    """What keeps an index-addressed write free of a round trip."""
+    qc = client.QuadCortex(FakeTransport())          # no catalog loaded
+    qc.set_param(Block(0, 1), 3, Encoded(0.25))
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(0.25)
+
+
+def test_the_wrong_unit_is_refused_before_anything_reaches_the_wire():
+    qc = _scale_client()
+    with pytest.raises(TypeError, match="dB"):
+        qc.set_param(LaneOutput(0), "VOLUME", Hertz(217))
+    assert not qc._t.sent
+
+
+def test_a_bare_number_is_refused_and_the_message_rewrites_the_call():
+    qc = _scale_client()
+    with pytest.raises(TypeError) as excinfo:
+        qc.set_param(LaneOutput(0), "VOLUME", -3.1)
+    message = str(excinfo.value)
+    assert "Real(-3.1)" in message
+    assert "Encoded(-3.1)" in message
+    assert "two number lines" in message
+
+
+def test_a_string_on_a_number_parameter_is_refused():
+    """Collapsing text= into the positional removed the declaration of intent.
+
+    A value that arrives as a string from argv or JSON would otherwise take the
+    string path onto a dB knob and be sent, which the device accepts silently.
+    """
+    qc = _option_client()
+    with pytest.raises(TypeError, match="not a string one"):
+        qc.set_param(Block(0, 1, 5005), "THRESHOLD", "0.5")
+
+
+def test_an_encoded_value_outside_the_devices_scale_is_refused():
+    """0..1 is the one bound true of all 3,809 parameters, so it is the only
+    one checkable without asking the device anything."""
+    qc = client.QuadCortex(FakeTransport())
+    for bad in (5.0, -1.0, float("nan")):
+        with pytest.raises(ValueError, match="0.0 to 1.0"):
+            qc.set_param(Block(0, 1), 3, Encoded(bad))
+    assert not qc._t.sent
+
+
+def test_a_number_on_a_string_parameter_is_refused():
+    """The string guard was one-directional.
+
+    A string on a number's parameter was refused; a number on a STRING
+    parameter was converted and sent. On a cab's `ir selector`, whose catalog
+    range is 0..999, `Real(0.5)` became wire 0.0005 - a write that looks like it
+    worked and means nothing.
+    """
+    from tests.test_targets import _diverging_cab_catalog
+
+    for param in (1, "ir"):                       # by index and by name
+        qc = client.QuadCortex(FakeTransport())
+        qc._catalog = _diverging_cab_catalog()()
+        with pytest.raises(TypeError, match="is a string parameter"):
+            qc.set_param(Block(0, 5, 12001), param, Real(0.5))
+        assert not qc._t.sent
+
+
+def test_an_indexed_encoded_write_still_costs_no_catalog():
+    """The deliberate gap in the check above, and why it is deliberate.
+
+    `Encoded` addressed by INDEX is not checked, because checking would mean
+    fetching a catalog - and an index-addressed write staying free of a round
+    trip is that branch's whole reason to exist. Naming the parameter fetches
+    one anyway, so that path IS checked.
+    """
+    from tests.test_targets import _diverging_cab_catalog
+
+    qc = client.QuadCortex(FakeTransport())       # no catalog at all
+    qc.set_param(Block(0, 5), 3, Encoded(0.5))
+    assert qc._t.sent
+
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = _diverging_cab_catalog()()
+    with pytest.raises(TypeError, match="is a string parameter"):
+        qc.set_param(Block(0, 5, 12001), "ir", Encoded(0.5))
+
+
+def test_a_unit_check_reads_the_spec_the_conversion_uses_on_a_cab(monkeypatch):
+    """The blocker from the #37 triage, through the public entry point.
+
+    A cab's own catalog entry and the shared layout describe different
+    parameters at the same index. The check read one and the conversion used the
+    other, so on 157 of 174 cab models Db, Hertz and Percent all wrote the same
+    wire value.
+    """
+    from tests.test_targets import _diverging_cab_catalog
+    from pyquadcortex.protocol.values import Hertz
+
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = _diverging_cab_catalog()()
+    qc.set_param(Block(0, 5, 12001), 2, Db(-3.0))         # the layout is dB
+    assert qc._t.sent
+    with pytest.raises(TypeError, match="dB"):
+        qc.set_param(Block(0, 5, 12001), 2, Hertz(-3.0))

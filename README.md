@@ -169,12 +169,19 @@ wrong - an edit to the wrong row still succeeds and still reads back correctly.
 
 ```python
 row = free_rows(preset)[0]                  # not just "a row with no blocks"
-qc.set_block(Block(row, 0, models.BassAmplifier.AMPED_FLIP_TOP_6464))
+amp = Block(row, 0, models.BassAmplifier.AMPED_FLIP_TOP_6464)
+qc.set_block(amp)
 qc.set_chain_input(row=row, in_portid=Input.INPUT_2)
 qc.set_chain_output(row=row, out_portid=Output.MULTIPLE)   # required, not optional
-qc.set_param(Block(row, 0, amp), "MASTER", real=5.0)
+qc.set_param(amp, "MASTER", Real(5.0))
 qc.save_current_preset(Setlist.USER, "30A", "Bass on In 2")
 ```
+
+A parameter value says which scale it is on, because every knob has two: the one
+the screen shows and the device's own 0.0 to 1.0. `Real` and the unit types
+(`Db`, `Hertz`, `Percent`, ...) are the screen's; `Encoded` is the device's. On a
+lane volume `Real(0.0)` is unity and `Encoded(0.0)` is silence, which is why a
+bare number is refused. See [the two number lines](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/api.md).
 
 An edit persists only through this kind of row/column-keyed write followed by a save.
 Writing a whole preset back does nothing.
@@ -186,8 +193,8 @@ from per-scene parameter VALUES rather than from bypass. Name a scene and the va
 belongs to that scene alone.
 
 ```python
-qc.set_param(Block(0, 5), "MIX", value=0.8, scene=Scene.C)
-qc.set_param(LaneOutput(0), "VOLUME", value=0.0, scene=Scene.E)  # a silent scene
+qc.set_param(Block(0, 5, models.Reverb.ROOM), "MIX", Percent(80), scene=Scene.C)
+qc.set_param(LaneOutput(0), "VOLUME", Encoded(0.0), scene=Scene.E)  # the Off detent
 qc.set_bypass(Block(0, 2), bypassed=True, scene=Scene.B)
 ```
 

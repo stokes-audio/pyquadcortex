@@ -186,6 +186,17 @@ READINGS = [
     (13002, 0, 0.50, -14.0, 1),
     (13002, 0, 1.00, 12.0, 1),
 
+    # -- a cab whose own entry disagrees, 2026-08-27 -------------------------
+    # Read through a `Plini Cab (M)` (12053), NOT a `Default Cabsim` - 12000 is
+    # internal="true" and cannot be placed. That is the point of the reading.
+    # 12053's own catalog entry calls index 2 `POSITION`, unitless over 0..1,
+    # and the borrowed layout calls it `LEVEL` in dB. Writing this wire value
+    # separates them: the layout predicts -3.0 dB and the cab's own entry
+    # predicts 0.34. The screen showed `LEVEL -3.0 dB`, and the block's own
+    # `POSITION` sat untouched at its 0.50 default - so the layout is right
+    # about the NAME as well as the law, on a model that names it otherwise.
+    (12000, 2, 0.339665, -3.0, 1),
+
     # -- the Splitter Crossover, 2026-08-26 ----------------------------------
     # Not read off the screen. The catalog states defaultValue="400.0" and the
     # unit was holding this wire value for that knob, which is what pins the
@@ -357,7 +368,7 @@ def test_the_same_knob_is_floored_under_both_of_its_spellings():
 def test_parallax_carries_the_cab_law_itself():
     """It is a Bass Overdrive with a cab section, so it cannot borrow the layout.
 
-    `targets._layout_spec` only fires for models in CABSIM_CATEGORIES, and
+    `targets.wire_model` only borrows for models in CABSIM_CATEGORIES, and
     Parallax is not one. It works only because its own catalog entry carries
     MIN_CABSIM_DB and the same skew - which is also the evidence the
     layout-borrowing design cites, so it is worth pinning where it is claimed.

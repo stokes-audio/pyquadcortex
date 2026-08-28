@@ -150,7 +150,7 @@ def test_a_name_does_need_one():
 
 def test_naming_a_parameter_on_a_bare_block_says_what_is_missing():
     """A cell holds whatever the player put there, so the address cannot say."""
-    with pytest.raises(TypeError, match="model="):
+    with pytest.raises(TypeError, match="which model is there"):
         Block(0, 1).index_of("GAIN", _Exploding())
 
 
@@ -342,23 +342,22 @@ def test_real_on_a_bare_block_names_the_missing_model_not_the_catalog():
     Worth its own message: blaming the catalog sends a reader looking for a
     missing catalog entry when the address simply never said what it points at.
     """
-    with pytest.raises(TypeError, match="model="):
+    with pytest.raises(TypeError, match="which model is there"):
         Block(0, 1).normalize(0, 6.0, _Exploding())
 
 
 def test_a_cab_converts_through_the_shared_cabsim_layout():
-    """The catalog UNDER-DESCRIBES most cabs, so they borrow `Default Cabsim`.
+    """A cab's own entry is a LOCAL list, so the layout is what numbers the wire.
 
-    A cab model lists its mic selectors while the wire carries the whole layout.
     The taper it borrows is confirmed on three blocks in three different
     categories, and the catalog agrees: every one of those LEVEL entries carries
     the same skew and the same MIN_CABSIM_DB bound.
     """
     get = _scale_catalog()
-    # 21005 describes ONE parameter, so index 2 is not its own.
-    assert Block(0, 5, 21005).spec_at(2, get) is None
-    borrowed = Block(0, 5, 21005)._layout_spec(2, get)
-    assert borrowed.name == "MIC 1 LEVEL"
+    # 21005 describes ONE parameter against the layout's several, so its own
+    # list cannot be numbering the wire and `spec_at` reads the layout's.
+    assert Block(0, 5, 21005).wire_model(get).id == 12000
+    assert Block(0, 5, 21005).spec_at(2, get).name == "MIC 1 LEVEL"
     assert Block(0, 5, 21005).normalize(2, -3.0, get) == pytest.approx(0.3400,
                                                                       abs=5e-4)
 
@@ -366,4 +365,135 @@ def test_a_cab_converts_through_the_shared_cabsim_layout():
 def test_a_non_cab_does_not_borrow_the_cabsim_layout():
     """The alias is not a back door into every model near a cab."""
     get = _scale_catalog()
-    assert Block(0, 1, 5005)._layout_spec(2, get) is None
+    assert Block(0, 1, 5005).wire_model(get).id == 5005
+
+
+# -- the check and the conversion must read the SAME spec ---------------------
+
+
+def _diverging_cab_catalog():
+    """The three shapes a cab comes in, at the proportions the device ships.
+
+    Not hypothetical, and not "the catalog under-describes them". A cab's own
+    entry is a LOCAL list, numbered from zero over the parameters that model
+    contributes, and those numbers do not address the wire:
+
+    * 157 of the 174 list two mic selectors and nothing else;
+    * 11 more add their mics' POSITION and DISTANCE, so their own index 2 names
+      a knob the wire carries at 5;
+    * 6 describe the whole layout starting at ``0:bypass``, and those DO number
+      the wire - three of them carry parameters past the layout's end, where
+      borrowing would be a fresh version of the same bug.
+
+    The layout here is deliberately longer than the short models, because that
+    length difference is what `wire_model` reads.
+    """
+    from tests.test_catalog import SAMPLE_XML, make_payload
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model blob="lay" id="12000" name="Default Cabsim" internal="true">
+    <Parameter defaultValue="0" max="1" min="0" name="bypass" type="switch"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir" type="string"/>
+    <Parameter defaultValue="0.5" max="MAX_CABSIM_DB" min="MIN_CABSIM_DB" name="LEVEL" type="float" units="dB" skew="4.9594844" min_string="OFF"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="PAN" type="float"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="DISTANCE" type="float"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="POSITION" type="float"/>
+  </Model>
+  <Model blob="bare" id="12001" name="Bare Cab">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector 2" type="string"/>
+  </Model>
+  <Model blob="pos" id="12053" name="Named Cab">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector 2" type="string"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="POSITION" type="float"/>
+  </Model>
+  <Model blob="full" id="12100" name="Full Cab">
+    <Parameter defaultValue="0" max="1" min="0" name="bypass" type="switch"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir" type="string"/>
+    <Parameter defaultValue="0.5" max="MAX_CABSIM_DB" min="MIN_CABSIM_DB" name="LEVEL" type="float" units="dB" skew="4.9594844" min_string="OFF"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="PAN" type="float"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="DISTANCE" type="float"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="POSITION" type="float"/>
+    <Parameter defaultValue="0.5" max="100" min="0" name="ROOM MIX" type="float" units="%"/>
+  </Model>
+</Category>
+""" + "</Models>")
+    cat = catalog.parse_model_repo(make_payload(xml))
+    return lambda: cat
+
+
+def test_a_short_cabs_own_list_cannot_be_numbering_the_wire():
+    """157 describe two parameters against a layout of many, so `spec_at` reads
+    the layout - the short list is local, and index 2 is not in it at all."""
+    get = _diverging_cab_catalog()
+    bare = Block(0, 5, 12001)
+    assert bare.wire_model(get).id == 12000
+    assert bare.spec_at(2, get).name == "LEVEL"
+
+
+def test_a_cab_that_describes_the_whole_layout_numbers_the_wire_itself():
+    """The 6 full-form cabs are left alone, and it is not tidiness.
+
+    Three of them carry parameters PAST the layout's end - the layout says
+    `IR NAME` at 19 where they say `ROOM MIX` - so borrowing for a model that
+    already numbers the wire would reintroduce this bug facing the other way.
+    """
+    get = _diverging_cab_catalog()
+    full = Block(0, 5, 12100)
+    assert full.wire_model(get).id == 12100
+    assert full.spec_at(6, get).name == "ROOM MIX"      # past the layout's end
+    assert full.spec_at(2, get).name == "LEVEL"         # and agreeing before it
+
+
+def test_the_layout_wins_over_the_cabs_own_disagreeing_entry():
+    """12 cabs call index 2 POSITION while the wire carries LEVEL in dB.
+
+    Confirmed on hardware 2026-08-27, because guessing this backwards would
+    have been worse than the bug it fixes. A `Plini Cab (M)` took a wire value
+    the two specs read differently and the screen showed `LEVEL -3.0 dB` - the
+    layout's answer - with its own `POSITION` untouched at 0.50. The reading is
+    in `tests/test_scales.py`.
+    """
+    get = _diverging_cab_catalog()
+    named = Block(0, 5, 12053)
+    assert named.model(get).parameters[2].name == "POSITION"   # its own list
+    assert named.spec_at(2, get).name == "LEVEL"               # the wire's
+
+
+def test_a_name_on_a_cab_resolves_to_the_wire_index_not_the_models_own():
+    """The third resolution site, and the one that wrote to the wrong knob.
+
+    `index_of` returns a WIRE index, and it used to look the name up in the
+    cab's own local list. On a `Named Cab`, "POSITION" is its own index 2 -
+    which the wire carries as LEVEL, in dB. So asking for POSITION moved the
+    microphone's level and left POSITION where it was.
+
+    On the real device the layout names POSITION twice, once per microphone, so
+    the name is genuinely ambiguous there and `Model.parameter` refuses it. Both
+    outcomes beat silently addressing a different knob.
+    """
+    get = _diverging_cab_catalog()
+    named = Block(0, 5, 12053)
+    assert named.model(get).parameters[2].name == "POSITION"    # its own list
+    index, spec = named.index_of("POSITION", get)
+    assert index == 5 and spec.name == "POSITION"
+
+
+def test_a_unit_check_reads_the_spec_the_conversion_will_use():
+    """The bug this exists for.
+
+    `set_param` checked the unit against `spec_at` and converted against
+    the shared layout. On a cab those are different parameters, so the check was
+    reading a spec that was not there and doing nothing at all: Db, Hertz and
+    Percent every one wrote the same wire value.
+    """
+    from pyquadcortex.protocol import values
+
+    get = _diverging_cab_catalog()
+    for model_id in (12001, 12053):
+        spec = Block(0, 5, model_id).spec_at(2, get)
+        assert spec.units == "dB", model_id
+        values.Db(-3.0).check_unit(spec)                 # must not raise
+        with pytest.raises(TypeError, match="dB"):
+            values.Hertz(-3.0).check_unit(spec)

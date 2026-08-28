@@ -22,8 +22,9 @@ import time
 
 from pyquadcortex import protocol
 from pyquadcortex.protocol import (Block, BlockRefused, Input, Instrument, LaneOutput,
-                                   Output, Scene, Setlist, UNITY_LEVEL, blocks,
+                                   Output, Scene, Setlist, blocks,
                                    field_present, free_rows, models)
+from pyquadcortex.protocol.values import Db, Encoded, Real
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Brit 2203"        # any factory preset (see inspect_preset.py)
@@ -80,15 +81,14 @@ def main():
         # 2. A parameter in its own units rather than a 0..1 fraction. Naming the
         #    parameter is safer than an index, since indices are positional and not
         #    every one is a knob you can see.
-        qc.set_param(Block(row, 0, amp), param="MASTER", real=5.0)
+        qc.set_param(Block(row, 0, amp), "MASTER", Real(5.0))
 
-        # 3. The row's own level, then one scene that silences it. UNITY_LEVEL is
-        #    the wire value meaning "no attenuation"; `real=0.0` would say the same
-        #    in dB, and wire 0.0 is the Off detent below the bottom of that scale.
-        #    Naming a scene leaves the unit sitting on it.
-        qc.set_param(LaneOutput(row), param="VOLUME", value=UNITY_LEVEL)
-        qc.set_param(LaneOutput(row), param="VOLUME", value=0.0,
-                           scene=SILENT_SCENE)
+        # 3. The row's own level, then one scene that silences it. 0 dB is
+        #    unity - no attenuation. Silence is NOT the bottom of the dB scale
+        #    but the Off detent below it, which only exists on the device's own
+        #    line. Naming a scene leaves the unit sitting on it.
+        qc.set_param(LaneOutput(row), "VOLUME", Db(0.0))
+        qc.set_param(LaneOutput(row), "VOLUME", Encoded(0.0), scene=SILENT_SCENE)
 
         time.sleep(2.0)
         stored = qc.save_current_preset(Setlist.USER, DEST_SLOT, DEST_NAME,

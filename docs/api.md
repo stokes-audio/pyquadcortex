@@ -45,12 +45,12 @@ already read and need no connection; calling them as methods raises
 |---|---|
 | **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
-| **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(target, param, value=)`, `set_bypass(Block(row, column), bypassed)` |
+| **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(target, param, value)`, `set_bypass(Block(row, column), bypassed)` |
 | **Add and remove blocks** | `set_block(Block(row, column, model_id))`, `remove_block(cell)`, `move_block(source, destination)`, `catalog` |
 | **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
-| **Lane output** | `set_param(LaneOutput(row), param, value=/real=)` - VOLUME, PAN, MUTE, SOLO. `real=` speaks dB for VOLUME |
-| **Input gate** | `set_param(LaneInput(row), param, value=/real=)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
+| **Lane output** | `set_param(LaneOutput(row), param, value)` - VOLUME, PAN, MUTE, SOLO. VOLUME speaks dB, so `Db(-6.0)` |
+| **Input gate** | `set_param(LaneInput(row), param, value)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
 | **Split and mix** | `set_param(Splitter(row), param, ...)`, `set_param(Mixer(row), param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(cell, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
 | **Parameter names** | `protocol.params` - an `IntEnum` per model, so `params.LaneOutputParam.VOLUME` replaces `"VOLUME"`. A member IS its wire index, so it also skips the catalog fetch a name needs |
@@ -112,6 +112,77 @@ Things worth knowing before you script against this:
 - **Don't count a row's blocks with `len()`.** Every row reports all 8 column
   slots whether or not they hold anything. Use `protocol.blocks(preset)`.
 
+## Setting a parameter: the two number lines
+
+**Every knob on the unit has two number lines**, and this is the one thing to
+understand before setting anything.
+
+The screen shows one of them. A lane volume runs -40 dB to +12 dB, a drive's
+`GAIN` runs 0 to 10, a filter's cutoff runs 20 Hz to 20000 Hz. Each knob has its
+own, and they are all different.
+
+The device stores the other. Every parameter, without exception, is kept as a
+number from 0.0 to 1.0 - the same line for all 3,809 of them.
+
+You say which line your number is on:
+
+```python
+from pyquadcortex.protocol import Db, Encoded, Real
+
+qc.set_param(LaneOutput(0), "VOLUME", Real(0.0))      # zero on the SCREEN's line
+qc.set_param(LaneOutput(0), "VOLUME", Encoded(0.0))   # zero on the DEVICE's line
+```
+
+Those two are **opposite ends of the same knob**. Zero on the screen's line is
+0 dB - unity, full signal, nothing taken away. Zero on the device's line is the
+bottom of the travel, which is silence.
+
+Same number, opposite results. That is why you have to say which, and why a bare
+`0.0` is refused rather than guessed at.
+
+Which line a value is on also decides whether the catalog is consulted at all:
+
+```mermaid
+flowchart LR
+    U["Db(-3.1)<br/>Hertz(217)<br/>Percent(35)"] -->|"claims a unit,<br/>checked against the catalog"| R["Real(-3.1)<br/>the screen's line"]
+    R -->|"converted using the catalog's<br/>min, max and skew"| W["the device's line<br/>0.0 to 1.0"]
+    E["Encoded(0.71)<br/>the device's line"] -->|"written as it is,<br/>no catalog needed"| W
+```
+
+That is also why `Encoded` is the only one that works with no device attached:
+the other two need the catalog, and the catalog comes from the unit.
+
+### Naming the unit gets it checked
+
+`Db(-3.1)` means the same as `Real(-3.1)` and adds a claim: this parameter had
+better be in dB. Hand it to one the catalog calls Hz and you get a `TypeError`
+rather than a silently wrong write.
+
+```python
+qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))          # fine
+qc.set_param(block, "HPF FREQ", Db(-3.1))                # TypeError: it is in Hz
+qc.set_param(block, "HPF FREQ", Hertz(217))              # fine
+```
+
+The types are `Db`, `Percent`, `Hertz`, `Milliseconds`, `Seconds`, `Semitones`,
+`Cents` and `Bpm`. Use plain `Real` when you do not want the check, or when the
+parameter has no unit at all - 1,780 of them do not, like that drive's `GAIN`:
+
+```python
+qc.set_param(block, "GAIN", Real(5.0))    # 5 of 0..10, no unit involved
+```
+
+### When you need `Encoded`
+
+Rarely. The wire carries more parameters than the catalog describes, so an index
+the catalog does not know can only be written on the device's line:
+
+```python
+qc.set_param(block, 21, Encoded(0.5))     # the catalog omits index 21
+```
+
+Everywhere else a unit type or `Real` says more, and reads better.
+
 ## Blocks and the model catalog
 
 A grid cell holds a block. `set_block()` fills an empty cell or replaces an
@@ -142,7 +213,7 @@ in their own units rather than as a 0..1 fraction:
 
 ```python
 comp = qc.catalog[5005]
-qc.set_param(Block(0, 1, comp), "THRESHOLD", real=-20)  # dB
+qc.set_param(Block(0, 1, comp), "THRESHOLD", Db(-20))
 ```
 
 That is worth preferring: parameter indices are positional, and not every index
@@ -207,21 +278,21 @@ Factory presets often produce their scenes with the **mixer**, not with bypass. 
 `LEVEL A` / `LEVEL B` across two rows, giving four amp paths.
 
 ```python
-qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, value=0.0, scene=Scene.C)
+qc.set_param(Mixer(0), params.MixerParam.LEVEL_A, Encoded(0.0), scene=Scene.C)
 ```
 
 A level of `0.0` is silence, and unity is **`UNITY_LEVEL`** (0.76923077), which is
 what every mixer, splitter and lane level in the factory content sits at when nothing
 is attenuated. Their span is **-40..+12 dB**, which the catalog names as
-`MIN_MIXER_DB` / `MAX_MIXER_DB` and this library supplies the numbers for, so `real=`
-takes dB directly. The helpers remain for converting without a device in hand:
+`MIN_MIXER_DB` / `MAX_MIXER_DB` and this library supplies the numbers for, so `Db(...)`
+is taken directly. The helpers remain for converting without a device in hand:
 
 ```python
 from pyquadcortex.protocol import db_to_lane_level, lane_level_db
 
-qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, real=-6.0)   # dB
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Db(-6.0))
 qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME,
-             value=db_to_lane_level(-6.0))                             # the same
+             Encoded(db_to_lane_level(-6.0)))                          # the same
 lane_level_db(0.76923077)     # 0.0
 
 # A pedal as a volume and mute control: silence at the heel, +3.2 dB at the toe.
@@ -230,13 +301,13 @@ qc.set_expression(LaneOutput(0), params.LaneOutputParam.VOLUME, pedal=1,
 ```
 
 The span is **-40 to +12 dB**. The knob's lowest numeric step is -39.5 dB; below it
-the unit shows "Off", which is wire `0.0` - so for silence write `0.0` rather than
-the bottom of the dB scale.
+the unit shows "Off", which is wire `0.0` - so for silence write `Encoded(0.0)`
+rather than the bottom of the dB scale.
 
 The **splitter** divides a row into two lanes:
 
 ```python
-qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_A, value=0.25)
+qc.set_param(Splitter(0), params.SplitterParam.LEVEL_TO_A, Db(-27.0))
 ```
 
 Address its parameters by the **unified** model's names - `TYPE`, `STEREO`, `BALANCE`,
@@ -264,7 +335,7 @@ qc.read_preset(Setlist.FACTORY, "1A")                 # load it onto the grid
 
 # a different drive level in scene C - naming the scene switches to it,
 # promotes the parameter to follow scenes, and writes, in the right order
-qc.set_param(Block(0, 3), 0, value=0.4, scene=Scene.C)
+qc.set_param(Block(0, 3), 0, Encoded(0.4), scene=Scene.C)
 
 # per-scene bypass works the same way
 qc.set_bypass(Block(0, 3), bypassed=True, scene=Scene.D)
@@ -320,19 +391,20 @@ the write had in fact landed.
 The per-preset controls:
 
 ```python
-qc.set_param(Tempo(), params.TempoParam.TEMPO, real=120)  # bpm, 40..240 span
+qc.set_param(Tempo(), params.TempoParam.TEMPO, Bpm(120))   # 40..240 span
 qc.set_tempo_led(False)                 # this preset's TEMPO LED off
 qc.set_metronome_muted(True)            # silence the click - the unit's own MUTE
-qc.set_param(Tempo(), "TIME SIGNATURE", value=0.1)
+qc.set_param(Tempo(), "TIME SIGNATURE", Encoded(0.1))   # a list index; see options
 ```
 
 `TEMPO` runs 40..240 bpm, which the catalog names as `MIN_TEMPO` / `MAX_TEMPO`.
 `tempo_bpm()` and `bpm_to_tempo()` convert if you need the numbers directly, or want
-them without a catalog - `real=` reads the device's own description, so it fetches
-one.
+them without a catalog - a real value reads the device's own description, so it
+fetches one.
 
 Use `set_metronome_muted` and not the volume to silence a click:
-`set_metronome_volume(0.0)` is **-60 dB, quiet but still audible**, not silence.
+`set_metronome_volume(Db(-60.0))` is **quiet but still audible**, not silence -
+and it is the bottom of the knob, so there is nothing quieter to ask for.
 
 The metronome's list controls have named enums, so nothing needs a magic number:
 

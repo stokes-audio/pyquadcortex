@@ -18,9 +18,10 @@ import sys
 import time
 
 from pyquadcortex import protocol
-from pyquadcortex.protocol import (UNITY_LEVEL, Block, BlockRefused, Mixer, Scene,
+from pyquadcortex.protocol import (Block, BlockRefused, Mixer, Scene,
                                    Setlist, blocks, field_present, free_rows, models,
                                    splits)
+from pyquadcortex.protocol.values import Db, Encoded
 
 # --- edit to taste -----------------------------------------------------------
 SOURCE_NAME = "Brit 2203"     # a serial factory preset, so there is a row to branch
@@ -85,10 +86,14 @@ def main():
         #    leaves the unit sitting on that scene, so this walks all eight in order.
         for index, hears_lane in enumerate(LANE_SCENES):
             scene = Scene(index)
-            qc.set_param(Mixer(row), param="LEVEL A", scene=scene,
-                               value=0.0 if hears_lane else UNITY_LEVEL)
-            qc.set_param(Mixer(row), param="LEVEL B", scene=scene,
-                               value=UNITY_LEVEL if hears_lane else 0.0)
+            # Silence is the Off detent below the bottom of the dB scale, so
+            # it is the one value here that has to be written on the device's
+            # own line. Unity is 0 dB and says so.
+            silent, audible = Encoded(0.0), Db(0.0)
+            qc.set_param(Mixer(row), "LEVEL A",
+                         silent if hears_lane else audible, scene=scene)
+            qc.set_param(Mixer(row), "LEVEL B",
+                         audible if hears_lane else silent, scene=scene)
             qc.set_scene_label(index, "Lane" if hears_lane else "Main")
             time.sleep(0.4)
 

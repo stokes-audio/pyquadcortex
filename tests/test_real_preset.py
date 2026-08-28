@@ -187,7 +187,7 @@ def test_the_device_really_stores_per_scene_parameter_values(scene_preset):
 
 def test_a_muted_scene_reads_back_as_zero_in_that_scene_only(scene_preset):
     # The requester's use case: one scene silent, the rest untouched. Written with
-    # set_param(param="VOLUME", value=0.0, scene=Scene.E).
+    # set_param("VOLUME", Encoded(0.0), scene=Scene.E).
     lane = [(loc, vals) for loc, vals in scene_following_params(scene_preset)
             if loc[1] == "output_control"]
     assert lane, "the Lane Output Control parameter should follow scenes"
