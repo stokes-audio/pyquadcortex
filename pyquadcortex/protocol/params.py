@@ -15,8 +15,9 @@ catalog is fetched from the device.
 its two mic selectors - while the wire carries 22. So a cab is CHOSEN by
 its `models.*` id and DRIVEN through :class:`Cabsim`::
 
-    qc.set_block(Block(0, 5, models.CabsimBassM.N212_DARKGLASS_NEO))
-    qc.set_param(Block(0, 5), params.Cabsim.MIC_1_DISTANCE, Real(3.0))
+    cab = Block(0, 5, models.CabsimBassM.N212_DARKGLASS_NEO_M)
+    qc.set_block(cab)
+    qc.set_param(cab, params.Cabsim.MIC_1_DISTANCE, Real(3.0))
 
 A name the device publishes twice is numbered by occurrence, and BOTH
 occurrences are numbered. For a cab that repetition is a MICROPHONE and

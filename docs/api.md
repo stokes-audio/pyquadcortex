@@ -301,8 +301,8 @@ qc.set_expression(LaneOutput(0), params.LaneOutputParam.VOLUME, pedal=1,
 ```
 
 The span is **-40 to +12 dB**. The knob's lowest numeric step is -39.5 dB; below it
-the unit shows "Off", which is wire `0.0` - so for silence write `0.0` rather than
-the bottom of the dB scale.
+the unit shows "Off", which is wire `0.0` - so for silence write `Encoded(0.0)`
+rather than the bottom of the dB scale.
 
 The **splitter** divides a row into two lanes:
 

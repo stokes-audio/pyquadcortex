@@ -368,7 +368,7 @@ def test_the_same_knob_is_floored_under_both_of_its_spellings():
 def test_parallax_carries_the_cab_law_itself():
     """It is a Bass Overdrive with a cab section, so it cannot borrow the layout.
 
-    `targets._layout_spec` only fires for models in CABSIM_CATEGORIES, and
+    `targets.wire_model` only borrows for models in CABSIM_CATEGORIES, and
     Parallax is not one. It works only because its own catalog entry carries
     MIN_CABSIM_DB and the same skew - which is also the evidence the
     layout-borrowing design cites, so it is worth pinning where it is claimed.

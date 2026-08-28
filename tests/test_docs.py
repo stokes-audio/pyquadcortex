@@ -4,8 +4,10 @@ Both of these defects shipped in 0.34.0 and were found by an outside user:
 an unclosed code fence swallowed an entire section of api.md, and the method
 table presented eleven module-level functions as methods.
 """
+import ast
 import pathlib
 import re
+import textwrap
 
 import pytest
 
@@ -74,3 +76,135 @@ def test_the_api_table_carries_no_pre_flip_import_paths():
     assert not stale, (
         f"docs/api.md still shows {sorted(set(stale))} - the message-level API "
         f"is imported from pyquadcortex.protocol now (ADR-0006)")
+
+
+# -- the snippets in the prose are code too -----------------------------------
+#
+# Nothing compiled them until 2026-08-27. Two rounds of triage on the same PR
+# found seven that raise if run - a `Block(0, 2, model=5011)` keyword that has
+# never existed, a parameter NAMED on a Block carrying no model id, a bare
+# number where a value type is now required. `tests/test_examples.py` parses
+# `examples/` only, so none of these were visible to it.
+#
+# These checks are deliberately narrow: they pin the mistakes that actually
+# happened, in the places a reader copies from, without pretending to execute
+# a snippet that would open a device.
+
+SNIPPET_SOURCES = DOCS + [ROOT / "changelog.md"] + sorted(
+    (ROOT / "pyquadcortex").rglob("*.py"))
+
+
+def _python_snippets(path):
+    """Every ```python fence in a .md, or every ``::`` block in a .py docstring."""
+    text = path.read_text()
+    if path.suffix == ".md":
+        return re.findall(r"```python\n(.*?)```", text, re.DOTALL)
+    blocks = []
+    for doc in re.findall(r'"""(.*?)"""', text, re.DOTALL):
+        for chunk in re.split(r"::\n", doc)[1:]:
+            kept, depth = [], None
+            for line in chunk.splitlines():
+                if not line.strip():
+                    kept.append(line)
+                    continue
+                indent = len(line) - len(line.lstrip())
+                # The block ends at the first line shallower than its own first
+                # line. Testing "is it indented at all" instead kept the prose
+                # that follows, which dragged the common indent down and left
+                # the code indented after dedent - so nothing parsed and every
+                # check below passed on an empty list.
+                if depth is None:
+                    depth = indent
+                elif indent < depth:
+                    break
+                kept.append(line)
+            if any("qc." in line or "Block(" in line for line in kept):
+                # textwrap, not a fixed strip: a docstring block is indented by
+                # its method's level, so a hand-rolled `[4:]` left it indented,
+                # `ast.parse` raised, and every check below saw nothing. That
+                # made the whole suite pass vacuously.
+                blocks.append(textwrap.dedent("\n".join(kept)))
+    return blocks
+
+
+def _calls(snippet):
+    """Parsed calls in a snippet, or nothing if it is not standalone Python."""
+    try:
+        tree = ast.parse(snippet)
+    except SyntaxError:
+        return []
+    return [n for n in ast.walk(tree) if isinstance(n, ast.Call)]
+
+
+def _name_of(node):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+@pytest.mark.parametrize("path", SNIPPET_SOURCES,
+                         ids=lambda p: str(p.relative_to(ROOT)))
+def test_no_snippet_passes_a_keyword_the_signature_does_not_have(path):
+    """`Block(0, 2, model=5011)` was in `set_param`'s own docstring.
+
+    `Block`'s field is `model_id` and it is positional in every real call, so
+    this raised `TypeError` for anyone who copied the library's headline example.
+    """
+    for snippet in _python_snippets(path):
+        for call in _calls(snippet):
+            if _name_of(call.func) == "Block":
+                fields = {"row", "column", "model_id"}
+                bad = [k.arg for k in call.keywords if k.arg not in fields]
+                assert not bad, (
+                    f"{path.name}: Block(..., {bad[0]}=...) - Block takes "
+                    f"row, column and model_id, so this raises TypeError"
+                )
+
+
+@pytest.mark.parametrize("path", SNIPPET_SOURCES,
+                         ids=lambda p: str(p.relative_to(ROOT)))
+def test_no_snippet_names_a_parameter_on_a_block_with_no_model(path):
+    """Naming a parameter needs to know which model is in the cell.
+
+    `set_param(Block(0, 5), "MIX", ...)` raises before it looks at the value,
+    because a grid cell holds whatever the player put there. Three snippets
+    shipped this way, README included.
+    """
+    for snippet in _python_snippets(path):
+        for call in _calls(snippet):
+            if _name_of(call.func) != "set_param" or len(call.args) < 2:
+                continue
+            target, param = call.args[0], call.args[1]
+            names_it = isinstance(param, ast.Constant) and isinstance(param.value, str)
+            if not names_it or _name_of(target.func if isinstance(target, ast.Call)
+                                       else target) != "Block":
+                continue
+            # Positional OR keyword: `Block(0, 5, 12053)` and
+            # `Block(row=0, column=5, model_id=12053)` both say which model.
+            says_model = (len(target.args) >= 3
+                          or any(k.arg == "model_id" for k in target.keywords))
+            assert says_model, (
+                f"{path.name}: set_param({ast.unparse(target)}, "
+                f"{ast.unparse(param)}, ...) - naming a parameter needs the "
+                f"model id as Block's third argument"
+            )
+
+
+@pytest.mark.parametrize("path", SNIPPET_SOURCES,
+                         ids=lambda p: str(p.relative_to(ROOT)))
+def test_no_snippet_passes_set_param_a_bare_number(path):
+    """ADR-0016 made this a TypeError, and `docs/api.md` still taught it."""
+    for snippet in _python_snippets(path):
+        for call in _calls(snippet):
+            if _name_of(call.func) != "set_param" or len(call.args) < 3:
+                continue
+            value = call.args[2]
+            bare = (isinstance(value, ast.Constant)
+                    and isinstance(value.value, (int, float))
+                    and not isinstance(value.value, bool))
+            assert not bare, (
+                f"{path.name}: set_param(..., {value.value!r}) is refused - "
+                f"every knob has two number lines, so the value must say which"
+            )

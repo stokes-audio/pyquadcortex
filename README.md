@@ -169,10 +169,11 @@ wrong - an edit to the wrong row still succeeds and still reads back correctly.
 
 ```python
 row = free_rows(preset)[0]                  # not just "a row with no blocks"
-qc.set_block(Block(row, 0, models.BassAmplifier.AMPED_FLIP_TOP_6464))
+amp = Block(row, 0, models.BassAmplifier.AMPED_FLIP_TOP_6464)
+qc.set_block(amp)
 qc.set_chain_input(row=row, in_portid=Input.INPUT_2)
 qc.set_chain_output(row=row, out_portid=Output.MULTIPLE)   # required, not optional
-qc.set_param(Block(row, 0, amp), "MASTER", Real(5.0))
+qc.set_param(amp, "MASTER", Real(5.0))
 qc.save_current_preset(Setlist.USER, "30A", "Bass on In 2")
 ```
 
@@ -192,7 +193,7 @@ from per-scene parameter VALUES rather than from bypass. Name a scene and the va
 belongs to that scene alone.
 
 ```python
-qc.set_param(Block(0, 5), "MIX", Percent(80), scene=Scene.C)
+qc.set_param(Block(0, 5, models.Reverb.ROOM), "MIX", Percent(80), scene=Scene.C)
 qc.set_param(LaneOutput(0), "VOLUME", Encoded(0.0), scene=Scene.E)  # the Off detent
 qc.set_bypass(Block(0, 2), bypassed=True, scene=Scene.B)
 ```

@@ -2742,12 +2742,12 @@ Check `Param.scene_mode` and index by the scene you mean;
 **Wire 0.0 is an OFF detent, not the bottom of the dB scale.** The splitter's
 `LEVEL TO A` displays "OFF" there, exactly as the lane VOLUME does, so this
 belongs to the level family rather than to one control. For silence write
-`value=0.0`; `real=-40` is the scale's floor and a different thing.
+`Encoded(0.0)`; `Db(-40)` is the scale's floor and a different thing.
 
 **A band's TYPE decides whether its GAIN means anything.** Lo Pass and Hi Pass
 disable the control, and a gain written to such a band is stored and ignored by
-the unit. Nothing in the wire says so, so `real=` will happily convert dB into a
-parameter that does nothing.
+the unit. Nothing in the wire says so, so `Db(...)` will happily convert dB into
+a parameter that does nothing.
 
 **`N BYPASS = 1` means the band is ON** for the block EQs, the same inverted
 polarity already recorded for the Global EQ. A disabled band displays `0.0 dB`
@@ -2793,7 +2793,7 @@ as the lane and mixer levels and is **not** their -40..+12 scale - unity
 is at 0.5 rather than 10/13. Treating the bucket as one scale would put a value
 20 dB wrong on the wire.
 
-Everything NOT in that table still refuses `real=`. That is the honest answer:
+Everything NOT in that table still refuses a `Real`. That is the honest answer:
 an unmeasured span cannot be converted, only guessed.
 
 **One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable

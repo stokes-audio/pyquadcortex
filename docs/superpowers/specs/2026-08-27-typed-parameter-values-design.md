@@ -71,7 +71,7 @@ qc.set_param(block, "ATTACK", Milliseconds(12))
 qc.set_param(block, "MIX", Percent(35))
 qc.set_param(block, "GAIN", Real(5.0))           # unitless, 0..10 on its own scale
 qc.set_param(block, 21, Encoded(0.5))         # an index the catalog omits
-qc.set_param(block, IR_PATH_SLOT_1, "/media/...")  # a string is itself
+qc.set_param(ir, params.SingleM.IR_1_PATH, "/media/...")  # a string is itself
 ```
 
 `value=`, `real=` and `text=` all go away.

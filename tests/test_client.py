@@ -1356,7 +1356,8 @@ def test_set_capture_applies_params_after_the_file_name():
     """Loading a capture resets the block's knobs, so order is data integrity."""
     qc = client.QuadCortex(EchoingTransport())
     # model_id on the cell is what to place, so this both places and points.
-    qc.set_capture(Block(0, 2, 14000), capture=_Capture(), params={4: 0.56})
+    qc.set_capture(Block(0, 2, 14000), capture=_Capture(),
+                   params={4: Encoded(0.56)})
     writes = []
     for msg in qc._t.sent:
         if isinstance(msg, pa.GridMessage):
@@ -1372,6 +1373,35 @@ def test_set_capture_applies_params_after_the_file_name():
     assert ("float", 4, 0.56) in writes
     # the parameter write must come AFTER the capture reference
     assert writes.index(("float", 4, 0.56)) > writes.index(("text", 5))
+
+
+def test_set_capture_does_not_rewrite_a_values_scale():
+    """It used to wrap every value in `Encoded`, whatever the caller wrote.
+
+    So `Real(0.5)` on a knob running -40..+12 dB was sent as the DEVICE's 0.5 -
+    the exact swap ADR-0016 exists to close, performed by the library and
+    reported as success.
+    """
+    qc = client.QuadCortex(EchoingTransport())
+    with pytest.raises(TypeError, match="which model is there"):
+        qc.set_capture(Block(0, 2, 14000), capture=_Capture(),
+                       params={4: Real(0.5)})
+    # Refusing is the honest answer: this path addresses the cell without a
+    # model id, so no scale is known. What must not happen is the old
+    # behaviour, where Real(0.5) was rewritten as the DEVICE's 0.5 and sent.
+    floats = [round(pv.float_value, 5)
+              for msg in qc._t.sent if isinstance(msg, pa.GridMessage)
+              for chain in msg.preset.chains for m in chain.models
+              for pr in m.params for pv in pr.param_values
+              if pr.index == 4 and pv.HasField("float_value")]
+    assert floats == []
+
+
+def test_set_capture_refuses_a_bare_number_like_set_param_does():
+    """The docstring taught `params={4: 0.56}` while `set_param` refused it."""
+    qc = client.QuadCortex(EchoingTransport())
+    with pytest.raises(TypeError, match="two number lines"):
+        qc.set_capture(Block(0, 2, 14000), capture=_Capture(), params={4: 0.56})
 
 
 def test_set_capture_refuses_params_that_would_clobber_the_reference():

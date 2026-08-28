@@ -596,7 +596,7 @@ class QuadCortex:
         ``target`` says WHERE, and is one of the addresses in
         :mod:`pyquadcortex.protocol.targets`::
 
-            qc.set_param(Block(0, 2, model=5011), "GAIN", Real(-6.0))
+            qc.set_param(Block(0, 2, 1), "GAIN", Real(5.0))   # a Myth Drive
             qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))
             qc.set_param(LaneInput(0), "INPUT GAIN", Db(12.0))
             qc.set_param(Mixer(0), "LEVEL A", Db(0.0))
@@ -687,9 +687,15 @@ class QuadCortex:
             # The spec is often not in hand here: an indexed write never fetches
             # one, and `Tempo` maps its screen names straight to indexes.
             if spec is None:
+                # KeyError alone: the catalog has no such model, so there is
+                # genuinely nothing to check against and the refusal below is
+                # the answer. Anything else - a read timeout, a closed
+                # transport, an OSError out of hid, ADR-0009's refusal to read
+                # on the RX thread - means we could not LOOK, which is a
+                # different thing, and swallowing it wrote the value unchecked.
                 try:
                     spec = target.spec_at(index, self._get_catalog)
-                except Exception:
+                except KeyError:
                     spec = None
             if spec is None:
                 raise TypeError(
@@ -718,9 +724,14 @@ class QuadCortex:
             # and be sent. The catalog publishes type="string" for exactly the
             # 396 parameters that want it.
             if spec is None:
+                # See the bool branch: only "the catalog does not describe this
+                # model" is swallowed. A failure to CONSULT the catalog used to
+                # become `spec = None`, and `spec is None` means "allow" here -
+                # so a disconnected device turned a checked write into an
+                # unchecked one.
                 try:
                     spec = target.spec_at(index, self._get_catalog)
-                except Exception:
+                except KeyError:
                     spec = None
             if spec is not None and spec.type != "string":
                 raise TypeError(
@@ -747,12 +758,12 @@ class QuadCortex:
                 )
             value = float(value)
         elif isinstance(value, values_module.Real):
-            # The SAME spec for the check and the conversion. Resolving them
-            # separately meant the check read a cab's own catalog entry while
-            # the conversion used the shared layout, which are different
-            # parameters - so the check was inert on most cabs and refused
-            # correct calls on the rest.
-            spec = target.spec_for_conversion(index, self._get_catalog, spec)
+            # `spec_at` is the one answer to "what sits at this wire index",
+            # and the check and the conversion both read it. They used to
+            # resolve it separately and disagree on a cab, where the model's own
+            # entry is not wire-indexed at all.
+            if spec is None:
+                spec = target.spec_at(index, self._get_catalog)
             if spec is not None:
                 value.check_unit(spec)
             value = target.normalize(index, float(value), self._get_catalog, spec)
@@ -3132,11 +3143,13 @@ class QuadCortex:
         applied once the capture is in::
 
             qc.set_capture(row=0, column=2, capture=c,
-                           params={4: 0.56})            # VOLUME, by wire index
+                           params={4: Db(-5.0)})        # VOLUME, by wire index
 
-        ``params`` maps parameter index to value - floats are written as values,
-        strings as text. Pass ``model=None`` to point an existing block at a new
-        capture without re-placing it.
+        ``params`` maps parameter index to value, and each one goes through
+        :meth:`set_param` exactly as if you had written it there - so it says
+        which scale it is on, and a bare number is refused here too. Pass
+        ``model=None`` to point an existing block at a new capture without
+        re-placing it.
 
         Parameters passed here survive the preset's first save. A BYPASS written
         to this block before that save does not - see :meth:`set_bypass` for the
@@ -3159,14 +3172,19 @@ class QuadCortex:
             )
         if model is not None:
             self.set_block(Block(row, column, model))
+        # Addressed by cell alone, with no model id, which is deliberate: it
+        # keeps this path free of a catalog round trip. The cost is that a
+        # `Real` in `params` cannot be converted here and says so - `set_param`
+        # raises naming the missing model rather than guessing a scale.
         cell = Block(row, column)
         result = self.set_param(cell, self.CAPTURE_FILE_NAME_PARAM, f"{key}{name}")
         for index, value in (params or {}).items():
-            if isinstance(value, str):
-                result = self.set_param(cell, index, value)
-            else:
-                result = self.set_param(cell, index,
-                                        values_module.Encoded(float(value)))
+            # Passed through as they arrive. Wrapping them in `Encoded` here
+            # meant a caller who wrote `Real(0.5)` got the DEVICE's 0.5 - the
+            # exact swap ADR-0016 exists to close, performed by the library
+            # itself and reported as success. `set_param` refuses a bare number
+            # for this method's callers too.
+            result = self.set_param(cell, index, value)
         return result
 
     IR_LIBRARY = "local_ir_root"

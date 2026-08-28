@@ -147,11 +147,18 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 nothing at the call site said which. The pair that forced the issue: on a lane
 VOLUME, `real=0.0` is unity and `value=0.0` is silence.
 
-**What to watch:** the check and the conversion must read the SAME catalog
-parameter. They did not at first - on a cab the check read the model's own entry
-and the conversion used the shared layout, so on 157 of 174 cab models the check
-was inert. `ParamTarget.spec_for_conversion` is now the single place that
-decides.
+**What to watch:** everything that asks "what sits at this wire index" must get
+the SAME answer. It did not at first, and the reason was deeper than a
+duplicated lookup: on 169 of the 174 cab models the model's OWN catalog entry is
+a LOCAL list, numbered from zero over the parameters that model contributes, and
+those numbers do not address the wire. Confirmed on hardware - wire index 2 on a
+`Plini Cab (M)` reads `LEVEL` in dB, which is the shared layout's answer, while
+the cab's own entry calls index 2 `POSITION`.
+
+Two rounds of triage found the same bug in three different callers before the
+cause was named. `ParamTarget.spec_at` now reads `ParamTarget.wire_model` and is
+the only answer; `index_of` resolves names through it too, because the index it
+returns is a wire index. Do not add a second resolver.
 
 ### 2026-08-27 - The catalog is the source of truth for scales (ADR-0015)
 

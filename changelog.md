@@ -26,7 +26,7 @@ correction.
 qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))     # dB, checked
 qc.set_param(block, "GAIN", Real(5.0))              # 5 of 0..10, no unit
 qc.set_param(block, 21, Encoded(0.5))               # the device's own 0..1
-qc.set_param(block, "IR PATH SLOT 1", "/media/...")  # a string is itself
+qc.set_param(ir, params.SingleM.IR_1_PATH, "/media/...")  # a string is itself
 ```
 
 `value=`, `real=` and `text=` are replaced by one positional value. A bare
