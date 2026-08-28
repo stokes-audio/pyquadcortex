@@ -25,7 +25,8 @@ def test_the_container_enums_match_what_the_targets_address():
 
 
 def test_a_member_is_its_wire_index():
-    """IntEnum, so passing one needs no catalog - which is also the fast path."""
+    """`Param` subclasses `int`, so passing one needs no catalog - which is the
+    fast path as well as the checked one (ADR-0018)."""
     assert isinstance(params.LaneOutputParam.VOLUME, int)
     assert params.LaneOutputParam.VOLUME + 0 == 0
     assert int(params.TempoParam.VOLUME) == 3
@@ -106,11 +107,11 @@ def test_every_enum_has_unique_indices():
         assert len(values) == len(set(values)), f"{enum.__name__} repeats an index"
 
 
-def test_by_model_maps_ids_to_their_enum():
+def test_by_model_maps_ids_to_their_parameter_set():
     assert params.BY_MODEL[10] is params.ChiefDs1
-    for model_id, enum in params.BY_MODEL.items():
+    for model_id, group in params.BY_MODEL.items():
         assert isinstance(model_id, int) and model_id > 0
-        assert issubclass(enum, __import__("enum").IntEnum)
+        assert issubclass(group, params.ParamSet)
 
 
 def test_no_member_starts_with_a_digit_or_shadows_a_keyword():

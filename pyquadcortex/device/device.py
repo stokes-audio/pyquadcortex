@@ -44,7 +44,7 @@ class Device:
         if _state is None:
             self._state.listen_on(client)
         self._state.bind(client)
-        self._preset = None
+        self._preset: "Preset | None" = None
 
     def _check_open(self) -> None:
         """Refuse to answer through a `Device` the caller has finished with.

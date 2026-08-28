@@ -53,8 +53,9 @@ from pyquadcortex.protocol import models  # generated factory-block constants
 from pyquadcortex.protocol import params  # generated parameter constants
 from pyquadcortex.protocol import options  # generated option constants
 from pyquadcortex.protocol.values import (  # noqa: F401
-    Bpm, Cents, Db, Encoded, Hertz, Milliseconds, Percent, Real,
-    Seconds, Semitones, Value)
+    Bpm, BpmUnit, Cents, CentsUnit, Db, DbUnit, Encoded, Hertz, HertzUnit,
+    Milliseconds, MillisecondsUnit, NoUnit, Param, Percent, PercentUnit, Real,
+    Seconds, SecondsUnit, Semitones, SemitonesUnit, Value)
 from pyquadcortex.protocol.catalog import Model, ModelCatalog, Parameter
 
 __all__ = [

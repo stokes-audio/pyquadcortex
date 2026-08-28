@@ -288,6 +288,13 @@ class Rows:
     @typing.overload
     def __getitem__(self, row: typing.Literal[2, 4]) -> Row: ...
 
+    @typing.overload
+    def __getitem__(self, row: int) -> Row: ...
+    # The literal overloads are the point - they let a checker reject
+    # `rows[2].splitter` before it runs. This one is what keeps a COMPUTED row
+    # legal: `__iter__` walks `translate.ROWS`, whose members are plain ints,
+    # and without it iterating the rows was itself a type error.
+
     def __getitem__(self, row: int) -> Row:
         """One row, 1 to 4.
 

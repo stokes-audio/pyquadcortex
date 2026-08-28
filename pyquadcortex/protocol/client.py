@@ -29,6 +29,7 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 """
 
 import time
+import typing
 import uuid
 import warnings
 from typing import NamedTuple
@@ -484,7 +485,7 @@ class QuadCortex:
         raise KeyError(f"no preset named {name!r} in {str(setlist)!r}")
 
     def read_preset(
-        self, setlist_path: str, position, is_factory: bool = None,
+        self, setlist_path: str, position, is_factory: bool | None = None,
         timeout: float = 40.0,
     ) -> preset.BinaryPreset:
         """Recall a preset and return its full ``BinaryPreset``.
@@ -593,8 +594,8 @@ class QuadCortex:
         self,
         setlist_path: str,
         position,
-        is_factory: bool = None,
-        request_id: int = None,
+        is_factory: bool | None = None,
+        request_id: int | None = None,
     ):
         """Recall a preset within the setlist at ``setlist_path``.
 
@@ -733,6 +734,35 @@ class QuadCortex:
     def _get_catalog(self):
         """The catalog, fetched lazily - see `ParamTarget.model`."""
         return self.catalog
+
+    # Three overloads, and the order and the value unions both matter.
+    #
+    # A `Param` IS an `int` - that is what keeps it free of a catalog fetch -
+    # so an `int` overload accepting real values would swallow every wrong-unit
+    # call before the checker could reject it. Overload 3 therefore takes only
+    # what an index-addressed write actually needs, which is the device's own
+    # scale, a string, or a switch.
+    #
+    # The cost, stated rather than discovered: `set_param(target, 21, Real(3))`
+    # is a static error although it runs fine. Address by INDEX and say
+    # `Encoded`; name the parameter, or use its generated constant, to write
+    # real units. Three lines in this repository do the former, all in tests.
+    @typing.overload
+    def set_param(self, target, param: "values_module.Param[values_module.U]",
+                  value: "values_module.Real[values_module.U] | "
+                         "values_module.Encoded | str | bool | None" = None,
+                  *, scene=None, promote: bool = True): ...
+
+    @typing.overload
+    def set_param(self, target, param: str,
+                  value: "values_module.Real[typing.Any] | "
+                         "values_module.Encoded | str | bool | None" = None,
+                  *, scene=None, promote: bool = True): ...
+
+    @typing.overload
+    def set_param(self, target, param: int,
+                  value: "values_module.Encoded | str | bool | None" = None,
+                  *, scene=None, promote: bool = True): ...
 
     def set_param(self, target, param, value=None, *, scene=None,
                   promote: bool = True):
@@ -1353,7 +1383,7 @@ class QuadCortex:
         return self._t.send(msg)
 
     def reroute_grid_input(self, p: preset.BinaryPreset, to_port: int,
-                           from_port: int = None) -> list:
+                           from_port: int | None = None) -> list:
         """Re-point every grid input row on ``from_port`` to ``to_port``.
 
         ``p`` is the preset currently on the grid (from :meth:`read_preset`); the
@@ -2196,8 +2226,8 @@ class QuadCortex:
                                 lambda m: len(m.settings.in_port) > 0, timeout)
 
     def set_input_port(self, input_port_id: int, level=None,
-                       impedance: float = None, input_type: float = None,
-                       ground_lift: float = None, confirm: bool = False,
+                       impedance: float | None = None, input_type: float | None = None,
+                       ground_lift: float | None = None, confirm: bool = False,
                        timeout: float = 20.0):
         """Change one input port's settings, sparsely.
 
@@ -2268,7 +2298,7 @@ class QuadCortex:
         )
 
     def set_output_port(self, output_port_id: int, level=None,
-                        ground_lift: float = None, mute: bool = None):
+                        ground_lift: float | None = None, mute: bool | None = None):
         """Change one output port's settings, sparsely.
 
         ``level``, ``ground_lift`` and ``mute`` are all confirmed writable.
@@ -2305,8 +2335,8 @@ class QuadCortex:
             setattr(port, name, value)
             self._t.send(msg)
 
-    def set_usb_port(self, level=None, hp_select: float = None,
-                     dry_wet: float = None):
+    def set_usb_port(self, level=None, hp_select: float | None = None,
+                     dry_wet: float | None = None):
         """Change the USB audio settings. All three fields confirmed writable.
 
         ``dry_wet`` chooses whether USB outputs carry clean DI or processed audio,
@@ -2337,7 +2367,7 @@ class QuadCortex:
         msg.settings.midi_port.midi_thru = 1.0 if enabled else 0.0
         return self._t.send(msg)
 
-    def set_output_pairing(self, xlr1_2: bool = None, out3_4: bool = None):
+    def set_output_pairing(self, xlr1_2: bool | None = None, out3_4: bool | None = None):
         """Pair or unpair the output couples, which makes them share settings.
 
         The manual's "hold OUTPUTS 1/2 or 3/4 to pair or unpair them". Paired
@@ -2626,7 +2656,7 @@ class QuadCortex:
             lambda: self._t.send(pa.FileMessage(action=pa.MessageAction.READ)),
             seconds,
             match=lambda m: bool(m.folder.key))
-        best = {}
+        best: dict[str, Folder] = {}
         for m in pushes:
             f = m.folder
             occupied = sum(1 for x in f.files
@@ -2781,8 +2811,8 @@ class QuadCortex:
             f"that Favorites is unreadable."
         ) from last
 
-    def set_master_volume_assignment(self, out12: bool = None, out34: bool = None,
-                                     send12: bool = None, headphones: bool = None):
+    def set_master_volume_assignment(self, out12: bool | None = None, out34: bool | None = None,
+                                     send12: bool | None = None, headphones: bool | None = None):
         """Choose which outputs the Master Volume knob governs.
 
         The manual's checkboxes in the Master Volume overlay. Confirmed writable.
@@ -2920,7 +2950,7 @@ class QuadCortex:
         return self._t.send(msg)
 
     def set_param_option(self, block, param, option,
-                         source: preset.BinaryPreset = None):
+                         source: preset.BinaryPreset | None = None):
         """Choose a list-valued parameter's option.
 
         List parameters store ``index / (count - 1)``, so choosing one means
@@ -3191,7 +3221,7 @@ class QuadCortex:
         return self._file_operation(msg)
 
     def copy_preset(self, from_setlist: str, position, to_setlist: str,
-                    to_position=None, name: str = None,
+                    to_position=None, name: str | None = None,
                     instrument: int = Instrument.NONE):
         """Copy a preset into another setlist.
 
@@ -3223,7 +3253,7 @@ class QuadCortex:
                                         instrument=instrument, confirm=True)
 
     def duplicate_setlist(self, source_name: str, dest_name: str,
-                          limit: int = None):
+                          limit: int | None = None):
         """Copy a whole setlist into a new one, preset by preset.
 
         Also a composition rather than a device operation. The unit's own
@@ -3263,8 +3293,8 @@ class QuadCortex:
     GLOBAL_EQ_OUT_12 = 26
     GLOBAL_EQ_OUT_34 = 27
 
-    def set_global_eq_output(self, level=None, out12: bool = None,
-                             out34: bool = None):
+    def set_global_eq_output(self, level=None, out12: bool | None = None,
+                             out34: bool | None = None):
         """Set the Global EQ's OUT tab: its overall level and which outputs it feeds.
 
         The manual's OUT TAB - "assign the GLOBAL EQ to one or both output pairs and
@@ -3294,7 +3324,7 @@ class QuadCortex:
             self.set_global_eq_band(index, value)
 
     def set_global_eq(self, band: int, gain=None, frequency=None, q=None,
-                      filter_type=None, enabled: bool = None):
+                      filter_type=None, enabled: bool | None = None):
         """Set one Global EQ band's controls, by band number rather than wire index.
 
         ``band`` is 1 to 5 as the unit numbers them.
@@ -3343,14 +3373,17 @@ class QuadCortex:
         if q is not None:
             q = values_module.Encoded(_setting_wire(q, "a Global EQ band's Q"))
         # A selector and a switch, so the library builds their wire values
-        # itself - there is no caller number here to say a scale for.
-        if filter_type is not None:
-            filter_type = values_module.Encoded(int(filter_type) / 4)
-        if enabled is not None:
-            enabled = values_module.Encoded(float(enabled))
+        # itself - there is no caller number here to say a scale for. Separate
+        # names rather than reassigning the parameters: `enabled` is a bool and
+        # `filter_type` an enum, and writing an `Encoded` over either makes the
+        # signature stop describing the variable halfway down the function.
+        type_wire = (None if filter_type is None
+                     else values_module.Encoded(int(filter_type) / 4))
+        enabled_wire = (None if enabled is None
+                        else values_module.Encoded(float(enabled)))
         controls = [(offset, value) for offset, value in
-                    ((0, gain), (1, frequency), (2, q), (3, filter_type),
-                     (4, enabled))
+                    ((0, gain), (1, frequency), (2, q), (3, type_wire),
+                     (4, enabled_wire))
                     if value is not None]
         if not controls:
             raise TypeError("set_global_eq needs at least one control to set")
@@ -3376,7 +3409,7 @@ class QuadCortex:
         """
         return self.list_presets(self.CAPTURES_LIBRARY, timeout=timeout)
 
-    def set_capture(self, cell, capture, params: dict = None):
+    def set_capture(self, cell, capture, params: dict | None = None):
         """Point a Neural Capture block at a capture from the library.
 
         ``capture`` is an entry from :meth:`captures` (or anything with ``key`` and
@@ -3456,7 +3489,7 @@ class QuadCortex:
     IR_NAME_PARAMS = (22, 23)
     IR_LOADER_MODELS = range(29001, 29009)
 
-    def list_irs(self, folder: str = None, timeout: float = 20.0) -> list:
+    def list_irs(self, folder: str | None = None, timeout: float = 20.0) -> list:
         """Every Impulse Response the unit can load, as listing entries.
 
         Each has a ``key`` and a ``name``, which are exactly what :meth:`set_ir`
@@ -3965,14 +3998,28 @@ def stomp_assignments(p: preset.BinaryPreset) -> list:
             for a in p.stomp_mode_assignments]
 
 
-def midi_out(p: preset.BinaryPreset, source=None) -> dict:
+@typing.overload
+def midi_out(p: preset.BinaryPreset, source: None = None
+             ) -> dict[int, list[MidiOut]]: ...
+
+
+@typing.overload
+def midi_out(p: preset.BinaryPreset, source: int) -> list[MidiOut]: ...
+
+
+def midi_out(p: preset.BinaryPreset, source=None):
     """The per-preset MIDI Out messages, keyed by :class:`MidiSource`.
 
     Reads the 120-slot ``midi_messages_general_v2`` as 10 sources x 12 messages.
     Pass ``source`` to get one source's list instead of the whole map. Empty
     slots are dropped, so a source with nothing assigned is absent.
+
+    The return type DEPENDS on that argument - a map without it, one source's
+    list with it - which the annotation used to hide by claiming `dict` for
+    both. The overloads say it instead, so a caller that passes a source gets
+    told it has a list.
     """
-    out = {}
+    out: dict[int, list[MidiOut]] = {}
     for i, m in enumerate(p.midi_messages_general_v2):
         if not (m.type or m.channel or m.param1 or m.param2 or m.param3):
             continue
@@ -4237,7 +4284,7 @@ def row_status(p: preset.BinaryPreset) -> list:
     An occupied lane row reports ``"occupied"`` with ``reserved_by`` still set,
     so the split relationship stays visible either way.
     """
-    used = {}
+    used: dict[int, int] = {}
     for b in blocks(p):
         used[b.row] = used.get(b.row, 0) + 1
     lanes = {s.lane_row: s.row for s in splits(p)}

@@ -26,17 +26,43 @@ fi
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-# Prefer the version-matched generator from the venv dev extra (grpcio-tools);
-# fall back to system protoc for environments without the venv.
+# `--mypy_out` rides alongside `--python_out` rather than being a second pass:
+# one protoc run cannot emit bindings and stubs that disagree, and two could.
+# The plugin is a `protoc-gen-mypy` executable protoc finds on PATH, so the
+# venv's bin goes on PATH here - `mypy-protobuf` is in the dev extra with
+# grpcio-tools for exactly this.
+#
+# The bindings are what the package imports and the stubs are what a type
+# checker reads. Neither is optional: without the stubs mypy cannot see inside
+# a generated module at all and reports about 200 phantom "no attribute"
+# errors, which is what made a type checker unusable here before.
 if [ -x "$HERE/.venv/bin/python" ]; then
-  "$HERE/.venv/bin/python" -m grpc_tools.protoc -I "$PROTO_SRC" --python_out="$STAGE" Preset.proto ProductionAutomation.proto
+  PATH="$HERE/.venv/bin:$PATH" "$HERE/.venv/bin/python" -m grpc_tools.protoc \
+    -I "$PROTO_SRC" --python_out="$STAGE" --mypy_out="$STAGE" \
+    Preset.proto ProductionAutomation.proto
 else
-  protoc -I "$PROTO_SRC" --python_out="$STAGE" Preset.proto ProductionAutomation.proto
+  protoc -I "$PROTO_SRC" --python_out="$STAGE" --mypy_out="$STAGE" \
+    Preset.proto ProductionAutomation.proto
 fi
 
 # protoc exiting 0 having written nothing would otherwise reach the gate as an
 # unexpanded glob, sail through it with nothing to compare, and die at the `cp`
 # with a bare "No such file or directory". Name the actual problem here.
+# A MISSING plugin does not reach this check: protoc exits 1 when it cannot
+# find `protoc-gen-mypy`, and `set -euo pipefail` above ends the script there
+# with protoc's own message, which names the plugin. What this catches is the
+# other way to lose the stubs - somebody dropping `--mypy_out` from the
+# invocation above, which protoc accepts silently.
+if [ ! -f "$STAGE/Preset_pb2.pyi" ]; then
+  echo "error: the generator wrote bindings but no *_pb2.pyi stubs, so the" >&2
+  echo "       protoc call above is missing --mypy_out." >&2
+  echo "       (If the PLUGIN is what is missing, protoc has already failed" >&2
+  echo "        above saying so; the fix there is pip install -U -e '.[dev]'.)" >&2
+  echo "       Committing bindings without their stubs would leave the type" >&2
+  echo "       checker blind to every generated message, and CI runs it." >&2
+  exit 1
+fi
+
 if [ ! -f "$STAGE/Preset_pb2.py" ]; then
   echo "error: the generator exited 0 but wrote no *_pb2.py into $STAGE." >&2
   echo "       Check whether the .proto files grew a \`package\` statement:" >&2
@@ -126,8 +152,27 @@ if [ -n "$DOWNGRADES" ]; then
   exit 1
 fi
 
-cp "$STAGE"/*_pb2.py "$OUT/"
-echo "Generated bindings in $OUT"
+# protoc writes a stub's cross-references FLAT - `import Preset_pb2` - exactly
+# as it writes the bindings' imports. The BINDINGS get away with that through
+# the sys.path shim in `proto/__init__.py`; a type checker cannot use a runtime
+# shim, so the flat import resolves to nothing and every field carrying a
+# `Preset` type silently becomes `Any`. That is not a small hole: `msg.preset`
+# is the path every keyed grid write takes, and it read as unchecked while the
+# checker reported success.
+#
+# Rewriting it package-relative is the whole fix, and it is done here rather
+# than by hand so a regeneration cannot quietly undo it.
+for stub in "$STAGE"/*_pb2.pyi; do
+  perl -pi -e 's{^import (\w+_pb2) as }{from pyquadcortex.protocol.proto import $1 as }' "$stub"
+done
+if grep -qE '^import [A-Za-z]+_pb2' "$STAGE"/*_pb2.pyi; then
+  echo "error: a stub still imports a sibling flat, which a type checker" >&2
+  echo "       cannot resolve - every field of that type would become Any." >&2
+  exit 1
+fi
+
+cp "$STAGE"/*_pb2.py "$STAGE"/*_pb2.pyi "$OUT/"
+echo "Generated bindings and type stubs in $OUT"
 
 # "Nothing changed" is a result worth seeing rather than assuming: it means the
 # schema edit did not reach the bindings, or protoc wrote somewhere else.

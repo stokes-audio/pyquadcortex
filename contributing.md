@@ -71,6 +71,16 @@ See [docs/architecture.md](docs/architecture.md) for the details.
 .venv/bin/python -m pytest -q
 ```
 
+CI also runs a type checker, and it BLOCKS a merge, so run it before pushing:
+
+```bash
+.venv/bin/python -m mypy
+```
+
+The package is expected to be clean - no error is suppressed, and the generated
+protobuf bindings are checked through the committed `*_pb2.pyi` stubs beside
+them. See ADR-0018.
+
 The suite is fully **offline** - it needs no Quad Cortex and does not import `hid`
 (so no `DYLD_LIBRARY_PATH` prefix is needed, even on macOS), which means you can
 develop and test most changes with no hardware attached. Please add or update tests

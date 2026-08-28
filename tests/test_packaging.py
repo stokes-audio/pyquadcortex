@@ -85,11 +85,46 @@ def test_the_wheel_takes_the_whole_package_and_narrows_nothing():
         f"the installed package short of what the tests import")
 
 
+PROTO = ROOT / "pyquadcortex" / "protocol" / "proto"
+
+
 def test_the_generated_bindings_are_where_the_package_imports_them_from():
     """ADR-0001: these are committed on purpose and must never be gitignored."""
-    proto = ROOT / "pyquadcortex" / "protocol" / "proto"
     for name in ("__init__.py", "Preset_pb2.py", "ProductionAutomation_pb2.py"):
-        assert (proto / name).is_file(), f"{name} is missing from {proto}"
+        assert (PROTO / name).is_file(), f"{name} is missing from {PROTO}"
+
+
+def test_every_binding_has_its_type_stub_beside_it():
+    """ADR-0018: committed for the same reason the bindings are.
+
+    Without a stub a checker cannot see inside a generated message at all, and
+    CI runs one. `scripts/check_artifacts.py` proves they reach the wheel; this
+    proves they are in the tree, which is the half a `.gitignore` edit or a
+    hand-run protoc could quietly undo.
+    """
+    for name in ("Preset_pb2", "ProductionAutomation_pb2"):
+        stub = PROTO / f"{name}.pyi"
+        assert stub.is_file(), f"{name}.pyi is missing from {PROTO}"
+
+
+def test_no_stub_imports_a_sibling_flat():
+    """The failure that reads exactly like success.
+
+    protoc writes `import Preset_pb2` - flat, like the bindings' own imports.
+    The BINDINGS survive that through the sys.path shim in `proto/__init__.py`;
+    a type checker cannot use a runtime shim, so the import resolves to nothing
+    and EVERY field carrying that type silently becomes `Any` while mypy still
+    reports success. `msg.preset` is the path every keyed grid write takes.
+
+    `scripts/compile_protos.sh` rewrites these package-relative. This is what
+    notices if a stub is ever regenerated without it.
+    """
+    for stub in PROTO.glob("*_pb2.pyi"):
+        flat = [line for line in stub.read_text().splitlines()
+                if re.match(r"^import \w+_pb2\b", line)]
+        assert not flat, (
+            f"{stub.name} imports a sibling flat ({flat[0]!r}), which a type "
+            f"checker cannot resolve - every field of that type becomes Any")
 
 
 def _committed_gencode() -> dict[str, str]:

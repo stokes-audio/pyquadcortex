@@ -33,6 +33,11 @@ classifiers = [
 dependencies = [
   "hid>=1.0.6",          # ctypes binding to hidapi (also install the hidapi C lib, see README)
   "protobuf>=7.35.1,<8", # must match the shipped *_pb2 gencode major; protobuf enforces runtime >= gencode
+  # PEP 696 TypeVar defaults, for `values.U`. Without a default, binding a bare
+  # `Real` to a name - `gain = Real(5.0)` - is a mypy error for every downstream
+  # user, and `py.typed` invites exactly those users. `typing` gained this in
+  # 3.13 and this package supports 3.11.
+  "typing-extensions>=4.4",
 ]
 
 [project.optional-dependencies]
@@ -45,7 +50,7 @@ dependencies = [
 # Ask the compiler, never the metadata: grpcio-tools versions do not track
 # protobuf ones, and 1.82.1 declares `protobuf>=7.35.1` while still emitting
 # gencode 7.35.0.
-dev = ["pytest>=8", "grpcio-tools>=1.83.0"]
+dev = ["pytest>=8", "grpcio-tools>=1.83.0", "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
 
 [project.scripts]
 qcctl = "pyquadcortex.protocol.cli:main"
@@ -64,6 +69,10 @@ path = "pyquadcortex/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pyquadcortex"]
+# PEP 561: without `py.typed` in the installed package a type checker ignores
+# our annotations and the committed *_pb2.pyi entirely, so everything this
+# project's typing buys would stop at our own CI.
+artifacts = ["pyquadcortex/py.typed", "pyquadcortex/protocol/proto/*.pyi"]
 
 [tool.hatch.build.targets.sdist]
 # Ship the source needed to rebuild the bindings, run the offline tests, and
@@ -79,3 +88,27 @@ include = [
   "/changelog.md",
   "/LICENSE",
 ]
+
+
+[tool.mypy]
+python_version = "3.11"
+files = ["pyquadcortex"]
+# Not `strict`. This project's rule is that a guard has to BITE, and a strict
+# run over an untyped codebase produces hundreds of findings nobody reads -
+# which is how a check becomes decoration. What is on is what catches real
+# mistakes in code that is already annotated, plus the unit checking ADR-0016
+# deferred and ADR-0018 delivers.
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+# `hid` is a third-party C extension wrapper that publishes no stubs and no
+# `py.typed`. Stated here rather than as an inline ignore because it is a fact
+# about that package, not about the one line that imports it - and because
+# `import hid` appears exactly once in this codebase, lazily, inside
+# `session.open_device()`, which `tests/test_import_cleanliness.py` enforces.
+module = "hid"
+ignore_missing_imports = true
+

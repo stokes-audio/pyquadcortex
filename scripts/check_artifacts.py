@@ -23,6 +23,14 @@ REQUIRED = (
     "pyquadcortex/protocol/proto/__init__.py",
     "pyquadcortex/protocol/proto/Preset_pb2.py",
     "pyquadcortex/protocol/proto/ProductionAutomation_pb2.py",
+    # The stubs and the PEP 561 marker travel with the bindings or the typing
+    # stops at our own CI: without `py.typed` a checker ignores an installed
+    # package's annotations entirely, and without the *_pb2.pyi it cannot see
+    # inside a generated message. Both are easy for a packaging rule to drop,
+    # because neither is a .py file and nothing imports them.
+    "pyquadcortex/py.typed",
+    "pyquadcortex/protocol/proto/Preset_pb2.pyi",
+    "pyquadcortex/protocol/proto/ProductionAutomation_pb2.pyi",
     "pyquadcortex/protocol/cli.py",
     "pyquadcortex/protocol/client.py",
     "pyquadcortex/device/device.py",

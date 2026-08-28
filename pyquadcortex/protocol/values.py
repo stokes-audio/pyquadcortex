@@ -47,9 +47,101 @@ unitless and run 0..1 anyway. There ``Real(0.5)`` and ``Encoded(0.5)`` write the
 same thing. That is a coincidence, not a rule, and it does not hold for the
 other 3,530.
 
-See ADR-0016 and
+**The unit is also checked STATICALLY**, where the caller names the parameter
+with a generated constant (ADR-0018). `params.LaneOutputParam.VOLUME` is a
+`Param[DbUnit]` - an ``int`` that also carries which unit its parameter is in -
+so a type checker rejects ``Hertz`` there before the code runs. The runtime
+check below is unchanged and still does the work for every other caller: a
+string, a bare index, or anyone not running a checker.
+
+See ADR-0016, ADR-0018, and
 ``docs/superpowers/specs/2026-08-27-typed-parameter-values-design.md``.
 """
+
+from typing import Any, Generic
+
+# `typing_extensions` rather than `typing`: PEP 696 TypeVar defaults landed in
+# `typing` in 3.13 and this package supports 3.11. The default is not cosmetic -
+# without it, `gain = Real(5.0)` is a `Need type annotation` error for anyone
+# running a checker, which is every user `py.typed` invites.
+from typing_extensions import TypeVar
+
+#: The unit a parameter is in, as a TYPE rather than a string. These are marker
+#: classes and are never instantiated - their whole job is to be different from
+#: each other, so a checker can tell `Param[DbUnit]` from `Param[HzUnit]`.
+#:
+#: One per unit the catalog actually spells, plus `NoUnit` for every parameter
+#: with none - 1,414 of the 2,445 generated constants. `NoUnit` is not "unknown": it is a positive statement
+#: that the parameter has no unit, which is what makes `Db` on a drive's GAIN a
+#: static error rather than something that slips through.
+
+
+class DbUnit: ...
+class PercentUnit: ...
+class HertzUnit: ...
+class MillisecondsUnit: ...
+class SecondsUnit: ...
+class SemitonesUnit: ...
+class CentsUnit: ...
+class BpmUnit: ...
+class NoUnit: ...
+
+
+#: The unit a value or a constant is in. Defaults to `Any` so an unannotated
+#: `Real` still means "claims no unit" rather than "unsolvable".
+U = TypeVar("U", default=Any)
+
+
+class Param(int, Generic[U]):
+    """A parameter's wire index, tagged with the unit it takes.
+
+    An ``int`` at runtime and nothing more - it goes straight to the wire and
+    needs no catalog, which is what makes a generated constant the cheap route
+    as well as the checked one. The type argument exists only for the checker.
+
+    ADR-0016 recorded this as possible and deferred it; ADR-0018 is where it
+    ships, once a type checker was running in CI for it to mean anything.
+    """
+
+    # No `__slots__` here, unlike `Value` below, and not an oversight: CPython
+    # refuses a non-empty `__slots__` on an `int` subclass, and an EMPTY one
+    # would make `name` unassignable. These are a few thousand module-level
+    # constants built once at import, so a `__dict__` each is not worth a
+    # cleverer way of carrying one string.
+
+    #: What the constant is called. `params.py` fills it in, so the generated
+    #: constants keep the one `IntEnum` behaviour worth carrying over.
+    name: str
+
+    def __new__(cls, value: int, name: str = ""):
+        self = super().__new__(cls, value)
+        self.name = name
+        return self
+
+    @property
+    def value(self) -> int:
+        """The wire index, spelled the way an `IntEnum` member spelled it.
+
+        These WERE `IntEnum` members, and `.value` cost one line to keep. It is
+        redundant - a `Param` IS its value - but breaking it would have been an
+        incidental break rather than a chosen one.
+        """
+        return int(self)
+
+    def __repr__(self) -> str:
+        return f"{self.name}({int(self)})" if self.name else f"Param({int(self)})"
+
+    def __str__(self) -> str:
+        """The number, deliberately, and not `__repr__`.
+
+        `int` defines no `__str__` of its own - it inherits `object`'s, which
+        defers to `__repr__` - so an informative `__repr__` silently turned
+        `f"{VOLUME}"` from "0" into "VOLUME(0)" for every caller formatting a
+        constant into a string. An `IntEnum` member formats as its number, so
+        this one does too. `int.__str__` does not work here for the same
+        reason: it IS `object.__str__`.
+        """
+        return int.__repr__(self)
 
 
 class Value(float):
@@ -92,8 +184,14 @@ class Encoded(Value):
     __slots__ = ()
 
 
-class Real(Value):
+class Real(Value, Generic[U]):
     """The value on the PARAMETER's own scale, whatever that scale is.
+
+    Generic so a checker can tell `Db` from `Hertz`, and UNPARAMETERISED here
+    on purpose: a bare `Real` claims no unit, fits any `Param[U]`, and is the
+    general case for the 1,780 parameters that have none. The subclasses below
+    each bind one unit, which is what makes `Db` on an `Hz` parameter a static
+    error as well as a runtime one.
 
     Use this where the parameter has no unit - a drive's ``GAIN`` runs 0..10 and
     means nothing more specific - or where you do not want the unit checked.
@@ -128,56 +226,56 @@ class Real(Value):
         )
 
 
-class Db(Real):
+class Db(Real[DbUnit]):
     """Decibels. 499 parameters, the largest unit population in the catalog."""
 
     __slots__ = ()
     CATALOG_UNITS = frozenset({"dB"})
 
 
-class Percent(Real):
+class Percent(Real[PercentUnit]):
     """Percent."""
 
     __slots__ = ()
     CATALOG_UNITS = frozenset({"%"})
 
 
-class Hertz(Real):
+class Hertz(Real[HertzUnit]):
     """Hertz."""
 
     __slots__ = ()
     CATALOG_UNITS = frozenset({"Hz"})
 
 
-class Milliseconds(Real):
+class Milliseconds(Real[MillisecondsUnit]):
     """Milliseconds."""
 
     __slots__ = ()
     CATALOG_UNITS = frozenset({"ms"})
 
 
-class Seconds(Real):
+class Seconds(Real[SecondsUnit]):
     """Seconds."""
 
     __slots__ = ()
     CATALOG_UNITS = frozenset({"s"})
 
 
-class Semitones(Real):
+class Semitones(Real[SemitonesUnit]):
     """Semitones. The catalog spells this two ways, and both mean this."""
 
     __slots__ = ()
     CATALOG_UNITS = frozenset({"Semitones", "st"})
 
 
-class Cents(Real):
+class Cents(Real[CentsUnit]):
     """Cents. The catalog spells this two ways, and both mean this."""
 
     __slots__ = ()
     CATALOG_UNITS = frozenset({"Cents", "cents"})
 
 
-class Bpm(Real):
+class Bpm(Real[BpmUnit]):
     """Beats per minute. One parameter: the preset's TEMPO."""
 
     __slots__ = ()
@@ -208,6 +306,9 @@ def of_unit(units: str, value: float) -> Real:
 
 
 __all__ = [
+    "Param",
+    "DbUnit", "PercentUnit", "HertzUnit", "MillisecondsUnit", "SecondsUnit",
+    "SemitonesUnit", "CentsUnit", "BpmUnit", "NoUnit",
     "Value", "Encoded", "Real",
     "Db", "Percent", "Hertz", "Milliseconds", "Seconds", "Semitones", "Cents",
     "Bpm",

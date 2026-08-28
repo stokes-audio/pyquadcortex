@@ -7,9 +7,14 @@ member goes straight to :meth:`pyquadcortex.protocol.QuadCortex.set_param`::
 
     qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Db(-3.1))
 
-These are ``IntEnum``, so a member IS its wire index and passing one
-needs no catalog - which also makes it the cheapest route, since a
-catalog is fetched from the device.
+A constant IS its wire index - `Param` subclasses `int` - so passing
+one needs no catalog, which makes it the cheapest route as well as the
+clearest, since a catalog is fetched from the device.
+
+It also carries the parameter's UNIT in its type, so a type checker
+rejects `set_param(LaneOutputParam.VOLUME, Hertz(217))` before it runs
+(ADR-0018). The runtime check is unchanged and still covers every other
+caller - a string, a bare index, or anyone not running a checker.
 
 **Cabs share one layout.** The catalog lists two parameters for a cab -
 its two mic selectors - while the wire carries 22. So a cab is CHOSEN by
@@ -26,94 +31,136 @@ for an IR Loader it is an IR slot; both are measured, not assumed.
 Only FACTORY content is here, as in `models.py`. Resolve anything else
 through ``qc.catalog``.
 """
-from enum import IntEnum
+from pyquadcortex.protocol.values import (BpmUnit, CentsUnit, DbUnit,
+                                          HertzUnit, MillisecondsUnit,
+                                          NoUnit, Param, PercentUnit,
+                                          SecondsUnit, SemitonesUnit)
+
+
+class _ParamSetMeta(type):
+    """The `IntEnum` surface worth keeping, on a plain class.
+
+    These were `IntEnum`s until ADR-0018. An enum member's type is the
+    enum class, so it cannot carry a PER-MEMBER unit, and a model's
+    parameters have mixed units - which is the whole reason the shape
+    changed. What callers actually used of `IntEnum` is iteration,
+    lookup by name and `__members__`, so those are here; the rest of
+    the enum machinery was never reached.
+    """
+
+    @property
+    def __members__(cls):
+        return {k: v for k, v in vars(cls).items()
+                if isinstance(v, Param)}
+
+    def __iter__(cls):
+        return iter(cls.__members__.values())
+
+    def __getitem__(cls, name):
+        return cls.__members__[name]
+
+    def __len__(cls):
+        return len(cls.__members__)
+
+    def __contains__(cls, item):
+        return item in cls.__members__.values()
+
+
+class ParamSet(metaclass=_ParamSetMeta):
+    """One model's parameters. A namespace, not a value."""
+
+    def __init__(self):
+        raise TypeError(
+            f"{type(self).__name__} is a namespace of parameter "
+            f"constants, not something to instantiate - use its "
+            f"members, such as {type(self).__name__}.<NAME>")
 
 
 # -- the containers a target addresses ----------------------------------------
 
 
-class LaneOutputParam(IntEnum):
+class LaneOutputParam(ParamSet):
     """A row's Lane Output Control - `LaneOutput(row)`."""
 
-    VOLUME = 0    # float dB
-    PAN = 1    # float
-    MUTE = 2    # switch
-    SOLO = 3    # switch
+    VOLUME: Param[DbUnit] = Param(0, 'VOLUME')    # float dB
+    PAN: Param[NoUnit] = Param(1, 'PAN')    # float
+    MUTE: Param[NoUnit] = Param(2, 'MUTE')    # switch
+    SOLO: Param[NoUnit] = Param(3, 'SOLO')    # switch
 
 
-class LaneInputParam(IntEnum):
+class LaneInputParam(ParamSet):
     """A row's Input Gate Control - `LaneInput(row)`."""
 
-    NOISE_REDUCTION = 0    # float %
-    BYPASS = 1    # switch
-    GAIN_REDUCTION = 2    # grMeter dB
-    INPUT_GAIN = 3    # float dB
+    NOISE_REDUCTION: Param[PercentUnit] = Param(0, 'NOISE_REDUCTION')    # float %
+    BYPASS: Param[NoUnit] = Param(1, 'BYPASS')    # switch
+    GAIN_REDUCTION: Param[DbUnit] = Param(2, 'GAIN_REDUCTION')    # grMeter dB
+    INPUT_GAIN: Param[DbUnit] = Param(3, 'INPUT_GAIN')    # float dB
 
 
-class MixerParam(IntEnum):
+class MixerParam(ParamSet):
     """A row's Mixer - `Mixer(row)`."""
 
-    LEVEL_A = 0    # float dB
-    PAN_A = 1    # float
-    LEVEL_B = 2    # float dB
-    PAN_B = 3    # float
-    PHASE = 4    # switch
-    MIXER_LEVEL = 5    # float dB
-    SPLIT_MODE = 6    # float
+    LEVEL_A: Param[DbUnit] = Param(0, 'LEVEL_A')    # float dB
+    PAN_A: Param[NoUnit] = Param(1, 'PAN_A')    # float
+    LEVEL_B: Param[DbUnit] = Param(2, 'LEVEL_B')    # float dB
+    PAN_B: Param[NoUnit] = Param(3, 'PAN_B')    # float
+    PHASE: Param[NoUnit] = Param(4, 'PHASE')    # switch
+    MIXER_LEVEL: Param[DbUnit] = Param(5, 'MIXER_LEVEL')    # float dB
+    SPLIT_MODE: Param[NoUnit] = Param(6, 'SPLIT_MODE')    # float
 
 
-class SplitterParam(IntEnum):
+class SplitterParam(ParamSet):
     """A row's splitter - `Splitter(row)`."""
 
-    TYPE = 0    # switch
-    STEREO = 1    # switch
-    BALANCE = 2    # float
-    LEVEL_TO_A = 3    # float dB
-    LEVEL_TO_B = 4    # float dB
-    FREQUENCY = 5    # float Hz
-    MODE = 6    # switch
+    TYPE: Param[NoUnit] = Param(0, 'TYPE')    # switch
+    STEREO: Param[NoUnit] = Param(1, 'STEREO')    # switch
+    BALANCE: Param[NoUnit] = Param(2, 'BALANCE')    # float
+    LEVEL_TO_A: Param[DbUnit] = Param(3, 'LEVEL_TO_A')    # float dB
+    LEVEL_TO_B: Param[DbUnit] = Param(4, 'LEVEL_TO_B')    # float dB
+    FREQUENCY: Param[HertzUnit] = Param(5, 'FREQUENCY')    # float Hz
+    MODE: Param[NoUnit] = Param(6, 'MODE')    # switch
 
 
-class SplitterABParam(IntEnum):
+class SplitterABParam(ParamSet):
     """The older two-parameter splitter view."""
 
-    LEVEL_TO_A = 0    # float dB
-    LEVEL_TO_B = 1    # float dB
-    STEREO = 2    # switch
+    LEVEL_TO_A: Param[DbUnit] = Param(0, 'LEVEL_TO_A')    # float dB
+    LEVEL_TO_B: Param[DbUnit] = Param(1, 'LEVEL_TO_B')    # float dB
+    STEREO: Param[NoUnit] = Param(2, 'STEREO')    # switch
 
 
-class TempoParam(IntEnum):
+class TempoParam(ParamSet):
     """The preset's TempoControl - `Tempo()`."""
 
-    TEMPO = 0    # float BPM
-    TYPE = 1    # switch
-    LED_LIGHT = 2    # switch
-    VOLUME = 3    # float dB
-    START = 4    # toggleButton
-    PAN = 5    # float
-    TIME_SIGNATURE = 6    # comboBox
-    NOTELENGTH = 7    # comboBox
-    SOUND = 8    # comboBox
-    ROUTING = 9    # comboBox
-    STEPSTATE0 = 10    # empty
-    STEPSTATE1 = 11    # empty
-    STEPSTATE2 = 12    # empty
-    STEPSTATE3 = 13    # empty
-    STEPSTATE4 = 14    # empty
-    STEPSTATE5 = 15    # empty
-    STEPSTATE6 = 16    # empty
-    STEPSTATE7 = 17    # empty
-    STEPSTATE8 = 18    # empty
-    STEPSTATE9 = 19    # empty
-    STEPSTATE10 = 20    # empty
-    STEPSTATE11 = 21    # empty
-    STEPSTATE12 = 22    # empty
+    TEMPO: Param[BpmUnit] = Param(0, 'TEMPO')    # float BPM
+    TYPE: Param[NoUnit] = Param(1, 'TYPE')    # switch
+    LED_LIGHT: Param[NoUnit] = Param(2, 'LED_LIGHT')    # switch
+    VOLUME: Param[DbUnit] = Param(3, 'VOLUME')    # float dB
+    START: Param[NoUnit] = Param(4, 'START')    # toggleButton
+    PAN: Param[NoUnit] = Param(5, 'PAN')    # float
+    TIME_SIGNATURE: Param[NoUnit] = Param(6, 'TIME_SIGNATURE')    # comboBox
+    NOTELENGTH: Param[NoUnit] = Param(7, 'NOTELENGTH')    # comboBox
+    SOUND: Param[NoUnit] = Param(8, 'SOUND')    # comboBox
+    ROUTING: Param[NoUnit] = Param(9, 'ROUTING')    # comboBox
+    STEPSTATE0: Param[NoUnit] = Param(10, 'STEPSTATE0')    # empty
+    STEPSTATE1: Param[NoUnit] = Param(11, 'STEPSTATE1')    # empty
+    STEPSTATE2: Param[NoUnit] = Param(12, 'STEPSTATE2')    # empty
+    STEPSTATE3: Param[NoUnit] = Param(13, 'STEPSTATE3')    # empty
+    STEPSTATE4: Param[NoUnit] = Param(14, 'STEPSTATE4')    # empty
+    STEPSTATE5: Param[NoUnit] = Param(15, 'STEPSTATE5')    # empty
+    STEPSTATE6: Param[NoUnit] = Param(16, 'STEPSTATE6')    # empty
+    STEPSTATE7: Param[NoUnit] = Param(17, 'STEPSTATE7')    # empty
+    STEPSTATE8: Param[NoUnit] = Param(18, 'STEPSTATE8')    # empty
+    STEPSTATE9: Param[NoUnit] = Param(19, 'STEPSTATE9')    # empty
+    STEPSTATE10: Param[NoUnit] = Param(20, 'STEPSTATE10')    # empty
+    STEPSTATE11: Param[NoUnit] = Param(21, 'STEPSTATE11')    # empty
+    STEPSTATE12: Param[NoUnit] = Param(22, 'STEPSTATE12')    # empty
 
 
 # -- cabs: one layout, shared by every cab model ------------------------------
 
 
-class Cabsim(IntEnum):
+class Cabsim(ParamSet):
     """Every cab model's parameters. The catalog under-describes these.
 
     Measured on four cabs across all four categories: the wire carries
@@ -127,3769 +174,3769 @@ class Cabsim(IntEnum):
     reads 0.0 everywhere, so it is omitted rather than guessed at.
     """
 
-    MIC_1_BYPASS = 0    # switch
-    MIC_1_IR_SELECTOR = 1    # string
-    MIC_1_LEVEL = 2    # float dB
-    MIC_1_PAN = 3    # float
-    MIC_1_DISTANCE = 4    # float
-    MIC_1_POSITION = 5    # float
-    MIC_1_PHI = 6    # switch
-    MIC_1_GRID_MODE = 7    # switch
-    MIC_2_BYPASS = 8    # switch
-    MIC_2_IR_SELECTOR = 9    # string
-    MIC_2_LEVEL = 10    # float dB
-    MIC_2_PAN = 11    # float
-    MIC_2_DISTANCE = 12    # float
-    MIC_2_POSITION = 13    # float
-    MIC_2_PHI = 14    # switch
-    MIC_2_GRID_MODE = 15    # switch
-    HPF = 16    # float Hz
-    LPF = 17    # float Hz
-    OUTPUT_VOLUME = 18    # float dB
-    MIC_1_IR_NAME = 19    # string
-    MIC_2_IR_NAME = 20    # string
+    MIC_1_BYPASS: Param[NoUnit] = Param(0, 'MIC_1_BYPASS')    # switch
+    MIC_1_IR_SELECTOR: Param[NoUnit] = Param(1, 'MIC_1_IR_SELECTOR')    # string
+    MIC_1_LEVEL: Param[DbUnit] = Param(2, 'MIC_1_LEVEL')    # float dB
+    MIC_1_PAN: Param[NoUnit] = Param(3, 'MIC_1_PAN')    # float
+    MIC_1_DISTANCE: Param[NoUnit] = Param(4, 'MIC_1_DISTANCE')    # float
+    MIC_1_POSITION: Param[NoUnit] = Param(5, 'MIC_1_POSITION')    # float
+    MIC_1_PHI: Param[NoUnit] = Param(6, 'MIC_1_PHI')    # switch
+    MIC_1_GRID_MODE: Param[NoUnit] = Param(7, 'MIC_1_GRID_MODE')    # switch
+    MIC_2_BYPASS: Param[NoUnit] = Param(8, 'MIC_2_BYPASS')    # switch
+    MIC_2_IR_SELECTOR: Param[NoUnit] = Param(9, 'MIC_2_IR_SELECTOR')    # string
+    MIC_2_LEVEL: Param[DbUnit] = Param(10, 'MIC_2_LEVEL')    # float dB
+    MIC_2_PAN: Param[NoUnit] = Param(11, 'MIC_2_PAN')    # float
+    MIC_2_DISTANCE: Param[NoUnit] = Param(12, 'MIC_2_DISTANCE')    # float
+    MIC_2_POSITION: Param[NoUnit] = Param(13, 'MIC_2_POSITION')    # float
+    MIC_2_PHI: Param[NoUnit] = Param(14, 'MIC_2_PHI')    # switch
+    MIC_2_GRID_MODE: Param[NoUnit] = Param(15, 'MIC_2_GRID_MODE')    # switch
+    HPF: Param[HertzUnit] = Param(16, 'HPF')    # float Hz
+    LPF: Param[HertzUnit] = Param(17, 'LPF')    # float Hz
+    OUTPUT_VOLUME: Param[DbUnit] = Param(18, 'OUTPUT_VOLUME')    # float dB
+    MIC_1_IR_NAME: Param[NoUnit] = Param(19, 'MIC_1_IR_NAME')    # string
+    MIC_2_IR_NAME: Param[NoUnit] = Param(20, 'MIC_2_IR_NAME')    # string
 
 
 # -- every other factory model -----------------------------------------------
 
 
-class MythDrive(IntEnum):
+class MythDrive(ParamSet):
     """Myth Drive (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    TREBLE = 1    # float
-    LEVEL = 2    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    TREBLE: Param[NoUnit] = Param(1, 'TREBLE')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
 
 
-class ObsessiveDrive(IntEnum):
+class ObsessiveDrive(ParamSet):
     """Obsessive Drive (Guitar Overdrive)."""
 
-    DRIVE = 0    # float
-    PEAK = 1    # switch
-    TONE = 2    # float
-    VOLUME = 3    # float
+    DRIVE: Param[NoUnit] = Param(0, 'DRIVE')    # float
+    PEAK: Param[NoUnit] = Param(1, 'PEAK')    # switch
+    TONE: Param[NoUnit] = Param(2, 'TONE')    # float
+    VOLUME: Param[NoUnit] = Param(3, 'VOLUME')    # float
 
 
-class Od250(IntEnum):
+class Od250(ParamSet):
     """OD250 (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    VOLUME = 1    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    VOLUME: Param[NoUnit] = Param(1, 'VOLUME')    # float
 
 
-class RodentDrive(IntEnum):
+class RodentDrive(ParamSet):
     """Rodent Drive (Guitar Overdrive)."""
 
-    DISTORTION = 0    # float
-    FILTER = 1    # float
-    VOLUME = 2    # float
+    DISTORTION: Param[NoUnit] = Param(0, 'DISTORTION')    # float
+    FILTER: Param[NoUnit] = Param(1, 'FILTER')    # float
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
 
 
-class Exotic(IntEnum):
+class Exotic(ParamSet):
     """Exotic (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    TREBLE = 2    # float
-    VOLUME = 3    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    VOLUME: Param[NoUnit] = Param(3, 'VOLUME')    # float
 
 
-class FreemanBod(IntEnum):
+class FreemanBod(ParamSet):
     """Freeman BOD (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    TREBLE = 2    # float
-    PRESENCE = 3    # float
-    TIGHT = 4    # float
-    TRIM = 5    # float
-    VOLUME = 6    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(3, 'PRESENCE')    # float
+    TIGHT: Param[NoUnit] = Param(4, 'TIGHT')    # float
+    TRIM: Param[NoUnit] = Param(5, 'TRIM')    # float
+    VOLUME: Param[NoUnit] = Param(6, 'VOLUME')    # float
 
 
-class BritBlues(IntEnum):
+class BritBlues(ParamSet):
     """Brit Blues (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    TONE = 1    # float
-    VOLUME = 2    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
 
 
-class ChiefDs1(IntEnum):
+class ChiefDs1(ParamSet):
     """Chief DS1 (Guitar Overdrive)."""
 
-    DISTORTION = 0    # float
-    TONE = 1    # float
-    LEVEL = 2    # float
+    DISTORTION: Param[NoUnit] = Param(0, 'DISTORTION')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
 
 
-class BritGovernor(IntEnum):
+class BritGovernor(ParamSet):
     """Brit Governor (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    LEVEL = 4    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    LEVEL: Param[NoUnit] = Param(4, 'LEVEL')    # float
 
 
-class ChiefMt(IntEnum):
+class ChiefMt(ParamSet):
     """Chief MT (Guitar Overdrive)."""
 
-    DIST = 0    # float
-    LOW = 1    # float
-    MIDDLE = 2    # float
-    MIDFREQ = 3    # float
-    HIGH = 4    # float
-    LEVEL = 5    # float
+    DIST: Param[NoUnit] = Param(0, 'DIST')    # float
+    LOW: Param[NoUnit] = Param(1, 'LOW')    # float
+    MIDDLE: Param[NoUnit] = Param(2, 'MIDDLE')    # float
+    MIDFREQ: Param[NoUnit] = Param(3, 'MIDFREQ')    # float
+    HIGH: Param[NoUnit] = Param(4, 'HIGH')    # float
+    LEVEL: Param[NoUnit] = Param(5, 'LEVEL')    # float
 
 
-class ChiefOd1(IntEnum):
+class ChiefOd1(ParamSet):
     """Chief OD1 (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    LEVEL = 1    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    LEVEL: Param[NoUnit] = Param(1, 'LEVEL')    # float
 
 
-class ChiefSd1(IntEnum):
+class ChiefSd1(ParamSet):
     """Chief SD1 (Guitar Overdrive)."""
 
-    OVERDRIVE = 0    # float
-    TONE = 1    # float
-    LEVEL = 2    # float
+    OVERDRIVE: Param[NoUnit] = Param(0, 'OVERDRIVE')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
 
 
-class FuzzPi(IntEnum):
+class FuzzPi(ParamSet):
     """Fuzz Pi (Guitar Overdrive)."""
 
-    SUSTAIN = 0    # float
-    TONE = 1    # float
-    VOLUME = 2    # float
+    SUSTAIN: Param[NoUnit] = Param(0, 'SUSTAIN')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
 
 
-class ChiefBd2(IntEnum):
+class ChiefBd2(ParamSet):
     """Chief BD2 (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    TONE = 1    # float
-    VOLUME = 2    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
 
 
-class RageBooster(IntEnum):
+class RageBooster(ParamSet):
     """Rage Booster (Guitar Overdrive)."""
 
-    VOLUME = 0    # float
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
 
 
-class FacialFuzz(IntEnum):
+class FacialFuzz(ParamSet):
     """Facial Fuzz (Guitar Overdrive)."""
 
-    FUZZ = 0    # float
-    VOLUME = 1    # float
-    PICKUP = 2    # switch
-    PICKUP_LEVEL = 3    # float
+    FUZZ: Param[NoUnit] = Param(0, 'FUZZ')    # float
+    VOLUME: Param[NoUnit] = Param(1, 'VOLUME')    # float
+    PICKUP: Param[NoUnit] = Param(2, 'PICKUP')    # switch
+    PICKUP_LEVEL: Param[NoUnit] = Param(3, 'PICKUP_LEVEL')    # float
 
 
-class ExoticZBoost(IntEnum):
+class ExoticZBoost(ParamSet):
     """Exotic Z Boost (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    TREBLE = 2    # float
-    VOLUME = 3    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    VOLUME: Param[NoUnit] = Param(3, 'VOLUME')    # float
 
 
-class RedDrive(IntEnum):
+class RedDrive(ParamSet):
     """Red Drive (Guitar Overdrive)."""
 
-    DRIVE = 0    # float
-    TONE = 1    # float
-    LEVEL = 2    # float
-    MODE = 3    # switch
+    DRIVE: Param[NoUnit] = Param(0, 'DRIVE')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
+    MODE: Param[NoUnit] = Param(3, 'MODE')    # switch
 
 
-class VemuralRay(IntEnum):
+class VemuralRay(ParamSet):
     """Vemural Ray (Guitar Overdrive)."""
 
-    GAIN = 0    # float
-    TREBLE = 1    # float
-    BASS = 2    # float
-    LEVEL = 3    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    TREBLE: Param[NoUnit] = Param(1, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    LEVEL: Param[NoUnit] = Param(3, 'LEVEL')    # float
 
 
-class NoBellOd1(IntEnum):
+class NoBellOd1(ParamSet):
     """No-Bell OD1 (Guitar Overdrive)."""
 
-    DRIVE = 0    # float
-    SPECTRUM = 1    # float
-    LEVEL = 2    # float
-    BASS_CUT = 3    # switch
-    MUTE_TRIG = 4    # switch
+    DRIVE: Param[NoUnit] = Param(0, 'DRIVE')    # float
+    SPECTRUM: Param[NoUnit] = Param(1, 'SPECTRUM')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
+    BASS_CUT: Param[NoUnit] = Param(3, 'BASS_CUT')    # switch
+    MUTE_TRIG: Param[NoUnit] = Param(4, 'MUTE_TRIG')    # switch
 
 
-class Green808(IntEnum):
+class Green808(ParamSet):
     """Green 808 (Guitar Overdrive)."""
 
-    OVERDRIVE = 0    # float
-    TONE = 1    # float
-    LEVEL = 2    # float
+    OVERDRIVE: Param[NoUnit] = Param(0, 'OVERDRIVE')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
 
 
-class Thunderpaw(IntEnum):
+class Thunderpaw(ParamSet):
     """Thunderpaw (Guitar Overdrive)."""
 
-    OUTPUT = 0    # float
-    DISTORTION = 1    # float
-    BASS = 2    # float
-    TREBLE = 3    # float
-    USE_GATE = 4    # switch
+    OUTPUT: Param[NoUnit] = Param(0, 'OUTPUT')    # float
+    DISTORTION: Param[NoUnit] = Param(1, 'DISTORTION')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    USE_GATE: Param[NoUnit] = Param(4, 'USE_GATE')    # switch
 
 
-class Mk3SiliconFuzz(IntEnum):
+class Mk3SiliconFuzz(ParamSet):
     """MK3 Silicon Fuzz (Guitar Overdrive)."""
 
-    ATTACK = 0    # float
-    TONE = 1    # float
-    LEVEL = 2    # float
+    ATTACK: Param[NoUnit] = Param(0, 'ATTACK')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
 
 
-class N81CreationsDrive(IntEnum):
+class N81CreationsDrive(ParamSet):
     """81 Creations Drive (Guitar Overdrive)."""
 
-    DRV = 0    # float %
-    CUT = 1    # float %
-    OUTPUT = 2    # float dB
-    LEVEL = 3    # float %
+    DRV: Param[PercentUnit] = Param(0, 'DRV')    # float %
+    CUT: Param[PercentUnit] = Param(1, 'CUT')    # float %
+    OUTPUT: Param[DbUnit] = Param(2, 'OUTPUT')    # float dB
+    LEVEL: Param[PercentUnit] = Param(3, 'LEVEL')    # float %
 
 
-class Brit2203(IntEnum):
+class Brit2203(ParamSet):
     """Brit 2203 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class Pv505Lead(IntEnum):
+class Pv505Lead(ParamSet):
     """PV-505 Lead (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEPTH = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEPTH: Param[NoUnit] = Param(6, 'DEPTH')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class RolsJazzCh120(IntEnum):
+class RolsJazzCh120(ParamSet):
     """Rols Jazz CH120 (Guitar Amplifier)."""
 
-    BRIGHT = 0    # switch
-    VOLUME = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    OUTPUT = 5    # float dB
+    BRIGHT: Param[NoUnit] = Param(0, 'BRIGHT')    # switch
+    VOLUME: Param[NoUnit] = Param(1, 'VOLUME')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class UkC30Normal(IntEnum):
+class UkC30Normal(ParamSet):
     """UK C30 Normal (Guitar Amplifier)."""
 
-    BRIGHT = 0    # switch
-    VOLUME = 1    # float
-    TONE_CUT = 2    # float
-    OUTPUT = 3    # float dB
+    BRIGHT: Param[NoUnit] = Param(0, 'BRIGHT')    # switch
+    VOLUME: Param[NoUnit] = Param(1, 'VOLUME')    # float
+    TONE_CUT: Param[NoUnit] = Param(2, 'TONE_CUT')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class UkC30Topboost(IntEnum):
+class UkC30Topboost(ParamSet):
     """UK C30 TopBoost (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BOOST = 1    # switch
-    BASS = 2    # float
-    TREBLE = 3    # float
-    TONE_CUT = 4    # float
-    OUTPUT = 5    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BOOST: Param[NoUnit] = Param(1, 'BOOST')    # switch
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    TONE_CUT: Param[NoUnit] = Param(4, 'TONE_CUT')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class CaDuoCh3Modern(IntEnum):
+class CaDuoCh3Modern(ParamSet):
     """CA Duo Ch3 Modern (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    MASTER = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class CaDuoCh3Raw(IntEnum):
+class CaDuoCh3Raw(ParamSet):
     """CA Duo Ch3 Raw (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    MASTER = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class CaDuoCh3Vintage(IntEnum):
+class CaDuoCh3Vintage(ParamSet):
     """CA Duo Ch3 Vintage (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    MASTER = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class Freeman100Clean(IntEnum):
+class Freeman100Clean(ParamSet):
     """Freeman 100 Clean (Guitar Amplifier)."""
 
-    BRIGHT = 0    # rotarySwitch
-    BASS = 1    # float
-    TREBLE = 2    # float
-    VOLUME = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    BRIGHT: Param[NoUnit] = Param(0, 'BRIGHT')    # rotarySwitch
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    VOLUME: Param[NoUnit] = Param(3, 'VOLUME')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class Freeman100Rhythm(IntEnum):
+class Freeman100Rhythm(ParamSet):
     """Freeman 100 Rhythm (Guitar Amplifier)."""
 
-    FAT = 0    # switch
-    C45 = 1    # switch
-    GAIN = 2    # float
-    VOICE = 3    # switch
-    SAT = 4    # switch
-    BASS = 5    # float
-    MID = 6    # float
-    TREBLE = 7    # float
-    MASTER = 8    # float
-    PRESENCE = 9    # float
-    OUTPUT = 10    # float dB
+    FAT: Param[NoUnit] = Param(0, 'FAT')    # switch
+    C45: Param[NoUnit] = Param(1, 'C45')    # switch
+    GAIN: Param[NoUnit] = Param(2, 'GAIN')    # float
+    VOICE: Param[NoUnit] = Param(3, 'VOICE')    # switch
+    SAT: Param[NoUnit] = Param(4, 'SAT')    # switch
+    BASS: Param[NoUnit] = Param(5, 'BASS')    # float
+    MID: Param[NoUnit] = Param(6, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(7, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(8, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(9, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(10, 'OUTPUT')    # float dB
 
 
-class BritTm45Normal(IntEnum):
+class BritTm45Normal(ParamSet):
     """Brit TM45 Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class BritTm45Bright(IntEnum):
+class BritTm45Bright(ParamSet):
     """Brit TM45 Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class BritTm45Patch(IntEnum):
+class BritTm45Patch(ParamSet):
     """Brit TM45 Patch (Guitar Amplifier)."""
 
-    GAIN_1 = 0    # float
-    GAIN_2 = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN_1: Param[NoUnit] = Param(0, 'GAIN_1')    # float
+    GAIN_2: Param[NoUnit] = Param(1, 'GAIN_2')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class Brit900Clean(IntEnum):
+class Brit900Clean(ParamSet):
     """Brit 900 Clean (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    MASTER = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class Brit900Lead(IntEnum):
+class Brit900Lead(ParamSet):
     """Brit 900 Lead (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    MASTER = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class WattD103Normal(IntEnum):
+class WattD103Normal(ParamSet):
     """Watt D103 Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class WattD103Bright(IntEnum):
+class WattD103Bright(ParamSet):
     """Watt D103 Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class BritPlexi50Bright(IntEnum):
+class BritPlexi50Bright(ParamSet):
     """Brit Plexi 50 Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class BritPlexi50Patch(IntEnum):
+class BritPlexi50Patch(ParamSet):
     """Brit Plexi 50 Patch (Guitar Amplifier)."""
 
-    GAIN_1 = 0    # float
-    GAIN_2 = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN_1: Param[NoUnit] = Param(0, 'GAIN_1')    # float
+    GAIN_2: Param[NoUnit] = Param(1, 'GAIN_2')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class BritPlexi50Normal(IntEnum):
+class BritPlexi50Normal(ParamSet):
     """Brit Plexi 50 Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class Freeman100Lead(IntEnum):
+class Freeman100Lead(ParamSet):
     """Freeman 100 Lead (Guitar Amplifier)."""
 
-    FAT = 0    # switch
-    C45 = 1    # switch
-    GAIN = 2    # float
-    VOICE = 3    # switch
-    SAT = 4    # switch
-    BASS = 5    # float
-    MID = 6    # float
-    TREBLE = 7    # float
-    MASTER = 8    # float
-    PRESENCE = 9    # float
-    OUTPUT = 10    # float dB
+    FAT: Param[NoUnit] = Param(0, 'FAT')    # switch
+    C45: Param[NoUnit] = Param(1, 'C45')    # switch
+    GAIN: Param[NoUnit] = Param(2, 'GAIN')    # float
+    VOICE: Param[NoUnit] = Param(3, 'VOICE')    # switch
+    SAT: Param[NoUnit] = Param(4, 'SAT')    # switch
+    BASS: Param[NoUnit] = Param(5, 'BASS')    # float
+    MID: Param[NoUnit] = Param(6, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(7, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(8, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(9, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(10, 'OUTPUT')    # float dB
 
 
-class UsTwnNormal(IntEnum):
+class UsTwnNormal(ParamSet):
     """US TWN Normal (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BRIGHT = 1    # switch
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    OUTPUT = 5    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BRIGHT: Param[NoUnit] = Param(1, 'BRIGHT')    # switch
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class UsTwnVibrato(IntEnum):
+class UsTwnVibrato(ParamSet):
     """US TWN Vibrato (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BRIGHT = 1    # switch
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    OUTPUT = 5    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BRIGHT: Param[NoUnit] = Param(1, 'BRIGHT')    # switch
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class CaTremoOrange(IntEnum):
+class CaTremoOrange(ParamSet):
     """CA Tremo Orange (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    MASTER = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class CaTremoRed(IntEnum):
+class CaTremoRed(ParamSet):
     """CA Tremo Red (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    MASTER = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class BritPlexi100Bright(IntEnum):
+class BritPlexi100Bright(ParamSet):
     """Brit Plexi 100 Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class BritPlexi100Patch(IntEnum):
+class BritPlexi100Patch(ParamSet):
     """Brit Plexi 100 Patch (Guitar Amplifier)."""
 
-    GAIN_1 = 0    # float
-    GAIN_2 = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN_1: Param[NoUnit] = Param(0, 'GAIN_1')    # float
+    GAIN_2: Param[NoUnit] = Param(1, 'GAIN_2')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class BritPlexi100Normal(IntEnum):
+class BritPlexi100Normal(ParamSet):
     """Brit Plexi 100 Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class UsSprNormal(IntEnum):
+class UsSprNormal(ParamSet):
     """US SPR Normal (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BRIGHT = 1    # switch
-    BASS = 2    # float
-    TREBLE = 3    # float
-    OUTPUT = 4    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BRIGHT: Param[NoUnit] = Param(1, 'BRIGHT')    # switch
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    OUTPUT: Param[DbUnit] = Param(4, 'OUTPUT')    # float dB
 
 
-class UsSprVibrato(IntEnum):
+class UsSprVibrato(ParamSet):
     """US SPR Vibrato (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BRIGHT = 1    # switch
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    OUTPUT = 5    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BRIGHT: Param[NoUnit] = Param(1, 'BRIGHT')    # switch
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class Ca1starClean50wNormal(IntEnum):
+class Ca1starClean50wNormal(ParamSet):
     """CA 1Star Clean 50W Normal (Guitar Amplifier)."""
 
-    BASS = 0    # float
-    MID = 1    # float
-    TREBLE = 2    # float
-    EQ = 3    # rotarySwitch
-    GAIN = 4    # float
-    MASTER = 5    # float
-    PRESENCE = 6    # float
-    OUTPUT = 7    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    MID: Param[NoUnit] = Param(1, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    EQ: Param[NoUnit] = Param(3, 'EQ')    # rotarySwitch
+    GAIN: Param[NoUnit] = Param(4, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(6, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Ca1starClean50wTweed(IntEnum):
+class Ca1starClean50wTweed(ParamSet):
     """CA 1Star Clean 50W Tweed (Guitar Amplifier)."""
 
-    BASS = 0    # float
-    MID = 1    # float
-    TREBLE = 2    # float
-    EQ = 3    # rotarySwitch
-    GAIN = 4    # float
-    MASTER = 5    # float
-    PRESENCE = 6    # float
-    OUTPUT = 7    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    MID: Param[NoUnit] = Param(1, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    EQ: Param[NoUnit] = Param(3, 'EQ')    # rotarySwitch
+    GAIN: Param[NoUnit] = Param(4, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(6, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Ca1starClean100wNormal(IntEnum):
+class Ca1starClean100wNormal(ParamSet):
     """CA 1Star Clean 100W Normal (Guitar Amplifier)."""
 
-    BASS = 0    # float
-    MID = 1    # float
-    TREBLE = 2    # float
-    EQ = 3    # rotarySwitch
-    GAIN = 4    # float
-    MASTER = 5    # float
-    PRESENCE = 6    # float
-    OUTPUT = 7    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    MID: Param[NoUnit] = Param(1, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    EQ: Param[NoUnit] = Param(3, 'EQ')    # rotarySwitch
+    GAIN: Param[NoUnit] = Param(4, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(6, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Ca1starClean100wTweed(IntEnum):
+class Ca1starClean100wTweed(ParamSet):
     """CA 1Star Clean 100W Tweed (Guitar Amplifier)."""
 
-    BASS = 0    # float
-    MID = 1    # float
-    TREBLE = 2    # float
-    EQ = 3    # rotarySwitch
-    GAIN = 4    # float
-    MASTER = 5    # float
-    PRESENCE = 6    # float
-    OUTPUT = 7    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    MID: Param[NoUnit] = Param(1, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    EQ: Param[NoUnit] = Param(3, 'EQ')    # rotarySwitch
+    GAIN: Param[NoUnit] = Param(4, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(6, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Ca1starDrive50wNormal(IntEnum):
+class Ca1starDrive50wNormal(ParamSet):
     """CA 1Star Drive 50W Normal (Guitar Amplifier)."""
 
-    BASS = 0    # float
-    MID = 1    # float
-    TREBLE = 2    # float
-    DRIVE = 3    # float
-    EQ = 4    # rotarySwitch
-    GAIN = 5    # float
-    MASTER = 6    # float
-    PRESENCE = 7    # float
-    OUTPUT = 8    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    MID: Param[NoUnit] = Param(1, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    DRIVE: Param[NoUnit] = Param(3, 'DRIVE')    # float
+    EQ: Param[NoUnit] = Param(4, 'EQ')    # rotarySwitch
+    GAIN: Param[NoUnit] = Param(5, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(6, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(7, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(8, 'OUTPUT')    # float dB
 
 
-class Ca1starDrive50wTweed(IntEnum):
+class Ca1starDrive50wTweed(ParamSet):
     """CA 1Star Drive 50W Tweed (Guitar Amplifier)."""
 
-    BASS = 0    # float
-    MID = 1    # float
-    TREBLE = 2    # float
-    DRIVE = 3    # float
-    EQ = 4    # rotarySwitch
-    GAIN = 5    # float
-    MASTER = 6    # float
-    PRESENCE = 7    # float
-    OUTPUT = 8    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    MID: Param[NoUnit] = Param(1, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    DRIVE: Param[NoUnit] = Param(3, 'DRIVE')    # float
+    EQ: Param[NoUnit] = Param(4, 'EQ')    # rotarySwitch
+    GAIN: Param[NoUnit] = Param(5, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(6, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(7, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(8, 'OUTPUT')    # float dB
 
 
-class Ca1starDrive100wNormal(IntEnum):
+class Ca1starDrive100wNormal(ParamSet):
     """CA 1Star Drive 100W Normal (Guitar Amplifier)."""
 
-    BASS = 0    # float
-    MID = 1    # float
-    TREBLE = 2    # float
-    DRIVE = 3    # float
-    EQ = 4    # rotarySwitch
-    GAIN = 5    # float
-    MASTER = 6    # float
-    PRESENCE = 7    # float
-    OUTPUT = 8    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    MID: Param[NoUnit] = Param(1, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    DRIVE: Param[NoUnit] = Param(3, 'DRIVE')    # float
+    EQ: Param[NoUnit] = Param(4, 'EQ')    # rotarySwitch
+    GAIN: Param[NoUnit] = Param(5, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(6, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(7, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(8, 'OUTPUT')    # float dB
 
 
-class Ca1starDrive100wTweed(IntEnum):
+class Ca1starDrive100wTweed(ParamSet):
     """CA 1Star Drive 100W Tweed (Guitar Amplifier)."""
 
-    BASS = 0    # float
-    MID = 1    # float
-    TREBLE = 2    # float
-    DRIVE = 3    # float
-    EQ = 4    # rotarySwitch
-    GAIN = 5    # float
-    MASTER = 6    # float
-    PRESENCE = 7    # float
-    OUTPUT = 8    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    MID: Param[NoUnit] = Param(1, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    DRIVE: Param[NoUnit] = Param(3, 'DRIVE')    # float
+    EQ: Param[NoUnit] = Param(4, 'EQ')    # rotarySwitch
+    GAIN: Param[NoUnit] = Param(5, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(6, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(7, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(8, 'OUTPUT')    # float dB
 
 
-class Pv505Rhythm(IntEnum):
+class Pv505Rhythm(ParamSet):
     """PV-505 Rhythm (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BRIGHT = 1    # switch
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    MASTER = 5    # float
-    PRESENCE = 6    # float
-    DEPTH = 7    # float
-    OUTPUT = 8    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BRIGHT: Param[NoUnit] = Param(1, 'BRIGHT')    # switch
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(6, 'PRESENCE')    # float
+    DEPTH: Param[NoUnit] = Param(7, 'DEPTH')    # float
+    OUTPUT: Param[DbUnit] = Param(8, 'OUTPUT')    # float dB
 
 
-class Captain50(IntEnum):
+class Captain50(ParamSet):
     """Captain 50 (Guitar Amplifier)."""
 
-    BRIGHT = 0    # switch
-    LOW_BOOST = 1    # switch
-    GAIN = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    TREBLE = 5    # float
-    MASTER = 6    # float
-    OUTPUT = 7    # float dB
+    BRIGHT: Param[NoUnit] = Param(0, 'BRIGHT')    # switch
+    LOW_BOOST: Param[NoUnit] = Param(1, 'LOW_BOOST')    # switch
+    GAIN: Param[NoUnit] = Param(2, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(5, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(6, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class BognaVishnu20thClean(IntEnum):
+class BognaVishnu20thClean(ParamSet):
     """Bogna Vishnu 20th Clean (Guitar Amplifier)."""
 
-    BRIGHT = 0    # switch
-    GAIN = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    MASTER = 5    # float
-    PRESENCE = 6    # float
-    DEPTH = 7    # float
-    OUTPUT = 8    # float dB
+    BRIGHT: Param[NoUnit] = Param(0, 'BRIGHT')    # switch
+    GAIN: Param[NoUnit] = Param(1, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(6, 'PRESENCE')    # float
+    DEPTH: Param[NoUnit] = Param(7, 'DEPTH')    # float
+    OUTPUT: Param[DbUnit] = Param(8, 'OUTPUT')    # float dB
 
 
-class Ev101iiisBlue6l6100w(IntEnum):
+class Ev101iiisBlue6l6100w(ParamSet):
     """EV101IIIS Blue 6L6 100W (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    RESONANCE = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    RESONANCE: Param[NoUnit] = Param(6, 'RESONANCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Ev101iiisRed6l6100w(IntEnum):
+class Ev101iiisRed6l6100w(ParamSet):
     """EV101IIIS Red 6L6 100W (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    RESONANCE = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    RESONANCE: Param[NoUnit] = Param(6, 'RESONANCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class UsPrince(IntEnum):
+class UsPrince(ParamSet):
     """US Prince (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    TREBLE = 1    # float
-    BASS = 2    # float
-    OUTPUT = 3    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    TREBLE: Param[NoUnit] = Param(1, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class BritUblLead(IntEnum):
+class BritUblLead(ParamSet):
     """Brit UBL Lead (Guitar Amplifier)."""
 
-    INPUT_GAIN = 0    # float
-    LEAD_MASTER = 1    # float
-    OUTPUT_MASTER = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    TREBLE = 5    # float
-    PRESENCE = 6    # float
-    OUTPUT = 7    # float dB
+    INPUT_GAIN: Param[NoUnit] = Param(0, 'INPUT_GAIN')    # float
+    LEAD_MASTER: Param[NoUnit] = Param(1, 'LEAD_MASTER')    # float
+    OUTPUT_MASTER: Param[NoUnit] = Param(2, 'OUTPUT_MASTER')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(5, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(6, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class BritUblLeadClip(IntEnum):
+class BritUblLeadClip(ParamSet):
     """Brit UBL Lead Clip (Guitar Amplifier)."""
 
-    INPUT_GAIN = 0    # float
-    LEAD_MASTER = 1    # float
-    OUTPUT_MASTER = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    TREBLE = 5    # float
-    PRESENCE = 6    # float
-    OUTPUT = 7    # float dB
+    INPUT_GAIN: Param[NoUnit] = Param(0, 'INPUT_GAIN')    # float
+    LEAD_MASTER: Param[NoUnit] = Param(1, 'LEAD_MASTER')    # float
+    OUTPUT_MASTER: Param[NoUnit] = Param(2, 'OUTPUT_MASTER')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(5, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(6, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class UsTweedBassladBrightPatch(IntEnum):
+class UsTweedBassladBrightPatch(ParamSet):
     """US Tweed Basslad Bright Patch (Guitar Amplifier)."""
 
-    VOLUME_NORMAL = 0    # float
-    VOLUME_BRIGHT = 1    # float
-    TREBLE = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME_NORMAL: Param[NoUnit] = Param(0, 'VOLUME_NORMAL')    # float
+    VOLUME_BRIGHT: Param[NoUnit] = Param(1, 'VOLUME_BRIGHT')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class UsTweedBassladBright(IntEnum):
+class UsTweedBassladBright(ParamSet):
     """US Tweed Basslad Bright (Guitar Amplifier)."""
 
-    VOLUME_NORMAL = 0    # float
-    VOLUME_BRIGHT = 1    # float
-    TREBLE = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME_NORMAL: Param[NoUnit] = Param(0, 'VOLUME_NORMAL')    # float
+    VOLUME_BRIGHT: Param[NoUnit] = Param(1, 'VOLUME_BRIGHT')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class UsTweedBassladNormalPatch(IntEnum):
+class UsTweedBassladNormalPatch(ParamSet):
     """US Tweed Basslad Normal Patch (Guitar Amplifier)."""
 
-    VOLUME_NORMAL = 0    # float
-    VOLUME_BRIGHT = 1    # float
-    TREBLE = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME_NORMAL: Param[NoUnit] = Param(0, 'VOLUME_NORMAL')    # float
+    VOLUME_BRIGHT: Param[NoUnit] = Param(1, 'VOLUME_BRIGHT')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class UsTweedBassladNormal(IntEnum):
+class UsTweedBassladNormal(ParamSet):
     """US Tweed Basslad Normal (Guitar Amplifier)."""
 
-    VOLUME_NORMAL = 0    # float
-    VOLUME_BRIGHT = 1    # float
-    TREBLE = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME_NORMAL: Param[NoUnit] = Param(0, 'VOLUME_NORMAL')    # float
+    VOLUME_BRIGHT: Param[NoUnit] = Param(1, 'VOLUME_BRIGHT')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class UkC15Normal(IntEnum):
+class UkC15Normal(ParamSet):
     """UK C15 Normal (Guitar Amplifier)."""
 
-    BRIGHT = 0    # switch
-    VOLUME = 1    # float
-    TONE_CUT = 2    # float
-    OUTPUT = 3    # float dB
+    BRIGHT: Param[NoUnit] = Param(0, 'BRIGHT')    # switch
+    VOLUME: Param[NoUnit] = Param(1, 'VOLUME')    # float
+    TONE_CUT: Param[NoUnit] = Param(2, 'TONE_CUT')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class UkC15Topboost(IntEnum):
+class UkC15Topboost(ParamSet):
     """UK C15 TopBoost (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BOOST = 1    # switch
-    BASS = 2    # float
-    TREBLE = 3    # float
-    TONE_CUT = 4    # float
-    OUTPUT = 5    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BOOST: Param[NoUnit] = Param(1, 'BOOST')    # switch
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    TONE_CUT: Param[NoUnit] = Param(4, 'TONE_CUT')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class UsHpTweedTwnNormal(IntEnum):
+class UsHpTweedTwnNormal(ParamSet):
     """US HP Tweed TWN Normal (Guitar Amplifier)."""
 
-    VOLUME_NORMAL = 0    # float
-    VOLUME_BRIGHT = 1    # float
-    TREBLE = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME_NORMAL: Param[NoUnit] = Param(0, 'VOLUME_NORMAL')    # float
+    VOLUME_BRIGHT: Param[NoUnit] = Param(1, 'VOLUME_BRIGHT')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class UsHpTweedTwnNormalPatch(IntEnum):
+class UsHpTweedTwnNormalPatch(ParamSet):
     """US HP Tweed TWN Normal Patch (Guitar Amplifier)."""
 
-    VOLUME_NORMAL = 0    # float
-    VOLUME_BRIGHT = 1    # float
-    TREBLE = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME_NORMAL: Param[NoUnit] = Param(0, 'VOLUME_NORMAL')    # float
+    VOLUME_BRIGHT: Param[NoUnit] = Param(1, 'VOLUME_BRIGHT')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class UsHpTweedTwnBright(IntEnum):
+class UsHpTweedTwnBright(ParamSet):
     """US HP Tweed TWN Bright (Guitar Amplifier)."""
 
-    VOLUME_NORMAL = 0    # float
-    VOLUME_BRIGHT = 1    # float
-    TREBLE = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME_NORMAL: Param[NoUnit] = Param(0, 'VOLUME_NORMAL')    # float
+    VOLUME_BRIGHT: Param[NoUnit] = Param(1, 'VOLUME_BRIGHT')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class UsHpTweedTwnBrightPatch(IntEnum):
+class UsHpTweedTwnBrightPatch(ParamSet):
     """US HP Tweed TWN Bright Patch (Guitar Amplifier)."""
 
-    VOLUME_NORMAL = 0    # float
-    VOLUME_BRIGHT = 1    # float
-    TREBLE = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME_NORMAL: Param[NoUnit] = Param(0, 'VOLUME_NORMAL')    # float
+    VOLUME_BRIGHT: Param[NoUnit] = Param(1, 'VOLUME_BRIGHT')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class DCellHisbertCh1(IntEnum):
+class DCellHisbertCh1(ParamSet):
     """D-Cell Hisbert Ch1 (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MIDCUT = 4    # switch
-    LEVEL = 5    # float
-    INTENSITY = 6    # float
-    MASTER = 7    # float
-    PRESENCE = 8    # float
-    DEEP = 9    # float
-    OUTPUT = 10    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MIDCUT: Param[NoUnit] = Param(4, 'MIDCUT')    # switch
+    LEVEL: Param[NoUnit] = Param(5, 'LEVEL')    # float
+    INTENSITY: Param[NoUnit] = Param(6, 'INTENSITY')    # float
+    MASTER: Param[NoUnit] = Param(7, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(8, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(9, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(10, 'OUTPUT')    # float dB
 
 
-class DCellHisbertCh2(IntEnum):
+class DCellHisbertCh2(ParamSet):
     """D-Cell Hisbert Ch2 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    MODE = 1    # switch
-    VOLUME = 2    # float
-    BASS = 3    # float
-    MID = 4    # float
-    TREBLE = 5    # float
-    MIDCUT = 6    # switch
-    LEVEL = 7    # float
-    INTENSITY = 8    # float
-    MASTER = 9    # float
-    PRESENCE = 10    # float
-    DEEP = 11    # float
-    OUTPUT = 12    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    MODE: Param[NoUnit] = Param(1, 'MODE')    # switch
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MID: Param[NoUnit] = Param(4, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(5, 'TREBLE')    # float
+    MIDCUT: Param[NoUnit] = Param(6, 'MIDCUT')    # switch
+    LEVEL: Param[NoUnit] = Param(7, 'LEVEL')    # float
+    INTENSITY: Param[NoUnit] = Param(8, 'INTENSITY')    # float
+    MASTER: Param[NoUnit] = Param(9, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(10, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(11, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(12, 'OUTPUT')    # float dB
 
 
-class DCellHisbertCh3(IntEnum):
+class DCellHisbertCh3(ParamSet):
     """D-Cell Hisbert Ch3 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    VOLUME = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    MIDCUT = 5    # switch
-    LEVEL = 6    # float
-    INTENSITY = 7    # float
-    MASTER = 8    # float
-    PRESENCE = 9    # float
-    DEEP = 10    # float
-    OUTPUT = 11    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    VOLUME: Param[NoUnit] = Param(1, 'VOLUME')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    MIDCUT: Param[NoUnit] = Param(5, 'MIDCUT')    # switch
+    LEVEL: Param[NoUnit] = Param(6, 'LEVEL')    # float
+    INTENSITY: Param[NoUnit] = Param(7, 'INTENSITY')    # float
+    MASTER: Param[NoUnit] = Param(8, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(9, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(10, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(11, 'OUTPUT')    # float dB
 
 
-class CaJohnS2cCh1(IntEnum):
+class CaJohnS2cCh1(ParamSet):
     """CA John's 2C Ch1 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    MASTER = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
-    DUMMY1 = 7    # empty
-    DUMMY2 = 8    # empty
-    DUMMY3 = 9    # empty
-    N80_HZ = 10    # fader
-    N240_HZ = 11    # fader
-    N750_HZ = 12    # fader
-    N2200_HZ = 13    # fader
-    N6600_HZ = 14    # fader
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(1, 'MASTER')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
+    DUMMY1: Param[NoUnit] = Param(7, 'DUMMY1')    # empty
+    DUMMY2: Param[NoUnit] = Param(8, 'DUMMY2')    # empty
+    DUMMY3: Param[NoUnit] = Param(9, 'DUMMY3')    # empty
+    N80_HZ: Param[NoUnit] = Param(10, 'N80_HZ')    # fader
+    N240_HZ: Param[NoUnit] = Param(11, 'N240_HZ')    # fader
+    N750_HZ: Param[NoUnit] = Param(12, 'N750_HZ')    # fader
+    N2200_HZ: Param[NoUnit] = Param(13, 'N2200_HZ')    # fader
+    N6600_HZ: Param[NoUnit] = Param(14, 'N6600_HZ')    # fader
 
 
-class CaJohnS2cCh2(IntEnum):
+class CaJohnS2cCh2(ParamSet):
     """CA John's 2C Ch2 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    GAIN_PULL = 1    # switch
-    SHRED = 2    # switch
-    MASTER = 3    # float
-    OUTPUT = 4    # float dB
-    BASS = 5    # float
-    MID = 6    # float
-    TREBLE = 7    # float
-    PRESENCE = 8    # float
-    PRES_PULL = 9    # switch
-    N80_HZ = 10    # fader
-    N240_HZ = 11    # fader
-    N750_HZ = 12    # fader
-    N2200_HZ = 13    # fader
-    N6600_HZ = 14    # fader
-    MUTE_TRIG = 15    # switch
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    GAIN_PULL: Param[NoUnit] = Param(1, 'GAIN_PULL')    # switch
+    SHRED: Param[NoUnit] = Param(2, 'SHRED')    # switch
+    MASTER: Param[NoUnit] = Param(3, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(4, 'OUTPUT')    # float dB
+    BASS: Param[NoUnit] = Param(5, 'BASS')    # float
+    MID: Param[NoUnit] = Param(6, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(7, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(8, 'PRESENCE')    # float
+    PRES_PULL: Param[NoUnit] = Param(9, 'PRES_PULL')    # switch
+    N80_HZ: Param[NoUnit] = Param(10, 'N80_HZ')    # fader
+    N240_HZ: Param[NoUnit] = Param(11, 'N240_HZ')    # fader
+    N750_HZ: Param[NoUnit] = Param(12, 'N750_HZ')    # fader
+    N2200_HZ: Param[NoUnit] = Param(13, 'N2200_HZ')    # fader
+    N6600_HZ: Param[NoUnit] = Param(14, 'N6600_HZ')    # fader
+    MUTE_TRIG: Param[NoUnit] = Param(15, 'MUTE_TRIG')    # switch
 
 
-class CaJohnS2cCh3(IntEnum):
+class CaJohnS2cCh3(ParamSet):
     """CA John's 2C Ch3 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    GAIN_PULL = 1    # switch
-    SHRED = 2    # switch
-    MASTER = 3    # float
-    OUTPUT = 4    # float dB
-    BASS = 5    # float
-    MID = 6    # float
-    TREBLE = 7    # float
-    PRESENCE = 8    # float
-    PRES_PULL = 9    # switch
-    N80_HZ = 10    # fader
-    N240_HZ = 11    # fader
-    N750_HZ = 12    # fader
-    N2200_HZ = 13    # fader
-    N6600_HZ = 14    # fader
-    MUTE_TRIG = 15    # switch
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    GAIN_PULL: Param[NoUnit] = Param(1, 'GAIN_PULL')    # switch
+    SHRED: Param[NoUnit] = Param(2, 'SHRED')    # switch
+    MASTER: Param[NoUnit] = Param(3, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(4, 'OUTPUT')    # float dB
+    BASS: Param[NoUnit] = Param(5, 'BASS')    # float
+    MID: Param[NoUnit] = Param(6, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(7, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(8, 'PRESENCE')    # float
+    PRES_PULL: Param[NoUnit] = Param(9, 'PRES_PULL')    # switch
+    N80_HZ: Param[NoUnit] = Param(10, 'N80_HZ')    # fader
+    N240_HZ: Param[NoUnit] = Param(11, 'N240_HZ')    # fader
+    N750_HZ: Param[NoUnit] = Param(12, 'N750_HZ')    # fader
+    N2200_HZ: Param[NoUnit] = Param(13, 'N2200_HZ')    # fader
+    N6600_HZ: Param[NoUnit] = Param(14, 'N6600_HZ')    # fader
+    MUTE_TRIG: Param[NoUnit] = Param(15, 'MUTE_TRIG')    # switch
 
 
-class DCellH4Ch1Bright(IntEnum):
+class DCellH4Ch1Bright(ParamSet):
     """D-Cell H4 Ch1 Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch1Normal(IntEnum):
+class DCellH4Ch1Normal(ParamSet):
     """D-Cell H4 Ch1 Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch2Bright(IntEnum):
+class DCellH4Ch2Bright(ParamSet):
     """D-Cell H4 Ch2 Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch2Normal(IntEnum):
+class DCellH4Ch2Normal(ParamSet):
     """D-Cell H4 Ch2 Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch3(IntEnum):
+class DCellH4Ch3(ParamSet):
     """D-Cell H4 Ch3 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch4(IntEnum):
+class DCellH4Ch4(ParamSet):
     """D-Cell H4 Ch4 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Ev101iiisRedEl34100w(IntEnum):
+class Ev101iiisRedEl34100w(ParamSet):
     """EV101IIIS Red EL34 100W (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    RESONANCE = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    RESONANCE: Param[NoUnit] = Param(6, 'RESONANCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Ev101iiisBlueEl34100w(IntEnum):
+class Ev101iiisBlueEl34100w(ParamSet):
     """EV101IIIS Blue EL34 100W (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    RESONANCE = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    RESONANCE: Param[NoUnit] = Param(6, 'RESONANCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Solo100Lead(IntEnum):
+class Solo100Lead(ParamSet):
     """Solo 100 Lead (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class Solo100CrunchBright(IntEnum):
+class Solo100CrunchBright(ParamSet):
     """Solo 100 Crunch Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class Solo100CrunchNormal(IntEnum):
+class Solo100CrunchNormal(ParamSet):
     """Solo 100 Crunch Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class MatchmoreJefe(IntEnum):
+class MatchmoreJefe(ParamSet):
     """Matchmore Jefe (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    BRILLIANCE = 4    # float
-    MASTER = 5    # float
-    OUTPUT = 6    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    BRILLIANCE: Param[NoUnit] = Param(4, 'BRILLIANCE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class MatchmoreD30Ch1(IntEnum):
+class MatchmoreD30Ch1(ParamSet):
     """Matchmore D30 Ch1 (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BASS = 1    # float
-    TREBLE = 2    # float
-    CUT = 3    # float
-    MASTER = 4    # float
-    OUTPUT = 5    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    CUT: Param[NoUnit] = Param(3, 'CUT')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class MatchmoreD30Ch2(IntEnum):
+class MatchmoreD30Ch2(ParamSet):
     """Matchmore D30 Ch2 (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    CUT = 1    # float
-    MASTER = 2    # float
-    TONE = 3    # float
-    OUTPUT = 4    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    CUT: Param[NoUnit] = Param(1, 'CUT')    # float
+    MASTER: Param[NoUnit] = Param(2, 'MASTER')    # float
+    TONE: Param[NoUnit] = Param(3, 'TONE')    # float
+    OUTPUT: Param[DbUnit] = Param(4, 'OUTPUT')    # float dB
 
 
-class VictorSquidCh1(IntEnum):
+class VictorSquidCh1(ParamSet):
     """Victor Squid Ch1 (Guitar Amplifier)."""
 
-    MOD = 0    # switch
-    GAIN = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    MASTER = 5    # float
-    FOCUS = 6    # switch
-    H = 7    # switch
-    B = 8    # switch
-    TUBE = 9    # switch
-    OUTPUT = 10    # float dB
-    MUTE_TRIG = 11    # switch
+    MOD: Param[NoUnit] = Param(0, 'MOD')    # switch
+    GAIN: Param[NoUnit] = Param(1, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    FOCUS: Param[NoUnit] = Param(6, 'FOCUS')    # switch
+    H: Param[NoUnit] = Param(7, 'H')    # switch
+    B: Param[NoUnit] = Param(8, 'B')    # switch
+    TUBE: Param[NoUnit] = Param(9, 'TUBE')    # switch
+    OUTPUT: Param[DbUnit] = Param(10, 'OUTPUT')    # float dB
+    MUTE_TRIG: Param[NoUnit] = Param(11, 'MUTE_TRIG')    # switch
 
 
-class VictorSquidCh2(IntEnum):
+class VictorSquidCh2(ParamSet):
     """Victor Squid Ch2 (Guitar Amplifier)."""
 
-    MOD = 0    # switch
-    GAIN = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    MASTER = 5    # float
-    FOCUS = 6    # switch
-    TIGHT = 7    # float
-    PRESENCE = 8    # float
-    TUBE = 9    # switch
-    OUTPUT = 10    # float dB
-    MUTE_TRIG = 11    # switch
+    MOD: Param[NoUnit] = Param(0, 'MOD')    # switch
+    GAIN: Param[NoUnit] = Param(1, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(5, 'MASTER')    # float
+    FOCUS: Param[NoUnit] = Param(6, 'FOCUS')    # switch
+    TIGHT: Param[NoUnit] = Param(7, 'TIGHT')    # float
+    PRESENCE: Param[NoUnit] = Param(8, 'PRESENCE')    # float
+    TUBE: Param[NoUnit] = Param(9, 'TUBE')    # switch
+    OUTPUT: Param[DbUnit] = Param(10, 'OUTPUT')    # float dB
+    MUTE_TRIG: Param[NoUnit] = Param(11, 'MUTE_TRIG')    # switch
 
 
-class UsDlx64Vintage(IntEnum):
+class UsDlx64Vintage(ParamSet):
     """US DLX 64 Vintage (Guitar Amplifier)."""
 
-    INPUT = 0    # switch
-    MODE = 1    # comboBox
-    VOLUME = 2    # float
-    TREBLE = 3    # float
-    BASS = 4    # float
-    OUTPUT = 5    # float dB
-    MUTE_TRIG = 6    # switch
-    DELAY = 7    # int
+    INPUT: Param[NoUnit] = Param(0, 'INPUT')    # switch
+    MODE: Param[NoUnit] = Param(1, 'MODE')    # comboBox
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(4, 'BASS')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
+    MUTE_TRIG: Param[NoUnit] = Param(6, 'MUTE_TRIG')    # switch
+    DELAY: Param[NoUnit] = Param(7, 'DELAY')    # int
 
 
-class UsDlx65Reissue(IntEnum):
+class UsDlx65Reissue(ParamSet):
     """US DLX 65 Reissue (Guitar Amplifier)."""
 
-    INPUT = 0    # switch
-    MODE = 1    # comboBox
-    VOLUME = 2    # float
-    TREBLE = 3    # float
-    BASS = 4    # float
-    OUTPUT = 5    # float dB
-    MUTE_TRIG = 6    # switch
-    DELAY = 7    # int
+    INPUT: Param[NoUnit] = Param(0, 'INPUT')    # switch
+    MODE: Param[NoUnit] = Param(1, 'MODE')    # comboBox
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(4, 'BASS')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
+    MUTE_TRIG: Param[NoUnit] = Param(6, 'MUTE_TRIG')    # switch
+    DELAY: Param[NoUnit] = Param(7, 'DELAY')    # int
 
 
-class DumbbellOds(IntEnum):
+class DumbbellOds(ParamSet):
     """Dumbbell ODS (Guitar Amplifier)."""
 
-    CHANNEL = 0    # switch
-    VOLUME = 1    # float
-    TREBLE = 2    # float
-    MIDDLE = 3    # float
-    BASS = 4    # float
-    OD_CONTENT = 5    # float
-    OD_VOLUME = 6    # float
-    MASTER = 7    # float
-    PRESENCE = 8    # float
-    PREAMP = 9    # switch
-    BRIGHT = 10    # switch
-    MID = 11    # switch
-    EQ = 12    # switch
-    OUTPUT = 13    # float dB
+    CHANNEL: Param[NoUnit] = Param(0, 'CHANNEL')    # switch
+    VOLUME: Param[NoUnit] = Param(1, 'VOLUME')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    MIDDLE: Param[NoUnit] = Param(3, 'MIDDLE')    # float
+    BASS: Param[NoUnit] = Param(4, 'BASS')    # float
+    OD_CONTENT: Param[NoUnit] = Param(5, 'OD_CONTENT')    # float
+    OD_VOLUME: Param[NoUnit] = Param(6, 'OD_VOLUME')    # float
+    MASTER: Param[NoUnit] = Param(7, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(8, 'PRESENCE')    # float
+    PREAMP: Param[NoUnit] = Param(9, 'PREAMP')    # switch
+    BRIGHT: Param[NoUnit] = Param(10, 'BRIGHT')    # switch
+    MID: Param[NoUnit] = Param(11, 'MID')    # switch
+    EQ: Param[NoUnit] = Param(12, 'EQ')    # switch
+    OUTPUT: Param[DbUnit] = Param(13, 'OUTPUT')    # float dB
 
 
-class BritBass50Bright(IntEnum):
+class BritBass50Bright(ParamSet):
     """Brit Bass 50 Bright (Bass Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class BritBass50Patch(IntEnum):
+class BritBass50Patch(ParamSet):
     """Brit Bass 50 Patch (Bass Amplifier)."""
 
-    GAIN_1 = 0    # float
-    GAIN_2 = 1    # float
-    BASS = 2    # float
-    MID = 3    # float
-    TREBLE = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN_1: Param[NoUnit] = Param(0, 'GAIN_1')    # float
+    GAIN_2: Param[NoUnit] = Param(1, 'GAIN_2')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class BritBass50Normal(IntEnum):
+class BritBass50Normal(ParamSet):
     """Brit Bass 50 Normal (Bass Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    PRESENCE = 4    # float
-    OUTPUT = 5    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(4, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
-class G800k(IntEnum):
+class G800k(ParamSet):
     """G800K (Bass Amplifier)."""
 
-    GAIN = 0    # float
-    N10_DB = 1    # switch
-    LO_CUT = 2    # switch
-    HIGH_BOOST = 3    # switch
-    MID_CONTOUR = 4    # switch
-    BASS = 5    # float
-    LO_MID = 6    # float
-    HI_MID = 7    # float
-    TREBLE = 8    # float
-    OUTPUT = 9    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    N10_DB: Param[NoUnit] = Param(1, 'N10_DB')    # switch
+    LO_CUT: Param[NoUnit] = Param(2, 'LO_CUT')    # switch
+    HIGH_BOOST: Param[NoUnit] = Param(3, 'HIGH_BOOST')    # switch
+    MID_CONTOUR: Param[NoUnit] = Param(4, 'MID_CONTOUR')    # switch
+    BASS: Param[NoUnit] = Param(5, 'BASS')    # float
+    LO_MID: Param[NoUnit] = Param(6, 'LO_MID')    # float
+    HI_MID: Param[NoUnit] = Param(7, 'HI_MID')    # float
+    TREBLE: Param[NoUnit] = Param(8, 'TREBLE')    # float
+    OUTPUT: Param[DbUnit] = Param(9, 'OUTPUT')    # float dB
 
 
-class Ca400Ch1(IntEnum):
+class Ca400Ch1(ParamSet):
     """CA 400+ Ch1 (Bass Amplifier)."""
 
-    GAIN = 0    # float
-    BRIGHT = 1    # switch
-    TREBLE_SHIFT = 2    # switch
-    BASS_SHIFT = 3    # switch
-    BASS = 4    # float
-    MID = 5    # float
-    TREBLE = 6    # float
-    MASTER = 7    # float
-    EQ = 8    # switch
-    OUTPUT = 9    # float dB
-    N40_HZ = 10    # float
-    N100_HZ = 11    # float
-    N250_HZ = 12    # float
-    N625_HZ = 13    # float
-    N1560_HZ = 14    # float
-    N3900_HZ = 15    # float
-    N6600_HZ = 16    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BRIGHT: Param[NoUnit] = Param(1, 'BRIGHT')    # switch
+    TREBLE_SHIFT: Param[NoUnit] = Param(2, 'TREBLE_SHIFT')    # switch
+    BASS_SHIFT: Param[NoUnit] = Param(3, 'BASS_SHIFT')    # switch
+    BASS: Param[NoUnit] = Param(4, 'BASS')    # float
+    MID: Param[NoUnit] = Param(5, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(6, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(7, 'MASTER')    # float
+    EQ: Param[NoUnit] = Param(8, 'EQ')    # switch
+    OUTPUT: Param[DbUnit] = Param(9, 'OUTPUT')    # float dB
+    N40_HZ: Param[NoUnit] = Param(10, 'N40_HZ')    # float
+    N100_HZ: Param[NoUnit] = Param(11, 'N100_HZ')    # float
+    N250_HZ: Param[NoUnit] = Param(12, 'N250_HZ')    # float
+    N625_HZ: Param[NoUnit] = Param(13, 'N625_HZ')    # float
+    N1560_HZ: Param[NoUnit] = Param(14, 'N1560_HZ')    # float
+    N3900_HZ: Param[NoUnit] = Param(15, 'N3900_HZ')    # float
+    N6600_HZ: Param[NoUnit] = Param(16, 'N6600_HZ')    # float
 
 
-class Ca400Ch2(IntEnum):
+class Ca400Ch2(ParamSet):
     """CA 400+ Ch2 (Bass Amplifier)."""
 
-    GAIN = 0    # float
-    BRIGHT = 1    # switch
-    TREBLE_SHIFT = 2    # switch
-    BASS_SHIFT = 3    # switch
-    BASS = 4    # float
-    MID = 5    # float
-    TREBLE = 6    # float
-    MASTER = 7    # float
-    EQ = 8    # switch
-    OUTPUT = 9    # float dB
-    N40_HZ = 10    # float
-    N100_HZ = 11    # float
-    N250_HZ = 12    # float
-    N625_HZ = 13    # float
-    N1560_HZ = 14    # float
-    N3900_HZ = 15    # float
-    N6600_HZ = 16    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BRIGHT: Param[NoUnit] = Param(1, 'BRIGHT')    # switch
+    TREBLE_SHIFT: Param[NoUnit] = Param(2, 'TREBLE_SHIFT')    # switch
+    BASS_SHIFT: Param[NoUnit] = Param(3, 'BASS_SHIFT')    # switch
+    BASS: Param[NoUnit] = Param(4, 'BASS')    # float
+    MID: Param[NoUnit] = Param(5, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(6, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(7, 'MASTER')    # float
+    EQ: Param[NoUnit] = Param(8, 'EQ')    # switch
+    OUTPUT: Param[DbUnit] = Param(9, 'OUTPUT')    # float dB
+    N40_HZ: Param[NoUnit] = Param(10, 'N40_HZ')    # float
+    N100_HZ: Param[NoUnit] = Param(11, 'N100_HZ')    # float
+    N250_HZ: Param[NoUnit] = Param(12, 'N250_HZ')    # float
+    N625_HZ: Param[NoUnit] = Param(13, 'N625_HZ')    # float
+    N1560_HZ: Param[NoUnit] = Param(14, 'N1560_HZ')    # float
+    N3900_HZ: Param[NoUnit] = Param(15, 'N3900_HZ')    # float
+    N6600_HZ: Param[NoUnit] = Param(16, 'N6600_HZ')    # float
 
 
-class AmpedSuperValve(IntEnum):
+class AmpedSuperValve(ParamSet):
     """Amped Super Valve (Bass Amplifier)."""
 
-    GAIN = 0    # float
-    ULTRA_LO = 1    # switch
-    ULTRA_HI = 2    # switch
-    BASS = 3    # float
-    MIDRANGE = 4    # float
-    FREQUENCY = 5    # rotarySwitch
-    TREBLE = 6    # float
-    MASTER = 7    # float
-    OUTPUT = 8    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    ULTRA_LO: Param[NoUnit] = Param(1, 'ULTRA_LO')    # switch
+    ULTRA_HI: Param[NoUnit] = Param(2, 'ULTRA_HI')    # switch
+    BASS: Param[NoUnit] = Param(3, 'BASS')    # float
+    MIDRANGE: Param[NoUnit] = Param(4, 'MIDRANGE')    # float
+    FREQUENCY: Param[NoUnit] = Param(5, 'FREQUENCY')    # rotarySwitch
+    TREBLE: Param[NoUnit] = Param(6, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(7, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(8, 'OUTPUT')    # float dB
 
 
-class AmpedFlipTop6464(IntEnum):
+class AmpedFlipTop6464(ParamSet):
     """Amped Flip-Top 6464 (Bass Amplifier)."""
 
-    BASS = 0    # float
-    TREBLE = 1    # float
-    MASTER = 2    # float
-    OUTPUT = 3    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(1, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(2, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class AmpedFlipTop6466(IntEnum):
+class AmpedFlipTop6466(ParamSet):
     """Amped Flip-Top 6466 (Bass Amplifier)."""
 
-    BASS = 0    # float
-    TREBLE = 1    # float
-    MASTER = 2    # float
-    OUTPUT = 3    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(1, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(2, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class AmpedFlipTop6664(IntEnum):
+class AmpedFlipTop6664(ParamSet):
     """Amped Flip-Top 6664 (Bass Amplifier)."""
 
-    BASS = 0    # float
-    TREBLE = 1    # float
-    MASTER = 2    # float
-    OUTPUT = 3    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(1, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(2, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class AmpedFlipTop6666(IntEnum):
+class AmpedFlipTop6666(ParamSet):
     """Amped Flip-Top 6666 (Bass Amplifier)."""
 
-    BASS = 0    # float
-    TREBLE = 1    # float
-    MASTER = 2    # float
-    OUTPUT = 3    # float dB
+    BASS: Param[NoUnit] = Param(0, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(1, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(2, 'MASTER')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class WattBassModNormal(IntEnum):
+class WattBassModNormal(ParamSet):
     """Watt Bass Mod Normal (Bass Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class WattBassModBright(IntEnum):
+class WattBassModBright(ParamSet):
     """Watt Bass Mod Bright (Bass Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class MicrotubesB3k(IntEnum):
+class MicrotubesB3k(ParamSet):
     """Microtubes® B3K (Bass Overdrive)."""
 
-    DRIVE = 0    # float
-    GROWL = 1    # switch
-    MIDBOOST = 2    # switch
-    TONE = 3    # float
-    LEVEL = 4    # float
-    BLEND = 5    # float
+    DRIVE: Param[NoUnit] = Param(0, 'DRIVE')    # float
+    GROWL: Param[NoUnit] = Param(1, 'GROWL')    # switch
+    MIDBOOST: Param[NoUnit] = Param(2, 'MIDBOOST')    # switch
+    TONE: Param[NoUnit] = Param(3, 'TONE')    # float
+    LEVEL: Param[NoUnit] = Param(4, 'LEVEL')    # float
+    BLEND: Param[NoUnit] = Param(5, 'BLEND')    # float
 
 
-class Bddi(IntEnum):
+class Bddi(ParamSet):
     """BDDI (Bass Overdrive)."""
 
-    BLEND = 0    # float
-    PRESENCE = 1    # float
-    DRIVE = 2    # float
-    LEVEL = 3    # float
-    TREBLE = 4    # float
-    BASS = 5    # float
+    BLEND: Param[NoUnit] = Param(0, 'BLEND')    # float
+    PRESENCE: Param[NoUnit] = Param(1, 'PRESENCE')    # float
+    DRIVE: Param[NoUnit] = Param(2, 'DRIVE')    # float
+    LEVEL: Param[NoUnit] = Param(3, 'LEVEL')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    BASS: Param[NoUnit] = Param(5, 'BASS')    # float
 
 
-class SovietFuzz(IntEnum):
+class SovietFuzz(ParamSet):
     """Soviet Fuzz (Bass Overdrive)."""
 
-    SUSTAIN = 0    # float
-    TONE = 1    # float
-    VOLUME = 2    # float
+    SUSTAIN: Param[NoUnit] = Param(0, 'SUSTAIN')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
 
 
-class MicrotubesVmt(IntEnum):
+class MicrotubesVmt(ParamSet):
     """Microtubes® VMT (Bass Overdrive)."""
 
-    DRIVE = 0    # float
-    ERA = 1    # float
-    LEVEL = 2    # float
-    BLEND = 3    # float
+    DRIVE: Param[NoUnit] = Param(0, 'DRIVE')    # float
+    ERA: Param[NoUnit] = Param(1, 'ERA')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
+    BLEND: Param[NoUnit] = Param(3, 'BLEND')    # float
 
 
-class ExoticBassZBoost(IntEnum):
+class ExoticBassZBoost(ParamSet):
     """Exotic Bass Z Boost (Bass Overdrive)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    TREBLE = 2    # float
-    VOLUME = 3    # float
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    VOLUME: Param[NoUnit] = Param(3, 'VOLUME')    # float
 
 
-class Parametric8(IntEnum):
+class Parametric8(ParamSet):
     """Parametric-8 (Equalizer)."""
 
-    N1_GAIN = 0    # float dB
-    N1_FREQ = 1    # float Hz
-    N1_Q = 2    # float
-    N1_TYPE = 3    # float
-    N1_BYPASS = 4    # switch
-    N2_GAIN = 5    # float dB
-    N2_FREQ = 6    # float Hz
-    N2_Q = 7    # float
-    N2_TYPE = 8    # float
-    N2_BYPASS = 9    # switch
-    N3_GAIN = 10    # float dB
-    N3_FREQ = 11    # float Hz
-    N3_Q = 12    # float
-    N3_TYPE = 13    # float
-    N3_BYPASS = 14    # switch
-    N4_GAIN = 15    # float dB
-    N4_FREQ = 16    # float Hz
-    N4_Q = 17    # float
-    N4_TYPE = 18    # float
-    N4_BYPASS = 19    # switch
-    N5_GAIN = 20    # float dB
-    N5_FREQ = 21    # float Hz
-    N5_Q = 22    # float
-    N5_TYPE = 23    # float
-    N5_BYPASS = 24    # switch
-    N6_GAIN = 25    # float dB
-    N6_FREQ = 26    # float Hz
-    N6_Q = 27    # float
-    N6_TYPE = 28    # float
-    N6_BYPASS = 29    # switch
-    N7_GAIN = 30    # float dB
-    N7_FREQ = 31    # float Hz
-    N7_Q = 32    # float
-    N7_TYPE = 33    # float
-    N7_BYPASS = 34    # switch
-    N8_GAIN = 35    # float dB
-    N8_FREQ = 36    # float Hz
-    N8_Q = 37    # float
-    N8_TYPE = 38    # float
-    N8_BYPASS = 39    # switch
-    OUTPUT = 40    # float dB
+    N1_GAIN: Param[DbUnit] = Param(0, 'N1_GAIN')    # float dB
+    N1_FREQ: Param[HertzUnit] = Param(1, 'N1_FREQ')    # float Hz
+    N1_Q: Param[NoUnit] = Param(2, 'N1_Q')    # float
+    N1_TYPE: Param[NoUnit] = Param(3, 'N1_TYPE')    # float
+    N1_BYPASS: Param[NoUnit] = Param(4, 'N1_BYPASS')    # switch
+    N2_GAIN: Param[DbUnit] = Param(5, 'N2_GAIN')    # float dB
+    N2_FREQ: Param[HertzUnit] = Param(6, 'N2_FREQ')    # float Hz
+    N2_Q: Param[NoUnit] = Param(7, 'N2_Q')    # float
+    N2_TYPE: Param[NoUnit] = Param(8, 'N2_TYPE')    # float
+    N2_BYPASS: Param[NoUnit] = Param(9, 'N2_BYPASS')    # switch
+    N3_GAIN: Param[DbUnit] = Param(10, 'N3_GAIN')    # float dB
+    N3_FREQ: Param[HertzUnit] = Param(11, 'N3_FREQ')    # float Hz
+    N3_Q: Param[NoUnit] = Param(12, 'N3_Q')    # float
+    N3_TYPE: Param[NoUnit] = Param(13, 'N3_TYPE')    # float
+    N3_BYPASS: Param[NoUnit] = Param(14, 'N3_BYPASS')    # switch
+    N4_GAIN: Param[DbUnit] = Param(15, 'N4_GAIN')    # float dB
+    N4_FREQ: Param[HertzUnit] = Param(16, 'N4_FREQ')    # float Hz
+    N4_Q: Param[NoUnit] = Param(17, 'N4_Q')    # float
+    N4_TYPE: Param[NoUnit] = Param(18, 'N4_TYPE')    # float
+    N4_BYPASS: Param[NoUnit] = Param(19, 'N4_BYPASS')    # switch
+    N5_GAIN: Param[DbUnit] = Param(20, 'N5_GAIN')    # float dB
+    N5_FREQ: Param[HertzUnit] = Param(21, 'N5_FREQ')    # float Hz
+    N5_Q: Param[NoUnit] = Param(22, 'N5_Q')    # float
+    N5_TYPE: Param[NoUnit] = Param(23, 'N5_TYPE')    # float
+    N5_BYPASS: Param[NoUnit] = Param(24, 'N5_BYPASS')    # switch
+    N6_GAIN: Param[DbUnit] = Param(25, 'N6_GAIN')    # float dB
+    N6_FREQ: Param[HertzUnit] = Param(26, 'N6_FREQ')    # float Hz
+    N6_Q: Param[NoUnit] = Param(27, 'N6_Q')    # float
+    N6_TYPE: Param[NoUnit] = Param(28, 'N6_TYPE')    # float
+    N6_BYPASS: Param[NoUnit] = Param(29, 'N6_BYPASS')    # switch
+    N7_GAIN: Param[DbUnit] = Param(30, 'N7_GAIN')    # float dB
+    N7_FREQ: Param[HertzUnit] = Param(31, 'N7_FREQ')    # float Hz
+    N7_Q: Param[NoUnit] = Param(32, 'N7_Q')    # float
+    N7_TYPE: Param[NoUnit] = Param(33, 'N7_TYPE')    # float
+    N7_BYPASS: Param[NoUnit] = Param(34, 'N7_BYPASS')    # switch
+    N8_GAIN: Param[DbUnit] = Param(35, 'N8_GAIN')    # float dB
+    N8_FREQ: Param[HertzUnit] = Param(36, 'N8_FREQ')    # float Hz
+    N8_Q: Param[NoUnit] = Param(37, 'N8_Q')    # float
+    N8_TYPE: Param[NoUnit] = Param(38, 'N8_TYPE')    # float
+    N8_BYPASS: Param[NoUnit] = Param(39, 'N8_BYPASS')    # switch
+    OUTPUT: Param[DbUnit] = Param(40, 'OUTPUT')    # float dB
 
 
-class Parametric3(IntEnum):
+class Parametric3(ParamSet):
     """Parametric-3 (Equalizer)."""
 
-    N1_GAIN = 0    # float dB
-    N1_FREQ = 1    # float Hz
-    N1_Q = 2    # float
-    N1_TYPE = 3    # float
-    N1_BYPASS = 4    # switch
-    N2_GAIN = 5    # float dB
-    N2_FREQ = 6    # float Hz
-    N2_Q = 7    # float
-    N2_TYPE = 8    # float
-    N2_BYPASS = 9    # switch
-    N3_GAIN = 10    # float dB
-    N3_FREQ = 11    # float Hz
-    N3_Q = 12    # float
-    N3_TYPE = 13    # float
-    N3_BYPASS = 14    # switch
-    OUTPUT = 15    # float dB
+    N1_GAIN: Param[DbUnit] = Param(0, 'N1_GAIN')    # float dB
+    N1_FREQ: Param[HertzUnit] = Param(1, 'N1_FREQ')    # float Hz
+    N1_Q: Param[NoUnit] = Param(2, 'N1_Q')    # float
+    N1_TYPE: Param[NoUnit] = Param(3, 'N1_TYPE')    # float
+    N1_BYPASS: Param[NoUnit] = Param(4, 'N1_BYPASS')    # switch
+    N2_GAIN: Param[DbUnit] = Param(5, 'N2_GAIN')    # float dB
+    N2_FREQ: Param[HertzUnit] = Param(6, 'N2_FREQ')    # float Hz
+    N2_Q: Param[NoUnit] = Param(7, 'N2_Q')    # float
+    N2_TYPE: Param[NoUnit] = Param(8, 'N2_TYPE')    # float
+    N2_BYPASS: Param[NoUnit] = Param(9, 'N2_BYPASS')    # switch
+    N3_GAIN: Param[DbUnit] = Param(10, 'N3_GAIN')    # float dB
+    N3_FREQ: Param[HertzUnit] = Param(11, 'N3_FREQ')    # float Hz
+    N3_Q: Param[NoUnit] = Param(12, 'N3_Q')    # float
+    N3_TYPE: Param[NoUnit] = Param(13, 'N3_TYPE')    # float
+    N3_BYPASS: Param[NoUnit] = Param(14, 'N3_BYPASS')    # switch
+    OUTPUT: Param[DbUnit] = Param(15, 'OUTPUT')    # float dB
 
 
-class LowHighCut(IntEnum):
+class LowHighCut(ParamSet):
     """Low-High Cut (Equalizer)."""
 
-    HPF_SLOPE = 0    # rotarySwitch dB/oct
-    HPF_FREQ = 1    # float Hz
-    LPF_SLOPE = 2    # rotarySwitch dB/oct
-    LPF_FREQ = 3    # float Hz
-    OUTPUT = 4    # float dB
+    HPF_SLOPE: Param[NoUnit] = Param(0, 'HPF_SLOPE')    # rotarySwitch dB/oct
+    HPF_FREQ: Param[HertzUnit] = Param(1, 'HPF_FREQ')    # float Hz
+    LPF_SLOPE: Param[NoUnit] = Param(2, 'LPF_SLOPE')    # rotarySwitch dB/oct
+    LPF_FREQ: Param[HertzUnit] = Param(3, 'LPF_FREQ')    # float Hz
+    OUTPUT: Param[DbUnit] = Param(4, 'OUTPUT')    # float dB
 
 
-class Graphic9(IntEnum):
+class Graphic9(ParamSet):
     """Graphic-9 (Equalizer)."""
 
-    HPF = 0    # float Hz
-    N65HZ = 1    # fader dB
-    N125HZ = 2    # fader dB
-    N250HZ = 3    # fader dB
-    N500HZ = 4    # fader dB
-    N1KHZ = 5    # fader dB
-    N2KHZ = 6    # fader dB
-    N4KHZ = 7    # fader dB
-    N8KHZ = 8    # fader dB
-    N16KHZ = 9    # fader dB
-    LPF = 10    # float Hz
-    Q = 11    # float
-    OUTPUT = 12    # float dB
+    HPF: Param[HertzUnit] = Param(0, 'HPF')    # float Hz
+    N65HZ: Param[DbUnit] = Param(1, 'N65HZ')    # fader dB
+    N125HZ: Param[DbUnit] = Param(2, 'N125HZ')    # fader dB
+    N250HZ: Param[DbUnit] = Param(3, 'N250HZ')    # fader dB
+    N500HZ: Param[DbUnit] = Param(4, 'N500HZ')    # fader dB
+    N1KHZ: Param[DbUnit] = Param(5, 'N1KHZ')    # fader dB
+    N2KHZ: Param[DbUnit] = Param(6, 'N2KHZ')    # fader dB
+    N4KHZ: Param[DbUnit] = Param(7, 'N4KHZ')    # fader dB
+    N8KHZ: Param[DbUnit] = Param(8, 'N8KHZ')    # fader dB
+    N16KHZ: Param[DbUnit] = Param(9, 'N16KHZ')    # fader dB
+    LPF: Param[HertzUnit] = Param(10, 'LPF')    # float Hz
+    Q: Param[NoUnit] = Param(11, 'Q')    # float
+    OUTPUT: Param[DbUnit] = Param(12, 'OUTPUT')    # float dB
 
 
-class PluginGraphic9(IntEnum):
+class PluginGraphic9(ParamSet):
     """Plugin Graphic-9 (Equalizer)."""
 
-    HPF = 0    # float Hz
-    N65HZ = 1    # fader dB
-    N125HZ = 2    # fader dB
-    N250HZ = 3    # fader dB
-    N500HZ = 4    # fader dB
-    N1KHZ = 5    # fader dB
-    N2KHZ = 6    # fader dB
-    N4KHZ = 7    # fader dB
-    N8KHZ = 8    # fader dB
-    N16KHZ = 9    # fader dB
-    LPF = 10    # float Hz
-    Q = 11    # float
-    OUTPUT = 12    # float dB
+    HPF: Param[HertzUnit] = Param(0, 'HPF')    # float Hz
+    N65HZ: Param[DbUnit] = Param(1, 'N65HZ')    # fader dB
+    N125HZ: Param[DbUnit] = Param(2, 'N125HZ')    # fader dB
+    N250HZ: Param[DbUnit] = Param(3, 'N250HZ')    # fader dB
+    N500HZ: Param[DbUnit] = Param(4, 'N500HZ')    # fader dB
+    N1KHZ: Param[DbUnit] = Param(5, 'N1KHZ')    # fader dB
+    N2KHZ: Param[DbUnit] = Param(6, 'N2KHZ')    # fader dB
+    N4KHZ: Param[DbUnit] = Param(7, 'N4KHZ')    # fader dB
+    N8KHZ: Param[DbUnit] = Param(8, 'N8KHZ')    # fader dB
+    N16KHZ: Param[DbUnit] = Param(9, 'N16KHZ')    # fader dB
+    LPF: Param[HertzUnit] = Param(10, 'LPF')    # float Hz
+    Q: Param[NoUnit] = Param(11, 'Q')    # float
+    OUTPUT: Param[DbUnit] = Param(12, 'OUTPUT')    # float dB
 
 
-class Legendary87M(IntEnum):
+class Legendary87M(ParamSet):
     """Legendary 87 (M) (Compressor)."""
 
-    INPUT = 0    # float dB
-    RATIO = 1    # rotarySwitch
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float s
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    GAIN_REDUCTION = 6    # grMeter dB
+    INPUT: Param[DbUnit] = Param(0, 'INPUT')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # rotarySwitch
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[SecondsUnit] = Param(3, 'RELEASE')    # float s
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class SolidStateCompM(IntEnum):
+class SolidStateCompM(ParamSet):
     """Solid State Comp (M) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # rotarySwitch
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float s
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    GAIN_REDUCTION = 6    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # rotarySwitch
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[SecondsUnit] = Param(3, 'RELEASE')    # float s
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class VcaCompM(IntEnum):
+class VcaCompM(ParamSet):
     """VCA Comp (M) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # float
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float ms
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    GAIN_REDUCTION = 6    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # float
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(3, 'RELEASE')    # float ms
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class OptoCompM(IntEnum):
+class OptoCompM(ParamSet):
     """Opto Comp (M) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # float
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float ms
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    GAIN_REDUCTION = 6    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # float
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(3, 'RELEASE')    # float ms
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class Jewel(IntEnum):
+class Jewel(ParamSet):
     """Jewel (Compressor)."""
 
-    COMP = 0    # float
-    EQ = 1    # float
-    VOLUME = 2    # float
-    HIGH_CUT = 3    # switch
-    MIX = 4    # float %
+    COMP: Param[NoUnit] = Param(0, 'COMP')    # float
+    EQ: Param[NoUnit] = Param(1, 'EQ')    # float
+    VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
+    HIGH_CUT: Param[NoUnit] = Param(3, 'HIGH_CUT')    # switch
+    MIX: Param[PercentUnit] = Param(4, 'MIX')    # float %
 
 
-class Legendary87St(IntEnum):
+class Legendary87St(ParamSet):
     """Legendary 87 (ST) (Compressor)."""
 
-    INPUT = 0    # float dB
-    RATIO = 1    # rotarySwitch
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float s
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    GAIN_REDUCTION = 6    # grMeter dB
+    INPUT: Param[DbUnit] = Param(0, 'INPUT')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # rotarySwitch
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[SecondsUnit] = Param(3, 'RELEASE')    # float s
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class SolidStateCompSt(IntEnum):
+class SolidStateCompSt(ParamSet):
     """Solid State Comp (ST) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # rotarySwitch
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float s
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    GAIN_REDUCTION = 6    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # rotarySwitch
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[SecondsUnit] = Param(3, 'RELEASE')    # float s
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class VcaCompSt(IntEnum):
+class VcaCompSt(ParamSet):
     """VCA Comp (ST) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # float
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float ms
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    GAIN_REDUCTION = 6    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # float
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(3, 'RELEASE')    # float ms
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class OptoCompSt(IntEnum):
+class OptoCompSt(ParamSet):
     """Opto Comp (ST) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # float
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float ms
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    GAIN_REDUCTION = 6    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # float
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(3, 'RELEASE')    # float ms
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class ChiefCs3(IntEnum):
+class ChiefCs3(ParamSet):
     """Chief CS3 (Compressor)."""
 
-    SUSTAIN = 0    # float
-    ATTACK = 1    # float
-    TONE = 2    # float
-    LEVEL = 3    # float
+    SUSTAIN: Param[NoUnit] = Param(0, 'SUSTAIN')    # float
+    ATTACK: Param[NoUnit] = Param(1, 'ATTACK')    # float
+    TONE: Param[NoUnit] = Param(2, 'TONE')    # float
+    LEVEL: Param[NoUnit] = Param(3, 'LEVEL')    # float
 
 
-class SolidStateCompSC(IntEnum):
+class SolidStateCompSC(ParamSet):
     """Solid State Comp (S/C) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # rotarySwitch
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float s
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    SOURCE = 6    # comboBox
-    GAIN_REDUCTION = 7    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # rotarySwitch
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[SecondsUnit] = Param(3, 'RELEASE')    # float s
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
+    GAIN_REDUCTION: Param[DbUnit] = Param(7, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class Legendary87SC(IntEnum):
+class Legendary87SC(ParamSet):
     """Legendary 87 (S/C) (Compressor)."""
 
-    INPUT = 0    # float dB
-    RATIO = 1    # rotarySwitch
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float s
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    SOURCE = 6    # comboBox
-    GAIN_REDUCTION = 7    # grMeter dB
+    INPUT: Param[DbUnit] = Param(0, 'INPUT')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # rotarySwitch
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[SecondsUnit] = Param(3, 'RELEASE')    # float s
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
+    GAIN_REDUCTION: Param[DbUnit] = Param(7, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class OptoCompSC(IntEnum):
+class OptoCompSC(ParamSet):
     """Opto Comp (S/C) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # float
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float ms
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    SOURCE = 6    # comboBox
-    GAIN_REDUCTION = 7    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # float
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(3, 'RELEASE')    # float ms
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
+    GAIN_REDUCTION: Param[DbUnit] = Param(7, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class VcaCompSC(IntEnum):
+class VcaCompSC(ParamSet):
     """VCA Comp (S/C) (Compressor)."""
 
-    THRESHOLD = 0    # float dB
-    RATIO = 1    # float
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float ms
-    MAKEUP = 4    # float dB
-    MIX = 5    # float %
-    SOURCE = 6    # comboBox
-    GAIN_REDUCTION = 7    # grMeter dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # float
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(3, 'RELEASE')    # float ms
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
+    GAIN_REDUCTION: Param[DbUnit] = Param(7, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class AnalogDelayM(IntEnum):
+class AnalogDelayM(ParamSet):
     """Analog Delay (M) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    QUALITY = 4    # rotarySwitch
-    SYNC = 5    # switch
-    SYNC_NOTE = 6    # rotarySwitch
-    DELAY_TIME = 7    # float ms
-    MOD_RATE = 8    # float Hz
-    MOD_DEPTH = 9    # float %
-    DRIVE = 10    # float %
-    TRAILS = 11    # switch
-    DYN_DEPTH = 12    # float dB
-    DYN_MODE = 13    # rotarySwitch
-    THRESHOLD = 14    # float dB
-    ATTACK = 15    # float ms
-    RELEASE = 16    # float ms
-    KNEE = 17    # float dB
-    FEEDBACK_DEPTH = 18    # float %
-    GAIN_REDUCTION = 19    # grMeter dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    QUALITY: Param[NoUnit] = Param(4, 'QUALITY')    # rotarySwitch
+    SYNC: Param[NoUnit] = Param(5, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(6, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(7, 'DELAY_TIME')    # float ms
+    MOD_RATE: Param[HertzUnit] = Param(8, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(9, 'MOD_DEPTH')    # float %
+    DRIVE: Param[PercentUnit] = Param(10, 'DRIVE')    # float %
+    TRAILS: Param[NoUnit] = Param(11, 'TRAILS')    # switch
+    DYN_DEPTH: Param[DbUnit] = Param(12, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(13, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(14, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(15, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(16, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(17, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(18, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(19, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class SimplePingPongDelay(IntEnum):
+class SimplePingPongDelay(ParamSet):
     """Simple Ping Pong Delay (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    TONE = 2    # float
-    SYNC = 3    # switch
-    SYNC_NOTE = 4    # rotarySwitch
-    DELAY_TIME = 5    # float ms
-    TRAILS = 6    # switch
-    STEREO_WIDTH = 7    # float %
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    TONE: Param[NoUnit] = Param(2, 'TONE')    # float
+    SYNC: Param[NoUnit] = Param(3, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(4, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(5, 'DELAY_TIME')    # float ms
+    TRAILS: Param[NoUnit] = Param(6, 'TRAILS')    # switch
+    STEREO_WIDTH: Param[PercentUnit] = Param(7, 'STEREO_WIDTH')    # float %
 
 
-class SimpleDelaySt(IntEnum):
+class SimpleDelaySt(ParamSet):
     """Simple Delay (ST) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    TONE = 2    # float
-    SYNC = 3    # switch
-    SYNC_NOTE = 4    # rotarySwitch
-    DELAY_TIME = 5    # float ms
-    TRAILS = 6    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    TONE: Param[NoUnit] = Param(2, 'TONE')    # float
+    SYNC: Param[NoUnit] = Param(3, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(4, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(5, 'DELAY_TIME')    # float ms
+    TRAILS: Param[NoUnit] = Param(6, 'TRAILS')    # switch
 
 
-class TapeDelaySt(IntEnum):
+class TapeDelaySt(ParamSet):
     """Tape Delay (ST) (Delay)."""
 
-    NOTIFICATION_START = 0    # float
-    MIX = 1    # float %
-    FEEDBACK = 2    # float %
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    PING_PONG = 5    # switch
-    SYNC = 6    # switch
-    SYNC_NOTE = 7    # rotarySwitch
-    DELAY_TIME = 8    # float ms
-    WOW = 9    # float %
-    FLUTTER = 10    # float %
-    DRIVE = 11    # float %
-    TRAILS = 12    # switch
-    DUMMY = 13    # float %
-    STEREO_WIDTH = 14    # float %
-    DYN_DEPTH = 15    # float dB
-    DYN_MODE = 16    # rotarySwitch
-    THRESHOLD = 17    # float dB
-    ATTACK = 18    # float ms
-    RELEASE = 19    # float ms
-    KNEE = 20    # float dB
-    FEEDBACK_DEPTH = 21    # float %
-    GAIN_REDUCTION = 22    # grMeter dB
-    NOTIFICATION_END = 23    # float
+    NOTIFICATION_START: Param[NoUnit] = Param(0, 'NOTIFICATION_START')    # float
+    MIX: Param[PercentUnit] = Param(1, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(2, 'FEEDBACK')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    PING_PONG: Param[NoUnit] = Param(5, 'PING_PONG')    # switch
+    SYNC: Param[NoUnit] = Param(6, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(7, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(8, 'DELAY_TIME')    # float ms
+    WOW: Param[PercentUnit] = Param(9, 'WOW')    # float %
+    FLUTTER: Param[PercentUnit] = Param(10, 'FLUTTER')    # float %
+    DRIVE: Param[PercentUnit] = Param(11, 'DRIVE')    # float %
+    TRAILS: Param[NoUnit] = Param(12, 'TRAILS')    # switch
+    DUMMY: Param[PercentUnit] = Param(13, 'DUMMY')    # float %
+    STEREO_WIDTH: Param[PercentUnit] = Param(14, 'STEREO_WIDTH')    # float %
+    DYN_DEPTH: Param[DbUnit] = Param(15, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(16, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(17, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(18, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(19, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(20, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(21, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(22, 'GAIN_REDUCTION')    # grMeter dB
+    NOTIFICATION_END: Param[NoUnit] = Param(23, 'NOTIFICATION_END')    # float
 
 
-class DigitalDelayM(IntEnum):
+class DigitalDelayM(ParamSet):
     """Digital Delay (M) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    SYNC = 4    # switch
-    SYNC_NOTE = 5    # rotarySwitch
-    DELAY_TIME = 6    # float ms
-    MOD_RATE = 7    # float Hz
-    MOD_DEPTH = 8    # float %
-    TRAILS = 9    # switch
-    DYN_DEPTH = 10    # float dB
-    DYN_MODE = 11    # rotarySwitch
-    THRESHOLD = 12    # float dB
-    ATTACK = 13    # float ms
-    RELEASE = 14    # float ms
-    KNEE = 15    # float dB
-    FEEDBACK_DEPTH = 16    # float %
-    GAIN_REDUCTION = 17    # grMeter dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    SYNC: Param[NoUnit] = Param(4, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(5, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(6, 'DELAY_TIME')    # float ms
+    MOD_RATE: Param[HertzUnit] = Param(7, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(8, 'MOD_DEPTH')    # float %
+    TRAILS: Param[NoUnit] = Param(9, 'TRAILS')    # switch
+    DYN_DEPTH: Param[DbUnit] = Param(10, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(11, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(12, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(13, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(14, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(15, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(16, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(17, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class SimpleDelayM(IntEnum):
+class SimpleDelayM(ParamSet):
     """Simple Delay (M) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    TONE = 2    # float
-    SYNC = 3    # switch
-    SYNC_NOTE = 4    # rotarySwitch
-    DELAY_TIME = 5    # float ms
-    TRAILS = 6    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    TONE: Param[NoUnit] = Param(2, 'TONE')    # float
+    SYNC: Param[NoUnit] = Param(3, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(4, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(5, 'DELAY_TIME')    # float ms
+    TRAILS: Param[NoUnit] = Param(6, 'TRAILS')    # switch
 
 
-class TapeDelayM(IntEnum):
+class TapeDelayM(ParamSet):
     """Tape Delay (M) (Delay)."""
 
-    NOTIFICATION_START = 0    # float
-    MIX = 1    # float %
-    FEEDBACK = 2    # float %
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    SYNC = 5    # switch
-    SYNC_NOTE = 6    # rotarySwitch
-    DELAY_TIME = 7    # float ms
-    WOW = 8    # float %
-    FLUTTER = 9    # float %
-    DRIVE = 10    # float %
-    TRAILS = 11    # switch
-    DUMMY = 12    # float
-    DYN_DEPTH = 13    # float dB
-    DYN_MODE = 14    # rotarySwitch
-    THRESHOLD = 15    # float dB
-    ATTACK = 16    # float ms
-    RELEASE = 17    # float ms
-    KNEE = 18    # float dB
-    FEEDBACK_DEPTH = 19    # float %
-    GAIN_REDUCTION = 20    # grMeter dB
-    NOTIFICATION_END = 21    # float
+    NOTIFICATION_START: Param[NoUnit] = Param(0, 'NOTIFICATION_START')    # float
+    MIX: Param[PercentUnit] = Param(1, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(2, 'FEEDBACK')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    SYNC: Param[NoUnit] = Param(5, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(6, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(7, 'DELAY_TIME')    # float ms
+    WOW: Param[PercentUnit] = Param(8, 'WOW')    # float %
+    FLUTTER: Param[PercentUnit] = Param(9, 'FLUTTER')    # float %
+    DRIVE: Param[PercentUnit] = Param(10, 'DRIVE')    # float %
+    TRAILS: Param[NoUnit] = Param(11, 'TRAILS')    # switch
+    DUMMY: Param[NoUnit] = Param(12, 'DUMMY')    # float
+    DYN_DEPTH: Param[DbUnit] = Param(13, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(14, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(15, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(16, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(17, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(18, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(19, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(20, 'GAIN_REDUCTION')    # grMeter dB
+    NOTIFICATION_END: Param[NoUnit] = Param(21, 'NOTIFICATION_END')    # float
 
 
-class SlapbackDelaySt(IntEnum):
+class SlapbackDelaySt(ParamSet):
     """Slapback Delay (ST) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    PING_PONG = 4    # switch
-    QUALITY = 5    # rotarySwitch
-    SYNC = 6    # switch
-    SYNC_NOTE = 7    # rotarySwitch
-    DELAY_TIME = 8    # float ms
-    MOD_RATE = 9    # float Hz
-    MOD_DEPTH = 10    # float %
-    WIDTH = 11    # float %
-    DRIVE = 12    # float %
-    TRAILS = 13    # switch
-    DYN_DEPTH = 14    # float dB
-    DYN_MODE = 15    # rotarySwitch
-    THRESHOLD = 16    # float dB
-    ATTACK = 17    # float ms
-    RELEASE = 18    # float ms
-    KNEE = 19    # float dB
-    FEEDBACK_DEPTH = 20    # float %
-    GAIN_REDUCTION = 21    # grMeter dB
-    STEREO_WIDTH = 22    # float %
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    PING_PONG: Param[NoUnit] = Param(4, 'PING_PONG')    # switch
+    QUALITY: Param[NoUnit] = Param(5, 'QUALITY')    # rotarySwitch
+    SYNC: Param[NoUnit] = Param(6, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(7, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(8, 'DELAY_TIME')    # float ms
+    MOD_RATE: Param[HertzUnit] = Param(9, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(10, 'MOD_DEPTH')    # float %
+    WIDTH: Param[PercentUnit] = Param(11, 'WIDTH')    # float %
+    DRIVE: Param[PercentUnit] = Param(12, 'DRIVE')    # float %
+    TRAILS: Param[NoUnit] = Param(13, 'TRAILS')    # switch
+    DYN_DEPTH: Param[DbUnit] = Param(14, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(15, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(16, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(17, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(18, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(19, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(20, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(21, 'GAIN_REDUCTION')    # grMeter dB
+    STEREO_WIDTH: Param[PercentUnit] = Param(22, 'STEREO_WIDTH')    # float %
 
 
-class SlapbackDelayM(IntEnum):
+class SlapbackDelayM(ParamSet):
     """Slapback Delay (M) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    QUALITY = 4    # rotarySwitch
-    SYNC = 5    # switch
-    SYNC_NOTE = 6    # rotarySwitch
-    DELAY_TIME = 7    # float ms
-    MOD_RATE = 8    # float Hz
-    MOD_DEPTH = 9    # float %
-    DRIVE = 10    # float %
-    TRAILS = 11    # switch
-    DYN_DEPTH = 12    # float dB
-    DYN_MODE = 13    # rotarySwitch
-    THRESHOLD = 14    # float dB
-    ATTACK = 15    # float ms
-    RELEASE = 16    # float ms
-    KNEE = 17    # float dB
-    FEEDBACK_DEPTH = 18    # float %
-    GAIN_REDUCTION = 19    # grMeter dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    QUALITY: Param[NoUnit] = Param(4, 'QUALITY')    # rotarySwitch
+    SYNC: Param[NoUnit] = Param(5, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(6, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(7, 'DELAY_TIME')    # float ms
+    MOD_RATE: Param[HertzUnit] = Param(8, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(9, 'MOD_DEPTH')    # float %
+    DRIVE: Param[PercentUnit] = Param(10, 'DRIVE')    # float %
+    TRAILS: Param[NoUnit] = Param(11, 'TRAILS')    # switch
+    DYN_DEPTH: Param[DbUnit] = Param(12, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(13, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(14, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(15, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(16, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(17, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(18, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(19, 'GAIN_REDUCTION')    # grMeter dB
 
 
-class AnalogDelaySt(IntEnum):
+class AnalogDelaySt(ParamSet):
     """Analog Delay (ST) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    PING_PONG = 4    # switch
-    QUALITY = 5    # rotarySwitch
-    SYNC = 6    # switch
-    SYNC_NOTE = 7    # rotarySwitch
-    DELAY_TIME = 8    # float ms
-    MOD_RATE = 9    # float Hz
-    MOD_DEPTH = 10    # float %
-    WIDTH = 11    # float %
-    DRIVE = 12    # float %
-    TRAILS = 13    # switch
-    DYN_DEPTH = 14    # float dB
-    DYN_MODE = 15    # rotarySwitch
-    THRESHOLD = 16    # float dB
-    ATTACK = 17    # float ms
-    RELEASE = 18    # float ms
-    KNEE = 19    # float dB
-    FEEDBACK_DEPTH = 20    # float %
-    GAIN_REDUCTION = 21    # grMeter dB
-    STEREO_WIDTH = 22    # float %
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    PING_PONG: Param[NoUnit] = Param(4, 'PING_PONG')    # switch
+    QUALITY: Param[NoUnit] = Param(5, 'QUALITY')    # rotarySwitch
+    SYNC: Param[NoUnit] = Param(6, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(7, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(8, 'DELAY_TIME')    # float ms
+    MOD_RATE: Param[HertzUnit] = Param(9, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(10, 'MOD_DEPTH')    # float %
+    WIDTH: Param[PercentUnit] = Param(11, 'WIDTH')    # float %
+    DRIVE: Param[PercentUnit] = Param(12, 'DRIVE')    # float %
+    TRAILS: Param[NoUnit] = Param(13, 'TRAILS')    # switch
+    DYN_DEPTH: Param[DbUnit] = Param(14, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(15, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(16, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(17, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(18, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(19, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(20, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(21, 'GAIN_REDUCTION')    # grMeter dB
+    STEREO_WIDTH: Param[PercentUnit] = Param(22, 'STEREO_WIDTH')    # float %
 
 
-class DigitalDelaySt(IntEnum):
+class DigitalDelaySt(ParamSet):
     """Digital Delay (ST) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    PING_PONG = 4    # switch
-    SYNC = 5    # switch
-    SYNC_NOTE = 6    # rotarySwitch
-    DELAY_TIME = 7    # float ms
-    MOD_RATE = 8    # float Hz
-    MOD_DEPTH = 9    # float %
-    WIDTH = 10    # float %
-    TRAILS = 11    # switch
-    DYN_DEPTH = 12    # float dB
-    DYN_MODE = 13    # rotarySwitch
-    THRESHOLD = 14    # float dB
-    ATTACK = 15    # float ms
-    RELEASE = 16    # float ms
-    KNEE = 17    # float dB
-    FEEDBACK_DEPTH = 18    # float %
-    GAIN_REDUCTION = 19    # grMeter dB
-    STEREO_WIDTH = 20    # float %
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    PING_PONG: Param[NoUnit] = Param(4, 'PING_PONG')    # switch
+    SYNC: Param[NoUnit] = Param(5, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(6, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(7, 'DELAY_TIME')    # float ms
+    MOD_RATE: Param[HertzUnit] = Param(8, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(9, 'MOD_DEPTH')    # float %
+    WIDTH: Param[PercentUnit] = Param(10, 'WIDTH')    # float %
+    TRAILS: Param[NoUnit] = Param(11, 'TRAILS')    # switch
+    DYN_DEPTH: Param[DbUnit] = Param(12, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(13, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(14, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(15, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(16, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(17, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(18, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(19, 'GAIN_REDUCTION')    # grMeter dB
+    STEREO_WIDTH: Param[PercentUnit] = Param(20, 'STEREO_WIDTH')    # float %
 
 
-class DualDelay(IntEnum):
+class DualDelay(ParamSet):
     """Dual Delay (Delay)."""
 
-    MIX = 0    # float %
-    SYNC_L = 1    # switch
-    SYNC_NOTE_L = 2    # rotarySwitch
-    DELAY_TIME_L = 3    # float ms
-    FEEDBACK_L = 4    # float %
-    X_FEEDBACK = 5    # float %
-    SYNC_R = 6    # switch
-    SYNC_NOTE_R = 7    # rotarySwitch
-    DELAY_TIME_R = 8    # float ms
-    FEEDBACK_R = 9    # float %
-    HIGH_PASS = 10    # float Hz
-    LOW_PASS = 11    # float Hz
-    MOD_RATE = 12    # float Hz
-    MOD_DEPTH = 13    # float %
-    LINK_FBACK = 14    # switch
-    TRAILS = 15    # switch
-    DYN_DEPTH = 16    # float dB
-    DYN_MODE = 17    # rotarySwitch
-    THRESHOLD = 18    # float dB
-    ATTACK = 19    # float ms
-    RELEASE = 20    # float ms
-    KNEE = 21    # float dB
-    FEEDBACK_DEPTH = 22    # float %
-    GAIN_REDUCTION = 23    # grMeter dB
-    STEREO_WIDTH = 24    # float %
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SYNC_L: Param[NoUnit] = Param(1, 'SYNC_L')    # switch
+    SYNC_NOTE_L: Param[NoUnit] = Param(2, 'SYNC_NOTE_L')    # rotarySwitch
+    DELAY_TIME_L: Param[MillisecondsUnit] = Param(3, 'DELAY_TIME_L')    # float ms
+    FEEDBACK_L: Param[PercentUnit] = Param(4, 'FEEDBACK_L')    # float %
+    X_FEEDBACK: Param[PercentUnit] = Param(5, 'X_FEEDBACK')    # float %
+    SYNC_R: Param[NoUnit] = Param(6, 'SYNC_R')    # switch
+    SYNC_NOTE_R: Param[NoUnit] = Param(7, 'SYNC_NOTE_R')    # rotarySwitch
+    DELAY_TIME_R: Param[MillisecondsUnit] = Param(8, 'DELAY_TIME_R')    # float ms
+    FEEDBACK_R: Param[PercentUnit] = Param(9, 'FEEDBACK_R')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(10, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(11, 'LOW_PASS')    # float Hz
+    MOD_RATE: Param[HertzUnit] = Param(12, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(13, 'MOD_DEPTH')    # float %
+    LINK_FBACK: Param[NoUnit] = Param(14, 'LINK_FBACK')    # switch
+    TRAILS: Param[NoUnit] = Param(15, 'TRAILS')    # switch
+    DYN_DEPTH: Param[DbUnit] = Param(16, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(17, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(18, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(19, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(20, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(21, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(22, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(23, 'GAIN_REDUCTION')    # grMeter dB
+    STEREO_WIDTH: Param[PercentUnit] = Param(24, 'STEREO_WIDTH')    # float %
 
 
-class ReverseDelayM(IntEnum):
+class ReverseDelayM(ParamSet):
     """Reverse Delay (M) (Delay)."""
 
-    MIX = 0    # float %
-    FEEDBACK = 1    # float %
-    FEEDBACK_MODE = 2    # switch
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    SYNC = 5    # switch
-    SYNC_NOTE = 6    # rotarySwitch
-    DELAY_TIME = 7    # float ms
-    OVERLAP = 8    # float %
-    TRIG_THRESHOLD = 9    # floatWithLed dB
-    DYN_DEPTH = 10    # float dB
-    DYN_MODE = 11    # rotarySwitch
-    THRESHOLD = 12    # float dB
-    ATTACK = 13    # float ms
-    RELEASE = 14    # float ms
-    KNEE = 15    # float dB
-    FEEDBACK_DEPTH = 16    # float %
-    GAIN_REDUCTION = 17    # grMeter dB
-    TRAILS = 18    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(1, 'FEEDBACK')    # float %
+    FEEDBACK_MODE: Param[NoUnit] = Param(2, 'FEEDBACK_MODE')    # switch
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    SYNC: Param[NoUnit] = Param(5, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(6, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(7, 'DELAY_TIME')    # float ms
+    OVERLAP: Param[PercentUnit] = Param(8, 'OVERLAP')    # float %
+    TRIG_THRESHOLD: Param[DbUnit] = Param(9, 'TRIG_THRESHOLD')    # floatWithLed dB
+    DYN_DEPTH: Param[DbUnit] = Param(10, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(11, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(12, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(13, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(14, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(15, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(16, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(17, 'GAIN_REDUCTION')    # grMeter dB
+    TRAILS: Param[NoUnit] = Param(18, 'TRAILS')    # switch
 
 
-class DualReverseDelay(IntEnum):
+class DualReverseDelay(ParamSet):
     """Dual Reverse Delay (Delay)."""
 
-    MIX = 0    # float %
-    SYNC = 1    # switch
-    SYNC_NOTE_L = 2    # rotarySwitch
-    DELAY_TIME_L = 3    # float ms
-    FEEDBACK_L = 4    # float %
-    X_FEEDBACK = 5    # float %
-    FEEDBACK_MODE = 6    # switch
-    SYNC_NOTE_R = 7    # rotarySwitch
-    DELAY_TIME_R = 8    # float ms
-    FEEDBACK_R = 9    # float %
-    OVERLAP = 10    # float %
-    TRIG_THRESHOLD = 11    # floatWithLed dB
-    DYN_DEPTH = 12    # float dB
-    DYN_MODE = 13    # rotarySwitch
-    THRESHOLD = 14    # float dB
-    ATTACK = 15    # float ms
-    RELEASE = 16    # float ms
-    KNEE = 17    # float dB
-    FEEDBACK_DEPTH = 18    # float %
-    GAIN_REDUCTION = 19    # grMeter dB
-    HIGH_PASS = 20    # float Hz
-    LOW_PASS = 21    # float Hz
-    STEREO_WIDTH = 22    # float %
-    TRAILS = 23    # switch
-    LINK_FBACK = 24    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SYNC: Param[NoUnit] = Param(1, 'SYNC')    # switch
+    SYNC_NOTE_L: Param[NoUnit] = Param(2, 'SYNC_NOTE_L')    # rotarySwitch
+    DELAY_TIME_L: Param[MillisecondsUnit] = Param(3, 'DELAY_TIME_L')    # float ms
+    FEEDBACK_L: Param[PercentUnit] = Param(4, 'FEEDBACK_L')    # float %
+    X_FEEDBACK: Param[PercentUnit] = Param(5, 'X_FEEDBACK')    # float %
+    FEEDBACK_MODE: Param[NoUnit] = Param(6, 'FEEDBACK_MODE')    # switch
+    SYNC_NOTE_R: Param[NoUnit] = Param(7, 'SYNC_NOTE_R')    # rotarySwitch
+    DELAY_TIME_R: Param[MillisecondsUnit] = Param(8, 'DELAY_TIME_R')    # float ms
+    FEEDBACK_R: Param[PercentUnit] = Param(9, 'FEEDBACK_R')    # float %
+    OVERLAP: Param[PercentUnit] = Param(10, 'OVERLAP')    # float %
+    TRIG_THRESHOLD: Param[DbUnit] = Param(11, 'TRIG_THRESHOLD')    # floatWithLed dB
+    DYN_DEPTH: Param[DbUnit] = Param(12, 'DYN_DEPTH')    # float dB
+    DYN_MODE: Param[NoUnit] = Param(13, 'DYN_MODE')    # rotarySwitch
+    THRESHOLD: Param[DbUnit] = Param(14, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(15, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(16, 'RELEASE')    # float ms
+    KNEE: Param[DbUnit] = Param(17, 'KNEE')    # float dB
+    FEEDBACK_DEPTH: Param[PercentUnit] = Param(18, 'FEEDBACK_DEPTH')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(19, 'GAIN_REDUCTION')    # grMeter dB
+    HIGH_PASS: Param[HertzUnit] = Param(20, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(21, 'LOW_PASS')    # float Hz
+    STEREO_WIDTH: Param[PercentUnit] = Param(22, 'STEREO_WIDTH')    # float %
+    TRAILS: Param[NoUnit] = Param(23, 'TRAILS')    # switch
+    LINK_FBACK: Param[NoUnit] = Param(24, 'LINK_FBACK')    # switch
 
 
-class CircularDelay(IntEnum):
+class CircularDelay(ParamSet):
     """Circular Delay (Delay)."""
 
-    MIX = 0    # float %
-    TAP_PRESET = 1    # rotarySwitch
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    DELAY_TIME = 4    # float ms
-    FEEDBACK = 5    # float %
-    DIFFUSION = 6    # float %
-    HIGH_PASS = 7    # float Hz
-    LOW_PASS = 8    # float Hz
-    MOD_RATE = 9    # float Hz
-    MOD_DEPTH = 10    # float %
-    VINTAGE_MODE = 11    # switch
-    TRAILS = 12    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    TAP_PRESET: Param[NoUnit] = Param(1, 'TAP_PRESET')    # rotarySwitch
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    DELAY_TIME: Param[MillisecondsUnit] = Param(4, 'DELAY_TIME')    # float ms
+    FEEDBACK: Param[PercentUnit] = Param(5, 'FEEDBACK')    # float %
+    DIFFUSION: Param[PercentUnit] = Param(6, 'DIFFUSION')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(7, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(8, 'LOW_PASS')    # float Hz
+    MOD_RATE: Param[HertzUnit] = Param(9, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(10, 'MOD_DEPTH')    # float %
+    VINTAGE_MODE: Param[NoUnit] = Param(11, 'VINTAGE_MODE')    # switch
+    TRAILS: Param[NoUnit] = Param(12, 'TRAILS')    # switch
 
 
-class VintageChorus(IntEnum):
+class VintageChorus(ParamSet):
     """Vintage Chorus (Modulation)."""
 
-    MIX = 0    # float %
-    MODE = 1    # switch
-    CHR_RATE = 2    # float Hz
-    VIB_RATE = 3    # float Hz
-    VIB_DEPTH = 4    # float %
-    WIDTH = 5    # float %
-    SYNC = 6    # switch
-    CHR_NOTE = 7    # rotarySwitch
-    VIB_NOTE = 8    # rotarySwitch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    MODE: Param[NoUnit] = Param(1, 'MODE')    # switch
+    CHR_RATE: Param[HertzUnit] = Param(2, 'CHR_RATE')    # float Hz
+    VIB_RATE: Param[HertzUnit] = Param(3, 'VIB_RATE')    # float Hz
+    VIB_DEPTH: Param[PercentUnit] = Param(4, 'VIB_DEPTH')    # float %
+    WIDTH: Param[PercentUnit] = Param(5, 'WIDTH')    # float %
+    SYNC: Param[NoUnit] = Param(6, 'SYNC')    # switch
+    CHR_NOTE: Param[NoUnit] = Param(7, 'CHR_NOTE')    # rotarySwitch
+    VIB_NOTE: Param[NoUnit] = Param(8, 'VIB_NOTE')    # rotarySwitch
 
 
-class DualChorus(IntEnum):
+class DualChorus(ParamSet):
     """Dual Chorus (Modulation)."""
 
-    MIX = 0    # float %
-    MODE = 1    # switch
-    RATE = 2    # float Hz
-    DEPTH = 3    # float %
-    WIDTH = 4    # float %
-    TONE = 5    # float
-    SYNC = 6    # switch
-    SYNC_NOTE = 7    # rotarySwitch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    MODE: Param[NoUnit] = Param(1, 'MODE')    # switch
+    RATE: Param[HertzUnit] = Param(2, 'RATE')    # float Hz
+    DEPTH: Param[PercentUnit] = Param(3, 'DEPTH')    # float %
+    WIDTH: Param[PercentUnit] = Param(4, 'WIDTH')    # float %
+    TONE: Param[NoUnit] = Param(5, 'TONE')    # float
+    SYNC: Param[NoUnit] = Param(6, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(7, 'SYNC_NOTE')    # rotarySwitch
 
 
-class Vibrato(IntEnum):
+class Vibrato(ParamSet):
     """Vibrato (Modulation)."""
 
-    RATE = 0    # float Hz
-    DEPTH = 1    # float %
-    WIDTH = 2    # float %
-    LFO_ACTIVE = 3    # switch
-    FADE_IN = 4    # float ms
-    FADE_OUT = 5    # float ms
-    SYNC = 6    # switch
-    SYNC_NOTE = 7    # rotarySwitch
+    RATE: Param[HertzUnit] = Param(0, 'RATE')    # float Hz
+    DEPTH: Param[PercentUnit] = Param(1, 'DEPTH')    # float %
+    WIDTH: Param[PercentUnit] = Param(2, 'WIDTH')    # float %
+    LFO_ACTIVE: Param[NoUnit] = Param(3, 'LFO_ACTIVE')    # switch
+    FADE_IN: Param[MillisecondsUnit] = Param(4, 'FADE_IN')    # float ms
+    FADE_OUT: Param[MillisecondsUnit] = Param(5, 'FADE_OUT')    # float ms
+    SYNC: Param[NoUnit] = Param(6, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(7, 'SYNC_NOTE')    # rotarySwitch
 
 
-class Flangerish(IntEnum):
+class Flangerish(ParamSet):
     """Flangerish (Modulation)."""
 
-    MIX = 0    # float %
-    RATE = 1    # float Hz
-    DEPTH = 2    # float %
-    FEEDBACK = 3    # float %
-    WIDTH = 4    # float %
-    DRIVE = 5    # float %
-    SYNC = 6    # switch
-    SYNC_NOTE = 7    # rotarySwitch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    RATE: Param[HertzUnit] = Param(1, 'RATE')    # float Hz
+    DEPTH: Param[PercentUnit] = Param(2, 'DEPTH')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(3, 'FEEDBACK')    # float %
+    WIDTH: Param[PercentUnit] = Param(4, 'WIDTH')    # float %
+    DRIVE: Param[PercentUnit] = Param(5, 'DRIVE')    # float %
+    SYNC: Param[NoUnit] = Param(6, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(7, 'SYNC_NOTE')    # rotarySwitch
 
 
-class Tremolo(IntEnum):
+class Tremolo(ParamSet):
     """Tremolo (Modulation)."""
 
-    RATE = 0    # float Hz
-    DEPTH = 1    # float %
-    WAVEFORM = 2    # comboBox
-    DUTY_CYCLE = 3    # float %
-    WIDTH = 4    # float %
-    SMOOTHING = 5    # float %
-    LFO_ACTIVE = 6    # switch
-    FADE_IN = 7    # float ms
-    FADE_OUT = 8    # float ms
-    BOOST = 9    # float %
-    SYNC = 10    # switch
-    SYNC_NOTE = 11    # rotarySwitch
+    RATE: Param[HertzUnit] = Param(0, 'RATE')    # float Hz
+    DEPTH: Param[PercentUnit] = Param(1, 'DEPTH')    # float %
+    WAVEFORM: Param[NoUnit] = Param(2, 'WAVEFORM')    # comboBox
+    DUTY_CYCLE: Param[PercentUnit] = Param(3, 'DUTY_CYCLE')    # float %
+    WIDTH: Param[PercentUnit] = Param(4, 'WIDTH')    # float %
+    SMOOTHING: Param[PercentUnit] = Param(5, 'SMOOTHING')    # float %
+    LFO_ACTIVE: Param[NoUnit] = Param(6, 'LFO_ACTIVE')    # switch
+    FADE_IN: Param[MillisecondsUnit] = Param(7, 'FADE_IN')    # float ms
+    FADE_OUT: Param[MillisecondsUnit] = Param(8, 'FADE_OUT')    # float ms
+    BOOST: Param[PercentUnit] = Param(9, 'BOOST')    # float %
+    SYNC: Param[NoUnit] = Param(10, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(11, 'SYNC_NOTE')    # rotarySwitch
 
 
-class Rotary(IntEnum):
+class Rotary(ParamSet):
     """Rotary (Modulation)."""
 
-    SPEED = 0    # switch
-    SLOW_SPEED = 1    # float Hz
-    FAST_SPEED = 2    # float Hz
-    ACCELERATION = 3    # float %
-    SPEAKER_BALANCE = 4    # float %
-    DRIVE = 5    # float %
-    BRIGHTNESS = 6    # float %
-    HORN_MIC_WIDTH = 7    # float %
-    SYNC = 8    # switch
-    SLOW_NOTE = 9    # rotarySwitch
-    FAST_NOTE = 10    # rotarySwitch
+    SPEED: Param[NoUnit] = Param(0, 'SPEED')    # switch
+    SLOW_SPEED: Param[HertzUnit] = Param(1, 'SLOW_SPEED')    # float Hz
+    FAST_SPEED: Param[HertzUnit] = Param(2, 'FAST_SPEED')    # float Hz
+    ACCELERATION: Param[PercentUnit] = Param(3, 'ACCELERATION')    # float %
+    SPEAKER_BALANCE: Param[PercentUnit] = Param(4, 'SPEAKER_BALANCE')    # float %
+    DRIVE: Param[PercentUnit] = Param(5, 'DRIVE')    # float %
+    BRIGHTNESS: Param[PercentUnit] = Param(6, 'BRIGHTNESS')    # float %
+    HORN_MIC_WIDTH: Param[PercentUnit] = Param(7, 'HORN_MIC_WIDTH')    # float %
+    SYNC: Param[NoUnit] = Param(8, 'SYNC')    # switch
+    SLOW_NOTE: Param[NoUnit] = Param(9, 'SLOW_NOTE')    # rotarySwitch
+    FAST_NOTE: Param[NoUnit] = Param(10, 'FAST_NOTE')    # rotarySwitch
 
 
-class DigitalFlanger(IntEnum):
+class DigitalFlanger(ParamSet):
     """Digital Flanger (Modulation)."""
 
-    MIX = 0    # float %
-    RATE = 1    # float Hz
-    DEPTH = 2    # float %
-    DELAY = 3    # float ms
-    FEEDBACK = 4    # float %
-    POLARITY = 5    # switch
-    WIDTH = 6    # float %
-    DRIVE = 7    # float %
-    VOLUME = 8    # float dB
-    SYNC = 9    # switch
-    SYNC_NOTE = 10    # rotarySwitch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    RATE: Param[HertzUnit] = Param(1, 'RATE')    # float Hz
+    DEPTH: Param[PercentUnit] = Param(2, 'DEPTH')    # float %
+    DELAY: Param[MillisecondsUnit] = Param(3, 'DELAY')    # float ms
+    FEEDBACK: Param[PercentUnit] = Param(4, 'FEEDBACK')    # float %
+    POLARITY: Param[NoUnit] = Param(5, 'POLARITY')    # switch
+    WIDTH: Param[PercentUnit] = Param(6, 'WIDTH')    # float %
+    DRIVE: Param[PercentUnit] = Param(7, 'DRIVE')    # float %
+    VOLUME: Param[DbUnit] = Param(8, 'VOLUME')    # float dB
+    SYNC: Param[NoUnit] = Param(9, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(10, 'SYNC_NOTE')    # rotarySwitch
 
 
-class FlangerEngine(IntEnum):
+class FlangerEngine(ParamSet):
     """Flanger Engine (Modulation)."""
 
-    MIX = 0    # float %
-    RATE = 1    # float Hz
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    DELAY = 4    # float ms
-    DEPTH = 5    # float %
-    THR_ZERO = 6    # switch
-    FEEDBACK = 7    # float %
-    WAVEFORM = 8    # rotarySwitch
-    DUTY_CYCLE = 9    # float
-    SKEW = 10    # float
-    SMOOTHING = 11    # float %
-    LOW_PASS = 12    # float Hz
-    HIGH_PASS = 13    # float Hz
-    WIDTH = 14    # float %
-    RESONANCE = 15    # rotarySwitch
-    COLOR = 16    # rotarySwitch
-    INTENSITY = 17    # float %
-    DRIVE_TYPE = 18    # rotarySwitch
-    DRIVE = 19    # float %
-    OUTPUT = 20    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    RATE: Param[HertzUnit] = Param(1, 'RATE')    # float Hz
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    DELAY: Param[MillisecondsUnit] = Param(4, 'DELAY')    # float ms
+    DEPTH: Param[PercentUnit] = Param(5, 'DEPTH')    # float %
+    THR_ZERO: Param[NoUnit] = Param(6, 'THR_ZERO')    # switch
+    FEEDBACK: Param[PercentUnit] = Param(7, 'FEEDBACK')    # float %
+    WAVEFORM: Param[NoUnit] = Param(8, 'WAVEFORM')    # rotarySwitch
+    DUTY_CYCLE: Param[NoUnit] = Param(9, 'DUTY_CYCLE')    # float
+    SKEW: Param[NoUnit] = Param(10, 'SKEW')    # float
+    SMOOTHING: Param[PercentUnit] = Param(11, 'SMOOTHING')    # float %
+    LOW_PASS: Param[HertzUnit] = Param(12, 'LOW_PASS')    # float Hz
+    HIGH_PASS: Param[HertzUnit] = Param(13, 'HIGH_PASS')    # float Hz
+    WIDTH: Param[PercentUnit] = Param(14, 'WIDTH')    # float %
+    RESONANCE: Param[NoUnit] = Param(15, 'RESONANCE')    # rotarySwitch
+    COLOR: Param[NoUnit] = Param(16, 'COLOR')    # rotarySwitch
+    INTENSITY: Param[PercentUnit] = Param(17, 'INTENSITY')    # float %
+    DRIVE_TYPE: Param[NoUnit] = Param(18, 'DRIVE_TYPE')    # rotarySwitch
+    DRIVE: Param[PercentUnit] = Param(19, 'DRIVE')    # float %
+    OUTPUT: Param[DbUnit] = Param(20, 'OUTPUT')    # float dB
 
 
-class ChorusEngine(IntEnum):
+class ChorusEngine(ParamSet):
     """Chorus Engine (Modulation)."""
 
-    MIX = 0    # float %
-    RATE = 1    # float Hz
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    DELAY = 4    # float ms
-    DEPTH = 5    # float %
-    MORPH = 6    # float %
-    RANDOM = 7    # float %
-    VOICE_MODE = 8    # rotarySwitch
-    TONE = 9    # float %
-    TONE_FREQ = 10    # float Hz
-    LOW_PASS = 11    # float Hz
-    HIGH_PASS = 12    # float Hz
-    WIDTH = 13    # float %
-    DRIVE_TYPE = 14    # rotarySwitch
-    DRIVE = 15    # float %
-    OUTPUT = 16    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    RATE: Param[HertzUnit] = Param(1, 'RATE')    # float Hz
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    DELAY: Param[MillisecondsUnit] = Param(4, 'DELAY')    # float ms
+    DEPTH: Param[PercentUnit] = Param(5, 'DEPTH')    # float %
+    MORPH: Param[PercentUnit] = Param(6, 'MORPH')    # float %
+    RANDOM: Param[PercentUnit] = Param(7, 'RANDOM')    # float %
+    VOICE_MODE: Param[NoUnit] = Param(8, 'VOICE_MODE')    # rotarySwitch
+    TONE: Param[PercentUnit] = Param(9, 'TONE')    # float %
+    TONE_FREQ: Param[HertzUnit] = Param(10, 'TONE_FREQ')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(11, 'LOW_PASS')    # float Hz
+    HIGH_PASS: Param[HertzUnit] = Param(12, 'HIGH_PASS')    # float Hz
+    WIDTH: Param[PercentUnit] = Param(13, 'WIDTH')    # float %
+    DRIVE_TYPE: Param[NoUnit] = Param(14, 'DRIVE_TYPE')    # rotarySwitch
+    DRIVE: Param[PercentUnit] = Param(15, 'DRIVE')    # float %
+    OUTPUT: Param[DbUnit] = Param(16, 'OUTPUT')    # float dB
 
 
-class MxFlanger(IntEnum):
+class MxFlanger(ParamSet):
     """MX Flanger (Modulation)."""
 
-    MIX = 0    # float %
-    MANUAL = 1    # float %
-    WIDTH = 2    # float %
-    SPEED = 3    # float %
-    SYNC = 4    # switch
-    SYNC_NOTE = 5    # rotarySwitch
-    REGEN = 6    # float %
-    OUTPUT = 7    # float dB
-    RATE = 8    # float
-    DELAY = 9    # float
-    DEPTH = 10    # float
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    MANUAL: Param[PercentUnit] = Param(1, 'MANUAL')    # float %
+    WIDTH: Param[PercentUnit] = Param(2, 'WIDTH')    # float %
+    SPEED: Param[PercentUnit] = Param(3, 'SPEED')    # float %
+    SYNC: Param[NoUnit] = Param(4, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(5, 'SYNC_NOTE')    # rotarySwitch
+    REGEN: Param[PercentUnit] = Param(6, 'REGEN')    # float %
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
+    RATE: Param[NoUnit] = Param(8, 'RATE')    # float
+    DELAY: Param[NoUnit] = Param(9, 'DELAY')    # float
+    DEPTH: Param[NoUnit] = Param(10, 'DEPTH')    # float
 
 
-class DreamChorusSt(IntEnum):
+class DreamChorusSt(ParamSet):
     """Dream Chorus (ST) (Modulation)."""
 
-    MIX = 0    # float %
-    SPEED = 1    # float %
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    DEPTH = 4    # float %
-    MODE = 5    # switch
-    OUTPUT = 6    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SPEED: Param[PercentUnit] = Param(1, 'SPEED')    # float %
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    DEPTH: Param[PercentUnit] = Param(4, 'DEPTH')    # float %
+    MODE: Param[NoUnit] = Param(5, 'MODE')    # switch
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class Chorus229t(IntEnum):
+class Chorus229t(ParamSet):
     """Chorus 229T (Modulation)."""
 
-    MIX = 0    # float %
-    RATE = 1    # float Hz
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    DEPTH = 4    # float %
-    WIDTH = 5    # float %
-    OUTPUT = 6    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    RATE: Param[HertzUnit] = Param(1, 'RATE')    # float Hz
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    DEPTH: Param[PercentUnit] = Param(4, 'DEPTH')    # float %
+    WIDTH: Param[PercentUnit] = Param(5, 'WIDTH')    # float %
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class ChiefCe2wSt(IntEnum):
+class ChiefCe2wSt(ParamSet):
     """Chief CE2W (ST) (Modulation)."""
 
-    MIX = 0    # float %
-    RATE = 1    # float %
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    DEPTH = 4    # float %
-    TYPE = 5    # switch
-    WIDTH = 6    # float %
-    OUTPUT = 7    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    RATE: Param[PercentUnit] = Param(1, 'RATE')    # float %
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    DEPTH: Param[PercentUnit] = Param(4, 'DEPTH')    # float %
+    TYPE: Param[NoUnit] = Param(5, 'TYPE')    # switch
+    WIDTH: Param[PercentUnit] = Param(6, 'WIDTH')    # float %
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class ChiefCe2wM(IntEnum):
+class ChiefCe2wM(ParamSet):
     """Chief CE2W (M) (Modulation)."""
 
-    MIX = 0    # float %
-    RATE = 1    # float %
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    DEPTH = 4    # float %
-    TYPE = 5    # switch
-    OUT_MODE = 6    # switch
-    OUTPUT = 7    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    RATE: Param[PercentUnit] = Param(1, 'RATE')    # float %
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    DEPTH: Param[PercentUnit] = Param(4, 'DEPTH')    # float %
+    TYPE: Param[NoUnit] = Param(5, 'TYPE')    # switch
+    OUT_MODE: Param[NoUnit] = Param(6, 'OUT_MODE')    # switch
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DreamChorusM(IntEnum):
+class DreamChorusM(ParamSet):
     """Dream Chorus (M) (Modulation)."""
 
-    MIX = 0    # float %
-    SPEED = 1    # float %
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    DEPTH = 4    # float %
-    MODE = 5    # switch
-    OUTPUT = 6    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SPEED: Param[PercentUnit] = Param(1, 'SPEED')    # float %
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    DEPTH: Param[PercentUnit] = Param(4, 'DEPTH')    # float %
+    MODE: Param[NoUnit] = Param(5, 'MODE')    # switch
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class ChiefDc2wSt(IntEnum):
+class ChiefDc2wSt(ParamSet):
     """Chief DC2W (ST) (Modulation)."""
 
-    MIX = 0    # float %
-    MODE = 1    # rotarySwitch
-    TYPE = 2    # switch
-    DRIVE = 3    # float %
-    OUTPUT = 4    # float dB
-    STEREO = 5    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    MODE: Param[NoUnit] = Param(1, 'MODE')    # rotarySwitch
+    TYPE: Param[NoUnit] = Param(2, 'TYPE')    # switch
+    DRIVE: Param[PercentUnit] = Param(3, 'DRIVE')    # float %
+    OUTPUT: Param[DbUnit] = Param(4, 'OUTPUT')    # float dB
+    STEREO: Param[NoUnit] = Param(5, 'STEREO')    # switch
 
 
-class MxPhase95(IntEnum):
+class MxPhase95(ParamSet):
     """MX Phase 95 (Modulation)."""
 
-    MIX = 0    # float %
-    SPEED = 1    # float %
-    SYNC = 2    # switch
-    SYNC_NOTE = 3    # rotarySwitch
-    TYPE = 4    # switch
-    MODE = 5    # switch
-    OUTPUT = 6    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SPEED: Param[PercentUnit] = Param(1, 'SPEED')    # float %
+    SYNC: Param[NoUnit] = Param(2, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(3, 'SYNC_NOTE')    # rotarySwitch
+    TYPE: Param[NoUnit] = Param(4, 'TYPE')    # switch
+    MODE: Param[NoUnit] = Param(5, 'MODE')    # switch
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class MxVibe(IntEnum):
+class MxVibe(ParamSet):
     """MX Vibe (Modulation)."""
 
-    MIX = 0    # float %
-    VIBE = 1    # switch
-    SPEED = 2    # float %
-    SYNC = 3    # switch
-    SYNC_NOTE = 4    # rotarySwitch
-    LEVEL = 5    # float %
-    DEPTH = 6    # float %
-    OUTPUT = 7    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    VIBE: Param[NoUnit] = Param(1, 'VIBE')    # switch
+    SPEED: Param[PercentUnit] = Param(2, 'SPEED')    # float %
+    SYNC: Param[NoUnit] = Param(3, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(4, 'SYNC_NOTE')    # rotarySwitch
+    LEVEL: Param[PercentUnit] = Param(5, 'LEVEL')    # float %
+    DEPTH: Param[PercentUnit] = Param(6, 'DEPTH')    # float %
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class ChiefDc2wM(IntEnum):
+class ChiefDc2wM(ParamSet):
     """Chief DC2W (M) (Modulation)."""
 
-    MIX = 0    # float %
-    MODE = 1    # rotarySwitch
-    TYPE = 2    # switch
-    DRIVE = 3    # float %
-    OUTPUT = 4    # float dB
-    STEREO = 5    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    MODE: Param[NoUnit] = Param(1, 'MODE')    # rotarySwitch
+    TYPE: Param[NoUnit] = Param(2, 'TYPE')    # switch
+    DRIVE: Param[PercentUnit] = Param(3, 'DRIVE')    # float %
+    OUTPUT: Param[DbUnit] = Param(4, 'OUTPUT')    # float dB
+    STEREO: Param[NoUnit] = Param(5, 'STEREO')    # switch
 
 
-class Phaser(IntEnum):
+class Phaser(ParamSet):
     """Phaser (Modulation)."""
 
-    MIX = 0    # float %
-    SPEED = 1    # float
-    WIDTH = 2    # float %
-    DRIVE = 3    # float %
-    DEPTH = 4    # float %
-    MANUAL = 5    # float %
-    RESONANCE = 6    # float %
-    OUTPUT = 7    # float dB
-    SYNC = 8    # switch
-    SYNC_NOTE = 9    # rotarySwitch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SPEED: Param[NoUnit] = Param(1, 'SPEED')    # float
+    WIDTH: Param[PercentUnit] = Param(2, 'WIDTH')    # float %
+    DRIVE: Param[PercentUnit] = Param(3, 'DRIVE')    # float %
+    DEPTH: Param[PercentUnit] = Param(4, 'DEPTH')    # float %
+    MANUAL: Param[PercentUnit] = Param(5, 'MANUAL')    # float %
+    RESONANCE: Param[PercentUnit] = Param(6, 'RESONANCE')    # float %
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
+    SYNC: Param[NoUnit] = Param(8, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(9, 'SYNC_NOTE')    # rotarySwitch
 
 
-class HarmonicTremolo(IntEnum):
+class HarmonicTremolo(ParamSet):
     """Harmonic Tremolo (Modulation)."""
 
-    RATE = 0    # float Hz
-    DEPTH = 1    # float %
-    WAVEFORM = 2    # comboBox
-    DUTY_CYCLE = 3    # float %
-    SMOOTHING = 4    # float %
-    LFO_ACTIVE = 5    # switch
-    FADE_IN = 6    # float ms
-    FADE_OUT = 7    # float ms
-    BOOST = 8    # float %
-    LP_XOVER = 9    # float Hz
-    HP_XOVER = 10    # float Hz
-    SYNC = 11    # switch
-    SYNC_NOTE = 12    # rotarySwitch
-    SYNC_ON = 13    # switch
+    RATE: Param[HertzUnit] = Param(0, 'RATE')    # float Hz
+    DEPTH: Param[PercentUnit] = Param(1, 'DEPTH')    # float %
+    WAVEFORM: Param[NoUnit] = Param(2, 'WAVEFORM')    # comboBox
+    DUTY_CYCLE: Param[PercentUnit] = Param(3, 'DUTY_CYCLE')    # float %
+    SMOOTHING: Param[PercentUnit] = Param(4, 'SMOOTHING')    # float %
+    LFO_ACTIVE: Param[NoUnit] = Param(5, 'LFO_ACTIVE')    # switch
+    FADE_IN: Param[MillisecondsUnit] = Param(6, 'FADE_IN')    # float ms
+    FADE_OUT: Param[MillisecondsUnit] = Param(7, 'FADE_OUT')    # float ms
+    BOOST: Param[PercentUnit] = Param(8, 'BOOST')    # float %
+    LP_XOVER: Param[HertzUnit] = Param(9, 'LP_XOVER')    # float Hz
+    HP_XOVER: Param[HertzUnit] = Param(10, 'HP_XOVER')    # float Hz
+    SYNC: Param[NoUnit] = Param(11, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(12, 'SYNC_NOTE')    # rotarySwitch
+    SYNC_ON: Param[NoUnit] = Param(13, 'SYNC_ON')    # switch
 
 
-class MicroProcessorSt(IntEnum):
+class MicroProcessorSt(ParamSet):
     """Micro Processor (ST) (Modulation)."""
 
-    MIX = 0    # float %
-    SYNC = 1    # switch
-    DELAY_TIME_A = 2    # float ms
-    DELAY_TIME_B = 3    # float ms
-    SYNC_NOTE_A = 4    # rotarySwitch
-    SYNC_NOTE_B = 5    # rotarySwitch
-    MOD_SOURCE = 6    # comboBox
-    LFO_RATE = 7    # float Hz
-    MOD_DEPTH = 8    # float %
-    ENV_GAIN = 9    # float dB
-    FEEDBACK = 10    # float %
-    X_FEEDBACK = 11    # switch
-    PITCH_A = 12    # float cents
-    PITCH_B = 13    # float cents
-    A_B_PITCH_MIX = 14    # float %
-    TONE = 15    # float %
-    OUTPUT = 16    # float dB
-    TRAILS = 17    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SYNC: Param[NoUnit] = Param(1, 'SYNC')    # switch
+    DELAY_TIME_A: Param[MillisecondsUnit] = Param(2, 'DELAY_TIME_A')    # float ms
+    DELAY_TIME_B: Param[MillisecondsUnit] = Param(3, 'DELAY_TIME_B')    # float ms
+    SYNC_NOTE_A: Param[NoUnit] = Param(4, 'SYNC_NOTE_A')    # rotarySwitch
+    SYNC_NOTE_B: Param[NoUnit] = Param(5, 'SYNC_NOTE_B')    # rotarySwitch
+    MOD_SOURCE: Param[NoUnit] = Param(6, 'MOD_SOURCE')    # comboBox
+    LFO_RATE: Param[HertzUnit] = Param(7, 'LFO_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(8, 'MOD_DEPTH')    # float %
+    ENV_GAIN: Param[DbUnit] = Param(9, 'ENV_GAIN')    # float dB
+    FEEDBACK: Param[PercentUnit] = Param(10, 'FEEDBACK')    # float %
+    X_FEEDBACK: Param[NoUnit] = Param(11, 'X_FEEDBACK')    # switch
+    PITCH_A: Param[CentsUnit] = Param(12, 'PITCH_A')    # float cents
+    PITCH_B: Param[CentsUnit] = Param(13, 'PITCH_B')    # float cents
+    A_B_PITCH_MIX: Param[PercentUnit] = Param(14, 'A_B_PITCH_MIX')    # float %
+    TONE: Param[PercentUnit] = Param(15, 'TONE')    # float %
+    OUTPUT: Param[DbUnit] = Param(16, 'OUTPUT')    # float dB
+    TRAILS: Param[NoUnit] = Param(17, 'TRAILS')    # switch
 
 
-class PatternTremolo(IntEnum):
+class PatternTremolo(ParamSet):
     """Pattern Tremolo (Modulation)."""
 
-    SYNC = 0    # switch
-    RATE = 1    # float Hz
-    SYNC_NOTE = 2    # rotarySwitch
-    SWING = 3    # float %
-    DEPTH = 4    # float %
-    SMOOTH = 5    # float %
-    PING_PONG = 6    # switch
-    RETRIGGER = 7    # switch
-    OUTPUT = 8    # float dB
-    TRANSIENT_THRESHOLD = 9    # float dB
-    STEPS = 10    # float
-    STEP_1 = 11    # float
-    STEP_2 = 12    # float
-    STEP_3 = 13    # float
-    STEP_4 = 14    # float
-    STEP_5 = 15    # float
-    STEP_6 = 16    # float
-    STEP_7 = 17    # float
-    STEP_8 = 18    # float
-    STEP_9 = 19    # float
-    STEP_10 = 20    # float
-    STEP_11 = 21    # float
-    STEP_12 = 22    # float
-    STEP_13 = 23    # float
-    STEP_14 = 24    # float
-    STEP_15 = 25    # float
-    STEP_16 = 26    # float
-    STEP_1_CONNECTED = 27    # switch
-    STEP_2_CONNECTED = 28    # switch
-    STEP_3_CONNECTED = 29    # switch
-    STEP_4_CONNECTED = 30    # switch
-    STEP_5_CONNECTED = 31    # switch
-    STEP_6_CONNECTED = 32    # switch
-    STEP_7_CONNECTED = 33    # switch
-    STEP_8_CONNECTED = 34    # switch
-    STEP_9_CONNECTED = 35    # switch
-    STEP_10_CONNECTED = 36    # switch
-    STEP_11_CONNECTED = 37    # switch
-    STEP_12_CONNECTED = 38    # switch
-    STEP_13_CONNECTED = 39    # switch
-    STEP_14_CONNECTED = 40    # switch
-    STEP_15_CONNECTED = 41    # switch
+    SYNC: Param[NoUnit] = Param(0, 'SYNC')    # switch
+    RATE: Param[HertzUnit] = Param(1, 'RATE')    # float Hz
+    SYNC_NOTE: Param[NoUnit] = Param(2, 'SYNC_NOTE')    # rotarySwitch
+    SWING: Param[PercentUnit] = Param(3, 'SWING')    # float %
+    DEPTH: Param[PercentUnit] = Param(4, 'DEPTH')    # float %
+    SMOOTH: Param[PercentUnit] = Param(5, 'SMOOTH')    # float %
+    PING_PONG: Param[NoUnit] = Param(6, 'PING_PONG')    # switch
+    RETRIGGER: Param[NoUnit] = Param(7, 'RETRIGGER')    # switch
+    OUTPUT: Param[DbUnit] = Param(8, 'OUTPUT')    # float dB
+    TRANSIENT_THRESHOLD: Param[DbUnit] = Param(9, 'TRANSIENT_THRESHOLD')    # float dB
+    STEPS: Param[NoUnit] = Param(10, 'STEPS')    # float
+    STEP_1: Param[NoUnit] = Param(11, 'STEP_1')    # float
+    STEP_2: Param[NoUnit] = Param(12, 'STEP_2')    # float
+    STEP_3: Param[NoUnit] = Param(13, 'STEP_3')    # float
+    STEP_4: Param[NoUnit] = Param(14, 'STEP_4')    # float
+    STEP_5: Param[NoUnit] = Param(15, 'STEP_5')    # float
+    STEP_6: Param[NoUnit] = Param(16, 'STEP_6')    # float
+    STEP_7: Param[NoUnit] = Param(17, 'STEP_7')    # float
+    STEP_8: Param[NoUnit] = Param(18, 'STEP_8')    # float
+    STEP_9: Param[NoUnit] = Param(19, 'STEP_9')    # float
+    STEP_10: Param[NoUnit] = Param(20, 'STEP_10')    # float
+    STEP_11: Param[NoUnit] = Param(21, 'STEP_11')    # float
+    STEP_12: Param[NoUnit] = Param(22, 'STEP_12')    # float
+    STEP_13: Param[NoUnit] = Param(23, 'STEP_13')    # float
+    STEP_14: Param[NoUnit] = Param(24, 'STEP_14')    # float
+    STEP_15: Param[NoUnit] = Param(25, 'STEP_15')    # float
+    STEP_16: Param[NoUnit] = Param(26, 'STEP_16')    # float
+    STEP_1_CONNECTED: Param[NoUnit] = Param(27, 'STEP_1_CONNECTED')    # switch
+    STEP_2_CONNECTED: Param[NoUnit] = Param(28, 'STEP_2_CONNECTED')    # switch
+    STEP_3_CONNECTED: Param[NoUnit] = Param(29, 'STEP_3_CONNECTED')    # switch
+    STEP_4_CONNECTED: Param[NoUnit] = Param(30, 'STEP_4_CONNECTED')    # switch
+    STEP_5_CONNECTED: Param[NoUnit] = Param(31, 'STEP_5_CONNECTED')    # switch
+    STEP_6_CONNECTED: Param[NoUnit] = Param(32, 'STEP_6_CONNECTED')    # switch
+    STEP_7_CONNECTED: Param[NoUnit] = Param(33, 'STEP_7_CONNECTED')    # switch
+    STEP_8_CONNECTED: Param[NoUnit] = Param(34, 'STEP_8_CONNECTED')    # switch
+    STEP_9_CONNECTED: Param[NoUnit] = Param(35, 'STEP_9_CONNECTED')    # switch
+    STEP_10_CONNECTED: Param[NoUnit] = Param(36, 'STEP_10_CONNECTED')    # switch
+    STEP_11_CONNECTED: Param[NoUnit] = Param(37, 'STEP_11_CONNECTED')    # switch
+    STEP_12_CONNECTED: Param[NoUnit] = Param(38, 'STEP_12_CONNECTED')    # switch
+    STEP_13_CONNECTED: Param[NoUnit] = Param(39, 'STEP_13_CONNECTED')    # switch
+    STEP_14_CONNECTED: Param[NoUnit] = Param(40, 'STEP_14_CONNECTED')    # switch
+    STEP_15_CONNECTED: Param[NoUnit] = Param(41, 'STEP_15_CONNECTED')    # switch
 
 
-class Room(IntEnum):
+class Room(ParamSet):
     """Room (Reverb)."""
 
-    DECAY = 0    # float s
-    PRE_DELAY = 1    # float ms
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    MIX = 4    # float %
-    TRAILS = 5    # switch
+    DECAY: Param[SecondsUnit] = Param(0, 'DECAY')    # float s
+    PRE_DELAY: Param[MillisecondsUnit] = Param(1, 'PRE_DELAY')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    MIX: Param[PercentUnit] = Param(4, 'MIX')    # float %
+    TRAILS: Param[NoUnit] = Param(5, 'TRAILS')    # switch
 
 
-class SpringSt(IntEnum):
+class SpringSt(ParamSet):
     """Spring (ST) (Reverb)."""
 
-    MIX = 0    # float %
-    DAMPING = 1    # float %
-    TONE = 2    # float %
-    BOING = 3    # float %
-    TRAILS = 4    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DAMPING: Param[PercentUnit] = Param(1, 'DAMPING')    # float %
+    TONE: Param[PercentUnit] = Param(2, 'TONE')    # float %
+    BOING: Param[PercentUnit] = Param(3, 'BOING')    # float %
+    TRAILS: Param[NoUnit] = Param(4, 'TRAILS')    # switch
 
 
-class Hall(IntEnum):
+class Hall(ParamSet):
     """Hall (Reverb)."""
 
-    DECAY = 0    # float s
-    PRE_DELAY = 1    # float ms
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    MIX = 4    # float %
-    TRAILS = 5    # switch
+    DECAY: Param[SecondsUnit] = Param(0, 'DECAY')    # float s
+    PRE_DELAY: Param[MillisecondsUnit] = Param(1, 'PRE_DELAY')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    MIX: Param[PercentUnit] = Param(4, 'MIX')    # float %
+    TRAILS: Param[NoUnit] = Param(5, 'TRAILS')    # switch
 
 
-class SpringM(IntEnum):
+class SpringM(ParamSet):
     """Spring (M) (Reverb)."""
 
-    MIX = 0    # float %
-    DAMPING = 1    # float %
-    TONE = 2    # float %
-    BOING = 3    # float %
-    TRAILS = 4    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DAMPING: Param[PercentUnit] = Param(1, 'DAMPING')    # float %
+    TONE: Param[PercentUnit] = Param(2, 'TONE')    # float %
+    BOING: Param[PercentUnit] = Param(3, 'BOING')    # float %
+    TRAILS: Param[NoUnit] = Param(4, 'TRAILS')    # switch
 
 
-class Modulated(IntEnum):
+class Modulated(ParamSet):
     """Modulated (Reverb)."""
 
-    DECAY = 0    # float s
-    PRE_DELAY = 1    # float ms
-    MOD_SPEED = 2    # float Hz
-    MOD_DEPTH = 3    # float %
-    HIGH_PASS = 4    # float Hz
-    LOW_PASS = 5    # float Hz
-    MIX = 6    # float %
-    TRAILS = 7    # switch
+    DECAY: Param[SecondsUnit] = Param(0, 'DECAY')    # float s
+    PRE_DELAY: Param[MillisecondsUnit] = Param(1, 'PRE_DELAY')    # float ms
+    MOD_SPEED: Param[HertzUnit] = Param(2, 'MOD_SPEED')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(3, 'MOD_DEPTH')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(4, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(5, 'LOW_PASS')    # float Hz
+    MIX: Param[PercentUnit] = Param(6, 'MIX')    # float %
+    TRAILS: Param[NoUnit] = Param(7, 'TRAILS')    # switch
 
 
-class Ambience(IntEnum):
+class Ambience(ParamSet):
     """Ambience (Reverb)."""
 
-    SIZE = 0    # rotarySwitch
-    PRE_DELAY = 1    # float ms
-    HIGH_PASS = 2    # float Hz
-    LOW_PASS = 3    # float Hz
-    MIX = 4    # float %
-    TRAILS = 5    # switch
+    SIZE: Param[NoUnit] = Param(0, 'SIZE')    # rotarySwitch
+    PRE_DELAY: Param[MillisecondsUnit] = Param(1, 'PRE_DELAY')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(2, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(3, 'LOW_PASS')    # float Hz
+    MIX: Param[PercentUnit] = Param(4, 'MIX')    # float %
+    TRAILS: Param[NoUnit] = Param(5, 'TRAILS')    # switch
 
 
-class Cave(IntEnum):
+class Cave(ParamSet):
     """Cave (Reverb)."""
 
-    DECAY = 0    # float s
-    PRE_DELAY = 1    # float ms
-    DAMPING = 2    # float %
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    MIX = 5    # float %
-    TRAILS = 6    # switch
+    DECAY: Param[SecondsUnit] = Param(0, 'DECAY')    # float s
+    PRE_DELAY: Param[MillisecondsUnit] = Param(1, 'PRE_DELAY')    # float ms
+    DAMPING: Param[PercentUnit] = Param(2, 'DAMPING')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    TRAILS: Param[NoUnit] = Param(6, 'TRAILS')    # switch
 
 
-class Shimmer(IntEnum):
+class Shimmer(ParamSet):
     """Shimmer (Reverb)."""
 
-    MIX = 0    # float %
-    DECAY = 1    # float s
-    BRIGHTNESS = 2    # float %
-    FEEDBACK = 3    # float %
-    PITCH = 4    # float Semitones
-    TRAILS = 5    # switch
-    PRE_DELAY = 6    # float ms
-    DAMPING = 7    # float %
-    HIGH_PASS = 8    # float Hz
-    RAND_PITCH = 9    # float Cents
-    MOD_SPEED = 10    # float Hz
-    MOD_DEPTH = 11    # float %
-    WET_LEVEL = 12    # float dB
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DECAY: Param[SecondsUnit] = Param(1, 'DECAY')    # float s
+    BRIGHTNESS: Param[PercentUnit] = Param(2, 'BRIGHTNESS')    # float %
+    FEEDBACK: Param[PercentUnit] = Param(3, 'FEEDBACK')    # float %
+    PITCH: Param[SemitonesUnit] = Param(4, 'PITCH')    # float Semitones
+    TRAILS: Param[NoUnit] = Param(5, 'TRAILS')    # switch
+    PRE_DELAY: Param[MillisecondsUnit] = Param(6, 'PRE_DELAY')    # float ms
+    DAMPING: Param[PercentUnit] = Param(7, 'DAMPING')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(8, 'HIGH_PASS')    # float Hz
+    RAND_PITCH: Param[CentsUnit] = Param(9, 'RAND_PITCH')    # float Cents
+    MOD_SPEED: Param[HertzUnit] = Param(10, 'MOD_SPEED')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(11, 'MOD_DEPTH')    # float %
+    WET_LEVEL: Param[DbUnit] = Param(12, 'WET_LEVEL')    # float dB
 
 
-class MindHall(IntEnum):
+class MindHall(ParamSet):
     """Mind Hall (Reverb)."""
 
-    MIX = 0    # float %
-    DECAY = 1    # float %
-    PRE_DELAY = 2    # float ms
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    DAMPING = 5    # float %
-    TRAILS = 6    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DECAY: Param[PercentUnit] = Param(1, 'DECAY')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(2, 'PRE_DELAY')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    DAMPING: Param[PercentUnit] = Param(5, 'DAMPING')    # float %
+    TRAILS: Param[NoUnit] = Param(6, 'TRAILS')    # switch
 
 
-class PlateLush(IntEnum):
+class PlateLush(ParamSet):
     """Plate Lush (Reverb)."""
 
-    MIX = 0    # float %
-    DECAY = 1    # float %
-    PRE_DELAY = 2    # float ms
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    LF_DAMPING = 5    # float %
-    HF_DAMPING = 6    # float %
-    MOD_DEPTH = 7    # float %
-    TRAILS = 8    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DECAY: Param[PercentUnit] = Param(1, 'DECAY')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(2, 'PRE_DELAY')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    LF_DAMPING: Param[PercentUnit] = Param(5, 'LF_DAMPING')    # float %
+    HF_DAMPING: Param[PercentUnit] = Param(6, 'HF_DAMPING')    # float %
+    MOD_DEPTH: Param[PercentUnit] = Param(7, 'MOD_DEPTH')    # float %
+    TRAILS: Param[NoUnit] = Param(8, 'TRAILS')    # switch
 
 
-class Plate(IntEnum):
+class Plate(ParamSet):
     """Plate (Reverb)."""
 
-    MIX = 0    # float %
-    DECAY = 1    # float %
-    PRE_DELAY = 2    # float ms
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    LF_DAMPING = 5    # float %
-    HF_DAMPING = 6    # float %
-    MOD_DEPTH = 7    # float %
-    TRAILS = 8    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DECAY: Param[PercentUnit] = Param(1, 'DECAY')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(2, 'PRE_DELAY')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    LF_DAMPING: Param[PercentUnit] = Param(5, 'LF_DAMPING')    # float %
+    HF_DAMPING: Param[PercentUnit] = Param(6, 'HF_DAMPING')    # float %
+    MOD_DEPTH: Param[PercentUnit] = Param(7, 'MOD_DEPTH')    # float %
+    TRAILS: Param[NoUnit] = Param(8, 'TRAILS')    # switch
 
 
-class PlateTight(IntEnum):
+class PlateTight(ParamSet):
     """Plate Tight (Reverb)."""
 
-    MIX = 0    # float %
-    DECAY = 1    # float %
-    PRE_DELAY = 2    # float ms
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    LF_DAMPING = 5    # float %
-    HF_DAMPING = 6    # float %
-    MOD_DEPTH = 7    # float %
-    TRAILS = 8    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DECAY: Param[PercentUnit] = Param(1, 'DECAY')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(2, 'PRE_DELAY')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    LF_DAMPING: Param[PercentUnit] = Param(5, 'LF_DAMPING')    # float %
+    HF_DAMPING: Param[PercentUnit] = Param(6, 'HF_DAMPING')    # float %
+    MOD_DEPTH: Param[PercentUnit] = Param(7, 'MOD_DEPTH')    # float %
+    TRAILS: Param[NoUnit] = Param(8, 'TRAILS')    # switch
 
 
-class SpringReverbEngineM(IntEnum):
+class SpringReverbEngineM(ParamSet):
     """Spring Reverb Engine (M) (Reverb)."""
 
-    INPUT_GAIN = 0    # float dB
-    HIGH_PASS = 1    # float Hz
-    LOW_PASS = 2    # float Hz
-    CHIRP_DECAY = 3    # float %
-    DIFF_DECAY = 4    # float %
-    CHIRP_LEVEL = 5    # float %
-    DIFF_LEVEL = 6    # float %
-    TANK_TYPE = 7    # comboBox
-    MIX = 8    # float %
-    OUTPUT_GAIN = 9    # float dB
-    TRAILS = 10    # switch
+    INPUT_GAIN: Param[DbUnit] = Param(0, 'INPUT_GAIN')    # float dB
+    HIGH_PASS: Param[HertzUnit] = Param(1, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(2, 'LOW_PASS')    # float Hz
+    CHIRP_DECAY: Param[PercentUnit] = Param(3, 'CHIRP_DECAY')    # float %
+    DIFF_DECAY: Param[PercentUnit] = Param(4, 'DIFF_DECAY')    # float %
+    CHIRP_LEVEL: Param[PercentUnit] = Param(5, 'CHIRP_LEVEL')    # float %
+    DIFF_LEVEL: Param[PercentUnit] = Param(6, 'DIFF_LEVEL')    # float %
+    TANK_TYPE: Param[NoUnit] = Param(7, 'TANK_TYPE')    # comboBox
+    MIX: Param[PercentUnit] = Param(8, 'MIX')    # float %
+    OUTPUT_GAIN: Param[DbUnit] = Param(9, 'OUTPUT_GAIN')    # float dB
+    TRAILS: Param[NoUnit] = Param(10, 'TRAILS')    # switch
 
 
-class SpringReverbEngineSt(IntEnum):
+class SpringReverbEngineSt(ParamSet):
     """Spring Reverb Engine (ST) (Reverb)."""
 
-    INPUT_GAIN = 0    # float dB
-    HIGH_PASS = 1    # float Hz
-    LOW_PASS = 2    # float Hz
-    CHIRP_DECAY = 3    # float %
-    DIFF_DECAY = 4    # float %
-    CHIRP_LEVEL = 5    # float %
-    DIFF_LEVEL = 6    # float %
-    TANK_TYPE = 7    # comboBox
-    MIX = 8    # float %
-    OUTPUT_GAIN = 9    # float dB
-    TRAILS = 10    # switch
+    INPUT_GAIN: Param[DbUnit] = Param(0, 'INPUT_GAIN')    # float dB
+    HIGH_PASS: Param[HertzUnit] = Param(1, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(2, 'LOW_PASS')    # float Hz
+    CHIRP_DECAY: Param[PercentUnit] = Param(3, 'CHIRP_DECAY')    # float %
+    DIFF_DECAY: Param[PercentUnit] = Param(4, 'DIFF_DECAY')    # float %
+    CHIRP_LEVEL: Param[PercentUnit] = Param(5, 'CHIRP_LEVEL')    # float %
+    DIFF_LEVEL: Param[PercentUnit] = Param(6, 'DIFF_LEVEL')    # float %
+    TANK_TYPE: Param[NoUnit] = Param(7, 'TANK_TYPE')    # comboBox
+    MIX: Param[PercentUnit] = Param(8, 'MIX')    # float %
+    OUTPUT_GAIN: Param[DbUnit] = Param(9, 'OUTPUT_GAIN')    # float dB
+    TRAILS: Param[NoUnit] = Param(10, 'TRAILS')    # switch
 
 
-class NordicConcertHallSt(IntEnum):
+class NordicConcertHallSt(ParamSet):
     """Nordic Concert Hall (ST) (Reverb)."""
 
-    MIX = 0    # float %
-    DECAY = 1    # float s
-    PRE_DELAY = 2    # float ms
-    SIZE = 3    # float %
-    H_SHELF_GAIN = 4    # float dB
-    HIGH_PASS = 5    # float Hz
-    LOW_PASS = 6    # float Hz
-    BASS_FREQ = 7    # float Hz
-    BASS_MULT = 8    # float x
-    H_SHELF_FREQ = 9    # float Hz
-    REV_ATTACK = 10    # float %
-    EARLY_DIFF = 11    # float %
-    LATE_DIFF = 12    # float %
-    MOD_RATE = 13    # float Hz
-    MOD_DEPTH = 14    # float %
-    TRAILS = 15    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DECAY: Param[SecondsUnit] = Param(1, 'DECAY')    # float s
+    PRE_DELAY: Param[MillisecondsUnit] = Param(2, 'PRE_DELAY')    # float ms
+    SIZE: Param[PercentUnit] = Param(3, 'SIZE')    # float %
+    H_SHELF_GAIN: Param[DbUnit] = Param(4, 'H_SHELF_GAIN')    # float dB
+    HIGH_PASS: Param[HertzUnit] = Param(5, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(6, 'LOW_PASS')    # float Hz
+    BASS_FREQ: Param[HertzUnit] = Param(7, 'BASS_FREQ')    # float Hz
+    BASS_MULT: Param[NoUnit] = Param(8, 'BASS_MULT')    # float x
+    H_SHELF_FREQ: Param[HertzUnit] = Param(9, 'H_SHELF_FREQ')    # float Hz
+    REV_ATTACK: Param[PercentUnit] = Param(10, 'REV_ATTACK')    # float %
+    EARLY_DIFF: Param[PercentUnit] = Param(11, 'EARLY_DIFF')    # float %
+    LATE_DIFF: Param[PercentUnit] = Param(12, 'LATE_DIFF')    # float %
+    MOD_RATE: Param[HertzUnit] = Param(13, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(14, 'MOD_DEPTH')    # float %
+    TRAILS: Param[NoUnit] = Param(15, 'TRAILS')    # switch
 
 
-class StudioPlate70St(IntEnum):
+class StudioPlate70St(ParamSet):
     """Studio Plate 70 (ST) (Reverb)."""
 
-    MIX = 0    # float %
-    DECAY = 1    # float s
-    PRE_DELAY = 2    # float ms
-    SIZE = 3    # float %
-    H_SHELF_GAIN = 4    # float dB
-    HIGH_PASS = 5    # float Hz
-    LOW_PASS = 6    # float Hz
-    BASS_FREQ = 7    # float Hz
-    BASS_MULT = 8    # float x
-    H_SHELF_FREQ = 9    # float Hz
-    REV_ATTACK = 10    # float %
-    EARLY_DIFF = 11    # float %
-    LATE_DIFF = 12    # float %
-    MOD_RATE = 13    # float Hz
-    MOD_DEPTH = 14    # float %
-    TRAILS = 15    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DECAY: Param[SecondsUnit] = Param(1, 'DECAY')    # float s
+    PRE_DELAY: Param[MillisecondsUnit] = Param(2, 'PRE_DELAY')    # float ms
+    SIZE: Param[PercentUnit] = Param(3, 'SIZE')    # float %
+    H_SHELF_GAIN: Param[DbUnit] = Param(4, 'H_SHELF_GAIN')    # float dB
+    HIGH_PASS: Param[HertzUnit] = Param(5, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(6, 'LOW_PASS')    # float Hz
+    BASS_FREQ: Param[HertzUnit] = Param(7, 'BASS_FREQ')    # float Hz
+    BASS_MULT: Param[NoUnit] = Param(8, 'BASS_MULT')    # float x
+    H_SHELF_FREQ: Param[HertzUnit] = Param(9, 'H_SHELF_FREQ')    # float Hz
+    REV_ATTACK: Param[PercentUnit] = Param(10, 'REV_ATTACK')    # float %
+    EARLY_DIFF: Param[PercentUnit] = Param(11, 'EARLY_DIFF')    # float %
+    LATE_DIFF: Param[PercentUnit] = Param(12, 'LATE_DIFF')    # float %
+    MOD_RATE: Param[HertzUnit] = Param(13, 'MOD_RATE')    # float Hz
+    MOD_DEPTH: Param[PercentUnit] = Param(14, 'MOD_DEPTH')    # float %
+    TRAILS: Param[NoUnit] = Param(15, 'TRAILS')    # switch
 
 
-class BlossomSt(IntEnum):
+class BlossomSt(ParamSet):
     """Blossom (ST) (Reverb)."""
 
-    MIX = 0    # float %
-    DECAY = 1    # float s
-    PRE_DELAY = 2    # float ms
-    HIGH_PASS = 3    # float Hz
-    LOW_PASS = 4    # float Hz
-    EXTRA_E_R = 5    # switch
-    E_R_LENGTH = 6    # float %
-    DIFFUSION = 7    # float %
-    BASS = 8    # float dB
-    TREBLE = 9    # float dB
-    DUCKING = 10    # float %
-    GAIN_REDUCTION = 11    # grMeter dB
-    MODULATION = 12    # float %
-    TRAILS = 13    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    DECAY: Param[SecondsUnit] = Param(1, 'DECAY')    # float s
+    PRE_DELAY: Param[MillisecondsUnit] = Param(2, 'PRE_DELAY')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(3, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(4, 'LOW_PASS')    # float Hz
+    EXTRA_E_R: Param[NoUnit] = Param(5, 'EXTRA_E_R')    # switch
+    E_R_LENGTH: Param[PercentUnit] = Param(6, 'E_R_LENGTH')    # float %
+    DIFFUSION: Param[PercentUnit] = Param(7, 'DIFFUSION')    # float %
+    BASS: Param[DbUnit] = Param(8, 'BASS')    # float dB
+    TREBLE: Param[DbUnit] = Param(9, 'TREBLE')    # float dB
+    DUCKING: Param[PercentUnit] = Param(10, 'DUCKING')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(11, 'GAIN_REDUCTION')    # grMeter dB
+    MODULATION: Param[PercentUnit] = Param(12, 'MODULATION')    # float %
+    TRAILS: Param[NoUnit] = Param(13, 'TRAILS')    # switch
 
 
-class BubbaWah(IntEnum):
+class BubbaWah(ParamSet):
     """Bubba Wah (Wah)."""
 
-    WAH = 0    # float
+    WAH: Param[NoUnit] = Param(0, 'WAH')    # float
 
 
-class BassWah(IntEnum):
+class BassWah(ParamSet):
     """Bass Wah (Wah)."""
 
-    WAH = 0    # float
+    WAH: Param[NoUnit] = Param(0, 'WAH')    # float
 
 
-class CryingWah(IntEnum):
+class CryingWah(ParamSet):
     """Crying Wah (Wah)."""
 
-    WAH = 0    # float
+    WAH: Param[NoUnit] = Param(0, 'WAH')    # float
 
 
-class CryingClydeWah(IntEnum):
+class CryingClydeWah(ParamSet):
     """Crying Clyde Wah (Wah)."""
 
-    WAH = 0    # float
+    WAH: Param[NoUnit] = Param(0, 'WAH')    # float
 
 
-class BadHorse(IntEnum):
+class BadHorse(ParamSet):
     """Bad Horse (Wah)."""
 
-    WAH = 0    # float
+    WAH: Param[NoUnit] = Param(0, 'WAH')    # float
 
 
-class CryingWahFromHell(IntEnum):
+class CryingWahFromHell(ParamSet):
     """Crying Wah From Hell (Wah)."""
 
-    WAH = 0    # float
-    RANGE = 1    # float
-    Q = 2    # float
-    FINE_TUNE = 3    # float
-    BOOST = 4    # switch
-    BOOST_LEVEL = 5    # float dB
+    WAH: Param[NoUnit] = Param(0, 'WAH')    # float
+    RANGE: Param[NoUnit] = Param(1, 'RANGE')    # float
+    Q: Param[NoUnit] = Param(2, 'Q')    # float
+    FINE_TUNE: Param[NoUnit] = Param(3, 'FINE_TUNE')    # float
+    BOOST: Param[NoUnit] = Param(4, 'BOOST')    # switch
+    BOOST_LEVEL: Param[DbUnit] = Param(5, 'BOOST_LEVEL')    # float dB
 
 
-class AutoWah(IntEnum):
+class AutoWah(ParamSet):
     """Auto Wah (Wah)."""
 
-    SENSITIVITY = 0    # float %
-    ATTACK = 1    # float ms
-    RELEASE = 2    # float ms
+    SENSITIVITY: Param[PercentUnit] = Param(0, 'SENSITIVITY')    # float %
+    ATTACK: Param[MillisecondsUnit] = Param(1, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(2, 'RELEASE')    # float ms
 
 
-class Send1(IntEnum):
+class Send1(ParamSet):
     """Send 1 (FX Loop)."""
 
-    LEVEL = 0    # float dB
-    THRU = 1    # float dB
+    LEVEL: Param[DbUnit] = Param(0, 'LEVEL')    # float dB
+    THRU: Param[DbUnit] = Param(1, 'THRU')    # float dB
 
 
-class Send2(IntEnum):
+class Send2(ParamSet):
     """Send 2 (FX Loop)."""
 
-    LEVEL = 0    # float dB
-    THRU = 1    # float dB
+    LEVEL: Param[DbUnit] = Param(0, 'LEVEL')    # float dB
+    THRU: Param[DbUnit] = Param(1, 'THRU')    # float dB
 
 
-class Return1(IntEnum):
+class Return1(ParamSet):
     """Return 1 (FX Loop)."""
 
-    LEVEL = 0    # float dB
-    MIX = 1    # float %
+    LEVEL: Param[DbUnit] = Param(0, 'LEVEL')    # float dB
+    MIX: Param[PercentUnit] = Param(1, 'MIX')    # float %
 
 
-class Return2(IntEnum):
+class Return2(ParamSet):
     """Return 2 (FX Loop)."""
 
-    LEVEL = 0    # float dB
-    MIX = 1    # float %
+    LEVEL: Param[DbUnit] = Param(0, 'LEVEL')    # float dB
+    MIX: Param[PercentUnit] = Param(1, 'MIX')    # float %
 
 
-class FxLoop1(IntEnum):
+class FxLoop1(ParamSet):
     """FX Loop 1 (FX Loop)."""
 
-    SEND_LEV = 0    # float dB
-    RET_LEV = 1    # float dB
-    MIX = 2    # float %
-    TRAILS = 3    # switch
+    SEND_LEV: Param[DbUnit] = Param(0, 'SEND_LEV')    # float dB
+    RET_LEV: Param[DbUnit] = Param(1, 'RET_LEV')    # float dB
+    MIX: Param[PercentUnit] = Param(2, 'MIX')    # float %
+    TRAILS: Param[NoUnit] = Param(3, 'TRAILS')    # switch
 
 
-class FxLoop2(IntEnum):
+class FxLoop2(ParamSet):
     """FX Loop 2 (FX Loop)."""
 
-    SEND_LEV = 0    # float dB
-    RET_LEV = 1    # float dB
-    MIX = 2    # float %
-    TRAILS = 3    # switch
+    SEND_LEV: Param[DbUnit] = Param(0, 'SEND_LEV')    # float dB
+    RET_LEV: Param[DbUnit] = Param(1, 'RET_LEV')    # float dB
+    MIX: Param[PercentUnit] = Param(2, 'MIX')    # float %
+    TRAILS: Param[NoUnit] = Param(3, 'TRAILS')    # switch
 
 
-class Send12(IntEnum):
+class Send12(ParamSet):
     """Send 1/2 (FX Loop)."""
 
-    LEVEL = 0    # float dB
-    THRU = 1    # float dB
+    LEVEL: Param[DbUnit] = Param(0, 'LEVEL')    # float dB
+    THRU: Param[DbUnit] = Param(1, 'THRU')    # float dB
 
 
-class Return12(IntEnum):
+class Return12(ParamSet):
     """Return 1/2 (FX Loop)."""
 
-    LEVEL = 0    # float dB
-    MIX = 1    # float %
+    LEVEL: Param[DbUnit] = Param(0, 'LEVEL')    # float dB
+    MIX: Param[PercentUnit] = Param(1, 'MIX')    # float %
 
 
-class FxLoop12(IntEnum):
+class FxLoop12(ParamSet):
     """FX Loop 1/2 (FX Loop)."""
 
-    SEND_LEV = 0    # float dB
-    RET_LEV = 1    # float dB
-    MIX = 2    # float %
-    TRAILS = 3    # switch
+    SEND_LEV: Param[DbUnit] = Param(0, 'SEND_LEV')    # float dB
+    RET_LEV: Param[DbUnit] = Param(1, 'RET_LEV')    # float dB
+    MIX: Param[PercentUnit] = Param(2, 'MIX')    # float %
+    TRAILS: Param[NoUnit] = Param(3, 'TRAILS')    # switch
 
 
-class AdaptiveGate(IntEnum):
+class AdaptiveGate(ParamSet):
     """Adaptive Gate (Utility)."""
 
-    NOISE_REDUCTION = 0    # float %
+    NOISE_REDUCTION: Param[PercentUnit] = Param(0, 'NOISE_REDUCTION')    # float %
 
 
-class UtilityGate(IntEnum):
+class UtilityGate(ParamSet):
     """Utility Gate (Utility)."""
 
-    THRESHOLD = 0    # float dB
-    ATTACK = 1    # float ms
-    HOLD = 2    # float ms
-    RELEASE = 3    # float ms
-    RANGE = 4    # float dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(1, 'ATTACK')    # float ms
+    HOLD: Param[MillisecondsUnit] = Param(2, 'HOLD')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(3, 'RELEASE')    # float ms
+    RANGE: Param[DbUnit] = Param(4, 'RANGE')    # float dB
 
 
-class SimpleGate(IntEnum):
+class SimpleGate(ParamSet):
     """Simple Gate (Utility)."""
 
-    THRESHOLD = 0    # float dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
 
 
-class Gain(IntEnum):
+class Gain(ParamSet):
     """Gain (Utility)."""
 
-    LEVEL = 0    # float dB
-    PAN = 1    # float
-    PHASE_INVERT = 2    # switch
+    LEVEL: Param[DbUnit] = Param(0, 'LEVEL')    # float dB
+    PAN: Param[NoUnit] = Param(1, 'PAN')    # float
+    PHASE_INVERT: Param[NoUnit] = Param(2, 'PHASE_INVERT')    # switch
 
 
-class Volume(IntEnum):
+class Volume(ParamSet):
     """Volume (Utility)."""
 
-    LEVEL = 0    # float %
-    CURVE = 1    # switch
+    LEVEL: Param[PercentUnit] = Param(0, 'LEVEL')    # float %
+    CURVE: Param[NoUnit] = Param(1, 'CURVE')    # switch
 
 
-class AdaptiveGateSC(IntEnum):
+class AdaptiveGateSC(ParamSet):
     """Adaptive Gate (S/C) (Utility)."""
 
-    NOISE_REDUCTION = 0    # float %
-    SOURCE = 1    # comboBox
+    NOISE_REDUCTION: Param[PercentUnit] = Param(0, 'NOISE_REDUCTION')    # float %
+    SOURCE: Param[NoUnit] = Param(1, 'SOURCE')    # comboBox
 
 
-class PluginBlend(IntEnum):
+class PluginBlend(ParamSet):
     """Plugin Blend (Utility)."""
 
-    INPUTSOURCEID = 0    # int
-    INPUTCHANNEL = 1    # int
-    STEREOINPUT = 2    # int
-    DELAY = 3    # int
-    BLEND = 4    # float %
-    OUTPUT = 5    # float dB
-    SOURCE = 6    # comboBox
+    INPUTSOURCEID: Param[NoUnit] = Param(0, 'INPUTSOURCEID')    # int
+    INPUTCHANNEL: Param[NoUnit] = Param(1, 'INPUTCHANNEL')    # int
+    STEREOINPUT: Param[NoUnit] = Param(2, 'STEREOINPUT')    # int
+    DELAY: Param[NoUnit] = Param(3, 'DELAY')    # int
+    BLEND: Param[PercentUnit] = Param(4, 'BLEND')    # float %
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
+    SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
 
 
-class PluginGate(IntEnum):
+class PluginGate(ParamSet):
     """Plugin Gate (Utility)."""
 
-    THRESHOLD = 0    # float dB
+    THRESHOLD: Param[DbUnit] = Param(0, 'THRESHOLD')    # float dB
 
 
-class Doubler(IntEnum):
+class Doubler(ParamSet):
     """Doubler (Utility)."""
 
-    ENABLED = 0    # switch
-    SPREAD = 1    # float ms
-    DRY_LEVEL = 2    # float dB
-    FX_LEVEL = 3    # float dB
-    TRIGGER = 4    # comboBox
+    ENABLED: Param[NoUnit] = Param(0, 'ENABLED')    # switch
+    SPREAD: Param[MillisecondsUnit] = Param(1, 'SPREAD')    # float ms
+    DRY_LEVEL: Param[DbUnit] = Param(2, 'DRY_LEVEL')    # float dB
+    FX_LEVEL: Param[DbUnit] = Param(3, 'FX_LEVEL')    # float dB
+    TRIGGER: Param[NoUnit] = Param(4, 'TRIGGER')    # comboBox
 
 
-class PluginDoubler(IntEnum):
+class PluginDoubler(ParamSet):
     """Plugin Doubler (Utility)."""
 
-    ENABLED = 0    # switch
-    SPREAD = 1    # float ms
-    DRY_LEVEL = 2    # float dB
-    FX_LEVEL = 3    # float dB
-    TRIGGER = 4    # comboBox
+    ENABLED: Param[NoUnit] = Param(0, 'ENABLED')    # switch
+    SPREAD: Param[MillisecondsUnit] = Param(1, 'SPREAD')    # float ms
+    DRY_LEVEL: Param[DbUnit] = Param(2, 'DRY_LEVEL')    # float dB
+    FX_LEVEL: Param[DbUnit] = Param(3, 'FX_LEVEL')    # float dB
+    TRIGGER: Param[NoUnit] = Param(4, 'TRIGGER')    # comboBox
 
 
-class TransparentBlend(IntEnum):
+class TransparentBlend(ParamSet):
     """Transparent Blend (Utility)."""
 
-    INPUTSOURCEID = 0    # int
-    INPUTCHANNEL = 1    # int
-    STEREOINPUT = 2    # int
-    DELAY = 3    # int
-    BLEND = 4    # float %
-    OUTPUT = 5    # float dB
-    SOURCE = 6    # comboBox
+    INPUTSOURCEID: Param[NoUnit] = Param(0, 'INPUTSOURCEID')    # int
+    INPUTCHANNEL: Param[NoUnit] = Param(1, 'INPUTCHANNEL')    # int
+    STEREOINPUT: Param[NoUnit] = Param(2, 'STEREOINPUT')    # int
+    DELAY: Param[NoUnit] = Param(3, 'DELAY')    # int
+    BLEND: Param[PercentUnit] = Param(4, 'BLEND')    # float %
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
+    SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
 
 
-class PhaseDoctor(IntEnum):
+class PhaseDoctor(ParamSet):
     """Phase Doctor (Utility)."""
 
-    POLARITY = 0    # switch
-    ADJUST = 1    # rotarySwitch
-    CENTER = 2    # switch
-    SHIFT = 3    # float %
-    STEREO_LINK = 4    # switch
-    POLARITY_R = 5    # switch
-    ADJUST_R = 6    # rotarySwitch
-    CENTER_R = 7    # switch
-    SHIFT_R = 8    # float %
+    POLARITY: Param[NoUnit] = Param(0, 'POLARITY')    # switch
+    ADJUST: Param[NoUnit] = Param(1, 'ADJUST')    # rotarySwitch
+    CENTER: Param[NoUnit] = Param(2, 'CENTER')    # switch
+    SHIFT: Param[PercentUnit] = Param(3, 'SHIFT')    # float %
+    STEREO_LINK: Param[NoUnit] = Param(4, 'STEREO_LINK')    # switch
+    POLARITY_R: Param[NoUnit] = Param(5, 'POLARITY_R')    # switch
+    ADJUST_R: Param[NoUnit] = Param(6, 'ADJUST_R')    # rotarySwitch
+    CENTER_R: Param[NoUnit] = Param(7, 'CENTER_R')    # switch
+    SHIFT_R: Param[PercentUnit] = Param(8, 'SHIFT_R')    # float %
 
 
-class PitchShifter(IntEnum):
+class PitchShifter(ParamSet):
     """Pitch Shifter (Pitch)."""
 
-    MIX = 0    # float %
-    PITCH_COARSE = 1    # float Semitones
-    PITCH_FINE = 2    # float Cents
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    PITCH_COARSE: Param[SemitonesUnit] = Param(1, 'PITCH_COARSE')    # float Semitones
+    PITCH_FINE: Param[CentsUnit] = Param(2, 'PITCH_FINE')    # float Cents
 
 
-class PolyOctaver(IntEnum):
+class PolyOctaver(ParamSet):
     """Poly Octaver (Pitch)."""
 
-    DRY = 0    # float %
-    OCT = 1    # float %
-    SUB = 2    # float %
+    DRY: Param[PercentUnit] = Param(0, 'DRY')    # float %
+    OCT: Param[PercentUnit] = Param(1, 'OCT')    # float %
+    SUB: Param[PercentUnit] = Param(2, 'SUB')    # float %
 
 
-class Wham(IntEnum):
+class Wham(ParamSet):
     """Wham (Pitch)."""
 
-    MIX = 0    # float %
-    PEDAL = 1    # float %
-    HEEL_PITCH_1 = 2    # float Semitones
-    TOE_PITCH_1 = 3    # float Semitones
-    HEEL_PITCH_2 = 4    # float Semitones
-    TOE_PITCH_2 = 5    # float Semitones
-    BLEND = 6    # float %
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    PEDAL: Param[PercentUnit] = Param(1, 'PEDAL')    # float %
+    HEEL_PITCH_1: Param[SemitonesUnit] = Param(2, 'HEEL_PITCH_1')    # float Semitones
+    TOE_PITCH_1: Param[SemitonesUnit] = Param(3, 'TOE_PITCH_1')    # float Semitones
+    HEEL_PITCH_2: Param[SemitonesUnit] = Param(4, 'HEEL_PITCH_2')    # float Semitones
+    TOE_PITCH_2: Param[SemitonesUnit] = Param(5, 'TOE_PITCH_2')    # float Semitones
+    BLEND: Param[PercentUnit] = Param(6, 'BLEND')    # float %
 
 
-class Minivoicer(IntEnum):
+class Minivoicer(ParamSet):
     """Minivoicer (Pitch)."""
 
-    MIX = 0    # float %
-    ROOT = 1    # comboBox
-    MODE = 2    # comboBox
-    TUNING = 3    # float Hz
-    QUANTIZE = 4    # switch
-    V1_ACTIVE = 5    # switch
-    V1_LEVEL = 6    # float dB
-    V1_INTER = 7    # rotarySwitch
-    V1_PAN = 8    # float
-    V2_ACTIVE = 9    # switch
-    V2_LEVEL = 10    # float dB
-    V2_INTER = 11    # rotarySwitch
-    V2_PAN = 12    # float
-    HIGH_PASS = 13    # float Hz
-    LOW_PASS = 14    # float Hz
-    MIDI = 15    # switch
-    GLISSANDO = 16    # float ms
-    OUTPUT = 17    # float dB
-    V1_NOTE = 18    # float
-    V2_NOTE = 19    # float
-    V1_SEMIT = 20    # float
-    V2_SEMIT = 21    # float
-    MIDI_CH = 22    # comboBox
-    V1_NOTE_DISPLAY = 23    # float
-    V2_NOTE_DISPLAY = 24    # float
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    ROOT: Param[NoUnit] = Param(1, 'ROOT')    # comboBox
+    MODE: Param[NoUnit] = Param(2, 'MODE')    # comboBox
+    TUNING: Param[HertzUnit] = Param(3, 'TUNING')    # float Hz
+    QUANTIZE: Param[NoUnit] = Param(4, 'QUANTIZE')    # switch
+    V1_ACTIVE: Param[NoUnit] = Param(5, 'V1_ACTIVE')    # switch
+    V1_LEVEL: Param[DbUnit] = Param(6, 'V1_LEVEL')    # float dB
+    V1_INTER: Param[NoUnit] = Param(7, 'V1_INTER')    # rotarySwitch
+    V1_PAN: Param[NoUnit] = Param(8, 'V1_PAN')    # float
+    V2_ACTIVE: Param[NoUnit] = Param(9, 'V2_ACTIVE')    # switch
+    V2_LEVEL: Param[DbUnit] = Param(10, 'V2_LEVEL')    # float dB
+    V2_INTER: Param[NoUnit] = Param(11, 'V2_INTER')    # rotarySwitch
+    V2_PAN: Param[NoUnit] = Param(12, 'V2_PAN')    # float
+    HIGH_PASS: Param[HertzUnit] = Param(13, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(14, 'LOW_PASS')    # float Hz
+    MIDI: Param[NoUnit] = Param(15, 'MIDI')    # switch
+    GLISSANDO: Param[MillisecondsUnit] = Param(16, 'GLISSANDO')    # float ms
+    OUTPUT: Param[DbUnit] = Param(17, 'OUTPUT')    # float dB
+    V1_NOTE: Param[NoUnit] = Param(18, 'V1_NOTE')    # float
+    V2_NOTE: Param[NoUnit] = Param(19, 'V2_NOTE')    # float
+    V1_SEMIT: Param[NoUnit] = Param(20, 'V1_SEMIT')    # float
+    V2_SEMIT: Param[NoUnit] = Param(21, 'V2_SEMIT')    # float
+    MIDI_CH: Param[NoUnit] = Param(22, 'MIDI_CH')    # comboBox
+    V1_NOTE_DISPLAY: Param[NoUnit] = Param(23, 'V1_NOTE_DISPLAY')    # float
+    V2_NOTE_DISPLAY: Param[NoUnit] = Param(24, 'V2_NOTE_DISPLAY')    # float
 
 
-class Transpose(IntEnum):
+class Transpose(ParamSet):
     """Transpose (Pitch)."""
 
-    MIX = 0    # float %
-    PITCH_COARSE = 1    # float Semitones
-    PITCH_FINE = 2    # float Cents
-    SEMITONES = 3    # float Semitones
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    PITCH_COARSE: Param[SemitonesUnit] = Param(1, 'PITCH_COARSE')    # float Semitones
+    PITCH_FINE: Param[CentsUnit] = Param(2, 'PITCH_FINE')    # float Cents
+    SEMITONES: Param[SemitonesUnit] = Param(3, 'SEMITONES')    # float Semitones
 
 
-class PitchCorrection(IntEnum):
+class PitchCorrection(ParamSet):
     """Pitch Correction (Pitch)."""
 
-    ROOT = 0    # comboBox
-    MODE = 1    # comboBox
-    TUNING = 2    # float Hz
-    QUANTIZE = 3    # float %
-    GLISSANDO = 4    # float ms
-    HIGH_PASS = 5    # float Hz
-    LOW_PASS = 6    # float Hz
-    OUTPUT = 7    # float dB
+    ROOT: Param[NoUnit] = Param(0, 'ROOT')    # comboBox
+    MODE: Param[NoUnit] = Param(1, 'MODE')    # comboBox
+    TUNING: Param[HertzUnit] = Param(2, 'TUNING')    # float Hz
+    QUANTIZE: Param[PercentUnit] = Param(3, 'QUANTIZE')    # float %
+    GLISSANDO: Param[MillisecondsUnit] = Param(4, 'GLISSANDO')    # float ms
+    HIGH_PASS: Param[HertzUnit] = Param(5, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(6, 'LOW_PASS')    # float Hz
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class ChiefOc2(IntEnum):
+class ChiefOc2(ParamSet):
     """Chief OC2 (Pitch)."""
 
-    OUTPUT = 0    # float dB
-    DRY = 1    # float %
-    OCT_1 = 2    # float %
-    OCT_2 = 3    # float %
+    OUTPUT: Param[DbUnit] = Param(0, 'OUTPUT')    # float dB
+    DRY: Param[PercentUnit] = Param(1, 'DRY')    # float %
+    OCT_1: Param[PercentUnit] = Param(2, 'OCT_1')    # float %
+    OCT_2: Param[PercentUnit] = Param(3, 'OCT_2')    # float %
 
 
-class SubharmonicSynth(IntEnum):
+class SubharmonicSynth(ParamSet):
     """Subharmonic Synth (Pitch)."""
 
-    OUTPUT = 0    # float dB
-    DRY = 1    # float %
-    OCTAVE = 2    # float %
-    CHARACTER = 3    # float %
-    LOW = 4    # float %
-    SUB = 5    # float %
+    OUTPUT: Param[DbUnit] = Param(0, 'OUTPUT')    # float dB
+    DRY: Param[PercentUnit] = Param(1, 'DRY')    # float %
+    OCTAVE: Param[PercentUnit] = Param(2, 'OCTAVE')    # float %
+    CHARACTER: Param[PercentUnit] = Param(3, 'CHARACTER')    # float %
+    LOW: Param[PercentUnit] = Param(4, 'LOW')    # float %
+    SUB: Param[PercentUnit] = Param(5, 'SUB')    # float %
 
 
-class AggiSubOctaver(IntEnum):
+class AggiSubOctaver(ParamSet):
     """Aggi Sub Octaver (Pitch)."""
 
-    OUTPUT = 0    # float dB
-    CLEAN_LEVEL = 1    # float %
-    CLEAN_TONE = 2    # float %
-    OCTAVE_LEVEL = 3    # float %
-    OCTAVE_FILTER = 4    # float %
+    OUTPUT: Param[DbUnit] = Param(0, 'OUTPUT')    # float dB
+    CLEAN_LEVEL: Param[PercentUnit] = Param(1, 'CLEAN_LEVEL')    # float %
+    CLEAN_TONE: Param[PercentUnit] = Param(2, 'CLEAN_TONE')    # float %
+    OCTAVE_LEVEL: Param[PercentUnit] = Param(3, 'OCTAVE_LEVEL')    # float %
+    OCTAVE_FILTER: Param[PercentUnit] = Param(4, 'OCTAVE_FILTER')    # float %
 
 
-class LoveMeat(IntEnum):
+class LoveMeat(ParamSet):
     """Love Meat (Filter)."""
 
-    SENSITIVITY = 0    # float
-    ATTACK = 1    # float
-    DECAY = 2    # float
-    COLOR = 3    # float
-    INTENSITY = 4    # float
-    BLEND = 5    # float
-    TRIG_DIRECTION = 6    # switch
-    TRIGGER_MODE = 7    # rotarySwitch
-    FILTER_CUTOFF = 8    # rotarySwitch
-    FILTER_TYPE = 9    # rotarySwitch
-    LEVEL = 10    # float dB
+    SENSITIVITY: Param[NoUnit] = Param(0, 'SENSITIVITY')    # float
+    ATTACK: Param[NoUnit] = Param(1, 'ATTACK')    # float
+    DECAY: Param[NoUnit] = Param(2, 'DECAY')    # float
+    COLOR: Param[NoUnit] = Param(3, 'COLOR')    # float
+    INTENSITY: Param[NoUnit] = Param(4, 'INTENSITY')    # float
+    BLEND: Param[NoUnit] = Param(5, 'BLEND')    # float
+    TRIG_DIRECTION: Param[NoUnit] = Param(6, 'TRIG_DIRECTION')    # switch
+    TRIGGER_MODE: Param[NoUnit] = Param(7, 'TRIGGER_MODE')    # rotarySwitch
+    FILTER_CUTOFF: Param[NoUnit] = Param(8, 'FILTER_CUTOFF')    # rotarySwitch
+    FILTER_TYPE: Param[NoUnit] = Param(9, 'FILTER_TYPE')    # rotarySwitch
+    LEVEL: Param[DbUnit] = Param(10, 'LEVEL')    # float dB
 
 
-class Foog(IntEnum):
+class Foog(ParamSet):
     """Foog (Filter)."""
 
-    DRIVE = 0    # float
-    DECAY = 1    # switch
-    ENV_AMOUNT = 2    # float
-    CUTOFF = 3    # float
-    RESONANCE = 4    # float
-    MIX = 5    # float %
-    FILTER = 6    # switch
-    LEVEL = 7    # float dB
+    DRIVE: Param[NoUnit] = Param(0, 'DRIVE')    # float
+    DECAY: Param[NoUnit] = Param(1, 'DECAY')    # switch
+    ENV_AMOUNT: Param[NoUnit] = Param(2, 'ENV_AMOUNT')    # float
+    CUTOFF: Param[NoUnit] = Param(3, 'CUTOFF')    # float
+    RESONANCE: Param[NoUnit] = Param(4, 'RESONANCE')    # float
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    FILTER: Param[NoUnit] = Param(6, 'FILTER')    # switch
+    LEVEL: Param[DbUnit] = Param(7, 'LEVEL')    # float dB
 
 
-class EnvelopeFilter(IntEnum):
+class EnvelopeFilter(ParamSet):
     """Envelope Filter (Filter)."""
 
-    SENS = 0    # float dB
-    ATTACK = 1    # float ms
-    DECAY = 2    # float ms
-    LP_BP_HP = 3    # float
-    LEVEL = 4    # float dB
-    FREQ = 5    # float Hz
-    FREQ_DEPTH = 6    # float Hz
-    RESO = 7    # float
-    RESO_ENV_AMT = 8    # float
-    MIX = 9    # float %
+    SENS: Param[DbUnit] = Param(0, 'SENS')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(1, 'ATTACK')    # float ms
+    DECAY: Param[MillisecondsUnit] = Param(2, 'DECAY')    # float ms
+    LP_BP_HP: Param[NoUnit] = Param(3, 'LP_BP_HP')    # float
+    LEVEL: Param[DbUnit] = Param(4, 'LEVEL')    # float dB
+    FREQ: Param[HertzUnit] = Param(5, 'FREQ')    # float Hz
+    FREQ_DEPTH: Param[HertzUnit] = Param(6, 'FREQ_DEPTH')    # float Hz
+    RESO: Param[NoUnit] = Param(7, 'RESO')    # float
+    RESO_ENV_AMT: Param[NoUnit] = Param(8, 'RESO_ENV_AMT')    # float
+    MIX: Param[PercentUnit] = Param(9, 'MIX')    # float %
 
 
-class EnvelopeFilterSC(IntEnum):
+class EnvelopeFilterSC(ParamSet):
     """Envelope Filter (S/C) (Filter)."""
 
-    SENS = 0    # float dB
-    ATTACK = 1    # float ms
-    DECAY = 2    # float ms
-    LP_BP_HP = 3    # float
-    LEVEL = 4    # float dB
-    FREQ = 5    # float Hz
-    FREQ_DEPTH = 6    # float Hz
-    RESO = 7    # float
-    RESO_ENV_AMT = 8    # float
-    MIX = 9    # float %
-    SOURCE = 10    # comboBox
+    SENS: Param[DbUnit] = Param(0, 'SENS')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(1, 'ATTACK')    # float ms
+    DECAY: Param[MillisecondsUnit] = Param(2, 'DECAY')    # float ms
+    LP_BP_HP: Param[NoUnit] = Param(3, 'LP_BP_HP')    # float
+    LEVEL: Param[DbUnit] = Param(4, 'LEVEL')    # float dB
+    FREQ: Param[HertzUnit] = Param(5, 'FREQ')    # float Hz
+    FREQ_DEPTH: Param[HertzUnit] = Param(6, 'FREQ_DEPTH')    # float Hz
+    RESO: Param[NoUnit] = Param(7, 'RESO')    # float
+    RESO_ENV_AMT: Param[NoUnit] = Param(8, 'RESO_ENV_AMT')    # float
+    MIX: Param[PercentUnit] = Param(9, 'MIX')    # float %
+    SOURCE: Param[NoUnit] = Param(10, 'SOURCE')    # comboBox
 
 
-class Freeze(IntEnum):
+class Freeze(ParamSet):
     """Freeze (Morph)."""
 
-    ON_OFF = 0    # toggleButton
-    MOMENTARY = 1    # switch
-    ATTACK = 2    # float ms
-    RELEASE = 3    # float ms
-    DRY_GAIN = 4    # float dB
-    FREEZE_GAIN = 5    # float dB
-    HIGH_PASS = 6    # float Hz
-    LOW_PASS = 7    # float Hz
+    ON_OFF: Param[NoUnit] = Param(0, 'ON_OFF')    # toggleButton
+    MOMENTARY: Param[NoUnit] = Param(1, 'MOMENTARY')    # switch
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[MillisecondsUnit] = Param(3, 'RELEASE')    # float ms
+    DRY_GAIN: Param[DbUnit] = Param(4, 'DRY_GAIN')    # float dB
+    FREEZE_GAIN: Param[DbUnit] = Param(5, 'FREEZE_GAIN')    # float dB
+    HIGH_PASS: Param[HertzUnit] = Param(6, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(7, 'LOW_PASS')    # float Hz
 
 
-class PhaseLockedLoop(IntEnum):
+class PhaseLockedLoop(ParamSet):
     """Phase-Locked Loop (Morph)."""
 
-    OUTPUT = 0    # float dB
-    DRY_LEVEL = 1    # float %
-    UNISON_LEVEL = 2    # float %
-    MUL_LEVEL = 3    # float %
-    DIV_LEVEL = 4    # float %
-    MUL_SOURCE = 5    # comboBox
-    DIV_SOURCE = 6    # comboBox
-    MULTIPLIER = 7    # rotarySwitch
-    DIVIDER = 8    # rotarySwitch
-    RESPONSE = 9    # float %
-    STABILITY = 10    # float %
-    THRESHOLD = 11    # float dB
-    TRAILS_GATE = 12    # switch
-    INSTRUMENT = 13    # switch
+    OUTPUT: Param[DbUnit] = Param(0, 'OUTPUT')    # float dB
+    DRY_LEVEL: Param[PercentUnit] = Param(1, 'DRY_LEVEL')    # float %
+    UNISON_LEVEL: Param[PercentUnit] = Param(2, 'UNISON_LEVEL')    # float %
+    MUL_LEVEL: Param[PercentUnit] = Param(3, 'MUL_LEVEL')    # float %
+    DIV_LEVEL: Param[PercentUnit] = Param(4, 'DIV_LEVEL')    # float %
+    MUL_SOURCE: Param[NoUnit] = Param(5, 'MUL_SOURCE')    # comboBox
+    DIV_SOURCE: Param[NoUnit] = Param(6, 'DIV_SOURCE')    # comboBox
+    MULTIPLIER: Param[NoUnit] = Param(7, 'MULTIPLIER')    # rotarySwitch
+    DIVIDER: Param[NoUnit] = Param(8, 'DIVIDER')    # rotarySwitch
+    RESPONSE: Param[PercentUnit] = Param(9, 'RESPONSE')    # float %
+    STABILITY: Param[PercentUnit] = Param(10, 'STABILITY')    # float %
+    THRESHOLD: Param[DbUnit] = Param(11, 'THRESHOLD')    # float dB
+    TRAILS_GATE: Param[NoUnit] = Param(12, 'TRAILS_GATE')    # switch
+    INSTRUMENT: Param[NoUnit] = Param(13, 'INSTRUMENT')    # switch
 
 
-class BitCrusherSt(IntEnum):
+class BitCrusherSt(ParamSet):
     """Bit-Crusher (ST) (Morph)."""
 
-    OUTPUT = 0    # float dB
-    DRY = 1    # float %
-    WET = 2    # float %
-    RESAMPLER = 3    # float Hz
-    BIT_DEPTH = 4    # rotarySwitch bits
-    SHAPE = 5    # float %
-    TONE = 6    # float Hz
+    OUTPUT: Param[DbUnit] = Param(0, 'OUTPUT')    # float dB
+    DRY: Param[PercentUnit] = Param(1, 'DRY')    # float %
+    WET: Param[PercentUnit] = Param(2, 'WET')    # float %
+    RESAMPLER: Param[HertzUnit] = Param(3, 'RESAMPLER')    # float Hz
+    BIT_DEPTH: Param[NoUnit] = Param(4, 'BIT_DEPTH')    # rotarySwitch bits
+    SHAPE: Param[PercentUnit] = Param(5, 'SHAPE')    # float %
+    TONE: Param[HertzUnit] = Param(6, 'TONE')    # float Hz
 
 
-class BitCrusherEngineM(IntEnum):
+class BitCrusherEngineM(ParamSet):
     """Bit-Crusher Engine (M) (Morph)."""
 
-    OUTPUT = 0    # float dB
-    DRY = 1    # float %
-    WET = 2    # float %
-    RESAMPLER = 3    # float Hz
-    FREQ_MULTI = 4    # float
-    DISSONANCE = 5    # float %
-    PITCH_TRACKING = 6    # switch
-    BIT_DEPTH = 7    # rotarySwitch bits
-    SHAPE = 8    # float %
-    TONE = 9    # float Hz
+    OUTPUT: Param[DbUnit] = Param(0, 'OUTPUT')    # float dB
+    DRY: Param[PercentUnit] = Param(1, 'DRY')    # float %
+    WET: Param[PercentUnit] = Param(2, 'WET')    # float %
+    RESAMPLER: Param[HertzUnit] = Param(3, 'RESAMPLER')    # float Hz
+    FREQ_MULTI: Param[NoUnit] = Param(4, 'FREQ_MULTI')    # float
+    DISSONANCE: Param[PercentUnit] = Param(5, 'DISSONANCE')    # float %
+    PITCH_TRACKING: Param[NoUnit] = Param(6, 'PITCH_TRACKING')    # switch
+    BIT_DEPTH: Param[NoUnit] = Param(7, 'BIT_DEPTH')    # rotarySwitch bits
+    SHAPE: Param[PercentUnit] = Param(8, 'SHAPE')    # float %
+    TONE: Param[HertzUnit] = Param(9, 'TONE')    # float Hz
 
 
-class LooperX(IntEnum):
+class LooperX(ParamSet):
     """Looper X (Loopers)."""
 
-    RECORD_OVERDUB = 0    # switch
-    PLAY_STOP = 1    # switch
-    UNDO = 2    # switch
-    DUPLICATE = 3    # switch
-    ONE_SHOT = 4    # switch
-    HALF_SPEED = 5    # switch
-    PUNCH = 6    # switch
-    REVERSE = 7    # switch
-    PLAYBACK_LEVEL = 8    # float dB
-    OVERDUB_LEVEL = 9    # float dB
-    HIGH_PASS = 10    # float Hz
-    LOW_PASS = 11    # float Hz
-    THRESHOLD = 12    # float dB
-    RECORD_MODE = 13    # switch
-    OVERDUB_MODE = 14    # switch
-    DUPLICATE_MODE = 15    # switch
-    PUNCH_MODE = 16    # switch
-    ROUTING_MODE = 17    # rotarySwitch
-    QUANTIZE = 18    # rotarySwitch
-    MIDI_CLOCK_START = 19    # switch
-    PRE_ROLL = 20    # rotarySwitch
-    METRONOME_MUTE = 21    # toggleButton
-    REC_LENGTH = 22    # rotarySwitch
+    RECORD_OVERDUB: Param[NoUnit] = Param(0, 'RECORD_OVERDUB')    # switch
+    PLAY_STOP: Param[NoUnit] = Param(1, 'PLAY_STOP')    # switch
+    UNDO: Param[NoUnit] = Param(2, 'UNDO')    # switch
+    DUPLICATE: Param[NoUnit] = Param(3, 'DUPLICATE')    # switch
+    ONE_SHOT: Param[NoUnit] = Param(4, 'ONE_SHOT')    # switch
+    HALF_SPEED: Param[NoUnit] = Param(5, 'HALF_SPEED')    # switch
+    PUNCH: Param[NoUnit] = Param(6, 'PUNCH')    # switch
+    REVERSE: Param[NoUnit] = Param(7, 'REVERSE')    # switch
+    PLAYBACK_LEVEL: Param[DbUnit] = Param(8, 'PLAYBACK_LEVEL')    # float dB
+    OVERDUB_LEVEL: Param[DbUnit] = Param(9, 'OVERDUB_LEVEL')    # float dB
+    HIGH_PASS: Param[HertzUnit] = Param(10, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(11, 'LOW_PASS')    # float Hz
+    THRESHOLD: Param[DbUnit] = Param(12, 'THRESHOLD')    # float dB
+    RECORD_MODE: Param[NoUnit] = Param(13, 'RECORD_MODE')    # switch
+    OVERDUB_MODE: Param[NoUnit] = Param(14, 'OVERDUB_MODE')    # switch
+    DUPLICATE_MODE: Param[NoUnit] = Param(15, 'DUPLICATE_MODE')    # switch
+    PUNCH_MODE: Param[NoUnit] = Param(16, 'PUNCH_MODE')    # switch
+    ROUTING_MODE: Param[NoUnit] = Param(17, 'ROUTING_MODE')    # rotarySwitch
+    QUANTIZE: Param[NoUnit] = Param(18, 'QUANTIZE')    # rotarySwitch
+    MIDI_CLOCK_START: Param[NoUnit] = Param(19, 'MIDI_CLOCK_START')    # switch
+    PRE_ROLL: Param[NoUnit] = Param(20, 'PRE_ROLL')    # rotarySwitch
+    METRONOME_MUTE: Param[NoUnit] = Param(21, 'METRONOME_MUTE')    # toggleButton
+    REC_LENGTH: Param[NoUnit] = Param(22, 'REC_LENGTH')    # rotarySwitch
 
 
-class SingleM(IntEnum):
+class SingleM(ParamSet):
     """Single (M) (IRLoaders)."""
 
-    IR_1_MUTE = 0    # switch
-    IR_1_INVERT = 1    # switch
-    IR_1_PATH = 2    # string
-    IR_1_LEVEL = 3    # float dB
-    IR_1_HI_PASS = 4    # float Hz
-    IR_1_LOW_PASS = 5    # float Hz
-    IR_1_PAN = 6    # float
-    IR_1_DELAY = 7    # float ms
-    IR_2_MUTE = 8    # switch
-    IR_2_INVERT = 9    # switch
-    IR_2_PATH = 10    # string
-    IR_2_LEVEL = 11    # float dB
-    IR_2_HI_PASS = 12    # float Hz
-    IR_2_LOW_PASS = 13    # float Hz
-    IR_2_PAN = 14    # float
-    IR_2_DELAY = 15    # float ms
-    ROOM_MIX = 16    # float %
-    PRE_DELAY = 17    # float ms
-    REV_HI_PASS = 18    # float Hz
-    REV_LOW_PASS = 19    # float Hz
-    SIZE = 20    # rotarySwitch
-    GLOBAL_OUTPUT = 21    # float dB
-    IR_1_NAME = 22    # string
-    IR_2_NAME = 23    # string
+    IR_1_MUTE: Param[NoUnit] = Param(0, 'IR_1_MUTE')    # switch
+    IR_1_INVERT: Param[NoUnit] = Param(1, 'IR_1_INVERT')    # switch
+    IR_1_PATH: Param[NoUnit] = Param(2, 'IR_1_PATH')    # string
+    IR_1_LEVEL: Param[DbUnit] = Param(3, 'IR_1_LEVEL')    # float dB
+    IR_1_HI_PASS: Param[HertzUnit] = Param(4, 'IR_1_HI_PASS')    # float Hz
+    IR_1_LOW_PASS: Param[HertzUnit] = Param(5, 'IR_1_LOW_PASS')    # float Hz
+    IR_1_PAN: Param[NoUnit] = Param(6, 'IR_1_PAN')    # float
+    IR_1_DELAY: Param[MillisecondsUnit] = Param(7, 'IR_1_DELAY')    # float ms
+    IR_2_MUTE: Param[NoUnit] = Param(8, 'IR_2_MUTE')    # switch
+    IR_2_INVERT: Param[NoUnit] = Param(9, 'IR_2_INVERT')    # switch
+    IR_2_PATH: Param[NoUnit] = Param(10, 'IR_2_PATH')    # string
+    IR_2_LEVEL: Param[DbUnit] = Param(11, 'IR_2_LEVEL')    # float dB
+    IR_2_HI_PASS: Param[HertzUnit] = Param(12, 'IR_2_HI_PASS')    # float Hz
+    IR_2_LOW_PASS: Param[HertzUnit] = Param(13, 'IR_2_LOW_PASS')    # float Hz
+    IR_2_PAN: Param[NoUnit] = Param(14, 'IR_2_PAN')    # float
+    IR_2_DELAY: Param[MillisecondsUnit] = Param(15, 'IR_2_DELAY')    # float ms
+    ROOM_MIX: Param[PercentUnit] = Param(16, 'ROOM_MIX')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(17, 'PRE_DELAY')    # float ms
+    REV_HI_PASS: Param[HertzUnit] = Param(18, 'REV_HI_PASS')    # float Hz
+    REV_LOW_PASS: Param[HertzUnit] = Param(19, 'REV_LOW_PASS')    # float Hz
+    SIZE: Param[NoUnit] = Param(20, 'SIZE')    # rotarySwitch
+    GLOBAL_OUTPUT: Param[DbUnit] = Param(21, 'GLOBAL_OUTPUT')    # float dB
+    IR_1_NAME: Param[NoUnit] = Param(22, 'IR_1_NAME')    # string
+    IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class SingleSt(IntEnum):
+class SingleSt(ParamSet):
     """Single (ST) (IRLoaders)."""
 
-    IR_1_MUTE = 0    # switch
-    IR_1_INVERT = 1    # switch
-    IR_1_PATH = 2    # string
-    IR_1_LEVEL = 3    # float dB
-    IR_1_HI_PASS = 4    # float Hz
-    IR_1_LOW_PASS = 5    # float Hz
-    IR_1_PAN = 6    # float
-    IR_1_DELAY = 7    # float ms
-    IR_2_MUTE = 8    # switch
-    IR_2_INVERT = 9    # switch
-    IR_2_PATH = 10    # string
-    IR_2_LEVEL = 11    # float dB
-    IR_2_HI_PASS = 12    # float Hz
-    IR_2_LOW_PASS = 13    # float Hz
-    IR_2_PAN = 14    # float
-    IR_2_DELAY = 15    # float ms
-    ROOM_MIX = 16    # float %
-    PRE_DELAY = 17    # float ms
-    REV_HI_PASS = 18    # float Hz
-    REV_LOW_PASS = 19    # float Hz
-    SIZE = 20    # rotarySwitch
-    GLOBAL_OUTPUT = 21    # float dB
-    IR_1_NAME = 22    # string
-    IR_2_NAME = 23    # string
+    IR_1_MUTE: Param[NoUnit] = Param(0, 'IR_1_MUTE')    # switch
+    IR_1_INVERT: Param[NoUnit] = Param(1, 'IR_1_INVERT')    # switch
+    IR_1_PATH: Param[NoUnit] = Param(2, 'IR_1_PATH')    # string
+    IR_1_LEVEL: Param[DbUnit] = Param(3, 'IR_1_LEVEL')    # float dB
+    IR_1_HI_PASS: Param[HertzUnit] = Param(4, 'IR_1_HI_PASS')    # float Hz
+    IR_1_LOW_PASS: Param[HertzUnit] = Param(5, 'IR_1_LOW_PASS')    # float Hz
+    IR_1_PAN: Param[NoUnit] = Param(6, 'IR_1_PAN')    # float
+    IR_1_DELAY: Param[MillisecondsUnit] = Param(7, 'IR_1_DELAY')    # float ms
+    IR_2_MUTE: Param[NoUnit] = Param(8, 'IR_2_MUTE')    # switch
+    IR_2_INVERT: Param[NoUnit] = Param(9, 'IR_2_INVERT')    # switch
+    IR_2_PATH: Param[NoUnit] = Param(10, 'IR_2_PATH')    # string
+    IR_2_LEVEL: Param[DbUnit] = Param(11, 'IR_2_LEVEL')    # float dB
+    IR_2_HI_PASS: Param[HertzUnit] = Param(12, 'IR_2_HI_PASS')    # float Hz
+    IR_2_LOW_PASS: Param[HertzUnit] = Param(13, 'IR_2_LOW_PASS')    # float Hz
+    IR_2_PAN: Param[NoUnit] = Param(14, 'IR_2_PAN')    # float
+    IR_2_DELAY: Param[MillisecondsUnit] = Param(15, 'IR_2_DELAY')    # float ms
+    ROOM_MIX: Param[PercentUnit] = Param(16, 'ROOM_MIX')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(17, 'PRE_DELAY')    # float ms
+    REV_HI_PASS: Param[HertzUnit] = Param(18, 'REV_HI_PASS')    # float Hz
+    REV_LOW_PASS: Param[HertzUnit] = Param(19, 'REV_LOW_PASS')    # float Hz
+    SIZE: Param[NoUnit] = Param(20, 'SIZE')    # rotarySwitch
+    GLOBAL_OUTPUT: Param[DbUnit] = Param(21, 'GLOBAL_OUTPUT')    # float dB
+    IR_1_NAME: Param[NoUnit] = Param(22, 'IR_1_NAME')    # string
+    IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class DualM(IntEnum):
+class DualM(ParamSet):
     """Dual (M) (IRLoaders)."""
 
-    IR_1_MUTE = 0    # switch
-    IR_1_INVERT = 1    # switch
-    IR_1_PATH = 2    # string
-    IR_1_LEVEL = 3    # float dB
-    IR_1_HI_PASS = 4    # float Hz
-    IR_1_LOW_PASS = 5    # float Hz
-    IR_1_PAN = 6    # float
-    IR_1_DELAY = 7    # float ms
-    IR_2_MUTE = 8    # switch
-    IR_2_INVERT = 9    # switch
-    IR_2_PATH = 10    # string
-    IR_2_LEVEL = 11    # float dB
-    IR_2_HI_PASS = 12    # float Hz
-    IR_2_LOW_PASS = 13    # float Hz
-    IR_2_PAN = 14    # float
-    IR_2_DELAY = 15    # float ms
-    ROOM_MIX = 16    # float %
-    PRE_DELAY = 17    # float ms
-    REV_HI_PASS = 18    # float Hz
-    REV_LOW_PASS = 19    # float Hz
-    SIZE = 20    # rotarySwitch
-    GLOBAL_OUTPUT = 21    # float dB
-    IR_1_NAME = 22    # string
-    IR_2_NAME = 23    # string
+    IR_1_MUTE: Param[NoUnit] = Param(0, 'IR_1_MUTE')    # switch
+    IR_1_INVERT: Param[NoUnit] = Param(1, 'IR_1_INVERT')    # switch
+    IR_1_PATH: Param[NoUnit] = Param(2, 'IR_1_PATH')    # string
+    IR_1_LEVEL: Param[DbUnit] = Param(3, 'IR_1_LEVEL')    # float dB
+    IR_1_HI_PASS: Param[HertzUnit] = Param(4, 'IR_1_HI_PASS')    # float Hz
+    IR_1_LOW_PASS: Param[HertzUnit] = Param(5, 'IR_1_LOW_PASS')    # float Hz
+    IR_1_PAN: Param[NoUnit] = Param(6, 'IR_1_PAN')    # float
+    IR_1_DELAY: Param[MillisecondsUnit] = Param(7, 'IR_1_DELAY')    # float ms
+    IR_2_MUTE: Param[NoUnit] = Param(8, 'IR_2_MUTE')    # switch
+    IR_2_INVERT: Param[NoUnit] = Param(9, 'IR_2_INVERT')    # switch
+    IR_2_PATH: Param[NoUnit] = Param(10, 'IR_2_PATH')    # string
+    IR_2_LEVEL: Param[DbUnit] = Param(11, 'IR_2_LEVEL')    # float dB
+    IR_2_HI_PASS: Param[HertzUnit] = Param(12, 'IR_2_HI_PASS')    # float Hz
+    IR_2_LOW_PASS: Param[HertzUnit] = Param(13, 'IR_2_LOW_PASS')    # float Hz
+    IR_2_PAN: Param[NoUnit] = Param(14, 'IR_2_PAN')    # float
+    IR_2_DELAY: Param[MillisecondsUnit] = Param(15, 'IR_2_DELAY')    # float ms
+    ROOM_MIX: Param[PercentUnit] = Param(16, 'ROOM_MIX')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(17, 'PRE_DELAY')    # float ms
+    REV_HI_PASS: Param[HertzUnit] = Param(18, 'REV_HI_PASS')    # float Hz
+    REV_LOW_PASS: Param[HertzUnit] = Param(19, 'REV_LOW_PASS')    # float Hz
+    SIZE: Param[NoUnit] = Param(20, 'SIZE')    # rotarySwitch
+    GLOBAL_OUTPUT: Param[DbUnit] = Param(21, 'GLOBAL_OUTPUT')    # float dB
+    IR_1_NAME: Param[NoUnit] = Param(22, 'IR_1_NAME')    # string
+    IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class DualSt(IntEnum):
+class DualSt(ParamSet):
     """Dual (ST) (IRLoaders)."""
 
-    IR_1_MUTE = 0    # switch
-    IR_1_INVERT = 1    # switch
-    IR_1_PATH = 2    # string
-    IR_1_LEVEL = 3    # float dB
-    IR_1_HI_PASS = 4    # float Hz
-    IR_1_LOW_PASS = 5    # float Hz
-    IR_1_BALANCE = 6    # float
-    IR_1_DELAY = 7    # float ms
-    IR_2_MUTE = 8    # switch
-    IR_2_INVERT = 9    # switch
-    IR_2_PATH = 10    # string
-    IR_2_LEVEL = 11    # float dB
-    IR_2_HI_PASS = 12    # float Hz
-    IR_2_LOW_PASS = 13    # float Hz
-    IR_2_BALANCE = 14    # float
-    IR_2_DELAY = 15    # float ms
-    ROOM_MIX = 16    # float %
-    PRE_DELAY = 17    # float ms
-    REV_HI_PASS = 18    # float Hz
-    REV_LOW_PASS = 19    # float Hz
-    SIZE = 20    # rotarySwitch
-    GLOBAL_OUTPUT = 21    # float dB
-    IR_1_NAME = 22    # string
-    IR_2_NAME = 23    # string
+    IR_1_MUTE: Param[NoUnit] = Param(0, 'IR_1_MUTE')    # switch
+    IR_1_INVERT: Param[NoUnit] = Param(1, 'IR_1_INVERT')    # switch
+    IR_1_PATH: Param[NoUnit] = Param(2, 'IR_1_PATH')    # string
+    IR_1_LEVEL: Param[DbUnit] = Param(3, 'IR_1_LEVEL')    # float dB
+    IR_1_HI_PASS: Param[HertzUnit] = Param(4, 'IR_1_HI_PASS')    # float Hz
+    IR_1_LOW_PASS: Param[HertzUnit] = Param(5, 'IR_1_LOW_PASS')    # float Hz
+    IR_1_BALANCE: Param[NoUnit] = Param(6, 'IR_1_BALANCE')    # float
+    IR_1_DELAY: Param[MillisecondsUnit] = Param(7, 'IR_1_DELAY')    # float ms
+    IR_2_MUTE: Param[NoUnit] = Param(8, 'IR_2_MUTE')    # switch
+    IR_2_INVERT: Param[NoUnit] = Param(9, 'IR_2_INVERT')    # switch
+    IR_2_PATH: Param[NoUnit] = Param(10, 'IR_2_PATH')    # string
+    IR_2_LEVEL: Param[DbUnit] = Param(11, 'IR_2_LEVEL')    # float dB
+    IR_2_HI_PASS: Param[HertzUnit] = Param(12, 'IR_2_HI_PASS')    # float Hz
+    IR_2_LOW_PASS: Param[HertzUnit] = Param(13, 'IR_2_LOW_PASS')    # float Hz
+    IR_2_BALANCE: Param[NoUnit] = Param(14, 'IR_2_BALANCE')    # float
+    IR_2_DELAY: Param[MillisecondsUnit] = Param(15, 'IR_2_DELAY')    # float ms
+    ROOM_MIX: Param[PercentUnit] = Param(16, 'ROOM_MIX')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(17, 'PRE_DELAY')    # float ms
+    REV_HI_PASS: Param[HertzUnit] = Param(18, 'REV_HI_PASS')    # float Hz
+    REV_LOW_PASS: Param[HertzUnit] = Param(19, 'REV_LOW_PASS')    # float Hz
+    SIZE: Param[NoUnit] = Param(20, 'SIZE')    # rotarySwitch
+    GLOBAL_OUTPUT: Param[DbUnit] = Param(21, 'GLOBAL_OUTPUT')    # float dB
+    IR_1_NAME: Param[NoUnit] = Param(22, 'IR_1_NAME')    # string
+    IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class SingleMLite(IntEnum):
+class SingleMLite(ParamSet):
     """Single (M) Lite (IRLoaders)."""
 
-    IR_1_MUTE = 0    # switch
-    IR_1_INVERT = 1    # switch
-    IR_1_PATH = 2    # string
-    IR_1_LEVEL = 3    # float dB
-    IR_1_HI_PASS = 4    # float Hz
-    IR_1_LOW_PASS = 5    # float Hz
-    IR_1_PAN = 6    # float
-    IR_1_DELAY = 7    # float ms
-    IR_2_MUTE = 8    # switch
-    IR_2_INVERT = 9    # switch
-    IR_2_PATH = 10    # string
-    IR_2_LEVEL = 11    # float dB
-    IR_2_HI_PASS = 12    # float Hz
-    IR_2_LOW_PASS = 13    # float Hz
-    IR_2_PAN = 14    # float
-    IR_2_DELAY = 15    # float ms
-    ROOM_MIX = 16    # float %
-    PRE_DELAY = 17    # float ms
-    REV_HI_PASS = 18    # float Hz
-    REV_LOW_PASS = 19    # float Hz
-    SIZE = 20    # rotarySwitch
-    GLOBAL_OUTPUT = 21    # float dB
-    IR_1_NAME = 22    # string
-    IR_2_NAME = 23    # string
+    IR_1_MUTE: Param[NoUnit] = Param(0, 'IR_1_MUTE')    # switch
+    IR_1_INVERT: Param[NoUnit] = Param(1, 'IR_1_INVERT')    # switch
+    IR_1_PATH: Param[NoUnit] = Param(2, 'IR_1_PATH')    # string
+    IR_1_LEVEL: Param[DbUnit] = Param(3, 'IR_1_LEVEL')    # float dB
+    IR_1_HI_PASS: Param[HertzUnit] = Param(4, 'IR_1_HI_PASS')    # float Hz
+    IR_1_LOW_PASS: Param[HertzUnit] = Param(5, 'IR_1_LOW_PASS')    # float Hz
+    IR_1_PAN: Param[NoUnit] = Param(6, 'IR_1_PAN')    # float
+    IR_1_DELAY: Param[MillisecondsUnit] = Param(7, 'IR_1_DELAY')    # float ms
+    IR_2_MUTE: Param[NoUnit] = Param(8, 'IR_2_MUTE')    # switch
+    IR_2_INVERT: Param[NoUnit] = Param(9, 'IR_2_INVERT')    # switch
+    IR_2_PATH: Param[NoUnit] = Param(10, 'IR_2_PATH')    # string
+    IR_2_LEVEL: Param[DbUnit] = Param(11, 'IR_2_LEVEL')    # float dB
+    IR_2_HI_PASS: Param[HertzUnit] = Param(12, 'IR_2_HI_PASS')    # float Hz
+    IR_2_LOW_PASS: Param[HertzUnit] = Param(13, 'IR_2_LOW_PASS')    # float Hz
+    IR_2_PAN: Param[NoUnit] = Param(14, 'IR_2_PAN')    # float
+    IR_2_DELAY: Param[MillisecondsUnit] = Param(15, 'IR_2_DELAY')    # float ms
+    ROOM_MIX: Param[PercentUnit] = Param(16, 'ROOM_MIX')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(17, 'PRE_DELAY')    # float ms
+    REV_HI_PASS: Param[HertzUnit] = Param(18, 'REV_HI_PASS')    # float Hz
+    REV_LOW_PASS: Param[HertzUnit] = Param(19, 'REV_LOW_PASS')    # float Hz
+    SIZE: Param[NoUnit] = Param(20, 'SIZE')    # rotarySwitch
+    GLOBAL_OUTPUT: Param[DbUnit] = Param(21, 'GLOBAL_OUTPUT')    # float dB
+    IR_1_NAME: Param[NoUnit] = Param(22, 'IR_1_NAME')    # string
+    IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class SingleStLite(IntEnum):
+class SingleStLite(ParamSet):
     """Single (ST) Lite (IRLoaders)."""
 
-    IR_1_MUTE = 0    # switch
-    IR_1_INVERT = 1    # switch
-    IR_1_PATH = 2    # string
-    IR_1_LEVEL = 3    # float dB
-    IR_1_HI_PASS = 4    # float Hz
-    IR_1_LOW_PASS = 5    # float Hz
-    IR_1_PAN = 6    # float
-    IR_1_DELAY = 7    # float ms
-    IR_2_MUTE = 8    # switch
-    IR_2_INVERT = 9    # switch
-    IR_2_PATH = 10    # string
-    IR_2_LEVEL = 11    # float dB
-    IR_2_HI_PASS = 12    # float Hz
-    IR_2_LOW_PASS = 13    # float Hz
-    IR_2_PAN = 14    # float
-    IR_2_DELAY = 15    # float ms
-    ROOM_MIX = 16    # float %
-    PRE_DELAY = 17    # float ms
-    REV_HI_PASS = 18    # float Hz
-    REV_LOW_PASS = 19    # float Hz
-    SIZE = 20    # rotarySwitch
-    GLOBAL_OUTPUT = 21    # float dB
-    IR_1_NAME = 22    # string
-    IR_2_NAME = 23    # string
+    IR_1_MUTE: Param[NoUnit] = Param(0, 'IR_1_MUTE')    # switch
+    IR_1_INVERT: Param[NoUnit] = Param(1, 'IR_1_INVERT')    # switch
+    IR_1_PATH: Param[NoUnit] = Param(2, 'IR_1_PATH')    # string
+    IR_1_LEVEL: Param[DbUnit] = Param(3, 'IR_1_LEVEL')    # float dB
+    IR_1_HI_PASS: Param[HertzUnit] = Param(4, 'IR_1_HI_PASS')    # float Hz
+    IR_1_LOW_PASS: Param[HertzUnit] = Param(5, 'IR_1_LOW_PASS')    # float Hz
+    IR_1_PAN: Param[NoUnit] = Param(6, 'IR_1_PAN')    # float
+    IR_1_DELAY: Param[MillisecondsUnit] = Param(7, 'IR_1_DELAY')    # float ms
+    IR_2_MUTE: Param[NoUnit] = Param(8, 'IR_2_MUTE')    # switch
+    IR_2_INVERT: Param[NoUnit] = Param(9, 'IR_2_INVERT')    # switch
+    IR_2_PATH: Param[NoUnit] = Param(10, 'IR_2_PATH')    # string
+    IR_2_LEVEL: Param[DbUnit] = Param(11, 'IR_2_LEVEL')    # float dB
+    IR_2_HI_PASS: Param[HertzUnit] = Param(12, 'IR_2_HI_PASS')    # float Hz
+    IR_2_LOW_PASS: Param[HertzUnit] = Param(13, 'IR_2_LOW_PASS')    # float Hz
+    IR_2_PAN: Param[NoUnit] = Param(14, 'IR_2_PAN')    # float
+    IR_2_DELAY: Param[MillisecondsUnit] = Param(15, 'IR_2_DELAY')    # float ms
+    ROOM_MIX: Param[PercentUnit] = Param(16, 'ROOM_MIX')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(17, 'PRE_DELAY')    # float ms
+    REV_HI_PASS: Param[HertzUnit] = Param(18, 'REV_HI_PASS')    # float Hz
+    REV_LOW_PASS: Param[HertzUnit] = Param(19, 'REV_LOW_PASS')    # float Hz
+    SIZE: Param[NoUnit] = Param(20, 'SIZE')    # rotarySwitch
+    GLOBAL_OUTPUT: Param[DbUnit] = Param(21, 'GLOBAL_OUTPUT')    # float dB
+    IR_1_NAME: Param[NoUnit] = Param(22, 'IR_1_NAME')    # string
+    IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class DualMLite(IntEnum):
+class DualMLite(ParamSet):
     """Dual (M) Lite (IRLoaders)."""
 
-    IR_1_MUTE = 0    # switch
-    IR_1_INVERT = 1    # switch
-    IR_1_PATH = 2    # string
-    IR_1_LEVEL = 3    # float dB
-    IR_1_HI_PASS = 4    # float Hz
-    IR_1_LOW_PASS = 5    # float Hz
-    IR_1_PAN = 6    # float
-    IR_1_DELAY = 7    # float ms
-    IR_2_MUTE = 8    # switch
-    IR_2_INVERT = 9    # switch
-    IR_2_PATH = 10    # string
-    IR_2_LEVEL = 11    # float dB
-    IR_2_HI_PASS = 12    # float Hz
-    IR_2_LOW_PASS = 13    # float Hz
-    IR_2_PAN = 14    # float
-    IR_2_DELAY = 15    # float ms
-    ROOM_MIX = 16    # float %
-    PRE_DELAY = 17    # float ms
-    REV_HI_PASS = 18    # float Hz
-    REV_LOW_PASS = 19    # float Hz
-    SIZE = 20    # rotarySwitch
-    GLOBAL_OUTPUT = 21    # float dB
-    IR_1_NAME = 22    # string
-    IR_2_NAME = 23    # string
+    IR_1_MUTE: Param[NoUnit] = Param(0, 'IR_1_MUTE')    # switch
+    IR_1_INVERT: Param[NoUnit] = Param(1, 'IR_1_INVERT')    # switch
+    IR_1_PATH: Param[NoUnit] = Param(2, 'IR_1_PATH')    # string
+    IR_1_LEVEL: Param[DbUnit] = Param(3, 'IR_1_LEVEL')    # float dB
+    IR_1_HI_PASS: Param[HertzUnit] = Param(4, 'IR_1_HI_PASS')    # float Hz
+    IR_1_LOW_PASS: Param[HertzUnit] = Param(5, 'IR_1_LOW_PASS')    # float Hz
+    IR_1_PAN: Param[NoUnit] = Param(6, 'IR_1_PAN')    # float
+    IR_1_DELAY: Param[MillisecondsUnit] = Param(7, 'IR_1_DELAY')    # float ms
+    IR_2_MUTE: Param[NoUnit] = Param(8, 'IR_2_MUTE')    # switch
+    IR_2_INVERT: Param[NoUnit] = Param(9, 'IR_2_INVERT')    # switch
+    IR_2_PATH: Param[NoUnit] = Param(10, 'IR_2_PATH')    # string
+    IR_2_LEVEL: Param[DbUnit] = Param(11, 'IR_2_LEVEL')    # float dB
+    IR_2_HI_PASS: Param[HertzUnit] = Param(12, 'IR_2_HI_PASS')    # float Hz
+    IR_2_LOW_PASS: Param[HertzUnit] = Param(13, 'IR_2_LOW_PASS')    # float Hz
+    IR_2_PAN: Param[NoUnit] = Param(14, 'IR_2_PAN')    # float
+    IR_2_DELAY: Param[MillisecondsUnit] = Param(15, 'IR_2_DELAY')    # float ms
+    ROOM_MIX: Param[PercentUnit] = Param(16, 'ROOM_MIX')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(17, 'PRE_DELAY')    # float ms
+    REV_HI_PASS: Param[HertzUnit] = Param(18, 'REV_HI_PASS')    # float Hz
+    REV_LOW_PASS: Param[HertzUnit] = Param(19, 'REV_LOW_PASS')    # float Hz
+    SIZE: Param[NoUnit] = Param(20, 'SIZE')    # rotarySwitch
+    GLOBAL_OUTPUT: Param[DbUnit] = Param(21, 'GLOBAL_OUTPUT')    # float dB
+    IR_1_NAME: Param[NoUnit] = Param(22, 'IR_1_NAME')    # string
+    IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class DualStLite(IntEnum):
+class DualStLite(ParamSet):
     """Dual (ST) Lite (IRLoaders)."""
 
-    IR_1_MUTE = 0    # switch
-    IR_1_INVERT = 1    # switch
-    IR_1_PATH = 2    # string
-    IR_1_LEVEL = 3    # float dB
-    IR_1_HI_PASS = 4    # float Hz
-    IR_1_LOW_PASS = 5    # float Hz
-    IR_1_BALANCE = 6    # float
-    IR_1_DELAY = 7    # float ms
-    IR_2_MUTE = 8    # switch
-    IR_2_INVERT = 9    # switch
-    IR_2_PATH = 10    # string
-    IR_2_LEVEL = 11    # float dB
-    IR_2_HI_PASS = 12    # float Hz
-    IR_2_LOW_PASS = 13    # float Hz
-    IR_2_BALANCE = 14    # float
-    IR_2_DELAY = 15    # float ms
-    ROOM_MIX = 16    # float %
-    PRE_DELAY = 17    # float ms
-    REV_HI_PASS = 18    # float Hz
-    REV_LOW_PASS = 19    # float Hz
-    SIZE = 20    # rotarySwitch
-    GLOBAL_OUTPUT = 21    # float dB
-    IR_1_NAME = 22    # string
-    IR_2_NAME = 23    # string
+    IR_1_MUTE: Param[NoUnit] = Param(0, 'IR_1_MUTE')    # switch
+    IR_1_INVERT: Param[NoUnit] = Param(1, 'IR_1_INVERT')    # switch
+    IR_1_PATH: Param[NoUnit] = Param(2, 'IR_1_PATH')    # string
+    IR_1_LEVEL: Param[DbUnit] = Param(3, 'IR_1_LEVEL')    # float dB
+    IR_1_HI_PASS: Param[HertzUnit] = Param(4, 'IR_1_HI_PASS')    # float Hz
+    IR_1_LOW_PASS: Param[HertzUnit] = Param(5, 'IR_1_LOW_PASS')    # float Hz
+    IR_1_BALANCE: Param[NoUnit] = Param(6, 'IR_1_BALANCE')    # float
+    IR_1_DELAY: Param[MillisecondsUnit] = Param(7, 'IR_1_DELAY')    # float ms
+    IR_2_MUTE: Param[NoUnit] = Param(8, 'IR_2_MUTE')    # switch
+    IR_2_INVERT: Param[NoUnit] = Param(9, 'IR_2_INVERT')    # switch
+    IR_2_PATH: Param[NoUnit] = Param(10, 'IR_2_PATH')    # string
+    IR_2_LEVEL: Param[DbUnit] = Param(11, 'IR_2_LEVEL')    # float dB
+    IR_2_HI_PASS: Param[HertzUnit] = Param(12, 'IR_2_HI_PASS')    # float Hz
+    IR_2_LOW_PASS: Param[HertzUnit] = Param(13, 'IR_2_LOW_PASS')    # float Hz
+    IR_2_BALANCE: Param[NoUnit] = Param(14, 'IR_2_BALANCE')    # float
+    IR_2_DELAY: Param[MillisecondsUnit] = Param(15, 'IR_2_DELAY')    # float ms
+    ROOM_MIX: Param[PercentUnit] = Param(16, 'ROOM_MIX')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(17, 'PRE_DELAY')    # float ms
+    REV_HI_PASS: Param[HertzUnit] = Param(18, 'REV_HI_PASS')    # float Hz
+    REV_LOW_PASS: Param[HertzUnit] = Param(19, 'REV_LOW_PASS')    # float Hz
+    SIZE: Param[NoUnit] = Param(20, 'SIZE')    # rotarySwitch
+    GLOBAL_OUTPUT: Param[DbUnit] = Param(21, 'GLOBAL_OUTPUT')    # float dB
+    IR_1_NAME: Param[NoUnit] = Param(22, 'IR_1_NAME')    # string
+    IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class MonoSynth(IntEnum):
+class MonoSynth(ParamSet):
     """Mono Synth (Synth)."""
 
-    MIX = 0    # float %
-    SENSITIVITY = 1    # float %
-    ENV_RETRIGGER = 2    # switch
-    TUNING = 3    # float Hz
-    QUANTIZE = 4    # switch
-    ROOT = 5    # comboBox
-    SCALE = 6    # switch
-    SYNTH_ACTIVE = 7    # switch
-    SYNTH_LEVEL = 8    # float dB
-    OSC1_ACTIVE = 9    # switch
-    OSC1_WAVE = 10    # rotarySwitch
-    OSC_1_LEVEL = 11    # float dB
-    OSC_1_STEPS = 12    # float st
-    OSC_1_DETUNE = 13    # float %
-    OSC2_ACTIVE = 14    # switch
-    OSC2_WAVE = 15    # rotarySwitch
-    OSC_2_LEVEL = 16    # float dB
-    OSC_2_STEPS = 17    # float st
-    OSC_2_DETUNE = 18    # float %
-    UNISON_SOURCE = 19    # comboBox
-    UNI_AMOUNT = 20    # rotarySwitch
-    UNI_DETUNE = 21    # float %
-    UNI_WIDTH = 22    # float %
-    FILTER = 23    # switch
-    SLOPE = 24    # rotarySwitch
-    CUTOFF = 25    # float Hz
-    FILT_MOD = 26    # float %
-    RESONANCE = 27    # float %
-    DRIVE = 28    # float %
-    F_E_AMOUNT = 29    # float %
-    F_E_DCY_ATCK = 30    # float ms
-    F_E_SUSTAIN = 31    # float %
-    ENV_DCY_ATCK = 32    # float ms
-    ENV_SUSTAIN = 33    # float %
-    GATE = 34    # float dB
-    OUTPUT = 35    # float dB
-    GLIDE = 36    # float ms
-    S_C_SOURCE = 37    # comboBox
-    ARPEGGIATOR = 38    # switch
-    ARP_PATTERN = 39    # rotarySwitch
-    OCTAVE = 40    # rotarySwitch
-    ARP_NOTE_2 = 41    # switch
-    ARP_NOTE_3 = 42    # switch
-    ARP_NOTE_4 = 43    # switch
-    ARP_NOTE_5 = 44    # switch
-    ARP_NOTE_6 = 45    # switch
-    ARP_NOTE_7 = 46    # switch
-    ARP_NOTE_8 = 47    # switch
-    FREE_RATE = 48    # float Hz
-    SYNC = 49    # switch
-    SYNC_NOTE = 50    # comboBox
-    MIDI_CH = 51    # comboBox
-    MIDI_NOTE = 52    # float
-    MIDI_VELOCITY = 53    # float
-    MIDI_TRIGGER = 54    # switch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SENSITIVITY: Param[PercentUnit] = Param(1, 'SENSITIVITY')    # float %
+    ENV_RETRIGGER: Param[NoUnit] = Param(2, 'ENV_RETRIGGER')    # switch
+    TUNING: Param[HertzUnit] = Param(3, 'TUNING')    # float Hz
+    QUANTIZE: Param[NoUnit] = Param(4, 'QUANTIZE')    # switch
+    ROOT: Param[NoUnit] = Param(5, 'ROOT')    # comboBox
+    SCALE: Param[NoUnit] = Param(6, 'SCALE')    # switch
+    SYNTH_ACTIVE: Param[NoUnit] = Param(7, 'SYNTH_ACTIVE')    # switch
+    SYNTH_LEVEL: Param[DbUnit] = Param(8, 'SYNTH_LEVEL')    # float dB
+    OSC1_ACTIVE: Param[NoUnit] = Param(9, 'OSC1_ACTIVE')    # switch
+    OSC1_WAVE: Param[NoUnit] = Param(10, 'OSC1_WAVE')    # rotarySwitch
+    OSC_1_LEVEL: Param[DbUnit] = Param(11, 'OSC_1_LEVEL')    # float dB
+    OSC_1_STEPS: Param[SemitonesUnit] = Param(12, 'OSC_1_STEPS')    # float st
+    OSC_1_DETUNE: Param[PercentUnit] = Param(13, 'OSC_1_DETUNE')    # float %
+    OSC2_ACTIVE: Param[NoUnit] = Param(14, 'OSC2_ACTIVE')    # switch
+    OSC2_WAVE: Param[NoUnit] = Param(15, 'OSC2_WAVE')    # rotarySwitch
+    OSC_2_LEVEL: Param[DbUnit] = Param(16, 'OSC_2_LEVEL')    # float dB
+    OSC_2_STEPS: Param[SemitonesUnit] = Param(17, 'OSC_2_STEPS')    # float st
+    OSC_2_DETUNE: Param[PercentUnit] = Param(18, 'OSC_2_DETUNE')    # float %
+    UNISON_SOURCE: Param[NoUnit] = Param(19, 'UNISON_SOURCE')    # comboBox
+    UNI_AMOUNT: Param[NoUnit] = Param(20, 'UNI_AMOUNT')    # rotarySwitch
+    UNI_DETUNE: Param[PercentUnit] = Param(21, 'UNI_DETUNE')    # float %
+    UNI_WIDTH: Param[PercentUnit] = Param(22, 'UNI_WIDTH')    # float %
+    FILTER: Param[NoUnit] = Param(23, 'FILTER')    # switch
+    SLOPE: Param[NoUnit] = Param(24, 'SLOPE')    # rotarySwitch
+    CUTOFF: Param[HertzUnit] = Param(25, 'CUTOFF')    # float Hz
+    FILT_MOD: Param[PercentUnit] = Param(26, 'FILT_MOD')    # float %
+    RESONANCE: Param[PercentUnit] = Param(27, 'RESONANCE')    # float %
+    DRIVE: Param[PercentUnit] = Param(28, 'DRIVE')    # float %
+    F_E_AMOUNT: Param[PercentUnit] = Param(29, 'F_E_AMOUNT')    # float %
+    F_E_DCY_ATCK: Param[MillisecondsUnit] = Param(30, 'F_E_DCY_ATCK')    # float ms
+    F_E_SUSTAIN: Param[PercentUnit] = Param(31, 'F_E_SUSTAIN')    # float %
+    ENV_DCY_ATCK: Param[MillisecondsUnit] = Param(32, 'ENV_DCY_ATCK')    # float ms
+    ENV_SUSTAIN: Param[PercentUnit] = Param(33, 'ENV_SUSTAIN')    # float %
+    GATE: Param[DbUnit] = Param(34, 'GATE')    # float dB
+    OUTPUT: Param[DbUnit] = Param(35, 'OUTPUT')    # float dB
+    GLIDE: Param[MillisecondsUnit] = Param(36, 'GLIDE')    # float ms
+    S_C_SOURCE: Param[NoUnit] = Param(37, 'S_C_SOURCE')    # comboBox
+    ARPEGGIATOR: Param[NoUnit] = Param(38, 'ARPEGGIATOR')    # switch
+    ARP_PATTERN: Param[NoUnit] = Param(39, 'ARP_PATTERN')    # rotarySwitch
+    OCTAVE: Param[NoUnit] = Param(40, 'OCTAVE')    # rotarySwitch
+    ARP_NOTE_2: Param[NoUnit] = Param(41, 'ARP_NOTE_2')    # switch
+    ARP_NOTE_3: Param[NoUnit] = Param(42, 'ARP_NOTE_3')    # switch
+    ARP_NOTE_4: Param[NoUnit] = Param(43, 'ARP_NOTE_4')    # switch
+    ARP_NOTE_5: Param[NoUnit] = Param(44, 'ARP_NOTE_5')    # switch
+    ARP_NOTE_6: Param[NoUnit] = Param(45, 'ARP_NOTE_6')    # switch
+    ARP_NOTE_7: Param[NoUnit] = Param(46, 'ARP_NOTE_7')    # switch
+    ARP_NOTE_8: Param[NoUnit] = Param(47, 'ARP_NOTE_8')    # switch
+    FREE_RATE: Param[HertzUnit] = Param(48, 'FREE_RATE')    # float Hz
+    SYNC: Param[NoUnit] = Param(49, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(50, 'SYNC_NOTE')    # comboBox
+    MIDI_CH: Param[NoUnit] = Param(51, 'MIDI_CH')    # comboBox
+    MIDI_NOTE: Param[NoUnit] = Param(52, 'MIDI_NOTE')    # float
+    MIDI_VELOCITY: Param[NoUnit] = Param(53, 'MIDI_VELOCITY')    # float
+    MIDI_TRIGGER: Param[NoUnit] = Param(54, 'MIDI_TRIGGER')    # switch
 
 
-class Green808Legacy(IntEnum):
+class Green808Legacy(ParamSet):
     """Green 808 (Guitar Overdrive)."""
 
-    OVERDRIVE = 0    # float
-    TONE = 1    # float
-    LEVEL = 2    # float
+    OVERDRIVE: Param[NoUnit] = Param(0, 'OVERDRIVE')    # float
+    TONE: Param[NoUnit] = Param(1, 'TONE')    # float
+    LEVEL: Param[NoUnit] = Param(2, 'LEVEL')    # float
 
 
-class Ev101iiisRedEl34100wLegacy(IntEnum):
+class Ev101iiisRedEl34100wLegacy(ParamSet):
     """EV101IIIS Red EL34 100W (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    RESONANCE = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    RESONANCE: Param[NoUnit] = Param(6, 'RESONANCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Solo100LeadLegacy(IntEnum):
+class Solo100LeadLegacy(ParamSet):
     """Solo 100 Lead (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class UsDlxNormalLegacy(IntEnum):
+class UsDlxNormalLegacy(ParamSet):
     """US DLX Normal (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BASS = 1    # float
-    TREBLE = 2    # float
-    OUTPUT = 3    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class UsDlxVibratoLegacy(IntEnum):
+class UsDlxVibratoLegacy(ParamSet):
     """US DLX Vibrato (Guitar Amplifier)."""
 
-    VOLUME = 0    # float
-    BASS = 1    # float
-    TREBLE = 2    # float
-    OUTPUT = 3    # float dB
+    VOLUME: Param[NoUnit] = Param(0, 'VOLUME')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    TREBLE: Param[NoUnit] = Param(2, 'TREBLE')    # float
+    OUTPUT: Param[DbUnit] = Param(3, 'OUTPUT')    # float dB
 
 
-class Ev101iiisBlueEl34100wLegacy(IntEnum):
+class Ev101iiisBlueEl34100wLegacy(ParamSet):
     """EV101IIIS Blue EL34 100W (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    RESONANCE = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    RESONANCE: Param[NoUnit] = Param(6, 'RESONANCE')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Solo100CrunchBrightLegacy(IntEnum):
+class Solo100CrunchBrightLegacy(ParamSet):
     """Solo 100 Crunch Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class Solo100CrunchNormalLegacy(IntEnum):
+class Solo100CrunchNormalLegacy(ParamSet):
     """Solo 100 Crunch Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    OUTPUT = 6    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch1BrightLegacy(IntEnum):
+class DCellH4Ch1BrightLegacy(ParamSet):
     """D-Cell H4 Ch1 Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch1NormalLegacy(IntEnum):
+class DCellH4Ch1NormalLegacy(ParamSet):
     """D-Cell H4 Ch1 Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch2BrightLegacy(IntEnum):
+class DCellH4Ch2BrightLegacy(ParamSet):
     """D-Cell H4 Ch2 Bright (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch2NormalLegacy(IntEnum):
+class DCellH4Ch2NormalLegacy(ParamSet):
     """D-Cell H4 Ch2 Normal (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch3Legacy(IntEnum):
+class DCellH4Ch3Legacy(ParamSet):
     """D-Cell H4 Ch3 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class DCellH4Ch4Legacy(IntEnum):
+class DCellH4Ch4Legacy(ParamSet):
     """D-Cell H4 Ch4 (Guitar Amplifier)."""
 
-    GAIN = 0    # float
-    BASS = 1    # float
-    MID = 2    # float
-    TREBLE = 3    # float
-    MASTER = 4    # float
-    PRESENCE = 5    # float
-    DEEP = 6    # float
-    OUTPUT = 7    # float dB
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    BASS: Param[NoUnit] = Param(1, 'BASS')    # float
+    MID: Param[NoUnit] = Param(2, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(3, 'TREBLE')    # float
+    MASTER: Param[NoUnit] = Param(4, 'MASTER')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    DEEP: Param[NoUnit] = Param(6, 'DEEP')    # float
+    OUTPUT: Param[DbUnit] = Param(7, 'OUTPUT')    # float dB
 
 
-class Graphic9Legacy(IntEnum):
+class Graphic9Legacy(ParamSet):
     """Graphic-9 (Equalizer)."""
 
-    HPF = 0    # float Hz
-    N65HZ = 1    # float dB
-    N125HZ = 2    # float dB
-    N250HZ = 3    # float dB
-    N500HZ = 4    # float dB
-    N1KHZ = 5    # float dB
-    N2KHZ = 6    # float dB
-    N4KHZ = 7    # float dB
-    N8KHZ = 8    # float dB
-    N16KHZ = 9    # float dB
-    OUTPUT = 10    # float dB
+    HPF: Param[HertzUnit] = Param(0, 'HPF')    # float Hz
+    N65HZ: Param[DbUnit] = Param(1, 'N65HZ')    # float dB
+    N125HZ: Param[DbUnit] = Param(2, 'N125HZ')    # float dB
+    N250HZ: Param[DbUnit] = Param(3, 'N250HZ')    # float dB
+    N500HZ: Param[DbUnit] = Param(4, 'N500HZ')    # float dB
+    N1KHZ: Param[DbUnit] = Param(5, 'N1KHZ')    # float dB
+    N2KHZ: Param[DbUnit] = Param(6, 'N2KHZ')    # float dB
+    N4KHZ: Param[DbUnit] = Param(7, 'N4KHZ')    # float dB
+    N8KHZ: Param[DbUnit] = Param(8, 'N8KHZ')    # float dB
+    N16KHZ: Param[DbUnit] = Param(9, 'N16KHZ')    # float dB
+    OUTPUT: Param[DbUnit] = Param(10, 'OUTPUT')    # float dB
 
 
-class PhaserLegacy(IntEnum):
+class PhaserLegacy(ParamSet):
     """Phaser (Modulation)."""
 
-    MIX = 0    # float %
-    SPEED = 1    # float
-    WIDTH = 2    # float %
-    DRIVE = 3    # float %
-    SYNC = 4    # switch
-    SYNC_NOTE = 5    # rotarySwitch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SPEED: Param[NoUnit] = Param(1, 'SPEED')    # float
+    WIDTH: Param[PercentUnit] = Param(2, 'WIDTH')    # float %
+    DRIVE: Param[PercentUnit] = Param(3, 'DRIVE')    # float %
+    SYNC: Param[NoUnit] = Param(4, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(5, 'SYNC_NOTE')    # rotarySwitch
 
 
-class NuvibesLegacy(IntEnum):
+class NuvibesLegacy(ParamSet):
     """NuVibes (Modulation)."""
 
-    MIX = 0    # float %
-    RATE = 1    # float Hz
-    INTENSITY = 2    # float %
-    WIDTH = 3    # float %
-    SHAPE = 4    # float %
-    DRIVE = 5    # float %
-    SYNC = 6    # switch
-    SYNC_NOTE = 7    # rotarySwitch
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    RATE: Param[HertzUnit] = Param(1, 'RATE')    # float Hz
+    INTENSITY: Param[PercentUnit] = Param(2, 'INTENSITY')    # float %
+    WIDTH: Param[PercentUnit] = Param(3, 'WIDTH')    # float %
+    SHAPE: Param[PercentUnit] = Param(4, 'SHAPE')    # float %
+    DRIVE: Param[PercentUnit] = Param(5, 'DRIVE')    # float %
+    SYNC: Param[NoUnit] = Param(6, 'SYNC')    # switch
+    SYNC_NOTE: Param[NoUnit] = Param(7, 'SYNC_NOTE')    # rotarySwitch
 
 
-class BadHorseLegacy(IntEnum):
+class BadHorseLegacy(ParamSet):
     """Bad Horse (Wah)."""
 
-    WAH = 0    # float
+    WAH: Param[NoUnit] = Param(0, 'WAH')    # float
 
 
-class EnvelopeFilterLegacy(IntEnum):
+class EnvelopeFilterLegacy(ParamSet):
     """Envelope Filter (Filter)."""
 
-    SENS = 0    # float dB
-    ATTACK = 1    # float ms
-    DECAY = 2    # float ms
-    LP_BP_HP = 3    # float
-    LEVEL = 4    # float dB
-    FREQ = 5    # float Hz
-    FREQ_ENV_AMT = 6    # float
-    RESO = 7    # float
-    RESO_ENV_AMT = 8    # float
-    MIX = 9    # float %
+    SENS: Param[DbUnit] = Param(0, 'SENS')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(1, 'ATTACK')    # float ms
+    DECAY: Param[MillisecondsUnit] = Param(2, 'DECAY')    # float ms
+    LP_BP_HP: Param[NoUnit] = Param(3, 'LP_BP_HP')    # float
+    LEVEL: Param[DbUnit] = Param(4, 'LEVEL')    # float dB
+    FREQ: Param[HertzUnit] = Param(5, 'FREQ')    # float Hz
+    FREQ_ENV_AMT: Param[NoUnit] = Param(6, 'FREQ_ENV_AMT')    # float
+    RESO: Param[NoUnit] = Param(7, 'RESO')    # float
+    RESO_ENV_AMT: Param[NoUnit] = Param(8, 'RESO_ENV_AMT')    # float
+    MIX: Param[PercentUnit] = Param(9, 'MIX')    # float %
 
 
-class EnvelopeFilterSCLegacy(IntEnum):
+class EnvelopeFilterSCLegacy(ParamSet):
     """Envelope Filter (S/C) (Filter)."""
 
-    SENS = 0    # float dB
-    ATTACK = 1    # float ms
-    DECAY = 2    # float ms
-    LP_BP_HP = 3    # float
-    LEVEL = 4    # float dB
-    FREQ = 5    # float Hz
-    FREQ_ENV_AMT = 6    # float
-    RESO = 7    # float
-    RESO_ENV_AMT = 8    # float
-    MIX = 9    # float %
-    SOURCE = 10    # comboBox
+    SENS: Param[DbUnit] = Param(0, 'SENS')    # float dB
+    ATTACK: Param[MillisecondsUnit] = Param(1, 'ATTACK')    # float ms
+    DECAY: Param[MillisecondsUnit] = Param(2, 'DECAY')    # float ms
+    LP_BP_HP: Param[NoUnit] = Param(3, 'LP_BP_HP')    # float
+    LEVEL: Param[DbUnit] = Param(4, 'LEVEL')    # float dB
+    FREQ: Param[HertzUnit] = Param(5, 'FREQ')    # float Hz
+    FREQ_ENV_AMT: Param[NoUnit] = Param(6, 'FREQ_ENV_AMT')    # float
+    RESO: Param[NoUnit] = Param(7, 'RESO')    # float
+    RESO_ENV_AMT: Param[NoUnit] = Param(8, 'RESO_ENV_AMT')    # float
+    MIX: Param[PercentUnit] = Param(9, 'MIX')    # float %
+    SOURCE: Param[NoUnit] = Param(10, 'SOURCE')    # comboBox
 
 
-#: Every generated enum, keyed by the model id it describes.
+#: Every generated parameter set, keyed by its model id.
 BY_MODEL = {
     1: MythDrive,
     2: ObsessiveDrive,

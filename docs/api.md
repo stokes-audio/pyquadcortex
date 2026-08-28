@@ -53,7 +53,7 @@ already read and need no connection; calling them as methods raises
 | **Input gate** | `set_param(LaneInput(row), param, value)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
 | **Split and mix** | `set_param(Splitter(row), param, ...)`, `set_param(Mixer(row), param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(cell, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
-| **Parameter names** | `protocol.params` - an `IntEnum` per model, so `params.LaneOutputParam.VOLUME` replaces `"VOLUME"`. A member IS its wire index, so it also skips the catalog fetch a name needs |
+| **Parameter names** | `protocol.params` - a constant per parameter, so `params.LaneOutputParam.VOLUME` replaces `"VOLUME"`. It IS its wire index, so it skips the catalog fetch a name needs, and it carries the parameter's UNIT in its type so a type checker rejects the wrong one |
 | **Expression pedals** | `set_expression(target, param, pedal, minimum, maximum)` and `clear_expression(target, param)`, against ANY target - a block, the lane output or input, the mixer, the splitter |
 | **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `protocol.midi_out(preset)` |
 | **Tempo MODE** | `tempo_mode()`, `set_tempo_mode(TempoMode.GLOBAL)` - global, and it picks which tempo block plays |

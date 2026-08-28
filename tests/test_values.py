@@ -207,13 +207,24 @@ UNTYPED_SPELLINGS = {
 }
 
 
+#: One generated constant: its unit MARKER type and the unit the trailing
+#: comment spells. Both come off the same line, which is what lets the test
+#: below hold them against each other.
+CONSTANT = re.compile(
+    r"^    [A-Z][A-Z0-9_]*: Param\[(?P<marker>\w+)\] = Param\(\d+, '[^']*'\)"
+    r"\s+#\s*(?P<type>[\w/]+)(?:\s+(?P<units>\S+))?\s*$")
+
+
+def _generated_constants():
+    return [m for m in (CONSTANT.match(line)
+                        for line in PARAMS_PY.read_text().splitlines()) if m]
+
+
 def _spellings_the_device_publishes():
     found = {}
-    for line in PARAMS_PY.read_text().splitlines():
-        match = re.match(r"^    [A-Z][A-Z0-9_]* = \d+\s+#\s*(\w[\w/]*)"
-                         r"(?:\s+(\S+))?\s*$", line)
-        if match and match.group(2):
-            found[match.group(2)] = found.get(match.group(2), 0) + 1
+    for match in _generated_constants():
+        if match["units"]:
+            found[match["units"]] = found.get(match["units"], 0) + 1
     return found
 
 
@@ -262,3 +273,40 @@ def test_the_two_double_spellings_are_both_really_there():
         for spelling in pair:
             assert spelling in published, spelling
         assert values.BY_CATALOG_UNIT[pair[0]] is values.BY_CATALOG_UNIT[pair[1]]
+
+
+def test_every_constants_marker_type_matches_the_unit_beside_it():
+    """The two halves of a generated line have to agree.
+
+    `params.py` carries a parameter's unit twice: once as the `Param[...]`
+    marker a type checker reads, and once in the trailing comment a person
+    reads. They come from the same catalog attribute, so a disagreement means
+    the generator's `UNIT_TYPES` map has drifted from `values.BY_CATALOG_UNIT`
+    - and the halves would then disagree silently, with the checker enforcing
+    one and the docs promising the other.
+    """
+    expected = {unit: cls.__name__ + "Unit" for unit, cls
+                in values.BY_CATALOG_UNIT.items()}
+    # The type names are not mechanically derived from the class names, so map
+    # the two that differ rather than pretending a rule exists.
+    expected.update({"Hz": "HertzUnit", "%": "PercentUnit", "BPM": "BpmUnit"})
+    for match in _generated_constants():
+        units, marker = match["units"], match["marker"]
+        if units and units in expected:
+            assert marker == expected[units], (
+                f"a constant in units={units!r} is tagged {marker}, and the "
+                f"value types say it should be {expected[units]}")
+        elif not units:
+            assert marker == "NoUnit", (
+                f"a constant with no unit is tagged {marker}, not NoUnit")
+
+
+def test_a_unit_with_no_value_type_is_tagged_as_having_none():
+    """`x`, `bits` and `dB/oct` decline a value type, so they decline a marker.
+
+    `NoUnit` is the honest tag: nothing checks them, and pretending otherwise
+    would make a checker enforce a unit the library does not model.
+    """
+    for match in _generated_constants():
+        if match["units"] in UNTYPED_SPELLINGS:
+            assert match["marker"] == "NoUnit"
