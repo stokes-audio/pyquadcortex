@@ -33,9 +33,9 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset
 def snapshot():
     """The hardware suite's helper, imported as a plain module, not collected.
 
-    ``tests/hardware/conftest.py`` refuses to COLLECT that directory without
-    ``--hardware``; importing one module out of it is a different thing, and safe
-    because nothing here touches a device.
+    ``tests/hardware/conftest.py`` refuses to RUN anything in that directory
+    without ``--hardware``; importing one module out of it is a different thing,
+    and safe because nothing here touches a device.
     """
     path = Path(__file__).parent / "hardware" / "state_snapshot.py"
     spec = importlib.util.spec_from_file_location("qc_state_snapshot", path)
