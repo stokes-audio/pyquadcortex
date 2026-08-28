@@ -196,10 +196,14 @@ qc.set_master_volume(Encoded(0.30))           # no screen scale is known
 qc.set_hold_timing(Milliseconds(800))         # no DEVICE scale exists
 ```
 
-**A measured scale** takes the unit type and converts: an input port's gain, and
-a Global EQ band's gain.
+**A known scale** takes the unit type and converts. There are two, and they are
+not known equally well. An input port's gain rests on four screen-and-wire pairs
+read together. A Global EQ band's gain rests on the MANUAL's span plus two
+points 6 dB apart on a range said to be 24 dB wide - enough to be useful, not
+enough to be sure, and `units.SETTING_SPANS` says so beside the number. Driving
+its ends on screen is what would settle it.
 
-**No measured scale** takes `Encoded` and nothing else - output port level, USB
+**No known scale** takes `Encoded` and nothing else - output port level, USB
 level, master volume, Global EQ frequency and Q, the Global EQ output level. A
 `Db` there raises `ControlNotDrivable` telling you what would have to be
 measured. It is not converted against a guess, because a wrong span is a silent

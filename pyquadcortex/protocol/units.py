@@ -230,33 +230,6 @@ def db_to_input_level(db: float) -> float:
     return (db - low) / (high - low)
 
 
-def global_eq_gain_db(value: float) -> float:
-    """Convert a Global EQ band's wire ``gain`` (0..1) to the dB it displays.
-
-    Linear over **-12 to +12 dB**, so ``dB = -12 + 24 * value``. The span is the
-    MANUAL's and rests on two points - see ``SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]``
-    for why that is weaker evidence than the input port's and what would settle
-    it. The Global EQ is not a catalog model, so nothing published describes
-    this scale.
-    """
-    low, high = SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]
-    return low + (high - low) * value
-
-
-def db_to_global_eq_gain(db: float) -> float:
-    """Convert Global EQ dB to the wire ``gain`` a band takes.
-
-    Inverse of :func:`global_eq_gain_db`. Outside the span is refused rather
-    than clamped, the same as every other converter here.
-    """
-    low, high = SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]
-    if not low <= db <= high:
-        raise ValueError(
-            f"a Global EQ band runs {low:g}..{high:g} dB; {db} dB does not exist"
-        )
-    return (db - low) / (high - low)
-
-
 def lane_level_db(value: float) -> float:
     """Convert a lane/mixer/splitter LEVEL wire ``value`` (0..1) to displayed dB.
 
@@ -353,6 +326,15 @@ SETTING_SPANS = {
     # apart on a span claimed to be 24 dB wide. Queued to be driven on screen.
     "GLOBAL_EQ_GAIN_DB": (-12.0, 12.0),
 }
+
+# There is deliberately NO `global_eq_gain_db()` pair beside `input_level_db()`.
+# The input port's pair predates ADR-0017 and has a caller that needs to convert
+# with no catalog in hand - `device/translate`. A span added since converts
+# through a `catalog.Parameter` built from the entry above, so it gets ADR-0015's
+# one law, the unit check and the range refusal at once. A function per span
+# would be a second implementation of each, which is what ADR-0017 says it
+# avoided; if a reader ever needs one in dB, the answer is a public accessor for
+# the scale, not a new pair of functions.
 
 
 #: Where user setlists live. They sit SIDE BY SIDE here rather than nested inside

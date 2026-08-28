@@ -467,3 +467,69 @@ def test_every_cab_that_describes_a_level_describes_the_same_one():
                 (3008, 16), (3008, 24)):
         spec = SCALES[key]
         assert (spec.minimum, spec.maximum, spec.skew) == law, key
+
+
+# -- the settings, whose spans the catalog does not publish --------------------
+
+
+SETTING_READINGS = [
+    # -- an input port's GAIN, 2026-08-25 ------------------------------------
+    # Four owner-set trims read on screen and on the wire at the same moment.
+    # The two interior points are what DISCRIMINATE the span - a wrong width
+    # still reproduces 0 dB at 1/6 - and until now they lived only in a comment
+    # in `units.py` while the tests asserted the two easy ones.
+    ("INPUT_GAIN_DB", 0.16667, 0.0, 1),
+    ("INPUT_GAIN_DB", 0.40043, 16.8, 1),
+    ("INPUT_GAIN_DB", 0.40556, 17.2, 1),
+    ("INPUT_GAIN_DB", 0.50009, 24.0, 1),
+
+    # -- a Global EQ band's GAIN ---------------------------------------------
+    # NOT a screen reading in the sense above, and listed apart on purpose: the
+    # span is the MANUAL's, and these two points are what the library was told
+    # rather than what anyone measured. They are 6 dB apart on a span claimed to
+    # be 24 dB wide, so they cannot distinguish it from a wider one - exactly
+    # the trap that put -100..+30 in this file for two releases. Driving the
+    # ENDS on screen is what would settle it.
+    ("GLOBAL_EQ_GAIN_DB", 0.5, 0.0, 1),
+    ("GLOBAL_EQ_GAIN_DB", 0.75, 6.0, 1),
+]
+
+
+@pytest.mark.parametrize("span_key, wire, screen, digits", SETTING_READINGS)
+def test_a_setting_span_reproduces_what_was_read(span_key, wire, screen, digits):
+    """The spans in `units.SETTING_SPANS` are linear, so this is the whole law.
+
+    Held here rather than only in `client.py` because these numbers have no
+    catalog entry to check them against - if a span is wrong, nothing else in
+    the offline suite would notice.
+    """
+    low, high = units.SETTING_SPANS[span_key]
+    assert round(low + (high - low) * wire, digits) == pytest.approx(
+        screen, abs=0), (
+        f"{span_key} at wire {wire} was read as {screen}, and the span says "
+        f"{round(low + (high - low) * wire, digits)}")
+
+
+def test_the_setting_spans_and_the_parameters_built_from_them_agree():
+    """`client` turns each span into a `catalog.Parameter` so the conversion is
+    the one law rather than a private copy. This is what holds those together -
+    a wrong bound in either place shows up as a disagreement."""
+    from pyquadcortex.protocol import client
+
+    for scale, key in ((client._INPUT_GAIN, "INPUT_GAIN_DB"),
+                       (client._GLOBAL_EQ_GAIN, "GLOBAL_EQ_GAIN_DB")):
+        assert (scale.minimum, scale.maximum) == units.SETTING_SPANS[key]
+        assert scale.units == "dB"
+        assert scale.skew == 1.0, "both spans are linear; a taper would need evidence"
+
+
+def test_every_setting_span_is_reachable_and_used():
+    """A span nobody converts against is a number with no evidence attached to
+    anything, which is how the old placeholder ranges survived."""
+    from pyquadcortex.protocol import client
+
+    used = {"INPUT_GAIN_DB", "GLOBAL_EQ_GAIN_DB"}
+    assert set(units.SETTING_SPANS) == used, (
+        "a span was added or removed without a `catalog.Parameter` built from "
+        "it - see `client._setting_scale`")
+    assert client._INPUT_GAIN is not None and client._GLOBAL_EQ_GAIN is not None

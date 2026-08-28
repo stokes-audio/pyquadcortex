@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from pyquadcortex.protocol import units, values
+from pyquadcortex.protocol import client, units, values
 from pyquadcortex.protocol.enums import Input
 
 SETTLE = 2.0
@@ -88,7 +88,9 @@ def test_a_global_eq_gain_in_db_lands_where_the_manuals_span_says(qc, restores):
 
     now = [p.value for p in qc.global_eq().parameters
            if p.parameter_index == offset]
-    assert now[0] == pytest.approx(units.db_to_global_eq_gain(-3.0), abs=1e-4)
+    # Through the same object the write used, which is the point: one law.
+    assert now[0] == pytest.approx(
+        client._GLOBAL_EQ_GAIN.to_normalized(-3.0), abs=1e-4)
 
 
 def test_the_hold_threshold_takes_milliseconds_and_stores_an_index(qc, restores):

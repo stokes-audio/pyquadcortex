@@ -151,7 +151,16 @@ def _bare_number(value, what, *, encoded=True, unit_example=None):
     if unit_example:
         lines.append(f"  {unit_example}   the screen's line")
     if encoded:
-        lines.append(f"  Encoded({value!r})  the device's line, 0.0 to 1.0")
+        # NEVER offer `Encoded(value)` for a number the device's line cannot
+        # hold. The first version did, and on the master volume - where the
+        # screen shows 0-100 and the wire takes 0..1 - it answered
+        # `set_master_volume(30)` with "Encoded(30)  the device's line, 0.0 to
+        # 1.0", which contradicts itself and points at the dangerous number.
+        if 0.0 <= float(value) <= 1.0:
+            lines.append(f"  Encoded({value!r})  the device's line, 0.0 to 1.0")
+        else:
+            lines.append(f"  Encoded(...)  the device's line, 0.0 to 1.0 - "
+                         f"which {value!r} is outside")
     lines.append("See docs/api.md, 'the two number lines'.")
     return TypeError("\n".join(lines))
 
@@ -179,7 +188,7 @@ def _setting_wire(value, what, scale=None, unit_example=None):
                     "nothing in the device's catalog describes this setting, "
                     "and nobody has read its screen against its wire value - so "
                     "there is no span to convert against. Inventing one is the "
-                    "guess ADR-0015 exists to prevent"
+                    "guess ADR-0015 exists to prevent."
                 ),
                 workaround=(
                     f"pass Encoded(...) with the device's own 0..1, or measure "
@@ -238,7 +247,10 @@ def _sweep_wire(value, target, index, spec, get_catalog, what):
             _reject_number_on_a_string_parameter(spec, value)
             value.check_unit(spec)
         return target.normalize(index, float(value), get_catalog, spec)
-    raise _bare_number(value, what, unit_example=f"Db({value!r})")
+    # `Real` first, like `set_param`'s own message: 1,780 catalog parameters
+    # are unitless, and suggesting `Db` for one of those sends the caller into
+    # a second refusal from `check_unit`.
+    raise _bare_number(value, what, unit_example=f"Real({value!r})")
 
 
 class QuadCortex:
@@ -1937,7 +1949,8 @@ class QuadCortex:
 
     def set_expression_bypass(self, block, pedal: int = 1,
                               mode: int = 0, invert: bool = False,
-                              delay_ms: int = 0, latch_emulation: bool = False):
+                              delay_ms=values_module.Milliseconds(0),
+                              latch_emulation: bool = False):
         """Let an expression pedal bypass a block.
 
         ``block`` is a :class:`~pyquadcortex.protocol.targets.Block`. This is the only
@@ -1950,13 +1963,16 @@ class QuadCortex:
         ``expression_bypass_info`` (how it behaves). Confirmed round-tripping
         through a save: pedal 1, mode 1, invert, 250 ms, latch emulation.
 
-``mode`` is an
+        ``mode`` is an
         :class:`~pyquadcortex.protocol.enums.ExpressionSwitchMode`: all three are confirmed
         on the unit, and note the numbering is not the manual's listed order -
         ``STOP`` is 0, ``SWITCH`` 1 and ``HEEL_TOE`` 2. ``invert`` reverses the
-        value at which the bypass engages, ``delay_ms`` is the switch delay (to
-        5000 ms), and ``latch_emulation`` lets a momentary toe switch behave as
-        latching.
+        value at which the bypass engages and ``latch_emulation`` lets a
+        momentary toe switch behave as latching.
+
+        ``delay_ms`` is the switch delay, up to 5000 ms, and takes
+        ``Milliseconds(250)``. Like the HOLD threshold it has no 0..1 line - the
+        wire carries the milliseconds themselves - so ``Encoded`` is refused.
         """
         if not isinstance(block, Block):
             raise TypeError(
@@ -1972,7 +1988,10 @@ class QuadCortex:
         info = model.expression_bypass_info.add()
         info.type = int(mode)
         info.invert = invert
-        info.delay_ms = delay_ms
+        # int(): the wire field is an integer count of milliseconds, and the
+        # typed value is a float subclass like every other value here.
+        info.delay_ms = int(_setting_real(
+            delay_ms, "the bypass switch delay", values_module.Milliseconds))
         info.latch_emulation = latch_emulation
         return self._t.send(msg)
 
@@ -3110,10 +3129,13 @@ class QuadCortex:
            waits for the owner to sweep the knob and tap SAVE. This method never
            sends it.
         """
-        # The screen-number mistake gets its own message BEFORE the generic
-        # 0..1 check, because "Encoded(30)" is a caller who read 30 off the
-        # unit rather than one who is out of range by accident.
-        if (isinstance(volume, values_module.Encoded)
+        # The screen-number mistake gets its own message BEFORE anything else,
+        # because a caller who read 30 off the unit needs the number to pass,
+        # not a lecture on types. Typed or bare: `set_master_volume(30)` was
+        # the motivating bug for ADR-0017 and it should not take two attempts
+        # to be told the answer.
+        if (isinstance(volume, (int, float))
+                and not isinstance(volume, values_module.Real)
                 and 1.0 < float(volume) <= 100.0):
             raise ValueError(
                 f"master volume is normalized 0..1, not {volume!r}. The unit "

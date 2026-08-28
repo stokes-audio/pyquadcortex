@@ -204,8 +204,8 @@ I/O port levels and ground lift, the Global EQ, footswitch modes, the tuner, the
 Looper's state, master volume, Gig View, and most of the Device Settings menu.
 
 ```python
-qc.set_input_port(1, level=0.4)              # global: no save, nothing to undo it
-qc.set_global_eq(band=3, gain=0.75, filter_type=GlobalEQFilter.PEAK)
+qc.set_input_port(Input.INPUT_1, level=Db(24.0))   # global: nothing undoes it
+qc.set_global_eq(band=3, gain=Db(6.0), filter_type=GlobalEQFilter.PEAK)
 qc.set_scene_bypass_behavior(SceneBypassBehavior.ALWAYS_OVERWRITE)
 ```
 

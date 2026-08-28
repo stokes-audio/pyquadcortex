@@ -2423,7 +2423,7 @@ def test_split_helpers_refuse_an_odd_row():
 def test_set_expression_bypass_writes_both_halves():
     qc = client.QuadCortex(FakeTransport())
     qc.set_expression_bypass(Block(0, 2), pedal=1, mode=1, invert=True,
-                             delay_ms=250, latch_emulation=True)
+                             delay_ms=Milliseconds(250), latch_emulation=True)
     model = qc._t.sent[-1].preset.chains[0].models[0]
     assert model.column == 2
     be = model.bypass_expression[0]
@@ -4247,3 +4247,77 @@ def test_an_unassigned_expression_sweep_still_defaults_to_the_whole_range():
     qc.set_expression(LaneOutput(0), "VOLUME", pedal=1)
     prm = qc._t.sent[-1].preset.chains[0].output_control[0].params[0]
     assert (prm.expression_min, prm.expression_max) == (0.0, 1.0)
+
+
+def test_the_usb_level_takes_encoded_and_refuses_a_real():
+    """The happy path had no test at all - the only USB-level assertion checked
+    the field was ABSENT."""
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_usb_port(level=Encoded(0.4))
+    assert qc._t.sent[-1].settings.usb_port.level == pytest.approx(0.4)
+
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ControlNotDrivable):
+        qc.set_usb_port(level=Db(-6.0))
+    assert qc._t.sent == []
+
+
+def test_the_global_eq_output_level_refuses_a_real_too():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ControlNotDrivable):
+        qc.set_global_eq_output(level=Db(-6.0))
+    assert qc._t.sent == []
+
+
+def test_a_global_eq_gain_outside_its_span_is_refused():
+    """The input gain had this test and the Global EQ gain did not, which
+    matters more here: its span is the weaker of the two."""
+    qc = client.QuadCortex(FakeTransport())
+    for bad in (Db(-20.0), Db(20.0)):
+        with pytest.raises(ValueError):
+            qc.set_global_eq(1, gain=bad)
+    assert qc._t.sent == []
+
+
+def test_the_master_volume_screen_number_is_caught_on_the_first_attempt():
+    """ADR-0017's motivating bug, and a regression this PR introduced once.
+
+    `set_master_volume(30)` means "30 on screen" and writes full output. The
+    typed refusal replaced the helpful message with one offering `Encoded(30)`
+    - self-contradictory next to "0.0 to 1.0", and pointing at the dangerous
+    number. The caller has to be told the answer, not told twice.
+    """
+    qc = client.QuadCortex(FakeTransport())
+    for given in (30, Encoded(30)):
+        with pytest.raises(ValueError) as caught:
+            qc.set_master_volume(given)
+        assert "0.30" in str(caught.value)
+    assert qc._t.sent == []
+
+
+def test_a_bare_number_never_suggests_an_encoded_the_wire_cannot_hold():
+    """The general form of the bug above, wherever a value is out of range."""
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError) as caught:
+        qc.set_global_eq_band(1, 30.0)
+    assert "Encoded(30.0)" not in str(caught.value)
+    assert "0.0 to 1.0" in str(caught.value)
+
+
+def test_a_sweep_end_suggests_real_rather_than_a_unit_it_cannot_check():
+    """1,780 parameters are unitless, so `Db` would earn a second refusal."""
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError) as caught:
+        qc.set_expression(Block(0, 2), 4, minimum=0.1)
+    assert "Real(0.1)" in str(caught.value)
+
+
+def test_the_bypass_switch_delay_takes_milliseconds():
+    qc = client.QuadCortex(FakeTransport())
+    qc.set_expression_bypass(Block(0, 2), delay_ms=Milliseconds(250))
+    info = qc._t.sent[-1].preset.chains[0].models[0].expression_bypass_info[0]
+    assert info.delay_ms == 250
+
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(TypeError, match="no 0..1 device scale"):
+        qc.set_expression_bypass(Block(0, 2), delay_ms=Encoded(0.5))
