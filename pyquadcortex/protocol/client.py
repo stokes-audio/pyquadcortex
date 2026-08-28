@@ -758,6 +758,12 @@ class QuadCortex:
                     f"it. If that number is in the parameter's own units, it is "
                     f"Real({float(value)!r}) rather than Encoded."
                 )
+            # Only if a spec is already in hand - naming the parameter fetched
+            # one. Fetching here on purpose does not happen: an index-addressed
+            # `Encoded` write staying free of a round trip is this branch's
+            # whole reason to exist.
+            if spec is not None:
+                _reject_number_on_a_string_parameter(spec, value)
             value = float(value)
         elif isinstance(value, values_module.Real):
             # `spec_at` is the one answer to "what sits at this wire index",
@@ -767,6 +773,7 @@ class QuadCortex:
             if spec is None:
                 spec = target.spec_at(index, self._get_catalog)
             if spec is not None:
+                _reject_number_on_a_string_parameter(spec, value)
                 value.check_unit(spec)
             value = target.normalize(index, float(value), self._get_catalog, spec)
         else:
@@ -3903,6 +3910,23 @@ def bypass_state(p: preset.BinaryPreset, cell) -> BypassState:
     cb = p.bypass[row].colBypass[column]
     return BypassState(scene_mode=bool(cb.sceneMode),
                        scenes=tuple(bool(sb.bypass) for sb in cb.sceneBypass))
+
+
+def _reject_number_on_a_string_parameter(spec, value):
+    """The mirror of the string guard, which was one-directional.
+
+    A string was checked against a number's parameter and refused; a number on
+    a STRING parameter was converted and sent. `Real(0.5)` on a cab's
+    `ir selector`, whose catalog range is 0..999, became wire 0.0005 - a write
+    that looks like it worked and means nothing.
+    """
+    if spec.type != "string":
+        return
+    raise TypeError(
+        f"{spec.name!r} is a string parameter, so {value!r} is not a value it "
+        f"can hold. Pass the string itself - set_param(target, param, \"...\") "
+        f"- which is what a string-valued parameter takes."
+    )
 
 
 class ParamState(NamedTuple):

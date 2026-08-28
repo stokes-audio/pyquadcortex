@@ -4050,6 +4050,44 @@ def test_an_encoded_value_outside_the_devices_scale_is_refused():
     assert not qc._t.sent
 
 
+def test_a_number_on_a_string_parameter_is_refused():
+    """The string guard was one-directional.
+
+    A string on a number's parameter was refused; a number on a STRING
+    parameter was converted and sent. On a cab's `ir selector`, whose catalog
+    range is 0..999, `Real(0.5)` became wire 0.0005 - a write that looks like it
+    worked and means nothing.
+    """
+    from tests.test_targets import _diverging_cab_catalog
+
+    for param in (1, "ir"):                       # by index and by name
+        qc = client.QuadCortex(FakeTransport())
+        qc._catalog = _diverging_cab_catalog()()
+        with pytest.raises(TypeError, match="is a string parameter"):
+            qc.set_param(Block(0, 5, 12001), param, Real(0.5))
+        assert not qc._t.sent
+
+
+def test_an_indexed_encoded_write_still_costs_no_catalog():
+    """The deliberate gap in the check above, and why it is deliberate.
+
+    `Encoded` addressed by INDEX is not checked, because checking would mean
+    fetching a catalog - and an index-addressed write staying free of a round
+    trip is that branch's whole reason to exist. Naming the parameter fetches
+    one anyway, so that path IS checked.
+    """
+    from tests.test_targets import _diverging_cab_catalog
+
+    qc = client.QuadCortex(FakeTransport())       # no catalog at all
+    qc.set_param(Block(0, 5), 3, Encoded(0.5))
+    assert qc._t.sent
+
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = _diverging_cab_catalog()()
+    with pytest.raises(TypeError, match="is a string parameter"):
+        qc.set_param(Block(0, 5, 12001), "ir", Encoded(0.5))
+
+
 def test_a_unit_check_reads_the_spec_the_conversion_uses_on_a_cab(monkeypatch):
     """The blocker from the #37 triage, through the public entry point.
 
