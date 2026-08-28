@@ -48,11 +48,16 @@ fi
 # protoc exiting 0 having written nothing would otherwise reach the gate as an
 # unexpanded glob, sail through it with nothing to compare, and die at the `cp`
 # with a bare "No such file or directory". Name the actual problem here.
+# A MISSING plugin does not reach this check: protoc exits 1 when it cannot
+# find `protoc-gen-mypy`, and `set -euo pipefail` above ends the script there
+# with protoc's own message, which names the plugin. What this catches is the
+# other way to lose the stubs - somebody dropping `--mypy_out` from the
+# invocation above, which protoc accepts silently.
 if [ ! -f "$STAGE/Preset_pb2.pyi" ]; then
-  echo "error: the generator wrote bindings but no *_pb2.pyi stubs." >&2
-  echo "       protoc finds the plugin as a \`protoc-gen-mypy\` executable on" >&2
-  echo "       PATH; install it with the dev extra:" >&2
-  echo "         pip install -U -e '.[dev]'    # or: uv pip install -U -e '.[dev]'" >&2
+  echo "error: the generator wrote bindings but no *_pb2.pyi stubs, so the" >&2
+  echo "       protoc call above is missing --mypy_out." >&2
+  echo "       (If the PLUGIN is what is missing, protoc has already failed" >&2
+  echo "        above saying so; the fix there is pip install -U -e '.[dev]'.)" >&2
   echo "       Committing bindings without their stubs would leave the type" >&2
   echo "       checker blind to every generated message, and CI runs it." >&2
   exit 1
@@ -144,6 +149,25 @@ if [ -n "$DOWNGRADES" ]; then
   echo "       If that already gives the version above, then the grpcio-tools" >&2
   echo "       floor in pyproject.toml is stale - find the release whose protoc" >&2
   echo "       emits the gencode above and raise the floor to it." >&2
+  exit 1
+fi
+
+# protoc writes a stub's cross-references FLAT - `import Preset_pb2` - exactly
+# as it writes the bindings' imports. The BINDINGS get away with that through
+# the sys.path shim in `proto/__init__.py`; a type checker cannot use a runtime
+# shim, so the flat import resolves to nothing and every field carrying a
+# `Preset` type silently becomes `Any`. That is not a small hole: `msg.preset`
+# is the path every keyed grid write takes, and it read as unchecked while the
+# checker reported success.
+#
+# Rewriting it package-relative is the whole fix, and it is done here rather
+# than by hand so a regeneration cannot quietly undo it.
+for stub in "$STAGE"/*_pb2.pyi; do
+  perl -pi -e 's{^import (\w+_pb2) as }{from pyquadcortex.protocol.proto import $1 as }' "$stub"
+done
+if grep -qE '^import [A-Za-z]+_pb2' "$STAGE"/*_pb2.pyi; then
+  echo "error: a stub still imports a sibling flat, which a type checker" >&2
+  echo "       cannot resolve - every field of that type would become Any." >&2
   exit 1
 fi
 

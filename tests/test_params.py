@@ -25,7 +25,8 @@ def test_the_container_enums_match_what_the_targets_address():
 
 
 def test_a_member_is_its_wire_index():
-    """IntEnum, so passing one needs no catalog - which is also the fast path."""
+    """`Param` subclasses `int`, so passing one needs no catalog - which is the
+    fast path as well as the checked one (ADR-0018)."""
     assert isinstance(params.LaneOutputParam.VOLUME, int)
     assert params.LaneOutputParam.VOLUME + 0 == 0
     assert int(params.TempoParam.VOLUME) == 3

@@ -746,7 +746,7 @@ class QuadCortex:
     # The cost, stated rather than discovered: `set_param(target, 21, Real(3))`
     # is a static error although it runs fine. Address by INDEX and say
     # `Encoded`; name the parameter, or use its generated constant, to write
-    # real units. One line in this repository does the former, in a test.
+    # real units. Three lines in this repository do the former, all in tests.
     @typing.overload
     def set_param(self, target, param: "values_module.Param[values_module.U]",
                   value: "values_module.Real[values_module.U] | "

@@ -58,14 +58,20 @@ See ADR-0016, ADR-0018, and
 ``docs/superpowers/specs/2026-08-27-typed-parameter-values-design.md``.
 """
 
-from typing import Generic, TypeVar
+from typing import Any, Generic
+
+# `typing_extensions` rather than `typing`: PEP 696 TypeVar defaults landed in
+# `typing` in 3.13 and this package supports 3.11. The default is not cosmetic -
+# without it, `gain = Real(5.0)` is a `Need type annotation` error for anyone
+# running a checker, which is every user `py.typed` invites.
+from typing_extensions import TypeVar
 
 #: The unit a parameter is in, as a TYPE rather than a string. These are marker
 #: classes and are never instantiated - their whole job is to be different from
 #: each other, so a checker can tell `Param[DbUnit]` from `Param[HzUnit]`.
 #:
-#: One per unit the catalog actually spells, plus `NoUnit` for the 1,780
-#: parameters with none. `NoUnit` is not "unknown": it is a positive statement
+#: One per unit the catalog actually spells, plus `NoUnit` for every parameter
+#: with none - 1,414 of the 2,445 generated constants. `NoUnit` is not "unknown": it is a positive statement
 #: that the parameter has no unit, which is what makes `Db` on a drive's GAIN a
 #: static error rather than something that slips through.
 
@@ -81,7 +87,9 @@ class BpmUnit: ...
 class NoUnit: ...
 
 
-U = TypeVar("U")
+#: The unit a value or a constant is in. Defaults to `Any` so an unannotated
+#: `Real` still means "claims no unit" rather than "unsolvable".
+U = TypeVar("U", default=Any)
 
 
 class Param(int, Generic[U]):
@@ -110,8 +118,30 @@ class Param(int, Generic[U]):
         self.name = name
         return self
 
+    @property
+    def value(self) -> int:
+        """The wire index, spelled the way an `IntEnum` member spelled it.
+
+        These WERE `IntEnum` members, and `.value` cost one line to keep. It is
+        redundant - a `Param` IS its value - but breaking it would have been an
+        incidental break rather than a chosen one.
+        """
+        return int(self)
+
     def __repr__(self) -> str:
         return f"{self.name}({int(self)})" if self.name else f"Param({int(self)})"
+
+    def __str__(self) -> str:
+        """The number, deliberately, and not `__repr__`.
+
+        `int` defines no `__str__` of its own - it inherits `object`'s, which
+        defers to `__repr__` - so an informative `__repr__` silently turned
+        `f"{VOLUME}"` from "0" into "VOLUME(0)" for every caller formatting a
+        constant into a string. An `IntEnum` member formats as its number, so
+        this one does too. `int.__str__` does not work here for the same
+        reason: it IS `object.__str__`.
+        """
+        return int.__repr__(self)
 
 
 class Value(float):
@@ -276,7 +306,7 @@ def of_unit(units: str, value: float) -> Real:
 
 
 __all__ = [
-    "Param", "U",
+    "Param",
     "DbUnit", "PercentUnit", "HertzUnit", "MillisecondsUnit", "SecondsUnit",
     "SemitonesUnit", "CentsUnit", "BpmUnit", "NoUnit",
     "Value", "Encoded", "Real",

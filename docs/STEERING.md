@@ -146,7 +146,8 @@ checker could run here - mypy saw 260 errors, ~200 of them phantom, because it
 cannot read inside a generated `_pb2.py`. Committing `*_pb2.pyi` stubs from the
 same protoc run fixed that half honestly.
 
-**What to watch:** the overload order and the value unions on `set_param`. A
+**What to watch:** the value unions on `set_param` - not their order, which
+was tried and does not matter. A
 `Param` IS an `int`, so an int overload that accepts real values swallows every
 wrong-unit call before the checker sees it - overload resolution takes the
 first MATCH, and a failing first overload just falls through. If you widen the

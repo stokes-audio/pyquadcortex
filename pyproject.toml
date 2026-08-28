@@ -33,6 +33,11 @@ classifiers = [
 dependencies = [
   "hid>=1.0.6",          # ctypes binding to hidapi (also install the hidapi C lib, see README)
   "protobuf>=7.35.1,<8", # must match the shipped *_pb2 gencode major; protobuf enforces runtime >= gencode
+  # PEP 696 TypeVar defaults, for `values.U`. Without a default, binding a bare
+  # `Real` to a name - `gain = Real(5.0)` - is a mypy error for every downstream
+  # user, and `py.typed` invites exactly those users. `typing` gained this in
+  # 3.13 and this package supports 3.11.
+  "typing-extensions>=4.4",
 ]
 
 [project.optional-dependencies]
@@ -45,7 +50,7 @@ dependencies = [
 # Ask the compiler, never the metadata: grpcio-tools versions do not track
 # protobuf ones, and 1.82.1 declares `protobuf>=7.35.1` while still emitting
 # gencode 7.35.0.
-dev = ["pytest>=8", "grpcio-tools>=1.83.0", "mypy-protobuf>=3.6", "mypy>=1.15"]
+dev = ["pytest>=8", "grpcio-tools>=1.83.0", "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
 
 [project.scripts]
 qcctl = "pyquadcortex.protocol.cli:main"
@@ -107,9 +112,3 @@ no_implicit_optional = true
 module = "hid"
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-# The generated bindings are protoc's output, checked through the committed
-# *_pb2.pyi stubs beside them rather than by reading the .py - which is the
-# only way a checker can see a generated message at all.
-module = "pyquadcortex.protocol.proto.*"
-ignore_errors = true

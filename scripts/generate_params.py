@@ -129,10 +129,14 @@ def members(model, group: str = None) -> list[tuple[str, int, str]]:
     return out
 
 
-#: Which unit marker a catalog `units` string maps to. The three the value
-#: types decline - `x`, `bits`, `dB/oct`, two parameters each - map to `NoUnit`
-#: for the same reason `values.of_unit` hands them a plain `Real`: there is no
-#: type to name, and `NoUnit` is the honest tag for "nothing checks this".
+#: Which unit marker a catalog `units` string maps to.
+#:
+#: The three the value types decline - `x`, `bits`, `dB/oct`, two parameters
+#: each - map to `NoUnit` for the same reason `values.of_unit` hands them a
+#: plain `Real`: there is no type to name. Note this stretches `NoUnit` past
+#: what its own docstring claims, which is that the parameter HAS no unit; for
+#: these six it means "has one, and nothing models it". Six parameters is not
+#: worth a second marker, but the difference should not be silent.
 UNIT_TYPES = {
     "dB": "DbUnit", "%": "PercentUnit", "Hz": "HertzUnit",
     "ms": "MillisecondsUnit", "s": "SecondsUnit",
@@ -227,7 +231,13 @@ def render(cat: catalog.ModelCatalog) -> str:
         "",
         "",
         "class ParamSet(metaclass=_ParamSetMeta):",
-        '    """One model\'s parameters. Never instantiated - it is a namespace."""',
+        '    """One model\'s parameters. A namespace, not a value."""',
+        "",
+        "    def __init__(self):",
+        "        raise TypeError(",
+        "            f\"{type(self).__name__} is a namespace of parameter \"",
+        "            f\"constants, not something to instantiate - use its \"",
+        "            f\"members, such as {type(self).__name__}.<NAME>\")",
     ]
 
     lines += ["", "", "# -- the containers a target addresses " + "-" * 40]

@@ -67,7 +67,13 @@ class _ParamSetMeta(type):
 
 
 class ParamSet(metaclass=_ParamSetMeta):
-    """One model's parameters. Never instantiated - it is a namespace."""
+    """One model's parameters. A namespace, not a value."""
+
+    def __init__(self):
+        raise TypeError(
+            f"{type(self).__name__} is a namespace of parameter "
+            f"constants, not something to instantiate - use its "
+            f"members, such as {type(self).__name__}.<NAME>")
 
 
 # -- the containers a target addresses ----------------------------------------

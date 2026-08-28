@@ -44,5 +44,26 @@ qc.set_param(block, params.Cabsim.HPF, Db(80.0))  # want: error
 qc.set_param(LaneOutput(0), params.LaneOutputParam.PAN, Db(0.5))  # want: error
 qc.set_param(block, params.Cabsim.MIC_1_DISTANCE, Db(3.0))  # want: error
 
+# -- accepted: a value BOUND TO A NAME, not just passed inline ----------------
+# Every case above hands the value straight to the call, where the argument's
+# type solves the unit. A bare `Real` on its own has nothing to solve against,
+# and without a default on the TypeVar this was `Need type annotation` for
+# every downstream user - a checker crying wolf on the commonest value type.
+gain = Real(5.0)
+sweep = [Real(0.0), Real(1.0)]
+qc.set_param(block, params.Cabsim.MIC_1_DISTANCE, gain)
+level = Db(-3.1)
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, level)
+
+# -- accepted: named arguments, and a scene ------------------------------------
+qc.set_param(LaneOutput(0), param=params.LaneOutputParam.VOLUME, value=Db(-3.1))
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Db(-3.1), scene=None)
+
+# -- accepted: one call per remaining unit type, so none is left unexercised ---
+qc.set_param(block, params.Cabsim.MIC_1_LEVEL, Db(-6.0))
+qc.set_param(block, params.SimpleDelayM.MIX, Percent(35))
+qc.set_param(block, params.SimpleDelayM.DELAY_TIME, Milliseconds(250))
+
 # -- rejected: a bare number, which the runtime refuses too -------------------
 qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, -3.1)  # want: error
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, level_wrong := Hertz(1))  # want: error

@@ -482,14 +482,28 @@ it is on purpose:
   and nothing platform-specific to get wrong.
 - CI installs the package and runs the suite without a protobuf compiler.
 
-**Do not add `pyquadcortex/protocol/proto/*_pb2.py` to `.gitignore`, and do not
-delete them as "build output".** Doing so breaks installs from PyPI and from a
-plain checkout.
+**Do not add `pyquadcortex/protocol/proto/*_pb2.py` or `*_pb2.pyi` to
+`.gitignore`, and do not delete them as "build output".** Doing so breaks
+installs from PyPI and from a plain checkout, and drops the type checking with
+them.
 
 `pyquadcortex/protocol/proto/__init__.py` is load-bearing: protoc emits absolute
 sibling imports (`ProductionAutomation_pb2` does `import Preset_pb2`), which fail
 inside a package, so `__init__.py` appends its own directory to `sys.path`. That
 is what lets unmodified protoc output keep working after a regeneration.
+
+**The `.pyi` stubs cannot use that shim, and that is why they are rewritten.**
+A type checker resolves imports statically, so the same flat `import Preset_pb2`
+resolves to nothing for it - and every field carrying a `Preset` type silently
+becomes `Any` while the checker still reports success. `msg.preset` is the path
+every keyed grid write takes, so the hole is not a corner. `compile_protos.sh`
+rewrites those imports package-relative after protoc runs and refuses to write
+a stub that still imports a sibling flat;
+`tests/test_packaging.py::test_no_stub_imports_a_sibling_flat` is what notices
+if a stub is ever regenerated without it.
+
+The stubs need `mypy-protobuf` on PATH as a `protoc-gen-mypy` executable, which
+is what the `dev` extra installs it for. ADR-0018 has the rest.
 
 ### Regenerating
 

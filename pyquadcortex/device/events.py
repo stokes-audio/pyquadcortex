@@ -37,6 +37,7 @@ import dataclasses
 import logging
 import queue
 import threading
+import typing
 
 log = logging.getLogger(__name__)
 
@@ -113,8 +114,10 @@ class EventStream:
 
     def __init__(self, thread_name: str = EVENT_THREAD_NAME):
         self._lock = threading.Lock()
-        self._listeners: list = []
-        self._queue: queue.SimpleQueue = queue.SimpleQueue()
+        self._listeners: list[typing.Callable] = []
+        # `_Stop` as well as events: the sentinel travels the same queue,
+        # which is how the delivery thread learns to end.
+        self._queue: "queue.SimpleQueue[ModelEvent | _Stop]" = queue.SimpleQueue()
         self._thread: threading.Thread | None = None
         self._closed = False
         self._thread_name = thread_name

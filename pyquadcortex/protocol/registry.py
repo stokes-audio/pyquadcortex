@@ -9,6 +9,8 @@ generated protobuf message classes, in both directions:
 Extend ``_BY_NAME`` as more message types are exercised.
 """
 
+import typing
+
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 # Map CortexMessageType.Enum name -> generated message class.
@@ -106,6 +108,8 @@ def type_for(cls) -> int:
 def class_for(message_type: int):
     """Return the generated protobuf class for a CortexMessageType enum integer."""
     # The keys ARE ints at runtime - a protobuf enum value is an int - but the
-    # generated stub types them as the enum's own ValueType, so the lookup needs
-    # to say which it is holding.
-    return _BY_TYPE[_ENUM.ValueType(message_type)]
+    # generated stub types them as the enum's own ValueType. A `cast` rather
+    # than `_ENUM.ValueType(...)`: that constructor is `int` at runtime, so it
+    # would have TRUNCATED a float and returned a class where this used to
+    # raise. A type-only fix stays type-only.
+    return _BY_TYPE[typing.cast("_ENUM.ValueType", message_type)]
