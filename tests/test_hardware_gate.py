@@ -160,7 +160,7 @@ def test_a_path_through_a_symlink_is_gated_too(_poisoned_hid, tmp_path):
     An absolute argument is what reaches that state: a RELATIVE one is joined to
     the working directory, which the OS has already resolved, so both sides come
     out physical whatever the developer typed. Measured with the item side left
-    unresolved, on ``tests/hardware/test_scales.py`` rather than the module this
+    unresolved, on ``tests/hardware/test_scales_on_unit.py`` rather than the one this
     test happens to name: its 28 tests collected, exit 0.
     """
     link = tmp_path / "linked-repo"
@@ -225,6 +225,46 @@ def test_one_hardware_path_refuses_the_whole_run(_poisoned_hid):
     assert "tests/test_registry.py" not in result.stderr, (
         "the refusal names an offline path as if it were gated:\n"
         + result.stderr)
+
+
+def test_the_whole_tree_collects_with_the_flag(_poisoned_hid):
+    """`pytest --hardware` from the repo root can collect BOTH suites.
+
+    The gate opening is worth nothing if what it opens cannot be collected, and
+    that is not hypothetical: until 2026-08-28 this exited 2 with two collection
+    errors, because `tests/hardware/test_scales.py` and `tests/test_scales.py`
+    shared a basename with no ``__init__.py`` to tell them apart, and so did the
+    two ``test_values.py``. pytest mapped each pair to one module name and refused
+    the second. Only the documented `pytest tests/hardware --hardware` worked,
+    which is why it went years unnoticed.
+
+    The two hardware files were renamed rather than the tree being made a package:
+    three offline modules do ``from waiting import ...``, which works only while
+    pytest keeps putting ``tests/`` on ``sys.path`` - and it stops doing that the
+    moment ``tests/`` becomes a package or a namespace package.
+
+    So this is the test that makes the naming rule enforceable instead of
+    remembered: a new hardware module whose basename an offline module already
+    owns fails here, in the offline suite, on the run everybody does.
+
+    Collection only, so no unit is involved.
+    """
+    result = _pytest(_poisoned_hid, "--hardware", "--collect-only", "-q")
+
+    assert result.returncode == pytest.ExitCode.OK, (
+        "`pytest --hardware` cannot collect the tree:\n"
+        + result.stdout[-3000:] + result.stderr[-3000:])
+    # Matched on pytest's own words for a collection failure, not on the
+    # substring "error" - a test called `..._raises_keyerror` contains that.
+    assert "errors during collection" not in result.stdout, result.stdout[-3000:]
+    reported = [line for line in result.stdout.splitlines()
+                if line.startswith("ERROR")]
+    assert not reported, reported
+    ids = [line.strip() for line in result.stdout.splitlines() if "::" in line]
+    assert any(node.startswith("tests/hardware/") for node in ids), (
+        "the hardware suite is not in a --hardware run of the whole tree")
+    assert any(not node.startswith("tests/hardware/") for node in ids), (
+        "the offline suite is not in a --hardware run of the whole tree")
 
 
 def test_the_flag_opens_the_gate_for_every_module(collected_with_the_flag):

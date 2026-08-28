@@ -145,11 +145,21 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
   connection instead of driving the unit.
 - `tests/hardware/readme.md`: the guarantee now says which invocation gets which
   treatment, because a named path is collected before it is refused.
+- `tests/hardware/test_scales.py` and `test_values.py` are renamed to
+  `test_scales_on_unit.py` and `test_values_on_unit.py`. They shared a basename
+  with their offline counterparts and no `__init__.py` told them apart, so pytest
+  mapped each pair to one module name and refused the second: `pytest --hardware`
+  from the repo root could not collect the suite at all, and only the documented
+  `pytest tests/hardware --hardware` worked. Renamed rather than made a package,
+  because `tests/test_state.py`, `test_events.py` and `test_preset.py` do
+  `from waiting import ...`, which works only while pytest keeps putting `tests/`
+  on `sys.path` - and it stops doing that the moment `tests/` becomes a package
+  or a namespace package.
 
 **Why:** the gate was one hook, and pytest does not consult it for command-line
-arguments. `pytest tests/hardware/test_scales.py` therefore collected and RAN the
-suite - driving the unit with no flag, or failing offline instead of being absent -
-while `pytest` and `pytest tests/` behaved exactly as documented. The readme told
+arguments. `pytest tests/hardware/test_write_echo.py` therefore collected and RAN
+the suite - driving the unit with no flag, or failing offline instead of being
+absent - while `pytest` and `pytest tests/` behaved exactly as documented. The readme told
 developers it could not happen.
 
 **What this constrains going forward:**
@@ -157,6 +167,10 @@ developers it could not happen.
   for whichever half it drops.
 - A refusal here is loud, not a silent deselect: the developer named those tests,
   so the reason they did not run is owed to them.
+- A module in `tests/hardware/` needs a basename no module under `tests/` already
+  owns, hence the two `_on_unit` names. The rule is enforced rather than
+  remembered: `tests/test_hardware_gate.py` fails if `pytest --hardware` stops
+  collecting the whole tree.
 
 **Scope of impact:**
 - **Updated:** `tests/hardware/conftest.py` (the second hook), `tests/conftest.py`
@@ -165,15 +179,14 @@ developers it could not happen.
 - **Also updated:** ADR-0005's Open Questions, whose "how it is invoked" line had
   been open since 2026-08-04 and is what this work settles; three offline
   docstrings that described the gate as collection-only
+- **Renamed:** `tests/hardware/test_scales.py` and `test_values.py` gain an
+  `_on_unit` suffix, with the references in ADR-0015 and
+  `scripts/extract_scale_fixture.py` following them
 - **New:** `tests/test_hardware_gate.py`
 
 **Downstream to consider:**
-- `pytest --hardware` from the repo root cannot run the hardware suite at all:
-  `tests/test_scales.py` and `tests/hardware/test_scales.py` share a basename with
-  no `__init__.py`, and so do the two `test_values.py`, so collection errors out.
-  Pre-existing and untouched here; the documented `pytest tests/hardware
-  --hardware` works. It also means a mixed run naming two same-named files dies in
-  collection before the new hook can name the flag.
+- Nothing outstanding. The basename collision above was pre-existing rather than
+  introduced here, and is fixed rather than recorded.
 
 **Not covered here:** the offline suite's own guarantee (ADR-0002), which was
 never affected - CI passes no paths, so no hardware test has ever run in it.

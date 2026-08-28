@@ -256,7 +256,7 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   - Converting real units now needs a catalog, where a hand-measured span did not. `Tempo()` loses its shortcut. That is the honest price of reading the device's own scale; `protocol.bpm_to_tempo` and `db_to_lane_level` remain for a caller with no device.
   - An out-of-range value is REFUSED rather than clamped. Both behaviours were in the library at once - the catalog path clamped, the measured-span path refused - and unifying them meant picking one.
   - A bound nobody can measure is `None` and refuses, rather than carrying a plausible number. One parameter qualifies: `NC_Recorder OUT LEVEL`, whose block crashes the unit when placed.
-  - `tests/fixtures/catalog/scales.json` distils the parameters under test out of a real catalog, because committing `ModelRepo.xml` would republish 556 KB of the vendor's product catalog. `tests/hardware/test_scales.py` proves it has not drifted.
+  - `tests/fixtures/catalog/scales.json` distils the parameters under test out of a real catalog, because committing `ModelRepo.xml` would republish 556 KB of the vendor's product catalog. `tests/hardware/test_scales_on_unit.py` proves it has not drifted.
 
 ## ADR-0016: Parameter values carry their own scale, and the protocol layer may speak the device's units
 

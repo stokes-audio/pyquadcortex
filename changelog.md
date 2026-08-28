@@ -26,7 +26,7 @@ correction.
 one `pytest_ignore_collect` hook, and pytest does not consult that hook for a
 path given as a command-line argument - only for paths it reaches by walking a
 directory. So `pytest` and `pytest tests/` collected nothing from there, exactly
-as documented, and `pytest tests/hardware/test_scales.py` collected all of it:
+as documented, and `pytest tests/hardware/test_write_echo.py` collected all of it:
 with a unit attached those tests ran and drove it, and with none attached they
 failed rather than being absent. A developer narrowing a run to one file lost the
 flag that means "yes, touch my unit" without being told.
@@ -39,6 +39,14 @@ affected: no hardware test has ever run in CI, which passes no paths.
 invocation. It now says which shape gets which, since a named path is collected
 before it is refused, and `tests/test_hardware_gate.py` holds both halves up in a
 subprocess running the developer's own command.
+
+Two files in that directory are renamed on the way past: `test_scales.py` and
+`test_values.py` become `test_scales_on_unit.py` and `test_values_on_unit.py`.
+They shared a basename with their offline counterparts, so pytest mapped each
+pair to one module name and refused the second - which meant `pytest --hardware`
+from the repo root could not collect the suite at all, and only
+`pytest tests/hardware --hardware` worked. Pre-existing, and unrelated to the
+gate except that a gate is worth nothing if what it opens cannot be collected.
 
 **Withdrawn:** the 0.39.0 entry below, "A hardware-in-the-loop test suite", makes
 the same too-strong claim - "nothing in `tests/hardware/` is collected at all -

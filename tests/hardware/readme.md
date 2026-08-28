@@ -15,7 +15,7 @@ reached pytest:
 - **Reached by walking the tree** (`pytest`, `pytest tests/`, `pytest tests/hardware`):
   not collected at all. `pytest_ignore_collect` vetoes the file before it is even
   imported.
-- **Named on the command line** (`pytest tests/hardware/test_scales.py`, or one
+- **Named on the command line** (`pytest tests/hardware/test_write_echo.py`, or one
   node id): the run stops with `ERROR: these tests drive a real Quad Cortex and
   need --hardware`, naming every path it refused. pytest does not offer
   command-line arguments to `pytest_ignore_collect` at all, so these are
@@ -36,14 +36,21 @@ behaviour rather than a promise. Nothing here depends on which it is: if pytest
 ever closes the gap, a named path stops being collected and the tests in
 `tests/test_hardware_gate.py` fail on the exit code they assert.
 
-One seam worth knowing, because it is not this gate's doing. If collection itself
-fails first, pytest stops there and the refusal never gets to speak - and
-`pytest tests/test_scales.py tests/hardware/test_scales.py` does exactly that,
-because the two files share a basename with no `__init__.py` to tell them apart.
-Nothing runs in that case either; you just get pytest's collection error instead
-of the message naming the flag. The same collision is why `pytest --hardware`
-from the repo root cannot run this suite at all, and why the documented command
-above names the directory.
+One seam worth knowing, because it is not this gate's doing: if collection
+itself fails first, pytest stops there and the refusal never gets to speak.
+Nothing runs in that case either - you just get pytest's collection error
+instead of the message naming the flag.
+
+That is why two files here end in `_on_unit`. **A module in this directory needs
+a basename no module under `tests/` already owns.** pytest maps
+`tests/hardware/test_scales.py` and `tests/test_scales.py` to one module name and
+refuses the second, which until 2026-08-28 meant `pytest --hardware` from the
+repo root could not collect this suite at all - two collection errors, exit 2 -
+and only the documented `pytest tests/hardware --hardware` worked. Renaming was
+the fix rather than making `tests/` a package, because three offline modules do
+`from waiting import ...`, which works only while pytest keeps putting `tests/`
+on `sys.path`. `tests/test_hardware_gate.py` now fails if the whole tree stops
+collecting under the flag, so the rule does not depend on being remembered.
 
 ## Before you run it
 

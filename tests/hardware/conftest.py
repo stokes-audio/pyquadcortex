@@ -35,7 +35,7 @@ def pytest_ignore_collect(collection_path, config):
     # path given on the command line (`_pytest/main.py`, pytest 9.1.1). So this
     # covers `pytest`, `pytest tests/` and `pytest tests/hardware` - the last one
     # because the DIRECTORY is the initial path and its files still come through
-    # here - and does nothing at all for `pytest tests/hardware/test_scales.py`.
+    # here - and nothing at all for `pytest tests/hardware/test_scales_on_unit.py`.
     # The hook below catches that one.
     return not config.getoption("--hardware")
 
@@ -47,7 +47,7 @@ def _resolved(item):
     node's path with ``absolutepath``, which does NOT follow symlinks. An
     ABSOLUTE argument naming this directory through a link would then compare
     unequal to ``SUITE`` and the gate would quietly stop firing - measured on
-    ``tests/hardware/test_scales.py`` with this line left out: its 28 tests
+    ``tests/hardware/test_scales_on_unit.py`` with this line left out: its 28
     collected, exit 0. A relative argument
     is joined to the working directory, which the OS has already resolved, so
     that shape was never at risk. ``tests/test_hardware_gate.py`` runs the one
