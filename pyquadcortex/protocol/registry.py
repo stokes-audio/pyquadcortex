@@ -105,4 +105,7 @@ def type_for(cls) -> int:
 
 def class_for(message_type: int):
     """Return the generated protobuf class for a CortexMessageType enum integer."""
-    return _BY_TYPE[message_type]
+    # The keys ARE ints at runtime - a protobuf enum value is an int - but the
+    # generated stub types them as the enum's own ValueType, so the lookup needs
+    # to say which it is holding.
+    return _BY_TYPE[_ENUM.ValueType(message_type)]

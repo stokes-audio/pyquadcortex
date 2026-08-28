@@ -67,9 +67,9 @@ class WriteWatch:
         self.deadline = deadline
         self._lock = threading.Lock()
         self._settled = threading.Event()
-        self._outcome = None
-        self._disagreement = None
-        self._confirmed = set()
+        self._outcome: WatchOutcome | None = None
+        self._disagreement: tuple[str, object, object] | None = None
+        self._confirmed: set[str] = set()
 
     @property
     def outcome(self):
@@ -184,10 +184,10 @@ class Watchdog:
         self._on_timeout = on_timeout
         self._name = name
         self._wake = threading.Condition()
-        self._watches = []
+        self._watches: list[WriteWatch] = []
         self._running = False
         self._stopped = False
-        self._thread = None
+        self._thread: threading.Thread | None = None
 
     def add(self, watch: WriteWatch) -> None:
         """Start watching ``watch``, starting the thread if this is the first.

@@ -90,14 +90,14 @@ class ParamTarget:
     """
 
     #: The repeated field on ``Chain`` holding this container.
-    collection = ""
+    collection: str = ""
     #: The catalog model id, or ``None`` when the caller must supply one.
-    model_id = None
+    model_id: int | None = None
     #: Parameter names this target cannot have an expression pedal assigned to.
-    unassignable = ()
+    unassignable: tuple[str, ...] = ()
     #: Whether this target's parameters can hold per-scene values. Scenes are a
     #: property of the GRID, so the one target that is not on the grid says no.
-    supports_scenes = True
+    supports_scenes: bool = True
 
     def container(self, msg):
         """Add this target's container to ``msg`` and return it.
@@ -339,7 +339,7 @@ class Block(ChainTarget):
     column: int
     #: The block's catalog model id. Needed only to NAME a parameter rather than
     #: index one; ``blocks()`` always fills it in.
-    model_id: int = None
+    model_id: int | None = None
 
     collection = "models"
 

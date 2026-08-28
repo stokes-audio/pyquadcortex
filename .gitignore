@@ -48,7 +48,9 @@ desktop.ini
 
 # NOTE: pyquadcortex/protocol/proto/*_pb2.py are generated but INTENTIONALLY committed,
 # so that installing the package needs no protoc toolchain. Do not ignore them.
-# See docs/architecture.md.
+# The *_pb2.pyi type stubs beside them are committed for the same reason and one
+# more: without them a type checker cannot see inside a generated module at all,
+# and CI runs one. See docs/architecture.md.
 
 # Hardware-suite working artifacts. The findings go in docs/, not here.
 tests/hardware/captures/

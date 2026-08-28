@@ -113,9 +113,9 @@ class EventStream:
 
     def __init__(self, thread_name: str = EVENT_THREAD_NAME):
         self._lock = threading.Lock()
-        self._listeners = []
-        self._queue = queue.SimpleQueue()
-        self._thread = None
+        self._listeners: list = []
+        self._queue: queue.SimpleQueue = queue.SimpleQueue()
+        self._thread: threading.Thread | None = None
         self._closed = False
         self._thread_name = thread_name
 

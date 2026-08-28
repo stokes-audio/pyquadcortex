@@ -225,7 +225,7 @@ class DeviceState:
         applied = fields_applied(message, plan)
         unkept = unkept_fields(message, plan)
         why = self._why_untrusted(plan, unkept, message)
-        announce = []
+        announce: list[Changed | Invalidated] = []
         with self._lock:
             if self._closed:
                 return

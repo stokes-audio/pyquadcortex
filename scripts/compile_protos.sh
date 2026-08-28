@@ -26,17 +26,38 @@ fi
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-# Prefer the version-matched generator from the venv dev extra (grpcio-tools);
-# fall back to system protoc for environments without the venv.
+# `--mypy_out` rides alongside `--python_out` rather than being a second pass:
+# one protoc run cannot emit bindings and stubs that disagree, and two could.
+# The plugin is a `protoc-gen-mypy` executable protoc finds on PATH, so the
+# venv's bin goes on PATH here - `mypy-protobuf` is in the dev extra with
+# grpcio-tools for exactly this.
+#
+# The bindings are what the package imports and the stubs are what a type
+# checker reads. Neither is optional: without the stubs mypy cannot see inside
+# a generated module at all and reports about 200 phantom "no attribute"
+# errors, which is what made a type checker unusable here before.
 if [ -x "$HERE/.venv/bin/python" ]; then
-  "$HERE/.venv/bin/python" -m grpc_tools.protoc -I "$PROTO_SRC" --python_out="$STAGE" Preset.proto ProductionAutomation.proto
+  PATH="$HERE/.venv/bin:$PATH" "$HERE/.venv/bin/python" -m grpc_tools.protoc \
+    -I "$PROTO_SRC" --python_out="$STAGE" --mypy_out="$STAGE" \
+    Preset.proto ProductionAutomation.proto
 else
-  protoc -I "$PROTO_SRC" --python_out="$STAGE" Preset.proto ProductionAutomation.proto
+  protoc -I "$PROTO_SRC" --python_out="$STAGE" --mypy_out="$STAGE" \
+    Preset.proto ProductionAutomation.proto
 fi
 
 # protoc exiting 0 having written nothing would otherwise reach the gate as an
 # unexpanded glob, sail through it with nothing to compare, and die at the `cp`
 # with a bare "No such file or directory". Name the actual problem here.
+if [ ! -f "$STAGE/Preset_pb2.pyi" ]; then
+  echo "error: the generator wrote bindings but no *_pb2.pyi stubs." >&2
+  echo "       protoc finds the plugin as a \`protoc-gen-mypy\` executable on" >&2
+  echo "       PATH; install it with the dev extra:" >&2
+  echo "         pip install -U -e '.[dev]'    # or: uv pip install -U -e '.[dev]'" >&2
+  echo "       Committing bindings without their stubs would leave the type" >&2
+  echo "       checker blind to every generated message, and CI runs it." >&2
+  exit 1
+fi
+
 if [ ! -f "$STAGE/Preset_pb2.py" ]; then
   echo "error: the generator exited 0 but wrote no *_pb2.py into $STAGE." >&2
   echo "       Check whether the .proto files grew a \`package\` statement:" >&2
@@ -126,8 +147,8 @@ if [ -n "$DOWNGRADES" ]; then
   exit 1
 fi
 
-cp "$STAGE"/*_pb2.py "$OUT/"
-echo "Generated bindings in $OUT"
+cp "$STAGE"/*_pb2.py "$STAGE"/*_pb2.pyi "$OUT/"
+echo "Generated bindings and type stubs in $OUT"
 
 # "Nothing changed" is a result worth seeing rather than assuming: it means the
 # schema edit did not reach the bindings, or protoc wrote somewhere else.

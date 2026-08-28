@@ -292,14 +292,14 @@ class Parameter:
                 f"Python, so without this True would quietly write the top of "
                 f"{self.name!r}'s range and look deliberate."
             )
-        self._reject_unmeasured()
+        low, high = self._reject_unmeasured()
         # Before the degenerate-span shortcut, not after: a zero-width parameter
         # should refuse a value it does not have like every other one.
         self._reject_outside_range(real)
-        span = self.maximum - self.minimum
+        span = high - low
         if span == 0:
             return 0.0
-        fraction = min(1.0, max(0.0, (real - self.minimum) / span))
+        fraction = min(1.0, max(0.0, (real - low) / span))
         return fraction ** self.skew
 
     def _reject_outside_range(self, real: float):
@@ -314,13 +314,18 @@ class Parameter:
         -40 dB while its quietest real position is -21.8 dB, so -30 dB converts
         to wire 0.0005 and MUTES the microphone.
         """
-        if self.floor is None:
+        bottom, top = self.floor, self.maximum
+        if bottom is None or top is None:
+            # `floor` is None where a bound is unmeasured, and so is `maximum`.
+            # Both are the same case - nothing to compare against - and reading
+            # only the first left the second as an unchecked `None` in the
+            # comparison below.
             return
         # sorted() so an inverted range - min > max, which nothing in the
         # shipped catalog has and nothing stops a firmware update introducing -
         # refuses values OUTSIDE the range rather than refusing every value
         # including both of its own endpoints.
-        low, high = sorted((self.floor, self.maximum))
+        low, high = sorted((float(bottom), float(top)))
         if low <= real <= high:
             return
         unit = f" {self.units}" if self.units else ""
@@ -347,7 +352,7 @@ class Parameter:
         Raises ``ValueError`` for a parameter whose bounds the catalog names and
         nobody has measured - see :meth:`_reject_unmeasured`.
         """
-        self._reject_unmeasured()
+        low, high = self._reject_unmeasured()
         if not 0.0 <= normalized <= 1.0:
             # NaN lands here, and that is the point of the check rather than a
             # side effect: `min(1.0, max(0.0, nan))` is 0.0, so clamping would
@@ -360,14 +365,21 @@ class Parameter:
                 f"is no value of {self.name!r} to report. A preset holding NaN "
                 f"reaches here - four factory presets do."
             )
-        span = self.maximum - self.minimum
+        span = high - low
         if span == 0:
-            return values.of_unit(self.units, self.minimum)
+            return values.of_unit(self.units, low)
         return values.of_unit(
-            self.units, self.minimum + span * normalized ** (1.0 / self.skew))
+            self.units, low + span * normalized ** (1.0 / self.skew))
 
-    def _reject_unmeasured(self):
+    def _reject_unmeasured(self) -> tuple[float, float]:
         """Refuse rather than convert against a bound nobody has measured.
+
+        Hands the two bounds BACK rather than only raising, so a caller uses
+        the checked values instead of re-reading `self.minimum` afterwards.
+        That is what makes the dependency visible: the arithmetic below cannot
+        be written without going through this guard first, where before it was
+        a call whose result nothing used and which was therefore easy to move
+        or drop.
 
         :class:`~pyquadcortex.protocol.errors.ControlNotDrivable` rather than a
         bare ``ValueError``: this is exactly the ADR-0007 shape, and CLAUDE.md
@@ -376,7 +388,7 @@ class Parameter:
         caller already catching that is unaffected.
         """
         if self.minimum is not None and self.maximum is not None:
-            return
+            return self.minimum, self.maximum
         from pyquadcortex.protocol.errors import ControlNotDrivable
         raise ControlNotDrivable(
             control=f"{self.name!r} in its own units",
@@ -499,7 +511,9 @@ class ModelCatalog:
 
     def categories(self) -> list[str]:
         """Category names, in catalog order, without duplicates."""
-        seen = {}
+        # A dict rather than a set, for insertion order - "in catalog order"
+        # is the contract. The value is never read.
+        seen: dict[str, None] = {}
         for m in self.models.values():
             seen.setdefault(m.category, None)
         return list(seen)
