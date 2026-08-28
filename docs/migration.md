@@ -17,6 +17,60 @@ while that is true, and this file is the cost of doing it.
 
 ## 0.40.0 to the next release
 
+### Every setting takes a typed value, not just `set_param`
+
+| before | after |
+|---|---|
+| `set_input_level(port, 0.5)` | `set_input_level(port, Db(24.0))`, or `Encoded(0.5)` |
+| `set_output_level(port, 0.5)` | `set_output_level(port, Encoded(0.5))` |
+| `set_input_port(port, level=0.5)` | `set_input_port(port, level=Db(24.0))` |
+| `set_output_port(port, level=0.5)` | `set_output_port(port, level=Encoded(0.5))` |
+| `set_usb_port(level=0.5)` | `set_usb_port(level=Encoded(0.5))` |
+| `set_master_volume(0.3)` | `set_master_volume(Encoded(0.3))` |
+| `set_global_eq(1, gain=0.75)` | `set_global_eq(1, gain=Db(6.0))`, or `Encoded(0.75)` |
+| `set_global_eq(1, frequency=0.4)` | `set_global_eq(1, frequency=Encoded(0.4))` |
+| `set_global_eq_band(i, 0.6)` | `set_global_eq_band(i, Encoded(0.6))` |
+| `set_global_eq_output(level=0.5)` | `set_global_eq_output(level=Encoded(0.5))` |
+| `set_hold_timing(800)` | `set_hold_timing(Milliseconds(800))` |
+| `set_tuner_reference(2.0)` | `set_tuner_reference(Hertz(2.0))` |
+| `set_expression(t, p, minimum=0.0, maximum=0.9)` | `set_expression(t, p, minimum=Encoded(0.0), maximum=Encoded(0.9))` |
+
+**Which type, and why it is not always your choice.** Three cases:
+
+- **A measured scale**, so the unit type works: an input port's gain
+  (-12..+60 dB) and a Global EQ band's gain (-12..+12 dB).
+- **No measured scale**, so `Encoded` is the only thing accepted: output level,
+  USB level, master volume, Global EQ frequency/Q/output level, and a Global EQ
+  parameter addressed by raw index. A `Db` there raises `ControlNotDrivable`
+  naming what would have to be measured - it is not converted against a guess.
+- **No wire scale at all**, so `Encoded` is REFUSED: the HOLD threshold takes
+  `Milliseconds` and the tuner reference takes `Hertz`, because the wire carries
+  the real number rather than a 0..1 position.
+
+**`set_expression` got better, not just stricter.** Its sweep ends are positions
+of the parameter being assigned, so they take the same values a write to that
+parameter takes:
+
+```python
+# before
+qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
+                  minimum=0.0, maximum=db_to_lane_level(3.2))
+# after - the heel is the Off detent, below the dB scale, so it stays Encoded
+qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
+                  minimum=Encoded(0.0), maximum=Db(3.2))
+```
+
+**Reading a value back and writing it again needs a wrapper.** Expression
+endpoints come off the wire as plain floats, so a restore is
+`minimum=Encoded(was.expression_min)`.
+
+**Selectors did not change.** `impedance`, `input_type`, `ground_lift`,
+`hp_select`, `dry_wet`, `filter_type`, `mute` and `enabled` are switches and
+option lists, not values on a scale, and still take an enum or a bool.
+
+`translate.hz_to_tuner_reference()` now returns `Hertz`, so its result can be
+passed straight to `set_tuner_reference()`.
+
 ### `set_param` takes one value, and it must say which scale it is on
 
 `value=`, `real=` and `text=` are gone.

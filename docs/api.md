@@ -183,6 +183,36 @@ qc.set_param(block, 21, Encoded(0.5))     # the catalog omits index 21
 
 Everywhere else a unit type or `Real` says more, and reads better.
 
+### The same rule for the settings, with one twist
+
+Every method that writes a value takes a typed one, not just `set_param`. The
+twist is that the settings are not catalog models, so the scale has to come from
+somewhere else - and for several of them nobody has found it yet. Three cases:
+
+```python
+qc.set_input_level(Input.INPUT_1, Db(24.0))   # measured: -12..+60 dB
+qc.set_global_eq(2, gain=Db(-3.0))            # -12..+12 dB
+qc.set_master_volume(Encoded(0.30))           # no screen scale is known
+qc.set_hold_timing(Milliseconds(800))         # no DEVICE scale exists
+```
+
+**A measured scale** takes the unit type and converts: an input port's gain, and
+a Global EQ band's gain.
+
+**No measured scale** takes `Encoded` and nothing else - output port level, USB
+level, master volume, Global EQ frequency and Q, the Global EQ output level. A
+`Db` there raises `ControlNotDrivable` telling you what would have to be
+measured. It is not converted against a guess, because a wrong span is a silent
+wrong write rather than an error.
+
+**No device scale at all** refuses `Encoded` instead. The HOLD threshold is
+milliseconds and the tuner reference is an Hz offset; the wire carries the real
+number, so `Encoded(0.5)` has nothing to mean.
+
+Selectors are not values and did not change: `impedance`, `input_type`,
+`ground_lift`, `hp_select`, `dry_wet`, `filter_type` and the mute and bypass
+flags still take an enum or a bool.
+
 ## Blocks and the model catalog
 
 A grid cell holds a block. `set_block()` fills an empty cell or replaces an
@@ -509,7 +539,7 @@ qc.update_settings(screen_brightness=before.screen_brightness)
 Fifteen `GeneralSettings` fields are confirmed writable this way; the exceptions are
 worth knowing before you trust a read-back. `internal_midi_clock_enabled` refuses writes
 outright. `dimmed_led_brightness` is capped just below `led_brightness`, so a high value
-silently lands lower. `hold_timing` is an index into six values (500-1000 ms in 100 ms steps), so use `set_hold_timing()` / `hold_timing_ms()`, which convert and validate.
+silently lands lower. `hold_timing` is an index into six values (500-1000 ms in 100 ms steps), so use `set_hold_timing(Milliseconds(800))` / `hold_timing_ms()`, which convert and validate.
 See `update_settings()`'s docstring for the full list.
 
 `update_settings()` refuses `power_option` and `reset_wifi_networks`: those are
