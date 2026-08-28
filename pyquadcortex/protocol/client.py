@@ -735,6 +735,35 @@ class QuadCortex:
         """The catalog, fetched lazily - see `ParamTarget.model`."""
         return self.catalog
 
+    # Three overloads, and the order and the value unions both matter.
+    #
+    # A `Param` IS an `int` - that is what keeps it free of a catalog fetch -
+    # so an `int` overload accepting real values would swallow every wrong-unit
+    # call before the checker could reject it. Overload 3 therefore takes only
+    # what an index-addressed write actually needs, which is the device's own
+    # scale, a string, or a switch.
+    #
+    # The cost, stated rather than discovered: `set_param(target, 21, Real(3))`
+    # is a static error although it runs fine. Address by INDEX and say
+    # `Encoded`; name the parameter, or use its generated constant, to write
+    # real units. One line in this repository does the former, in a test.
+    @typing.overload
+    def set_param(self, target, param: "values_module.Param[values_module.U]",
+                  value: "values_module.Real[values_module.U] | "
+                         "values_module.Encoded | str | bool | None" = None,
+                  *, scene=None, promote: bool = True): ...
+
+    @typing.overload
+    def set_param(self, target, param: str,
+                  value: "values_module.Real[typing.Any] | "
+                         "values_module.Encoded | str | bool | None" = None,
+                  *, scene=None, promote: bool = True): ...
+
+    @typing.overload
+    def set_param(self, target, param: int,
+                  value: "values_module.Encoded | str | bool | None" = None,
+                  *, scene=None, promote: bool = True): ...
+
     def set_param(self, target, param, value=None, *, scene=None,
                   promote: bool = True):
         """Set one parameter, wherever on the unit it lives.

@@ -129,14 +129,30 @@ def members(model, group: str = None) -> list[tuple[str, int, str]]:
     return out
 
 
+#: Which unit marker a catalog `units` string maps to. The three the value
+#: types decline - `x`, `bits`, `dB/oct`, two parameters each - map to `NoUnit`
+#: for the same reason `values.of_unit` hands them a plain `Real`: there is no
+#: type to name, and `NoUnit` is the honest tag for "nothing checks this".
+UNIT_TYPES = {
+    "dB": "DbUnit", "%": "PercentUnit", "Hz": "HertzUnit",
+    "ms": "MillisecondsUnit", "s": "SecondsUnit",
+    "Semitones": "SemitonesUnit", "st": "SemitonesUnit",
+    "Cents": "CentsUnit", "cents": "CentsUnit", "BPM": "BpmUnit",
+}
+
+
 def render_enum(cls: str, doc: str, model, group=None) -> list[str]:
-    lines = ["", "", f"class {cls}(IntEnum):", f'    """{doc}"""', ""]
+    lines = ["", "", f"class {cls}(ParamSet):", f'    """{doc}"""', ""]
     used = set()
+    by_index = {p.index: p for p in model.parameters}
     for name, index, comment in members(model, group):
         if name in used:                       # same name AND same spelling twice
             name = f"{name}_{index}"
         used.add(name)
-        lines.append(f"    {name} = {index}    # {comment}")
+        spec = by_index.get(index)
+        unit = UNIT_TYPES.get(spec.units if spec else "", "NoUnit")
+        lines.append(f"    {name}: Param[{unit}] = Param({index}, {name!r})"
+                     f"    # {comment}")
     return lines
 
 
@@ -151,9 +167,14 @@ def render(cat: catalog.ModelCatalog) -> str:
         "",
         "    qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Db(-3.1))",
         "",
-        "These are ``IntEnum``, so a member IS its wire index and passing one",
-        "needs no catalog - which also makes it the cheapest route, since a",
-        "catalog is fetched from the device.",
+        "A constant IS its wire index - `Param` subclasses `int` - so passing",
+        "one needs no catalog, which makes it the cheapest route as well as the",
+        "clearest, since a catalog is fetched from the device.",
+        "",
+        "It also carries the parameter's UNIT in its type, so a type checker",
+        "rejects `set_param(LaneOutputParam.VOLUME, Hertz(217))` before it runs",
+        "(ADR-0018). The runtime check is unchanged and still covers every other",
+        "caller - a string, a bare index, or anyone not running a checker.",
         "",
         "**Cabs share one layout.** The catalog lists two parameters for a cab -",
         "its two mic selectors - while the wire carries 22. So a cab is CHOSEN by",
@@ -170,7 +191,43 @@ def render(cat: catalog.ModelCatalog) -> str:
         "Only FACTORY content is here, as in `models.py`. Resolve anything else",
         "through ``qc.catalog``.",
         '"""',
-        "from enum import IntEnum",
+        "from pyquadcortex.protocol.values import (BpmUnit, CentsUnit, DbUnit,",
+        "                                          HertzUnit, MillisecondsUnit,",
+        "                                          NoUnit, Param, PercentUnit,",
+        "                                          SecondsUnit, SemitonesUnit)",
+        "",
+        "",
+        "class _ParamSetMeta(type):",
+        '    """The `IntEnum` surface worth keeping, on a plain class.',
+        "",
+        "    These were `IntEnum`s until ADR-0018. An enum member's type is the",
+        "    enum class, so it cannot carry a PER-MEMBER unit, and a model's",
+        "    parameters have mixed units - which is the whole reason the shape",
+        "    changed. What callers actually used of `IntEnum` is iteration,",
+        "    lookup by name and `__members__`, so those are here; the rest of",
+        "    the enum machinery was never reached.",
+        '    """',
+        "",
+        "    @property",
+        "    def __members__(cls):",
+        "        return {k: v for k, v in vars(cls).items()",
+        "                if isinstance(v, Param)}",
+        "",
+        "    def __iter__(cls):",
+        "        return iter(cls.__members__.values())",
+        "",
+        "    def __getitem__(cls, name):",
+        "        return cls.__members__[name]",
+        "",
+        "    def __len__(cls):",
+        "        return len(cls.__members__)",
+        "",
+        "    def __contains__(cls, item):",
+        "        return item in cls.__members__.values()",
+        "",
+        "",
+        "class ParamSet(metaclass=_ParamSetMeta):",
+        '    """One model\'s parameters. Never instantiated - it is a namespace."""',
     ]
 
     lines += ["", "", "# -- the containers a target addresses " + "-" * 40]
@@ -207,7 +264,7 @@ def render(cat: catalog.ModelCatalog) -> str:
                              group=GROUPED.get(model.category))
         index_lines.append(f"    {model.id}: {cls},")
 
-    lines += ["", "", "#: Every generated enum, keyed by the model id it describes.",
+    lines += ["", "", "#: Every generated parameter set, keyed by its model id.",
               "BY_MODEL = {"] + index_lines + ["}", ""]
     return "\n".join(lines)
 
