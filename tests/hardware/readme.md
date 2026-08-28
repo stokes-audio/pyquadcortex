@@ -7,9 +7,31 @@ that **a successful run leaves the unit exactly as it found it**.
 pytest tests/hardware --hardware
 ```
 
-Without `--hardware` nothing here is collected at all - not skipped, not collected.
-A hardware test that reports itself as a skip in an offline run is a test nobody
-notices has stopped running.
+Without `--hardware` nothing here runs. A hardware test that reports itself as a
+skip in an offline run is a test nobody notices has stopped running, so it is
+never a skip - which of the two stronger things happens depends on how the path
+reached pytest:
+
+- **Reached by walking the tree** (`pytest`, `pytest tests/`, `pytest tests/hardware`):
+  not collected at all. `pytest_ignore_collect` vetoes the file before it is even
+  imported.
+- **Named on the command line** (`pytest tests/hardware/test_scales.py`, or one
+  node id): the run stops with `ERROR: these tests drive a real Quad Cortex and
+  need --hardware`, naming every path it refused. pytest does not offer
+  command-line arguments to `pytest_ignore_collect` at all, so these are
+  collected first and then refused by `pytest_collection_modifyitems`; no test
+  runs, and `--collect-only` still prints the item list before it exits. The
+  refusal is loud rather than a silent deselect because you asked for those tests
+  by name and are owed the reason they did not run.
+
+Both halves are pinned offline in `tests/test_hardware_gate.py`, in a subprocess
+running the developer's own command. The second half was missing until
+2026-08-28: pytest exempts an initial command-line path from
+`pytest_ignore_collect` (`Dir.collect` skips the hook for anything
+`Session.isinitpath` claims - `_pytest/main.py`, pytest 9.1.1), so a named path
+walked straight past the flag, and with a unit attached those tests ran and drove
+it. The exemption is deliberate on pytest's side, so the second hook is permanent
+rather than a workaround.
 
 ## Before you run it
 

@@ -58,7 +58,7 @@ _HARDWARE_SUITE = Path(__file__).parent / "hardware" / "test_write_echo.py"
 def echo_suite():
     """The hardware module imported as a plain module, not collected.
 
-    ``tests/hardware/conftest.py`` refuses to *collect* it without ``--hardware``;
+    ``tests/hardware/conftest.py`` refuses to *run* it without ``--hardware``;
     importing it is a different thing and has to stay safe, which it is because
     nothing at its module scope touches a device. Two module-scope dependencies
     ride on that and will fail loudly here if they move: ``QuadCortex.set_block``
