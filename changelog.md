@@ -20,6 +20,32 @@ correction.
 
 ## Unreleased
 
+### Naming a hardware test on the command line walked past `--hardware`
+
+`tests/hardware/` drives a real unit and is gated on `--hardware`. The gate was
+one `pytest_ignore_collect` hook, and pytest does not consult that hook for a
+path given as a command-line argument - only for paths it reaches by walking a
+directory. So `pytest` and `pytest tests/` collected nothing from there, exactly
+as documented, and `pytest tests/hardware/test_scales.py` collected all of it:
+with a unit attached those tests ran and drove it, and with none attached they
+failed rather than being absent. A developer narrowing a run to one file lost the
+flag that means "yes, touch my unit" without being told.
+
+An explicitly named hardware path now stops the run with an error naming the flag
+and every path it refused. The offline suite's guarantee (ADR-0002) was never
+affected: no hardware test has ever run in CI, which passes no paths.
+
+`tests/hardware/readme.md` claimed the stronger "not collected at all" for every
+invocation. It now says which shape gets which, since a named path is collected
+before it is refused, and `tests/test_hardware_gate.py` holds both halves up in a
+subprocess running the developer's own command.
+
+**Withdrawn:** the 0.39.0 entry below, "A hardware-in-the-loop test suite", makes
+the same too-strong claim - "nothing in `tests/hardware/` is collected at all -
+not skipped, not collected". True of the paths pytest reaches by recursion, and
+never true of a path named on the command line. `tests/` ships in the sdist, so
+that entry is read by people who installed the package.
+
 ### BREAKING: every setting takes a typed value too, not just `set_param`
 
 ```python
@@ -84,25 +110,6 @@ Reads come back the same way, so `to_real` hands you `Db(12.0)` rather than
 `12.0`.
 
 See `docs/migration.md` for the table, and `docs/api.md` for the picture.
-### Naming a hardware test on the command line walked past `--hardware`
-
-`tests/hardware/` drives a real unit and is gated on `--hardware`. The gate was
-one `pytest_ignore_collect` hook, and pytest does not consult that hook for a
-path given as a command-line argument - only for paths it reaches by walking a
-directory. So `pytest` and `pytest tests/` collected nothing from there, exactly
-as documented, and `pytest tests/hardware/test_scales.py` collected all of it:
-with a unit attached those tests ran and drove it, and with none attached they
-failed rather than being absent. A developer narrowing a run to one file lost the
-flag that means "yes, touch my unit" without being told.
-
-An explicitly named hardware path now stops the run with an error naming the flag
-and every path it refused. The offline suite's guarantee (ADR-0002) was never
-affected: no hardware test has ever run in CI, which passes no paths.
-
-`tests/hardware/readme.md` claimed the stronger "not collected at all" for every
-invocation. It now says which shape gets which, since a named path is collected
-before it is refused, and `tests/test_hardware_gate.py` holds both halves up in a
-subprocess running the developer's own command.
 
 ### `has_unsaved_changes` could stay true through a recall
 

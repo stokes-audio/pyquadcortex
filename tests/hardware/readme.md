@@ -30,8 +30,20 @@ running the developer's own command. The second half was missing until
 `pytest_ignore_collect` (`Dir.collect` skips the hook for anything
 `Session.isinitpath` claims - `_pytest/main.py`, pytest 9.1.1), so a named path
 walked straight past the flag, and with a unit attached those tests ran and drove
-it. The exemption is deliberate on pytest's side, so the second hook is permanent
-rather than a workaround.
+it. That exemption is observed in pytest's code and absent from its hookspec,
+which says the hook is consulted for every file and directory - so treat it as
+behaviour rather than a promise. Nothing here depends on which it is: if pytest
+ever closes the gap, a named path stops being collected and the tests in
+`tests/test_hardware_gate.py` fail on the exit code they assert.
+
+One seam worth knowing, because it is not this gate's doing. If collection itself
+fails first, pytest stops there and the refusal never gets to speak - and
+`pytest tests/test_scales.py tests/hardware/test_scales.py` does exactly that,
+because the two files share a basename with no `__init__.py` to tell them apart.
+Nothing runs in that case either; you just get pytest's collection error instead
+of the message naming the flag. The same collision is why `pytest --hardware`
+from the repo root cannot run this suite at all, and why the documented command
+above names the directory.
 
 ## Before you run it
 

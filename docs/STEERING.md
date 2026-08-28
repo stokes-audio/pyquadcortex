@@ -148,9 +148,9 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 **Why:** the gate was one hook, and pytest does not consult it for command-line
 arguments. `pytest tests/hardware/test_scales.py` therefore collected and RAN the
-suite - driving the unit with no flag, or failing offline instead of being absent
-- while `pytest` and `pytest tests/` behaved exactly as documented. The readme
-told developers it could not happen.
+suite - driving the unit with no flag, or failing offline instead of being absent -
+while `pytest` and `pytest tests/` behaved exactly as documented. The readme told
+developers it could not happen.
 
 **What this constrains going forward:**
 - The gate stays two hooks. A tidy-up that folds them into one restores the bug
@@ -158,8 +158,26 @@ told developers it could not happen.
 - A refusal here is loud, not a silent deselect: the developer named those tests,
   so the reason they did not run is owed to them.
 
+**Scope of impact:**
+- **Updated:** `tests/hardware/conftest.py` (the second hook), `tests/conftest.py`
+  and `tests/hardware/readme.md` (the guarantee as enforced), this file and
+  CLAUDE.md (§ 6 and the test-command bullet), `changelog.md`
+- **Also updated:** ADR-0005's Open Questions, whose "how it is invoked" line had
+  been open since 2026-08-04 and is what this work settles; three offline
+  docstrings that described the gate as collection-only
+- **New:** `tests/test_hardware_gate.py`
+
+**Downstream to consider:**
+- `pytest --hardware` from the repo root cannot run the hardware suite at all:
+  `tests/test_scales.py` and `tests/hardware/test_scales.py` share a basename with
+  no `__init__.py`, and so do the two `test_values.py`, so collection errors out.
+  Pre-existing and untouched here; the documented `pytest tests/hardware
+  --hardware` works. It also means a mixed run naming two same-named files dies in
+  collection before the new hook can name the flag.
+
 **Not covered here:** the offline suite's own guarantee (ADR-0002), which was
 never affected - CI passes no paths, so no hardware test has ever run in it.
+
 ### 2026-08-28 - Every setting takes a typed value (ADR-0017)
 
 **What changed:** ADR-0016 reached one method. It now reaches every method that

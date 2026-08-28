@@ -46,8 +46,9 @@ def _resolved(item):
     Resolved on both sides of the comparison below, because pytest builds a
     node's path with ``absolutepath``, which does NOT follow symlinks. An
     ABSOLUTE argument naming this directory through a link would then compare
-    unequal to ``SUITE`` and the gate would quietly stop firing - measured, with
-    this line left out: 28 hardware tests collected, exit 0. A relative argument
+    unequal to ``SUITE`` and the gate would quietly stop firing - measured on
+    ``tests/hardware/test_scales.py`` with this line left out: its 28 tests
+    collected, exit 0. A relative argument
     is joined to the working directory, which the OS has already resolved, so
     that shape was never at risk. ``tests/test_hardware_gate.py`` runs the one
     that was.
@@ -63,16 +64,27 @@ def pytest_collection_modifyitems(session, config, items):
     command-line argument - only for paths reached by walking a directory - so
     narrowing a run to one file used to walk straight past the gate. With a unit
     attached those tests RAN and drove it; with none attached they failed rather
-    than being absent. The exemption is deliberate on pytest's side, so it is
-    not a version quirk to wait out. ``--hardware`` is the flag that means "yes,
-    touch my unit", and losing it without being told is the one thing this suite
-    must not do.
+    than being absent. ``--hardware`` is the flag that means "yes, touch my
+    unit", and losing it without being told is the one thing this suite must not
+    do.
+
+    That exemption is OBSERVED, not promised: it is in pytest's code (the
+    ``isinitpath`` checks in ``Dir.collect``) and not in its hookspec, which says
+    the hook is consulted for all files and directories. Read as behaviour rather
+    than contract - and the direction of the risk is fine either way. If pytest
+    ever matches its code to its docs, a named path becomes uncollected, this hook
+    sees no items, and ``tests/test_hardware_gate.py`` fails on the exit code
+    while the gate itself gets STRONGER.
 
     This hook does see explicitly-named paths, which is why the gate lives here
     as well. It raises rather than deselecting quietly: the developer asked for
     these tests by name, so the reason they did not run is owed to them, and a
-    deselected count in a summary line is not that reason. Nothing here executes
-    either way.
+    deselected count in a summary line is not that reason.
+
+    No test runs either way. The named modules are imported first, since that is
+    what collecting them means, and that is safe by a standing constraint rather
+    than by luck: the hardware modules must stay import-safe offline (STEERING
+    § 6), and nothing at their module scope touches a device.
     """
     if config.getoption("--hardware"):
         return

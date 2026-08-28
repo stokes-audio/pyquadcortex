@@ -41,8 +41,17 @@ MODULES = sorted(str(path.relative_to(ROOT))
 
 
 def _pytest(poison, *args):
-    """Run pytest from the repo root, exactly as a developer would."""
+    """Run pytest from the repo root, exactly as a developer would.
+
+    ``PYTEST_ADDOPTS`` and ``PYTEST_PLUGINS`` are dropped rather than inherited.
+    Somebody in the middle of a hardware session plausibly has
+    ``PYTEST_ADDOPTS=--hardware`` exported, and this file would then report the
+    gate broken when it is not - measured: 5 of these 7 tests fail. The one file
+    whose job is to be believed does not get to be noisy for that reason.
+    """
     env = dict(os.environ)
+    for leaks in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS"):
+        env.pop(leaks, None)
     env["PYTHONPATH"] = os.pathsep.join(
         [str(poison), str(ROOT), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
     return subprocess.run(
@@ -150,8 +159,9 @@ def test_a_path_through_a_symlink_is_gated_too(_poisoned_hid, tmp_path):
 
     An absolute argument is what reaches that state: a RELATIVE one is joined to
     the working directory, which the OS has already resolved, so both sides come
-    out physical whatever the developer typed. Measured on this checkout with the
-    item side left unresolved: 28 hardware tests collected, exit 0.
+    out physical whatever the developer typed. Measured with the item side left
+    unresolved, on ``tests/hardware/test_scales.py`` rather than the module this
+    test happens to name: its 28 tests collected, exit 0.
     """
     link = tmp_path / "linked-repo"
     link.symlink_to(ROOT)
@@ -178,6 +188,43 @@ def test_recursion_still_collects_no_hardware_test(_poisoned_hid):
     offered = [line for line in result.stdout.splitlines()
                if line.startswith("tests/hardware")]
     assert not offered, offered
+
+
+def test_naming_the_directory_collects_nothing(_poisoned_hid):
+    """``pytest tests/hardware`` - the readme's own example for the veto branch.
+
+    A directory named on the command line is an initial path too, so the veto
+    does not run for the DIRECTORY. Its files are reached by recursion from
+    there, which is what saves this shape: the per-file veto still fires. Worth
+    its own case because the two halves of the gate pass it back and forth.
+    """
+    result = _pytest(_poisoned_hid, "tests/hardware", "--collect-only", "-q")
+
+    assert result.returncode == pytest.ExitCode.NO_TESTS_COLLECTED, (
+        result.stdout + result.stderr)
+    assert "no tests collected" in result.stdout, result.stdout
+
+
+def test_one_hardware_path_refuses_the_whole_run(_poisoned_hid):
+    """A mixed run is refused entirely, offline half included.
+
+    The deliberate choice, pinned because it is the one a future reader is most
+    likely to soften: it would be easy to drop the hardware items and run the
+    rest, and that hands back a green run to somebody who asked to touch the unit
+    and was not told they did not. The pair below deliberately has no shared
+    basename - two files called the same thing collide in collection before this
+    gate is reached, which is the gap noted in ``tests/hardware/readme.md``.
+    """
+    result = _pytest(_poisoned_hid, "tests/test_registry.py",
+                     "tests/hardware/test_tempo_mode.py")
+
+    assert result.returncode == pytest.ExitCode.USAGE_ERROR, (
+        result.stdout + result.stderr)
+    assert "no tests ran" in result.stdout, result.stdout
+    assert "tests/hardware/test_tempo_mode.py" in result.stderr, result.stderr
+    assert "tests/test_registry.py" not in result.stderr, (
+        "the refusal names an offline path as if it were gated:\n"
+        + result.stderr)
 
 
 def test_the_flag_opens_the_gate_for_every_module(collected_with_the_flag):

@@ -37,9 +37,10 @@ _HARDWARE_CONFTEST = (
 def recorder_class():
     """The real ``HandshakeBurst``, loaded from the hardware suite's conftest.
 
-    Loaded by path under its own module name: the hardware conftest is not
-    collected at all without ``--hardware``, so there is no other way to reach it
-    from the offline suite, and pytest's own copy is untouched by this.
+    Loaded by path under its own module name: without ``--hardware`` nothing in
+    the hardware suite is collected from a recursive run and a named path is
+    refused, so there is no other way to reach it from the offline suite, and
+    pytest's own copy is untouched by this.
     """
     spec = importlib.util.spec_from_file_location(
         "hardware_conftest", _HARDWARE_CONFTEST)
