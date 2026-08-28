@@ -2669,12 +2669,12 @@ visually on the device's own screen.
 | `favorites` | `RecentsFavorites{READ}` | read-back | read-only |
 | `tuner` / `show_tuner` / `set_tuner_input` | `Tuner{READ}` / `ShowTuner{UPDATE, show}` / `Tuner{UPDATE, input_port_id}` | read-back | `frequency` is a readout, not the reference pitch |
 | `looper` | `Looper{READ}` | read-back | full status; transport not driven |
-| `set_input_port` / `set_output_port` / `set_usb_port` / `set_midi_thru` / `set_output_pairing` | `IOSettings{UPDATE, settings{...}}` | read-back | sparse and port-keyed. Output `mute` and input impedance did NOT take |
+| `set_input_port` / `set_output_port` / `set_usb_port` / `set_midi_thru` / `set_output_pairing` | `IOSettings{UPDATE, settings{...}}` | read-back | sparse and port-keyed. Output `mute` and input impedance did NOT take when packed with another field. Levels take a typed value: the input gain converts `Db` over a measured -12..+60 dB, the output and USB levels take `Encoded` only because no span is known |
 | `set_param_option` | `Grid{UPDATE, ..., params{index, param_values{float_value}}}` | read-back + on-unit | picks a list parameter's option by name; the value is `index / (count - 1)` |
 | `set_output_mute` | `IOSettings{UPDATE, settings{out_port{output_port_id, mute}}}` | read-back + on-unit | must travel ALONE; dropped if another field shares the port entry |
-| `set_tuner_reference` | `Tuner{UPDATE, frequency}` | read-back + on-unit | an OFFSET in Hz from 440 |
+| `set_tuner_reference` | `Tuner{UPDATE, frequency}` | read-back + on-unit | an OFFSET in Hz from 440, taken as `Hertz`; the wire carries the Hz itself, so there is no `Encoded` line here |
 | `captures` / `set_capture` | `File{READ}` on `local_nc_root`; then `Grid{UPDATE, ..., params{index: 5, param_values{string_value}}}` | read-back + on-unit | a capture block's model id is the block TYPE; `file_name` = hash + display name selects the capture |
-| `master_volume` | `MasterVolume{READ}` | read-back | READ-ONLY: 0..1 mapping to the 0-100 on screen; a write is ignored |
+| `master_volume` / `set_master_volume` | `MasterVolume{READ}` / `{UPDATE, volume}` | read-back + on-unit + by ear | WRITABLE. The recorded "a write is ignored" was a STALE READ - a read straight after a write returns the previous value. Takes `Encoded`: the wire is 0..1 and the screen shows 0-100, but what that number IS has not been established, so no dB is offered. After a host write the physical knob soft-takes-over |
 | `pin_model` / `unpin_model` / `pinned_models` | `PinnedModels{models}` with NO action / `{DELETE, models}` | read-back + on-unit | pinning APPENDS and can duplicate; DELETE removes every entry for an id |
 | `delete_setlist` | `File{DELETE, folder{key, name}}` | read-back | removes the setlist and its contents |
 | `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root, not children of My Presets |
@@ -2692,7 +2692,7 @@ visually on the device's own screen.
 | `set_master_volume_assignment` | `GeneralSettings{UPDATE, master_volume_assignment{...}}` | read-back | which outputs the knob governs. Read-merge-write, because a submessage is replaced wholesale |
 | `set_master_volume` | `MasterVolume{UPDATE, volume}` | read-back + on-unit + by ear | normalized 0..1, displayed as `round(v * 100)`. Travels alone. The earlier "accepted and ignored" was a stale read. Never add `calibrate` - it opens the calibration dialog |
 | `set_global_bypass` | `GeneralSettings{UPDATE, global_bypass_cab` / `_ir{row1..row4}}` | read-back | global Cab / IR bypass per row |
-| `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index; which index is which band control is unestablished |
+| `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index; which index is which band control is unestablished, so it takes `Encoded` only - `set_global_eq` knows the offsets and takes `Db` for a band's GAIN |
 | `set_mode_cycle` | `Mode{UPDATE, available_modes{modes}}` | read-back | the mode cycle order; the whole list is replaced |
 | `settings` / `update_settings` | `GeneralSettings{READ}` / `{UPDATE, <fields>}` | read-back | the Device Settings and System menus; sparse. `power_option` and `reset_wifi_networks` are refused as commands rather than settings |
 | `set_scene_bypass_behavior` | `GeneralSettings{UPDATE, scene_block_bypass}` | read-back | global, and it decides what `set_bypass` persists |

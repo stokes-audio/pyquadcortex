@@ -66,7 +66,9 @@ SPLITTER_AB = 10000
 #:
 #: Every other container tested - blocks, the input gate, the mixer, the
 #: splitter - accepts an assignment on every parameter kind. These two are the
-#: only refusal known in the library, so they are named rather than derived.
+#: first refusal known in the library, and still the only one where the DEVICE
+#: is what refuses, so they are named rather than derived. The others - an
+#: unmeasured bound, an unmeasured scale - are refusals about what we KNOW.
 LANE_OUTPUT_UNASSIGNABLE = ("MUTE", "SOLO")
 
 

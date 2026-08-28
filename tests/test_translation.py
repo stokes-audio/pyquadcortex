@@ -26,7 +26,7 @@ from pyquadcortex import protocol
 from pyquadcortex.device import translate
 from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
 from pyquadcortex.protocol.targets import Block, Tempo
-from pyquadcortex.protocol.values import Real
+from pyquadcortex.protocol.values import Milliseconds, Real
 
 
 # -- rows: 1-4 on screen, 0-3 on the wire ------------------------------------
@@ -583,7 +583,7 @@ def test_every_hold_timing_index_reads_the_same_way_the_protocol_layer_does(inde
 def test_hold_timing_is_what_the_protocol_write_expects():
     recorder = Recorder()
     qc = protocol.QuadCortex(recorder)
-    qc.set_hold_timing(800)
+    qc.set_hold_timing(Milliseconds(800))
     assert recorder.sent[-1].hold_timing == translate.ms_to_hold_timing(800)
 
 
@@ -878,6 +878,12 @@ PROTOCOL_NON_CONVERSIONS = {
     # and `translate.routes_to_a_row` deliberately refuses to report which row
     # they feed, because that reading is obvious rather than confirmed.
     "NEXT_ROW_3", "NEXT_ROW_4", "NEXT_ROW_3_4",
+    # A value TYPE, which labels a number rather than converting one. ADR-0016
+    # put these in the protocol layer on purpose - they name units the device
+    # PUBLISHES, not coordinates this library chooses - so the boundary is
+    # allowed to hand one back. `hz_to_tuner_reference` still does its own
+    # arithmetic here, inside the boundary, and only wraps the result.
+    "Hertz",
 }
 
 

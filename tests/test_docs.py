@@ -94,11 +94,34 @@ SNIPPET_SOURCES = DOCS + [ROOT / "changelog.md"] + sorted(
     (ROOT / "pyquadcortex").rglob("*.py"))
 
 
+def _drop_before_blocks(snippet):
+    """Remove the OLD-syntax half of a before/after example.
+
+    `docs/migration.md` exists to show the syntax that no longer works, so a
+    guard that refused it would refuse the guide for getting past it. The
+    exemption is a marker rather than a whole-file skip: everything after
+    `# after` is checked like any other snippet, which is the half a reader
+    copies.
+    """
+    kept, skipping = [], False
+    for line in snippet.split("\n"):
+        marker = line.strip().lower()
+        if marker.startswith("# before"):
+            skipping = True
+            continue
+        if marker.startswith("# after"):
+            skipping = False
+            continue
+        kept.append("" if skipping else line)
+    return "\n".join(kept)
+
+
 def _python_snippets(path):
     """Every ```python fence in a .md, or every ``::`` block in a .py docstring."""
     text = path.read_text()
     if path.suffix == ".md":
-        return re.findall(r"```python\n(.*?)```", text, re.DOTALL)
+        return [_drop_before_blocks(f)
+                for f in re.findall(r"```python\n(.*?)```", text, re.DOTALL)]
     blocks = []
     for doc in re.findall(r'"""(.*?)"""', text, re.DOTALL):
         for chunk in re.split(r"::\n", doc)[1:]:
@@ -192,21 +215,57 @@ def test_no_snippet_names_a_parameter_on_a_block_with_no_model(path):
             )
 
 
+#: Every method that refuses a bare number, and WHERE its values sit: the
+#: positional slots to check, and the keywords.
+#:
+#: ADR-0017 widened the rule from `set_param` to ten more methods and this list
+#: did not move with it, so the guard went stale in the same commit - and two
+#: `README.md` snippets that now raise got through, twenty-five lines below the
+#: page's own explanation of typed values. A method added to ADR-0017's scope
+#: belongs here in the same change.
+REFUSE_A_BARE_NUMBER = {
+    "set_param": (2, ()),
+    "set_input_level": (1, ()),
+    "set_output_level": (1, ()),
+    "set_master_volume": (0, ()),
+    "set_global_eq_band": (1, ()),
+    "set_hold_timing": (0, ()),
+    "set_tuner_reference": (0, ()),
+    "set_input_port": (None, ("level",)),
+    "set_output_port": (None, ("level",)),
+    "set_usb_port": (None, ("level",)),
+    "set_global_eq": (None, ("gain", "frequency", "q")),
+    "set_global_eq_output": (None, ("level",)),
+    "set_expression": (None, ("minimum", "maximum")),
+    "set_expression_bypass": (None, ("delay_ms",)),
+}
+
+
+def _bare(node):
+    return (isinstance(node, ast.Constant)
+            and isinstance(node.value, (int, float))
+            and not isinstance(node.value, bool))
+
+
 @pytest.mark.parametrize("path", SNIPPET_SOURCES,
                          ids=lambda p: str(p.relative_to(ROOT)))
-def test_no_snippet_passes_set_param_a_bare_number(path):
-    """ADR-0016 made this a TypeError, and `docs/api.md` still taught it."""
+def test_no_snippet_passes_a_bare_number_where_one_is_refused(path):
+    """ADR-0016 and ADR-0017 made these a TypeError; the docs still taught them."""
     for snippet in _python_snippets(path):
         for call in _calls(snippet):
-            if _name_of(call.func) != "set_param" or len(call.args) < 3:
+            where = REFUSE_A_BARE_NUMBER.get(_name_of(call.func))
+            if where is None:
                 continue
-            value = call.args[2]
-            bare = (isinstance(value, ast.Constant)
-                    and isinstance(value.value, (int, float))
-                    and not isinstance(value.value, bool))
-            assert not bare, (
-                f"{path.name}: set_param(..., {value.value!r}) is refused - "
-                f"every knob has two number lines, so the value must say which"
+            slot, keywords = where
+            found = []
+            if slot is not None and len(call.args) > slot and _bare(call.args[slot]):
+                found.append(repr(call.args[slot].value))
+            found += [f"{k.arg}={k.value.value!r}" for k in call.keywords
+                      if k.arg in keywords and _bare(k.value)]
+            assert not found, (
+                f"{path.name}: {_name_of(call.func)}(..., {found[0]}) is "
+                f"refused - every value has two number lines, so it must say "
+                f"which one it is on"
             )
 
 

@@ -20,6 +20,44 @@ correction.
 
 ## Unreleased
 
+### BREAKING: every setting takes a typed value too, not just `set_param`
+
+```python
+qc.set_input_level(Input.INPUT_1, Db(24.0))       # -12..+60 dB, measured
+qc.set_global_eq(2, gain=Db(-3.0))                # -12..+12 dB
+qc.set_master_volume(Encoded(0.30))               # no known screen scale
+qc.set_hold_timing(Milliseconds(800))             # no wire scale at all
+qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
+                  minimum=Encoded(0.0), maximum=Db(3.2))
+```
+
+The previous release made `set_param` refuse a bare number and left ten sibling
+methods taking a bare wire float, so the rule described one method rather than
+the library. The sharpest case was outside it: the unit displays master volume
+as 0-100 while the wire is 0..1, so `set_master_volume(30)` meaning "30 on
+screen" writes full output to whatever is plugged in.
+
+Three cases, and they are deliberately not blurred together:
+
+- **A known scale.** An input port's gain and a Global EQ band's gain take
+  `Db` and convert.
+- **No known scale.** Output level, USB level, master volume, Global EQ
+  frequency/Q/output level: `Encoded` only. A `Db` raises `ControlNotDrivable`
+  saying what would have to be measured, rather than converting against a
+  number somebody made up.
+- **No wire scale at all.** The HOLD threshold is milliseconds and the tuner
+  reference is an Hz offset - the wire carries the real number. `Encoded` is
+  refused there, because it has nothing to mean.
+
+`set_expression` gained the most. Its sweep ends are positions of the parameter
+being assigned, so they now take the same typed values a write to that knob
+takes: `maximum=Db(3.2)` replaces `maximum=db_to_lane_level(3.2)`.
+
+Selectors are unchanged - impedance, input type, ground lift, hp_select,
+dry_wet, filter type, mute and bypass still take an enum or a bool.
+
+See `docs/migration.md` for the table.
+
 ### BREAKING: a parameter value now says which scale it is on
 
 ```python

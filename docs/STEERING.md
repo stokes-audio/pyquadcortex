@@ -93,6 +93,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0014 | A parameter is addressed by a target, and the target owns what differs |
 | ADR-0015 | The catalog is the source of truth for a parameter's scale; measurements are tests |
 | ADR-0016 | Parameter values carry their own scale, and the protocol layer may speak the device's units |
+| ADR-0017 | Every setting takes a typed value, and says so when it has no scale to convert against |
 
 ## 8. Open Questions
 
@@ -131,6 +132,33 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-28 - Every setting takes a typed value (ADR-0017)
+
+**What changed:** ADR-0016 reached one method. It now reaches every method that
+writes a value - the I/O port levels, USB level, master volume, the Global EQ,
+the HOLD threshold, the tuner reference offset, and `set_expression`'s sweep
+ends. A bare number is refused everywhere.
+
+**Why:** the rule described `set_param` rather than the library, and the worst
+case was outside it. The unit shows master volume as 0-100 while the wire is
+0..1, so `set_master_volume(30)` meaning "30 on screen" writes full output to an
+amplifier - and the method already carried a hand-written guard for exactly
+that, which is what a real ambiguity being patched one method at a time looks
+like.
+
+**What to watch:** three cases, and blurring them is the failure mode. A wire
+0..1 with a MEASURED scale takes the unit type and converts. A wire 0..1 with no
+measured scale takes `Encoded` only, and a `Real` raises `ControlNotDrivable`
+naming what would settle it - never an invented span. A setting with no 0..1
+line at all, like the HOLD threshold in ms, refuses `Encoded` instead. Selectors
+are not values and stay plain.
+
+The two known spans are NOT equally known, and `units.SETTING_SPANS` says so
+beside each: the input port has four measured points, the Global EQ gain has the
+manual plus two points 6 dB apart on a 24 dB range. That second one is queued to
+be driven on screen. Two close points could not tell -40..+12 from -100..+30 for
+the lane family, and that mistake shipped twice.
 
 ### 2026-08-27 - A parameter value carries its own scale (ADR-0016)
 

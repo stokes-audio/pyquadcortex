@@ -33,12 +33,23 @@ class BlockRefused(RuntimeError):
 
 
 class ControlNotDrivable(ValueError):
-    """A control the unit has, that the unit itself drives, and a host cannot.
+    """A request the library will not answer, because answering means guessing.
 
     ADR-0007 decided that such a control is REPRESENTED and REFUSES rather than
     being omitted or guessed at, and left one question open: how the refusal
-    reads in practice, to be settled by the first control that ships one. This
-    is it - the Lane Output Control's MUTE and SOLO.
+    reads in practice, to be settled by the first control that ships one. That
+    was the Lane Output Control's MUTE and SOLO, where the DEVICE is what
+    refuses - it silently drops a host write.
+
+    ADR-0017 added a second shape, and the class name reads a little narrow for
+    it, which is worth saying rather than papering over. There the host CAN
+    drive the control - the master volume, an output port's level - and what is
+    missing is the SCALE: nobody has read that control's screen against its
+    wire value, so a value in dB cannot be converted without inventing a span.
+    The remedy differs accordingly, and `workaround` is the field that says
+    which case you are in: "do it on the unit" for the first, "pass Encoded(),
+    or measure the scale" for the second. Branch on `workaround`, not on the
+    class name.
 
     It subclasses ``ValueError`` because it is raised on an argument the caller
     chose, so ``except ValueError`` around a rig-building script keeps working.
@@ -52,7 +63,7 @@ class ControlNotDrivable(ValueError):
         try:
             qc.set_expression(LaneOutput(row), name, pedal=1)
         except ControlNotDrivable as refusal:
-            print(f"{refusal.control}: do it on the unit. {refusal.workaround}")
+            print(f"{refusal.control}: {refusal.workaround}")
 
     ``control`` is what was addressed, ``evidence`` is why we believe it cannot
     be driven, and ``workaround`` is what to do instead. All three are required:
