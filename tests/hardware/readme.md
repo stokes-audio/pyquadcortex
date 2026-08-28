@@ -7,9 +7,54 @@ that **a successful run leaves the unit exactly as it found it**.
 pytest tests/hardware --hardware
 ```
 
-Without `--hardware` nothing here is collected at all - not skipped, not collected.
-A hardware test that reports itself as a skip in an offline run is a test nobody
-notices has stopped running.
+`pytest --hardware` from the repo root works too, since the rename described
+below, and it runs BOTH suites - the offline one and this one, against your unit.
+Name the directory unless you want that.
+
+Without `--hardware` nothing here runs. A hardware test that reports itself as a
+skip in an offline run is a test nobody notices has stopped running, so it is
+never a skip - which of the two stronger things happens depends on how the path
+reached pytest:
+
+- **Reached by walking the tree** (`pytest`, `pytest tests/`, `pytest tests/hardware`):
+  not collected at all. `pytest_ignore_collect` vetoes the file before it is even
+  imported.
+- **Named on the command line** (`pytest tests/hardware/test_write_echo.py`, or one
+  node id): the run stops with `ERROR: these tests drive a real Quad Cortex and
+  need --hardware`, naming every path it refused. pytest does not offer
+  command-line arguments to `pytest_ignore_collect` at all, so these are
+  collected first and then refused by `pytest_collection_modifyitems`; no test
+  runs, and `--collect-only` still prints the item list before it exits. The
+  refusal is loud rather than a silent deselect because you asked for those tests
+  by name and are owed the reason they did not run.
+
+Both halves are pinned offline in `tests/test_hardware_gate.py`, in a subprocess
+running the developer's own command. The second half was missing until
+2026-08-28: pytest exempts an initial command-line path from
+`pytest_ignore_collect` (`Dir.collect` skips the hook for anything
+`Session.isinitpath` claims - `_pytest/main.py`, pytest 9.1.1), so a named path
+walked straight past the flag, and with a unit attached those tests ran and drove
+it. That exemption is observed in pytest's code and absent from its hookspec,
+which says the hook is consulted for every file and directory - so treat it as
+behaviour rather than a promise. Nothing here depends on which it is: if pytest
+ever closes the gap, a named path stops being collected and the tests in
+`tests/test_hardware_gate.py` fail on the exit code they assert.
+
+One seam worth knowing, because it is not this gate's doing: if collection
+itself fails first, pytest stops there and the refusal never gets to speak.
+Nothing runs in that case either - you just get pytest's collection error
+instead of the message naming the flag.
+
+That is why two files here end in `_on_unit`. **A module in this directory needs
+a basename no module under `tests/` already owns.** pytest maps
+`tests/hardware/test_scales.py` and `tests/test_scales.py` to one module name and
+refuses the second, which until 2026-08-28 meant `pytest --hardware` from the
+repo root could not collect this suite at all - two collection errors, exit 2 -
+and only the documented `pytest tests/hardware --hardware` worked. Renaming was
+the fix rather than making `tests/` a package, because three offline modules do
+`from waiting import ...`, which works only while pytest keeps putting `tests/`
+on `sys.path`. `tests/test_hardware_gate.py` now fails if the whole tree stops
+collecting under the flag, so the rule does not depend on being remembered.
 
 ## Before you run it
 

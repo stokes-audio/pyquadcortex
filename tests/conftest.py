@@ -5,8 +5,10 @@ command-line options from the rootdir's conftest, and the flag has to be
 recognised even on a run that never descends into the hardware directory.
 
 See ADR-0005. The offline suite (ADR-0002) must stay runnable, and stay
-meaningful, with no unit attached - so the hardware tests are not merely skipped
-without the flag, they are not collected at all.
+meaningful, with no unit attached - so the hardware tests are never merely
+skipped without the flag. Reached by recursion they are not collected at all;
+named on the command line, where pytest ignores that veto, the run stops with an
+error naming the flag. Both hooks live in ``tests/hardware/conftest.py``.
 """
 
 

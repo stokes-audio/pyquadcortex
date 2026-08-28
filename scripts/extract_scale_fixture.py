@@ -12,7 +12,7 @@ written, and this keeps that true.
 
 So the fixture holds only the parameters the tests actually assert on: for each,
 its bounds, its taper and its floor. That is the data under test and nothing
-else. ``tests/hardware/test_scales.py`` proves the live catalog still agrees
+else. ``tests/hardware/test_scales_on_unit.py`` proves the live catalog still agrees
 with it, which is what stops the fixture drifting away from the device.
 
 Regenerate whenever a reading is added to ``tests/test_scales.py`` for a

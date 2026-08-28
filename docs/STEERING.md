@@ -67,7 +67,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 - **Runtime dependencies are exactly `hid` and `protobuf`.** The wheel installs with no compiler, no protoc, no build step.
 - **The protobuf runtime pin is coupled to the committed gencode, and so is the generator floor.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001). The generator is `grpcio-tools`, which carries its own protoc and so decides the gencode by which version is installed, hence the `grpcio-tools>=1.83.0` floor in the dev extra. Older gencode still imports, so both guards are explicit: `scripts/compile_protos.sh` refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode and the pin floor are the same number (see ADR-0008).
 - **Python >= 3.11.**
-- **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - lives in `tests/hardware/` and runs only under `pytest --hardware` (see ADR-0005). Its modules must stay import-safe offline: `tests/test_scene_echo_predicates.py` imports `tests/hardware/test_write_echo.py` to exercise its predicates with no unit attached, which is the only way a predicate that can never match gets caught cheaply.
+- **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - lives in `tests/hardware/` and runs only under `pytest --hardware` (see ADR-0005). That gate is TWO hooks in `tests/hardware/conftest.py`, not one: pytest offers `pytest_ignore_collect` only the paths it reaches by walking a directory, so a path named on the command line is caught instead by `pytest_collection_modifyitems`, which stops the run with an error naming the flag. `tests/test_hardware_gate.py` holds both halves up through a subprocess. Its modules must stay import-safe offline, and two offline tests hold that: `tests/test_hardware_gate.py` collects the whole tree under `--hardware` with `hid` poisoned, which imports every module in the directory, and `tests/test_scene_echo_predicates.py` imports `tests/hardware/test_write_echo.py` to exercise its predicates with no unit attached - the only way a predicate that can never match gets caught cheaply.
 - **Wire baseline: CorOS / Cortex Control 4.0.1, firmware d14e.** The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
 - **Exclusive device access.** Cortex Control holds the HID interface exclusively, so the library and Cortex Control cannot be connected at the same time.
 
@@ -132,6 +132,64 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-28 - The `--hardware` gate covers a path named on the command line
+
+**What changed:**
+- `tests/hardware/conftest.py`: a second hook, `pytest_collection_modifyitems`,
+  refuses the run when a hardware test is named on the command line without
+  `--hardware`, listing every path it refused. `pytest_ignore_collect` still
+  covers the paths pytest reaches by recursion.
+- `tests/test_hardware_gate.py`: both halves pinned through a subprocess running
+  the developer's own command, with `hid` poisoned so a broken gate fails at the
+  connection instead of driving the unit.
+- `tests/hardware/readme.md`: the guarantee now says which invocation gets which
+  treatment, because a named path is collected before it is refused.
+- `tests/hardware/test_scales.py` and `test_values.py` are renamed to
+  `test_scales_on_unit.py` and `test_values_on_unit.py`. They shared a basename
+  with their offline counterparts and no `__init__.py` told them apart, so pytest
+  mapped each pair to one module name and refused the second: `pytest --hardware`
+  from the repo root could not collect the suite at all, and only the documented
+  `pytest tests/hardware --hardware` worked. Renamed rather than made a package,
+  because `tests/test_state.py`, `test_events.py` and `test_preset.py` do
+  `from waiting import ...`, which works only while pytest keeps putting `tests/`
+  on `sys.path` - and it stops doing that the moment `tests/` becomes a package
+  or a namespace package.
+
+**Why:** the gate was one hook, and pytest does not consult it for command-line
+arguments. `pytest tests/hardware/test_write_echo.py` therefore collected and RAN
+the suite - driving the unit with no flag, or failing offline instead of being
+absent - while `pytest` and `pytest tests/` behaved exactly as documented. The readme told
+developers it could not happen.
+
+**What this constrains going forward:**
+- The gate stays two hooks. A tidy-up that folds them into one restores the bug
+  for whichever half it drops.
+- A refusal here is loud, not a silent deselect: the developer named those tests,
+  so the reason they did not run is owed to them.
+- A module in `tests/hardware/` needs a basename no module under `tests/` already
+  owns, hence the two `_on_unit` names. The rule is enforced rather than
+  remembered: `tests/test_hardware_gate.py` fails if `pytest --hardware` stops
+  collecting the whole tree.
+
+**Scope of impact:**
+- **Updated:** `tests/hardware/conftest.py` (the second hook), `tests/conftest.py`
+  and `tests/hardware/readme.md` (the guarantee as enforced), this file and
+  CLAUDE.md (§ 6 and the test-command bullet), `changelog.md`
+- **Also updated:** ADR-0005's Open Questions, whose "how it is invoked" line had
+  been open since 2026-08-04 and is what this work settles; three offline
+  docstrings that described the gate as collection-only
+- **Renamed:** `tests/hardware/test_scales.py` and `test_values.py` gain an
+  `_on_unit` suffix, with the references in ADR-0015 and
+  `scripts/extract_scale_fixture.py` following them
+- **New:** `tests/test_hardware_gate.py`
+
+**Downstream to consider:**
+- Nothing outstanding. The basename collision above was pre-existing rather than
+  introduced here, and is fixed rather than recorded.
+
+**Not covered here:** the offline suite's own guarantee (ADR-0002), which was
+never affected - CI passes no paths, so no hardware test has ever run in it.
 
 ### 2026-08-28 - Every setting takes a typed value (ADR-0017)
 

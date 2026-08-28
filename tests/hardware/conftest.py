@@ -9,18 +9,98 @@ Run it with::
 
     pytest tests/hardware --hardware
 
-Without the flag nothing here is collected, so the offline suite stays honest
-with no unit attached.
+Without the flag nothing here runs, so the offline suite stays honest with no
+unit attached. That takes two hooks, not one: ``pytest_ignore_collect`` for the
+paths pytest REACHES by walking the tree, and ``pytest_collection_modifyitems``
+for a path named on the command line, which pytest never offers to
+``pytest_ignore_collect`` at all.
 """
+import pathlib
 import threading
 import time
 
 import pytest
 
+#: This directory. Everything under it drives the unit and is gated on the flag.
+SUITE = pathlib.Path(__file__).resolve().parent
+ROOT = SUITE.parent.parent
+
+
 def pytest_ignore_collect(collection_path, config):
     # Not merely skipped - not collected. A hardware test that silently "passes"
     # as a skip in an offline run is a test nobody notices has stopped running.
+    #
+    # pytest consults this only for paths it reaches by RECURSION: `Dir.collect`
+    # skips the call for anything `Session.isinitpath` claims, which is every
+    # path given on the command line (`_pytest/main.py`, pytest 9.1.1). So this
+    # covers `pytest`, `pytest tests/` and `pytest tests/hardware` - the last one
+    # because the DIRECTORY is the initial path and its files still come through
+    # here - and nothing at all for a file named outright, such as
+    # `pytest tests/hardware/test_scales_on_unit.py`.
+    # The hook below catches that one.
     return not config.getoption("--hardware")
+
+
+def _resolved(item):
+    """An item's file, resolved, or ``None`` if it has no file.
+
+    Resolved on both sides of the comparison below, because pytest builds a
+    node's path with ``absolutepath``, which does NOT follow symlinks. An
+    ABSOLUTE argument naming this directory through a link would then compare
+    unequal to ``SUITE`` and the gate would quietly stop firing - measured on
+    ``tests/hardware/test_scales_on_unit.py`` with this line left out: its 28
+    collected, exit 0. A relative argument
+    is joined to the working directory, which the OS has already resolved, so
+    that shape was never at risk. ``tests/test_hardware_gate.py`` runs the one
+    that was.
+    """
+    path = getattr(item, "path", None)
+    return None if path is None else path.resolve()
+
+
+def pytest_collection_modifyitems(session, config, items):
+    """Stop the run when a hardware test is named directly without the flag.
+
+    pytest does not consult ``pytest_ignore_collect`` for a path given as a
+    command-line argument - only for paths reached by walking a directory - so
+    narrowing a run to one file used to walk straight past the gate. With a unit
+    attached those tests RAN and drove it; with none attached they failed rather
+    than being absent. ``--hardware`` is the flag that means "yes, touch my
+    unit", and losing it without being told is the one thing this suite must not
+    do.
+
+    That exemption is OBSERVED, not promised: it is in pytest's code (the
+    ``isinitpath`` checks in ``Dir.collect``) and not in its hookspec, which says
+    the hook is consulted for all files and directories. Read as behaviour rather
+    than contract - and the direction of the risk is fine either way. If pytest
+    ever matches its code to its docs, a named path becomes uncollected, this hook
+    sees no items, and ``tests/test_hardware_gate.py`` fails on the exit code
+    while the gate itself gets STRONGER.
+
+    This hook does see explicitly-named paths, which is why the gate lives here
+    as well. It raises rather than deselecting quietly: the developer asked for
+    these tests by name, so the reason they did not run is owed to them, and a
+    deselected count in a summary line is not that reason.
+
+    No test runs either way. The named modules are imported first, since that is
+    what collecting them means, and that is safe by a standing constraint rather
+    than by luck: the hardware modules must stay import-safe offline (STEERING
+    § 6), and nothing at their module scope touches a device.
+    """
+    if config.getoption("--hardware"):
+        return
+    gated = sorted({
+        str(path.relative_to(ROOT))
+        for path in map(_resolved, items)
+        if path is not None and path.is_relative_to(SUITE)
+    })
+    if not gated:
+        return
+    raise pytest.UsageError(
+        "these tests drive a real Quad Cortex and need --hardware:\n  "
+        + "\n  ".join(gated)
+        + "\nRe-run with --hardware to drive the unit, or leave the path out."
+    )
 
 
 class HandshakeBurst:
