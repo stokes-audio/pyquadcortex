@@ -20,6 +20,34 @@ correction.
 
 ## Unreleased
 
+### The wrong unit is now caught before the code runs
+
+```python
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Db(-3.1))    # fine
+qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Hertz(217))  # mypy: rejected
+qc.set_param(LaneOutput(0), params.LaneOutputParam.PAN, Db(0.5))        # mypy: PAN has no unit
+```
+
+A generated constant now carries its parameter's unit in its type, so a type
+checker refuses the mismatch without running anything. The runtime check is
+unchanged and still covers every other caller - a string, a bare index, or
+anyone not running a checker.
+
+**`params.py`'s constants are no longer `IntEnum` members.** An enum member's
+type is the enum class, so it cannot carry a per-member unit. Iteration,
+`__members__`, lookup by name, `len()`, `in` and `.name` all still work, so
+call sites are unaffected; `issubclass(X, IntEnum)` is not, and `BY_MODEL`'s
+values are `ParamSet` subclasses now.
+
+**One narrowing, deliberate:** `set_param(target, 21, Real(3))` is a static
+error although it runs. A `Param` is an `int`, so an int overload that accepted
+real values would swallow every wrong-unit call. Address by index and say
+`Encoded`, or name the parameter to write real units.
+
+mypy also runs in CI now, over the whole package, blocking, with nothing
+suppressed - which needed the generated protobuf bindings to gain committed
+`*_pb2.pyi` stubs. `py.typed` ships, so this reaches you and not just our CI.
+
 ### BREAKING: every setting takes a typed value too, not just `set_param`
 
 ```python

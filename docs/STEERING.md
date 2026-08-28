@@ -94,6 +94,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0015 | The catalog is the source of truth for a parameter's scale; measurements are tests |
 | ADR-0016 | Parameter values carry their own scale, and the protocol layer may speak the device's units |
 | ADR-0017 | Every setting takes a typed value, and says so when it has no scale to convert against |
+| ADR-0018 | A parameter constant carries its unit, and CI runs a type checker |
 
 ## 8. Open Questions
 
@@ -132,6 +133,26 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-08-28 - Constants carry their unit, and mypy runs in CI (ADR-0018)
+
+**What changed:** `params.py`'s constants are `Param[Unit]` rather than
+`IntEnum` members, so a type checker rejects `set_param(VOLUME, Hertz(217))`
+before it runs. mypy is a blocking CI job over the whole package, with nothing
+suppressed.
+
+**Why:** ADR-0016 verified this and deferred it. The blocker was that no
+checker could run here - mypy saw 260 errors, ~200 of them phantom, because it
+cannot read inside a generated `_pb2.py`. Committing `*_pb2.pyi` stubs from the
+same protoc run fixed that half honestly.
+
+**What to watch:** the overload order and the value unions on `set_param`. A
+`Param` IS an `int`, so an int overload that accepts real values swallows every
+wrong-unit call before the checker sees it - overload resolution takes the
+first MATCH, and a failing first overload just falls through. If you widen the
+int overload, the static check silently stops working, which is what
+`tests/test_typing.py` exists to catch. It holds both directions: every wrong
+unit rejected, and no correct call rejected.
 
 ### 2026-08-28 - Every setting takes a typed value (ADR-0017)
 

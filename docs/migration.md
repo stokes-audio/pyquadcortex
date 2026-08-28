@@ -17,6 +17,22 @@ while that is true, and this file is the cost of doing it.
 
 ## 0.40.0 to the next release
 
+### `params.py`'s constants are no longer `IntEnum` members
+
+They are `Param[Unit]` instances, so each one carries its parameter's unit in
+its type and a checker can reject the wrong one. Everything a caller reads or
+passes is unchanged - a constant IS its wire index, and `.name`, iteration,
+`__members__`, `len()`, lookup by name and `in` all still work.
+
+| what changed | before | after |
+|---|---|---|
+| the base class | `issubclass(X, IntEnum)` | `issubclass(X, params.ParamSet)` |
+| `BY_MODEL` values | `IntEnum` subclasses | `ParamSet` subclasses |
+| an index-addressed real value | `set_param(t, 21, Real(3))` ran and checked | still runs; a type checker now rejects it - say `Encoded(...)`, or name the parameter |
+
+Nothing here raises at runtime except through a type checker, so a codebase
+that does not run one is unaffected.
+
 ### Every setting takes a typed value, not just `set_param`
 
 | before | after |

@@ -226,6 +226,14 @@ needs shouting about, and this does not have it.
 
 ## Deferred, and available: static unit checking
 
+> **SHIPPED 2026-08-28 as ADR-0018.** What follows is the design as written when
+> it was deferred, kept because the three conditions below are the reasons it
+> waited and the ADR builds on them. Two details came out differently in the
+> event, both recorded in ADR-0018: `Real` had to become generic so a bare
+> `Real` still fits any parameter, and `set_param` needed three overloads
+> rather than one signature, because a `Param` is an `int` and an int overload
+> accepting real values swallows the wrong-unit call before a checker sees it.
+
 The runtime check above catches a wrong unit for every caller. A STATIC check is
 also possible, was verified rather than assumed, and is deliberately not in this
 phase. Recorded here and in an ADR so the door stays open and nobody has to
