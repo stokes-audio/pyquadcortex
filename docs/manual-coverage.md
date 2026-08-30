@@ -20,10 +20,10 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 105 features audited: **65 yes**, **8 partly**, **21 no**, **11 n/a**.
+Of 106 features audited: **66 yes**, **8 partly**, **21 no**, **11 n/a**.
 
-Of the 93 features a host could plausibly drive - everything above except the 11 marked
-n/a - **65 are fully covered** and 8 more are partly covered, which here means the state
+Of the 94 features a host could plausibly drive - everything above except the 11 marked
+n/a - **66 are fully covered** and 8 more are partly covered, which here means the state
 is readable and at least one field of it is confirmed writable, with the neighbours the
 same shape but not individually exercised. Only 20 remain untouched.
 
@@ -109,6 +109,7 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | Side-chaining: set a block's SOURCE/TRIGGER | yes | `set_param_option(row, column, param="SOURCE", option=...)`. It is an ordinary comboBox parameter; `sidechain_source_flag` is bookkeeping and ignores writes |
 | Footswitch (STOMP) assignment | yes | `set_stomp_assignment()` / `clear_stomp_assignment()`, plus `set_stomp_momentary()` and `set_stomp_label()`; read with `stomp_assignments()`. Momentary is keyed by footswitch, not column, and only lands on a switch driving ONE block - the device refuses multi-block switches silently, as its own toggle does. The manual never mentions stomp momentary; the touchscreen's Assign footswitch modal has it |
 | Expression pedal assignment to a parameter | yes | `set_expression(target, param, pedal, minimum, maximum)` and `clear_expression(target, param)`, against ANY target. The sweep ends are positions of the parameter being assigned, so they take its own typed values - `maximum=Db(3.2)` on a lane VOLUME - a block, the lane output or input, the mixer, the splitter. Confirmed on all of them, on float AND `switch`-typed parameters: parameter type is irrelevant, and the manual gives every assignable parameter a MIN/MAX sweep |
+| Reading which pedals are assigned | yes | `grid.pedals` in the unit's words (row 1-4, slot 1-8, the knob's own units), `protocol.expression_assignments()` on the wire. Read only at M1; assigning is `set_expression` |
 | Expression pedal on a Lane Output MUTE or SOLO | no | the first refusal in the library, and the one ADR-0007's shape was settled on. The device silently drops a host write of those two in both directions while accepting the byte-identical message on VOLUME, so they raise `ControlNotDrivable` (ADR-0007). The touchscreen writes the same field and the library reads it back |
 | Expression bypass (heel-toe / switch / stop) | yes | `set_expression_bypass()` with `ExpressionSwitchMode`. All three confirmed: STOP 0, SWITCH 1, HEEL_TOE 2 - not the manual's listed order. The unit labels the control SWITCH ON, and the mode decides which of the other two exist: SWITCH greys out SWITCH DELAY, HEEL_TOE greys out LATCH EMULATION. The same `expression_bypass_info` carries a lane MUTE's and SOLO's settings, one slot per switch parameter |
 | Expression pedal calibration | partly | the flow IS `IOSettings`, as guessed: calibrating a pedal on the unit broadcasts `exp_port{exp_port_id, calibrating: true}` and `false` on completion, for EXP 1 and EXP 2 alike. Observed, never driven from the host |

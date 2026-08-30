@@ -20,6 +20,32 @@ correction.
 
 ## Unreleased
 
+### You can read back which expression pedals are assigned
+
+`set_expression` could always write an assignment. Nothing could read one back:
+
+```python
+protocol.expression_assignments(preset)   # the wire's rows, columns and 0..1
+device.preset.blocks.pedals               # the screen's rows, slots and dB
+```
+
+The model reads it the way the unit shows it - `<EXP 2 on VOLUME (row 1):
+-40 dB to 3.2 dB>` - with rows and slots numbered from 1 and the sweep in the
+knob's own units. `block.pedals` narrows it to one cell.
+
+Two things it will not fake. `minimum` above `maximum` **reverses** the pedal,
+which is a setting, so the pair is reported rather than sorted and `reversed`
+is the question to ask. And with no device attached there is no catalog to ask
+for a knob's scale, so the sweep stays the wire's 0..1 and `in_real_units` says
+so.
+
+Two wire traps are handled and worth knowing if you read the raw preset
+yourself: `params[].index` has no presence and reads 0 for every parameter, so
+the POSITION is the index; and `expression: 0` means unassigned, being what
+`clear_expression` writes.
+
+Reading only. Assigning through the model is M2.
+
 ### The wrong unit is now caught before the code runs
 
 ```python
