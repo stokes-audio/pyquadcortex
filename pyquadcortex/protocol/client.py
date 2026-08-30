@@ -3986,6 +3986,103 @@ class StompAssignment(NamedTuple):
     footswitch: int
 
 
+class ExpressionAssignment(NamedTuple):
+    """One parameter with an expression pedal on it.
+
+    ``minimum`` and ``maximum`` are the two ends of the sweep as the WIRE
+    carries them, so they are :class:`~pyquadcortex.protocol.values.Encoded`.
+    They are positions of the parameter being swept, so converting them to that
+    parameter's own units needs the catalog - which is the model layer's job,
+    not this one's. See ``pyquadcortex.device`` for the same thing in dB.
+
+    ``minimum`` above ``maximum`` REVERSES the pedal, which is how the manual
+    describes inverting a parameter, so the pair is not ordered and must not be
+    sorted.
+
+    The field is ``param_index`` rather than ``index`` for two reasons, and the
+    second is the real one: it matches :func:`param_state`'s argument name, and
+    a `NamedTuple` field called ``index`` SHADOWS ``tuple.index``, so the
+    method would silently disappear from a public type.
+    """
+
+    target: "targets.ParamTarget"
+    param_index: int
+    pedal: int
+    minimum: values_module.Encoded
+    maximum: values_module.Encoded
+
+    @property
+    def reversed(self) -> bool:
+        """Whether the heel is the LOUD end - `minimum` above `maximum`."""
+        return float(self.minimum) > float(self.maximum)
+
+
+#: Which target addresses each row-keyed collection that can carry an
+#: assignment. `models` is NOT here: a block is keyed by column as well as row,
+#: so it is walked separately. `combined_splitter` is the splitter's, matching
+#: `targets.Splitter` - the device sends that one bare, with no key of its own.
+_EXPRESSION_LANE_COLLECTIONS = (
+    ("output_control", targets.LaneOutput),
+    ("input_control", targets.LaneInput),
+    ("mixer", targets.Mixer),
+    ("combined_splitter", targets.Splitter),
+)
+
+
+def _assignments_on(entry, target) -> list:
+    """The assigned parameters of one container entry."""
+    found = []
+    for position, prm in enumerate(entry.params):
+        # `expression: 0` is UNASSIGNED, which is what `clear_expression`
+        # writes, and the field has no presence - so a parameter nobody has
+        # touched reads the same as one whose pedal was removed.
+        if not prm.expression:
+            continue
+        found.append(ExpressionAssignment(
+            target=target,
+            # The POSITION, not `prm.index`. That field has no presence and
+            # reads 0 for all 576 parameters across every committed fixture, so
+            # trusting it would report every assignment as being on the first
+            # knob. `param_state` addresses positionally for the same reason.
+            param_index=position,
+            pedal=prm.expression,
+            minimum=values_module.Encoded(prm.expression_min),
+            maximum=values_module.Encoded(prm.expression_max),
+        ))
+    return found
+
+
+def expression_assignments(p: preset.BinaryPreset) -> list:
+    """Every expression pedal assignment in ``p``, as :class:`ExpressionAssignment`.
+
+    The library could WRITE one of these before it could read one back, which
+    is the gap this closes: :meth:`QuadCortex.set_expression` is confirmed on
+    every container the unit has, and nothing reported what was already
+    assigned.
+
+    **The index is the parameter's POSITION in ``params[]``.** The wire's own
+    ``index`` field has no presence and reads 0 for every parameter in every
+    preset looked at, so an assignment on the third knob would report as being
+    on the first. :func:`param_state` addresses positionally for the same
+    reason.
+
+    Bypass assignments are a different feature on a different field and are NOT
+    here - a pedal that BYPASSES a block is not a pedal on one of its knobs.
+    """
+    found = []
+    for i, chain in enumerate(p.chains):
+        row = chain.row if field_present(chain, "row") else i
+        for j, model in enumerate(chain.models):
+            column = model.column if field_present(model, "column") else j
+            found += _assignments_on(
+                model, targets.Block(row=row, column=column,
+                                     model_id=model.hash or None))
+        for collection, address in _EXPRESSION_LANE_COLLECTIONS:
+            for entry in getattr(chain, collection):
+                found += _assignments_on(entry, address(row=row))
+    return found
+
+
 def stomp_assignments(p: preset.BinaryPreset) -> list:
     """Which blocks are bound to which footswitches, as :class:`StompAssignment`.
 

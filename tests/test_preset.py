@@ -18,6 +18,7 @@ from pyquadcortex.device import errors
 from pyquadcortex.device.device import Device
 from pyquadcortex.device.state import DeviceState
 from pyquadcortex.device.translate import SceneLetter
+from pyquadcortex.protocol import targets
 from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from waiting import wait_for
@@ -589,3 +590,83 @@ def test_hashing_a_block_never_asks_the_unit(warm):
     hash(block)
     block == block
     assert client.asked == []
+
+
+# -- reading back an expression assignment ------------------------------------
+
+
+def _preset(name):
+    p = preset_pb.BinaryPreset()
+    p.ParseFromString(
+        (pathlib.Path(__file__).parent / "fixtures" / "presets"
+         / f"{name}.bin").read_bytes())
+    return p
+
+
+def test_expression_assignments_finds_the_one_the_fixtures_carry():
+    """The library could write a pedal assignment and not read one back.
+
+    All three committed presets carry the same one, on the block at row 0
+    column 1, over the full sweep.
+    """
+    for name in ("structural_preset", "scene_preset", "split_preset"):
+        found = protocol.expression_assignments(_preset(name))
+        assert len(found) == 1, f"{name}: {found}"
+        one = found[0]
+        assert (one.target.row, one.target.column) == (0, 1)
+        assert one.pedal == 1
+        assert (float(one.minimum), float(one.maximum)) == (0.0, 1.0)
+        assert not one.reversed
+
+
+def test_an_unassigned_parameter_is_absent_rather_than_pedal_zero():
+    """`expression: 0` is what `clear_expression` writes, and the field has no
+    presence - so "never touched" and "pedal removed" are the same bytes."""
+    p = _preset("structural_preset")
+    every = sum(len(m.params) for ch in p.chains for m in ch.models)
+    assert every > 50, "the fixture should carry plenty of unassigned params"
+    assert len(protocol.expression_assignments(p)) == 1
+
+
+def test_the_index_reported_is_the_position_not_the_wire_field():
+    """The trap that would have made every assignment read as knob 0.
+
+    `params[].index` has no presence and is 0 for all 576 parameters across the
+    committed fixtures, so a reader trusting it reports the first knob every
+    time. This moves the assignment to the THIRD parameter of its block and
+    checks the reader follows.
+    """
+    p = _preset("structural_preset")
+    model = p.chains[0].models[1]
+    assert len(model.params) >= 2
+    while len(model.params) < 3:
+        model.params.add()
+    for prm in model.params:
+        prm.expression = 0
+    third = model.params[2]
+    third.expression = 2
+    third.expression_min, third.expression_max = 0.8, 0.2
+
+    found = protocol.expression_assignments(p)
+    assert len(found) == 1
+    assert found[0].param_index == 2, "reported the wire's index, not the position"
+    assert found[0].pedal == 2
+    assert found[0].reversed, "minimum above maximum reverses the pedal"
+
+
+def test_a_lane_output_assignment_comes_back_as_a_lane_output():
+    """Every container the unit has, not just blocks - `set_expression` was
+    confirmed on all of them, so the reader has to cover all of them."""
+    p = _preset("structural_preset")
+    entry = p.chains[2].output_control[0]
+    while len(entry.params) < 1:
+        entry.params.add()
+    entry.params[0].expression = 2
+    entry.params[0].expression_min = 0.0
+    entry.params[0].expression_max = 0.75
+
+    found = [a for a in protocol.expression_assignments(p)
+             if isinstance(a.target, targets.LaneOutput)]
+    assert len(found) == 1
+    assert found[0].target.row == 2
+    assert found[0].pedal == 2
