@@ -384,3 +384,56 @@ def test_a_row_whose_routing_the_preset_never_stated_refuses_to_guess(structural
     assert row.output.destination is None
     with pytest.raises(RuntimeError, match="does not say where row 2 goes"):
         row.output.lane
+
+
+# -- expression pedals, in the unit's own words -------------------------------
+
+
+def test_the_grid_reports_the_pedal_the_fixture_carries(structural):
+    """Row 1 slot 2, not the wire's row 0 column 1.
+
+    The whole point of reading this through the model: the player's screen
+    numbers rows and slots from 1, and the wire does not.
+    """
+    found = live(structural).pedals
+    assert len(found) == 1
+    one = found[0]
+    assert (one.row, one.slot) == (1, 2)
+    assert one.pedal == 1
+    assert not one.reversed
+
+
+def test_a_block_reports_only_its_own_pedals(structural):
+    grid = live(structural)
+    assert len(grid[1, 2].pedals) == 1
+    assert grid[1, 1].pedals == ()
+    assert grid[1, 3].pedals == ()
+
+
+def test_without_a_catalog_the_sweep_stays_the_devices_own_scale(structural):
+    """A preset can be read with nothing attached, and a knob's scale comes
+    from the unit. Saying so beats converting against a guess."""
+    grid = grid_module.BlockGrid(FakePreset(structural))
+    one = grid.pedals[0]
+    # FakeCatalog has no parameters, so no spec resolves.
+    assert not one.in_real_units
+    assert one.parameter is None
+    assert one.units == ""
+    assert isinstance(one.minimum, protocol.Encoded)
+
+
+def test_a_reversed_sweep_is_reported_rather_than_sorted(structural):
+    """`minimum` above `maximum` inverts the pedal, which is a SETTING - and
+    ordering the pair would throw it away."""
+    model = structural.chains[0].models[1]
+    model.params[0].expression_min = 0.9
+    model.params[0].expression_max = 0.1
+    one = live(structural).pedals[0]
+    assert one.reversed
+    assert float(one.minimum) > float(one.maximum)
+
+
+def test_the_repr_reads_like_the_screen(structural):
+    text = repr(live(structural).pedals[0])
+    assert "EXP 1" in text
+    assert "row 1 slot 2" in text

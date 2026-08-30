@@ -48,9 +48,12 @@ from pyquadcortex.device.translate.coordinates import (ROWS, SLOTS,
                                                        row_to_wire,
                                                        slot_from_wire,
                                                        slot_to_wire)
-from pyquadcortex.device.translate.grid import (SPLITTABLE_ROWS, Branch,
+from pyquadcortex.device.translate.grid import (EXPRESSION_PEDALS,
+                                                SPLITTABLE_ROWS, Branch,
                                                 PlacedBlock, block_bypassed,
-                                                branches, path_b_of,
+                                                branches,
+                                                expression_assignments,
+                                                path_b_of,
                                                 placed_blocks, routes_to_a_row,
                                                 row_input, row_output,
                                                 scene_name)
@@ -87,4 +90,5 @@ __all__ = [
     "placed_blocks", "branches", "path_b_of",
     "row_input", "row_output", "routes_to_a_row",
     "block_bypassed", "scene_name",
+    "EXPRESSION_PEDALS", "expression_assignments",
 ]

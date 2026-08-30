@@ -32,6 +32,56 @@ OutputDestination = protocol.Output
 
 
 @dataclass(frozen=True)
+class PedalAssignment:
+    """An expression pedal on one of a block's knobs, as the screen shows it.
+
+    Read from the parameter's own row and slot, numbered from 1. ``minimum``
+    and ``maximum`` are the two ends of the sweep in the knob's own units where
+    the unit describes them, so a volume assignment reads in dB.
+
+    **The pair is not ordered.** ``minimum`` above ``maximum`` REVERSES the
+    pedal, which is how the manual describes inverting a parameter, so sorting
+    them would throw the setting away. :attr:`reversed` is the question worth
+    asking.
+
+    **Without a device attached there is no catalog**, and a knob's scale comes
+    from the unit. Then - and for a knob the catalog does not describe, or one
+    whose bounds nobody has measured - ``units`` is empty and the two ends stay
+    the device's own 0..1. That is said rather than guessed, and
+    :attr:`in_real_units` is how to ask which you have.
+    """
+
+    row: int
+    slot: int | None
+    parameter: str | None
+    pedal: int
+    minimum: float
+    maximum: float
+    units: str
+
+    @property
+    def reversed(self) -> bool:
+        """Whether the HEEL is the loud end - ``minimum`` above ``maximum``."""
+        return float(self.minimum) > float(self.maximum)
+
+    @property
+    def in_real_units(self) -> bool:
+        """Whether the sweep reads in the knob's own units.
+
+        False where no catalog was available to ask, which is a real state
+        rather than an error: a preset can be read with no unit attached.
+        """
+        return not isinstance(self.minimum, protocol.Encoded)
+
+    def __repr__(self) -> str:
+        where = f"row {self.row}" + (f" slot {self.slot}" if self.slot else "")
+        what = self.parameter or "an undescribed parameter"
+        unit = f" {self.units}" if self.units else ""
+        return (f"<EXP {self.pedal} on {what} ({where}): "
+                f"{float(self.minimum):g}{unit} to {float(self.maximum):g}{unit}>")
+
+
+@dataclass(frozen=True)
 class VirtualDevice:
     """An amp, a cab, a pedal or a capture - what the parameter editor calls the
     VIRTUAL DEVICE NAME.
@@ -129,6 +179,19 @@ class DeviceBlock(Block):
         found = self._grid.catalog[self._device_id]
         return VirtualDevice(id=found.id, name=found.name,
                              category=found.category)
+
+    @property
+    def pedals(self) -> tuple:
+        """The expression pedals assigned to this block's knobs.
+
+        Empty for most blocks - a pedal is a deliberate assignment, and a
+        preset usually has none or one. See :class:`PedalAssignment`.
+
+        A pedal that BYPASSES this block is a different feature on a different
+        field and is not here: it is not a pedal on one of its knobs.
+        """
+        return tuple(a for a in self._grid.pedals
+                     if a.row == self.row and a.slot == self.slot)
 
     @property
     def bypassed(self) -> bool:

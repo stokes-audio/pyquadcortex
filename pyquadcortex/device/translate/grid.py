@@ -208,3 +208,66 @@ def scene_name(binary_preset, scene) -> str:
             f"has none - the unit stores eight")
     label = labels[index]
     return "" if not label.strip() else label
+
+
+#: The two expression pedals, as the back panel labels them. The wire numbers
+#: them 1 and 2 and so does the screen, so nothing is converted here - the type
+#: exists so a pedal cannot be passed where a row or a slot is wanted, which is
+#: the same reason `FootswitchLetter` exists.
+EXPRESSION_PEDALS = (1, 2)
+
+
+def expression_assignments(binary_preset, catalog=None) -> tuple:
+    """Every pedal assignment in a preset, in the screen's own terms.
+
+    `protocol.expression_assignments` hands back wire rows, wire columns and
+    the sweep ends as the device's own 0..1. This is where all three become
+    what the unit shows: rows and slots numbered from 1, and the sweep in the
+    parameter's own units where the catalog describes it.
+
+    ``catalog`` is optional because a preset can be read with no device
+    attached, and the scale of a knob comes from the unit. Without one, or for
+    a parameter the catalog does not describe, ``minimum`` and ``maximum`` stay
+    the device's 0..1 and ``units`` is empty - said plainly rather than
+    guessed, which is the same answer `Parameter.floor` gives for an unmeasured
+    bound.
+
+    Returns tuples of ``(row, slot, name, pedal, minimum, maximum, units)``
+    with ``slot`` and ``name`` ``None`` for a lane control, which has no slot
+    and whose parameter name needs a catalog the same way.
+    """
+    found = []
+    for one in protocol.expression_assignments(binary_preset):
+        target = one.target
+        row = row_from_wire(getattr(target, "row"))
+        slot = (slot_from_wire(target.column)
+                if hasattr(target, "column") else None)
+        name, units = None, ""
+        minimum, maximum = one.minimum, one.maximum
+        spec = _spec_for(target, one.param_index, catalog)
+        if spec is not None:
+            name, units = spec.name, spec.units
+            minimum = spec.to_real(float(one.minimum))
+            maximum = spec.to_real(float(one.maximum))
+        found.append((row, slot, name, one.pedal, minimum, maximum, units))
+    return tuple(found)
+
+
+def _spec_for(target, param_index: int, catalog):
+    """The catalog parameter a sweep end belongs to, or ``None``.
+
+    ``None`` is a real answer and not a failure: with no device attached there
+    is no catalog, an index the catalog does not describe is a documented case,
+    and a bound nobody has measured makes the conversion refuse. In every one
+    of those the caller gets the device's own 0..1 and is told so, rather than
+    a number this layer invented.
+    """
+    if catalog is None:
+        return None
+    try:
+        spec = target.spec_at(param_index, lambda: catalog)
+    except (KeyError, ValueError):
+        return None
+    if spec is None or spec.minimum is None or spec.maximum is None:
+        return None
+    return spec
