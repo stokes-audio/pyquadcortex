@@ -111,9 +111,8 @@ USER_SETLIST_ROOT = "/media/p4/Presets"
 #: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
 SCENE_UNLABELLED = " "
 
-# A corrupt or unrelated stream must not make an unbounded allocation while a
-# caller is trying to create a local backup. Observed backups are around 1.7 MB;
-# 32 MiB leaves ample headroom for a much fuller unit.
+# Observed backups are around 1.7 MB; reject a joined document above 32 MiB so a
+# corrupt or unrelated stream is never accepted as a backup.
 _MAX_LOCAL_BACKUP_BYTES = 32 * 1024 * 1024
 
 
@@ -478,8 +477,9 @@ class QuadCortex:
         The device answers one ``LocalBackup`` CREATE with an uncorrelated
         stream of JSON fragments; the final UPDATE carries ``is_last_chunk``.
         The fragments are joined in arrival order and the portable wrapper is
-        validated before it is returned as a dictionary. Its opaque Base64
-        payload is deliberately not interpreted.
+        structurally validated before it is returned as a dictionary. Its
+        opaque Base64 payload is deliberately not interpreted, and the native
+        integrity identifier is checked for shape rather than recomputed.
 
         This does not restore a backup or write a file. The caller can serialize
         the returned dictionary wherever it keeps backups.

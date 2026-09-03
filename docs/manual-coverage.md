@@ -25,7 +25,7 @@ Of 105 features audited: **66 yes**, **8 partly**, **20 no**, **11 n/a**.
 Of the 93 features a host could plausibly drive - everything above except the 11 marked
 n/a - **66 are fully covered** and 8 more are partly covered, which here means the state
 is readable and at least one field of it is confirmed writable, with the neighbours the
-same shape but not individually exercised. Only 19 remain untouched.
+same shape but not individually exercised. Only 20 remain untouched.
 
 Both paragraphs now count the same table. They had drifted apart: this one still read
 91/65/13/14 from an earlier revision, which no longer matched a row-by-row count.
@@ -191,7 +191,7 @@ on 25, 9 and 56 as `led_brightness` was 28, 13 and 59).
 | CorOS updates | no | `Updater` is decoded and subscribed; never driven. Risky to explore |
 | Brightness, power sensitivity, storage | yes | screen, LED and dimmed-LED brightness all confirmed (quantized: 30 reads back 31), plus the three dimming toggles; disk space is reported. `power_option` and `reset_wifi_networks` are refused by `update_settings()` as commands |
 | Cloud sign-in and cloud backups | no | `CloudLogin`, `CloudBackup`, `BackupsForward` |
-| Local backups | yes | `create_local_backup()` collects the complete native JSON wrapper, validates its opaque Base64 payload and integrity identifier, and returns it without altering the payload. Confirmed on CorOS 4.1.0: 12 ordered chunks, one marked final |
+| Local backups | yes | `create_local_backup()` collects the complete native JSON wrapper, validates its shape, opaque Base64 payload, and integrity-identifier format, and returns it without altering the payload. Confirmed on CorOS 4.1.0: 12 ordered chunks, one marked final |
 
 ## 11, 12 Desktop app and reference
 
