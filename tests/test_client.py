@@ -463,6 +463,34 @@ def test_move_preset_sends_file_move():
 # -- session hello -------------------------------------------------------------
 
 
+def test_set_device_name_sends_a_sparse_version_update():
+    qc = client.QuadCortex(FakeTransport())
+
+    qc.set_device_name("Stage QC")
+
+    sent = qc._t.sent[-1]
+    assert isinstance(sent, pa.VersionMessage)
+    assert sent.SerializeToString() == b"\x08\x01\x7a\x08Stage QC"
+
+
+def test_undo_and_redo_send_the_confirmed_sparse_updates():
+    qc = client.QuadCortex(FakeTransport())
+
+    qc.undo()
+    undo = qc._t.sent[-1]
+    assert isinstance(undo, pa.UndoRedoMessage)
+    assert undo.SerializeToString() == b"\x08\x01\x28\x01"
+    assert undo.HasField("undo")
+    assert not undo.HasField("redo")
+
+    qc.redo()
+    redo = qc._t.sent[-1]
+    assert isinstance(redo, pa.UndoRedoMessage)
+    assert redo.SerializeToString() == b"\x08\x01\x30\x01"
+    assert redo.HasField("redo")
+    assert not redo.HasField("undo")
+
+
 def test_hello_performs_full_connect_handshake():
     canned = {"ResetCommsBuffersMessage": pa.ResetCommsBuffersMessage(session_id="ab")}
     qc = client.QuadCortex(FakeTransport(canned))

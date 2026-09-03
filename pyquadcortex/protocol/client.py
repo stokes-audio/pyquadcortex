@@ -464,6 +464,28 @@ class QuadCortex:
             pa.VersionMessage(action=pa.MessageAction.READ), timeout=timeout
         )
 
+    def set_device_name(self, name: str):
+        """Set the user-visible device name.
+
+        The update is deliberately sparse: only ``custom_name`` is sent, so
+        none of the other version/identity fields can be overwritten.
+        """
+        self._t.send(pa.VersionMessage(
+            action=pa.MessageAction.UPDATE, custom_name=str(name)
+        ))
+
+    def undo(self):
+        """Undo the most recent editable-preset operation."""
+        self._t.send(pa.UndoRedoMessage(
+            action=pa.MessageAction.UPDATE, undo=True
+        ))
+
+    def redo(self):
+        """Redo the most recently undone editable-preset operation."""
+        self._t.send(pa.UndoRedoMessage(
+            action=pa.MessageAction.UPDATE, redo=True
+        ))
+
     def find_preset(self, name: str, setlist: str = Setlist.USER,
                     timeout: float = 25.0):
         """Look a preset up by the name shown on the unit.

@@ -7,6 +7,11 @@ that **a successful run leaves the unit exactly as it found it**.
 pytest tests/hardware --hardware
 ```
 
+The native undo/redo test has a second guard because it needs a disposable
+loaded preset. Set `PYQUADCORTEX_UNDO_SCRATCH_SLOT` to that preset's zero-based
+slot index; the test refuses to run if a different slot is loaded or the preset
+already has unsaved changes.
+
 `pytest --hardware` from the repo root works too, since the rename described
 below, and it runs BOTH suites - the offline one and this one, against your unit.
 Name the directory unless you want that.

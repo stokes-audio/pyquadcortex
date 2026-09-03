@@ -1228,15 +1228,18 @@ def test_a_write_through_a_closed_cache_is_refused(link):
 
 def test_the_watchdog_does_not_outlive_the_connection(link):
     transport, cache = link
+    # The full offline + hardware run can have another live cache watchdog.
+    existing = set(_watchdog_threads())
     cache.write_through("dirty", {"is_dirty": True}, send=lambda: None,
                         patience=30.0)
-    assert _watchdog_threads(), "no watchdog was started, so this proves nothing"
+    started = set(_watchdog_threads()) - existing
+    assert started, "no watchdog was started, so this proves nothing"
 
     cache.close()
 
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
-        if not _watchdog_threads():
+        if not (set(_watchdog_threads()) - existing):
             return
         time.sleep(0.02)
     pytest.fail("the write watchdog is still running after close()")
@@ -1269,11 +1272,12 @@ def test_a_write_that_races_the_close_leaves_no_thread_behind(link):
     watchdog starting its thread. A thread started there waits forever on a
     connection nobody can reach."""
     transport, cache = link
+    existing = set(_watchdog_threads())
     cache.close()
 
     cache._watchdog.add(_a_watch_for_the_race())
 
-    assert not _watchdog_threads()
+    assert set(_watchdog_threads()) == existing
 
 
 def _a_watch_for_the_race():
@@ -1294,9 +1298,10 @@ def test_the_watchdog_firing_as_the_connection_closes_does_not_raise(link):
 
 def test_no_watchdog_runs_until_something_is_written(link):
     transport, cache = link
+    existing = set(_watchdog_threads())
     cache.value("identity", "app_fw_version")
     transport.push(dirty_push(True))
-    assert not _watchdog_threads()
+    assert set(_watchdog_threads()) == existing
 
 
 def _watchdog_threads():

@@ -281,7 +281,7 @@ def main():
 
     cat = catalog.parse_model_repo(load_payload(args.payload))
     text = render(cat)
-    pathlib.Path(args.out).write_text(text)
+    pathlib.Path(args.out).write_text(text, encoding="utf-8")
     print(f"wrote {args.out} ({text.count('class ')} enums)")
 
 

@@ -84,11 +84,18 @@ Fixed alongside it: a damaged gzip payload could raise `EOFError` or
 `zlib.error`, neither of which was caught, so it was reported as an unexpected
 internal error rather than as the damaged payload it is.
 
+### Rename the unit and drive preset undo/redo
+
+`set_device_name()` changes the name shown by the device with a sparse Version
+update. `undo()` and `redo()` drive the unit's native editable-preset history;
+their four-byte wire payloads and live state transitions are pinned by tests.
+
 ### The offline suite is portable to Windows checkouts
 
 Hardware-gate diagnostics now spell repository-relative paths consistently on
 every platform, and the historical namespace fixture's pinned hash tolerates
-Git's CRLF checkout conversion while still hashing all source content.
+Git's CRLF checkout conversion while still hashing all source content. Catalog
+generators also write UTF-8 explicitly instead of inheriting Windows' code page.
 
 ### Read which global modules DSP load inhibited
 
