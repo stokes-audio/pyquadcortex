@@ -26,6 +26,7 @@ confirming each finding live against hardware.
   - [2.1 Report layout](#21-report-layout)
   - [2.2 Fragmentation and reassembly](#22-fragmentation-and-reassembly)
   - [2.3 The message envelope (trailer)](#23-the-message-envelope-trailer)
+  - [The two flag bytes, confirmed](#the-two-flag-bytes-confirmed)
   - [2.4 Compressed payloads](#24-compressed-payloads)
   - [2.5 Annotated real frames](#25-annotated-real-frames)
 - [3. Message types and actions](#3-message-types-and-actions)
@@ -260,7 +261,7 @@ keeping, because a per-type table would look right and be wrong:
 | `License` | device to host | encrypted 1 | 17 bytes, not protobuf |
 | `File` | device to host | compressed 0 | plain protobuf, x1,173 |
 | `File` | device to host | compressed 1 | gzip, x30 (the factory library listing) |
-| `RecallPreset` | device to host | compressed 0 | plain protobuf, 9,326 bytes |
+| `RecallPreset` | device to host | compressed 0 | plain protobuf, x1 (a 9,326-byte push) |
 | `RecallPreset` | device to host | compressed 1 | gzip, x9 |
 
 **What "encrypted" means here, and what it does not.** What was measured is that
@@ -299,7 +300,10 @@ Two different, independent kinds of compression appear:
   magic bytes, not the flag.** The argument is CortexUSB's own exception list:
   they read the flag and then had to add a skip-list for two message types.
   Magic bytes need no exceptions, so the flag stays informational. `framing`
-  reports it; nothing branches on it.
+  reports it, and logs a line if the two ever disagree, but the magic bytes
+  are what decide whether a payload is gunzipped. The agreement was measured on
+  CorOS 4.0.1 and nowhere else, so a firmware that broke it should say so rather
+  than fail quietly.
 - **Field-level gzip.** Large protobuf replies such as `ModelRepo` (roughly
   47 KB) instead gzip their content *inside* a normal protobuf `bytes` field, so
   the frame payload itself is plain protobuf.
@@ -317,7 +321,7 @@ c0                  flags = FIRST|LAST (complete message)
 00                  trailer: ENCRYPTED = 0
 00                  trailer: COMPRESSED = 0
 00 00               trailer: device bytes, zero from the host
-<114 zero bytes>    padding to the 128-byte body
+<116 zero bytes>    padding to the 128-byte body
 ```
 
 The first report of a session, `ResetCommsBuffers` (a session hello, not an

@@ -672,8 +672,11 @@ class Transport:
         try:
             cls = registry.class_for(frame.message_type)
         except KeyError:
+            # _type_name, not the bare number: the schema names more types
+            # than the registry has classes for, and it falls back to
+            # "type <n>" for a number the schema has never heard of.
             log.debug(
-                "skipping unregistered message type %d", frame.message_type
+                "skipping unregistered message %s", _type_name(frame.message_type)
             )
             return
 
@@ -685,7 +688,21 @@ class Transport:
             # message for that type. The trailer's COMPRESSED flag agrees with
             # these magic bytes on every frame measured, but the magic bytes
             # stay the test - see docs/protocol.md section 2.4.
-            if payload[:2] == b"\x1f\x8b":
+            gzipped = payload[:2] == b"\x1f\x8b"
+            if gzipped != frame.compressed:
+                # The whole case for testing the magic bytes rather than the
+                # flag rests on them agreeing, and that was measured on CorOS
+                # 4.0.1 only. Say so if a firmware ever disagrees, rather than
+                # letting a documented assumption fail silently. The magic bytes
+                # still win: they are what decides the next line.
+                log.debug(
+                    "%s frame's COMPRESSED flag says %s but the payload %s the "
+                    "gzip magic bytes; trusting the magic bytes",
+                    _type_name(frame.message_type),
+                    frame.compressed,
+                    "has" if gzipped else "lacks",
+                )
+            if gzipped:
                 payload = gzip.decompress(payload)
             message = cls()
             message.ParseFromString(payload)
@@ -696,6 +713,11 @@ class Transport:
             # same event - a compressed payload we could not read - and all three
             # have to land here rather than in the RX loop's backstop. Nothing
             # above explains this case, so it keeps the traceback.
+            # ValueError is the one member no test here reaches: the installed
+            # protobuf uses `upb`, which raises DecodeError for invalid UTF-8 in
+            # a string field, while the pure-Python implementation raises
+            # UnicodeDecodeError, which IS a ValueError. Deliberate breadth, held
+            # up by test_a_value_error_from_parsing_is_reachable_under_the_pure_python_protobuf.
             log.debug(
                 "skipping undecodable %s payload",
                 _type_name(frame.message_type),
