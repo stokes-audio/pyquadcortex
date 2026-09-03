@@ -46,7 +46,8 @@ class FakeUnit:
 
     def write(self, report):
         report = bytes(report)
-        message_type, payload = framing.decode_reports([report])
+        frame = framing.decode_reports([report])
+        message_type, payload = frame.message_type, frame.payload
         message_class = registry.class_for(message_type)
         message = message_class()
         message.ParseFromString(payload)

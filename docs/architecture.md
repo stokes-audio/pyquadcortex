@@ -121,16 +121,23 @@ connection that is already open.
 
 ### framing.py
 
-A pure codec. It converts a logical message `(message_type: int, payload:
-bytes)` into a list of 129-byte HID reports and back, and answers "is this list
+A pure codec. It converts a message type and a payload into a list of 129-byte
+HID reports, and converts reports back into a `Frame`, and answers "is this list
 of reports a complete message yet?". No hidapi, no protobuf, no threads, no I/O
 whatsoever. `message_type` is just an integer here, which is why this module can
 be tested against real captured frames byte for byte
 (`tests/fixtures/frames/*.json`).
 
-Public surface: `encode_message`, `decode_reports`, `is_complete`, and the
-confirmed wire constants (`REPORT_SIZE`, `CHUNK_SIZE`, `TRAILER_SIZE`,
-`FLAG_FIRST`, `FLAG_LAST`, the two report IDs).
+`decode_reports` returns a frozen `Frame`, not a tuple, because the trailer says
+more than the message type: `message_type`, `payload`, `encrypted`, `compressed`
+and `device_bytes`. The two flag bytes were confirmed over 15,675 captured
+messages (see [protocol.md 2.3](protocol.md#23-the-message-envelope-trailer)).
+`payload` is exactly what the trailer wrapped, still gzipped if `compressed` and
+still encrypted if `encrypted`; the codec labels, and leaves the bytes alone.
+
+Public surface: `encode_message`, `decode_reports`, `is_complete`, `Frame`, and
+the confirmed wire constants (`REPORT_SIZE`, `CHUNK_SIZE`, `TRAILER_SIZE`, the
+four `TRAILER_*` offsets, `FLAG_FIRST`, `FLAG_LAST`, the two report IDs).
 
 ### transport.py
 
@@ -336,9 +343,10 @@ A device message, bottom to top:
 device.read() -> one 129-byte input report
   -> RX thread appends to the reassembly buffer
   -> framing.is_complete(buffer)?  (flag-driven; no length field exists)
-  -> framing.decode_reports(buffer) -> (message_type, payload)
-  -> gunzip payload if it starts 1f 8b
-  -> registry.class_for(message_type) -> parse
+  -> framing.decode_reports(buffer) -> Frame
+  -> frame.encrypted?  log which type it was and stop (we do not decrypt)
+  -> registry.class_for(frame.message_type), or log the unregistered number
+  -> gunzip the payload if it starts 1f 8b, then parse
   -> _dispatch: every listener, then collectors, then a request_id waiter,
      else a broadcast waiter, else dropped
 ```
@@ -665,9 +673,16 @@ next, roughly in order of how well the ground is prepared:
   device does NOT validate: a meaningless id is stored, not rejected. What no
   read-back can tell you is which ids reach a physical jack, so that part remains
   inference (see [protocol.md](protocol.md#output-ports-chainout_portid)).
-- **Two envelope bytes remain unexplained** (the device-filled trailer bytes),
-  and the "raw payload" trailer flag is an inference. Neither blocks anything,
-  but do not write code that depends on them.
+- **Two envelope bytes remain unexplained**: the device-filled trailer bytes at
+  `n+6`. The host sends zeros and the device fills them on some frames; they do
+  not match common CRC-16 variants. `framing.Frame.device_bytes` reports them
+  and nothing in the library reads them. Do not write code that depends on them.
+  The old companion to this bullet, the "raw payload" trailer flag, is no longer
+  an inference: it is the ENCRYPTED and COMPRESSED bytes at `n+4` and `n+5`,
+  confirmed over 15,675 captured messages (see
+  [protocol.md 2.3](protocol.md#23-the-message-envelope-trailer)). The library
+  reports both and acts on neither, because compression is still detected by the
+  gzip magic bytes and an encrypted payload is labelled rather than decrypted.
 
 ## Adapting to a new CorOS version
 

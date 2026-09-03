@@ -1,6 +1,10 @@
 {
-  "note": "REAL captured frame (windows-session-01.pcap frame 5580, t=109.503s): the FIRST report Cortex Control 4.0.1 sends on connect - ResetCommsBuffers with request_id=0 and a fresh 32-hex session_id. The device echoes the session_id back. This is a session hello, NOT an unlock (the device stalls every SET_REPORT status stage regardless, while still processing the report).",
-  "message_type": "ResetCommsBuffers",
-  "payload_hex": "080012203739326630386261643836363466623961646538386236333137633363353466",
-  "frame_hex": "022cc0080012203739326630386261643836363466623961646538386236333137633363353466340000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    "note": "REAL captured frame (windows-session-01.pcap frame 5580, t=109.503s): the FIRST report Cortex Control 4.0.1 sends on connect - ResetCommsBuffers with request_id=0 and a fresh 32-hex session_id. The device echoes the session_id back. This is a session hello, NOT an unlock (the device stalls every SET_REPORT status stage regardless, while still processing the report).",
+    "message_type": "ResetCommsBuffers",
+    "payload_hex": "080012203739326630386261643836363466623961646538386236333137633363353466",
+    "trailer_hex": "3400000000000000",
+    "encrypted": false,
+    "compressed": false,
+    "device_bytes_hex": "0000",
+    "frame_hex": "022cc0080012203739326630386261643836363466623961646538386236333137633363353466340000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 }

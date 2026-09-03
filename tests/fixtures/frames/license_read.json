@@ -1,0 +1,10 @@
+{
+    "note": "REAL captured frame (windows-session-01-nonaudio.pcapng frame 1315, OUT, CorOS 4.0.1). Cortex Control 4.0.1's License READ to the QC. Plain protobuf: the ENCRYPTED trailer byte is 0. Pair this with license_reply_encrypted.json - SAME message type, opposite flag, which is what proves the byte describes the frame and not the type.",
+    "message_type": "License",
+    "payload_hex": "0803",
+    "trailer_hex": "3a00000000000000",
+    "encrypted": false,
+    "compressed": false,
+    "device_bytes_hex": "0000",
+    "frame_hex": "020ac008033a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+}

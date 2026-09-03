@@ -1,0 +1,10 @@
+{
+    "note": "REAL captured frame (windows-session-01-nonaudio.pcapng frame 1759, IN, CorOS 4.0.1). One page of the QC's preset directory listing, uncompressed: the COMPRESSED trailer byte is 0 and the payload is plain protobuf. The control for file_reply_gzip.json.",
+    "message_type": "File",
+    "payload_hex": "08011800220f0a09636c6f75642d302d3120002801",
+    "trailer_hex": "0400000000000000",
+    "encrypted": false,
+    "compressed": false,
+    "device_bytes_hex": "0000",
+    "frame_hex": "011dc008011800220f0a09636c6f75642d302d3120002801040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+}

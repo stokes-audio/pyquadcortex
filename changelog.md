@@ -20,6 +20,41 @@ correction.
 
 ## Unreleased
 
+### `framing.decode_reports` returns a `Frame`, not a tuple
+
+```python
+# before
+message_type, payload = framing.decode_reports(reports)
+
+# after
+frame = framing.decode_reports(reports)
+frame.message_type, frame.payload, frame.encrypted, frame.compressed, frame.device_bytes
+```
+
+**Breaking**, for anyone calling the codec directly. `framing` is the lowest
+layer and has never been part of the documented API surface in this file or in
+`docs/api.md`, so in practice this reaches nobody; it is written down because
+`docs/architecture.md` does call it public. Nothing else changed shape, and
+`encode_message` puts exactly the same bytes on the wire it always did.
+
+The reason is that the 8-byte frame trailer says more than the message type. Two
+bytes we used to skip as zeros are flags: one marks a payload that is encrypted
+and cannot be read, the other marks a gzip stream. A tuple had nowhere to put
+them. See `docs/protocol.md` section 2.3 for the evidence and ADR-0019 for what
+the library does and does not do with it.
+
+### Encrypted and corrupt inbound frames are no longer the same log line
+
+The receive path printed one debug line for three unrelated situations: a
+payload it could not decrypt, a message type it does not handle, and a payload
+that was genuinely corrupt. Each has its own line now, so real corruption is
+visible instead of hidden among ordinary device chatter. Nothing decrypts; an
+encrypted frame is named and dropped.
+
+Fixed alongside it: a damaged gzip payload could raise `EOFError` or
+`zlib.error`, neither of which was caught, so it was reported as an unexpected
+internal error rather than as the damaged payload it is.
+
 ### The wrong unit is now caught before the code runs
 
 ```python

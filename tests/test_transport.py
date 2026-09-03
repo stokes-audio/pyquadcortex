@@ -16,10 +16,20 @@ response is race-free: the waiter is always registered before the reply lands.
 """
 
 import collections
+import contextlib
+import gzip
 import itertools
+import json
+import logging
+import os
+import pathlib
 import struct
+import subprocess
+import sys
+import textwrap
 import threading
 import time
+import zlib
 
 import pytest
 
@@ -51,10 +61,10 @@ class FakeHid:
     def write(self, report):
         report = bytes(report)
         self.writes.append(report)
-        msg_type, payload = framing.decode_reports([report])
-        if registry.class_for(msg_type) is pa.VersionMessage:
+        frame = framing.decode_reports([report])
+        if registry.class_for(frame.message_type) is pa.VersionMessage:
             req = pa.VersionMessage()
-            req.ParseFromString(payload)
+            req.ParseFromString(frame.payload)
             resp = pa.VersionMessage(action=pa.MessageAction.READ)
             if req.HasField("request_id"):
                 resp.request_id = req.request_id
@@ -245,8 +255,8 @@ def test_keepalive_is_sent_periodically():
     try:
         def saw_keepalive():
             for report in list(fake.writes):
-                msg_type, _ = framing.decode_reports([report])
-                if registry.class_for(msg_type) is pa.KeepAliveMessage:
+                frame = framing.decode_reports([report])
+                if registry.class_for(frame.message_type) is pa.KeepAliveMessage:
                     return True
             return False
 
@@ -732,3 +742,248 @@ def test_loss_wakes_a_blocked_request_fast_with_the_real_error():
         assert isinstance(result["error"], transport.DeviceLostError)
     finally:
         t.stop()
+
+
+# -- what the RX path says when a frame does not reach a listener --------------
+#
+# Three different things stop a frame, and until the trailer's ENCRYPTED byte was
+# read (docs/protocol.md 2.3) they all produced one line: "skipping undecodable
+# inbound message". They mean different things, so they log differently now.
+
+
+def _captured_frame(name):
+    """Load one REAL captured frame from tests/fixtures/frames."""
+    fixture = json.loads(
+        (pathlib.Path(__file__).parent / "fixtures" / "frames" / name).read_text()
+    )
+    return fixture, [
+        bytes.fromhex(h)
+        for h in fixture.get("frames_hex", [fixture.get("frame_hex")])
+    ]
+
+
+@contextlib.contextmanager
+def caplog_at(level):
+    """Collect pyquadcortex.protocol.transport records at ``level``."""
+    records = []
+
+    class _Sink(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    logger = logging.getLogger("pyquadcortex.protocol.transport")
+    sink = _Sink()
+    old_level = logger.level
+    logger.addHandler(sink)
+    logger.setLevel(level)
+    try:
+        yield records
+    finally:
+        logger.removeHandler(sink)
+        logger.setLevel(old_level)
+
+
+def _feed(reports, level="DEBUG"):
+    """Push reports at a live transport and return (log text, seen messages)."""
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    seen = []
+    t.add_listener(seen.append)
+    t.start()
+    try:
+        with caplog_at(level) as records:
+            for report in reports:
+                fake.inject(report)
+            assert _wait_until(lambda: fake.pending_reads() == 0)
+            # The RX thread must have survived: a normal request still works.
+            resp = t.request(
+                pa.VersionMessage(action=pa.MessageAction.READ),
+                timeout=REQUEST_TIMEOUT,
+            )
+        assert isinstance(resp, pa.VersionMessage)
+    finally:
+        t.stop()
+    return "\n".join(r.getMessage() for r in records), seen
+
+
+def test_an_encrypted_push_is_reported_as_encrypted_not_as_a_bad_parse():
+    """A real encrypted License reply, straight off the wire.
+
+    Before the trailer flag was read this frame reached ParseFromString, failed,
+    and was logged as undecodable - indistinguishable from corruption. It is
+    recognised now, and it still must not reach a listener, because we cannot
+    read it.
+    """
+    _fixture, frames = _captured_frame("license_reply_encrypted.json")
+    text, seen = _feed(frames)
+
+    assert "encrypted License payload" in text
+    assert "undecodable" not in text
+    assert not [m for m in seen if isinstance(m, pa.LicenseMessage)]
+
+
+def test_an_unregistered_message_type_says_so_by_number():
+    unknown = 60000  # not a CortexMessageType the registry knows
+    text, _seen = _feed(framing.encode_message(unknown, b"\x08\x03"))
+
+    assert f"unregistered message type {unknown}" in text
+    assert "encrypted" not in text
+    assert "undecodable" not in text
+
+
+def test_a_corrupt_payload_is_still_reported_as_undecodable():
+    """The one case that means something is actually wrong keeps its own line.
+
+    A registered type, the ENCRYPTED flag clear, and bytes that are not a valid
+    protobuf message for it. Nothing else explains this, so it stays "undecodable"
+    and keeps the traceback.
+    """
+    # Field 1, wire type 2 (length-delimited), length 0x7f, then nothing.
+    corrupt = b"\x0a\x7f"
+    scene = registry.type_for(pa.SceneMessage)
+    text, seen = _feed(framing.encode_message(scene, corrupt))
+
+    assert "undecodable Scene payload" in text
+    assert "encrypted" not in text
+    assert not [m for m in seen if isinstance(m, pa.SceneMessage)]
+
+
+def test_a_malformed_frame_is_reported_separately_from_a_bad_payload():
+    """A frame the codec itself rejects never gets as far as a message type."""
+    body = bytes([4, 0xC0, 0xDE, 0xAD, 0xBE, 0xEF])  # body shorter than the trailer
+    report = bytes([framing.OUT_REPORT_ID]) + body + bytes(129 - 1 - len(body))
+    text, _seen = _feed([report])
+
+    assert "malformed inbound frame" in text
+    assert "undecodable" not in text
+
+
+# Each way of damaging a gzip stream, with the exception it actually raises on
+# CPython. These were MEASURED, not reasoned about: the first version of this
+# test used three inputs that all raised EOFError while claiming to cover three
+# hierarchies, so two thirds of the catch tuple went unpinned. `gzip.decompress`
+# only runs once the magic bytes match, so damage has to survive that check.
+GZIP_DAMAGE = [
+    # Header method byte set to 9 (only 8, deflate, is valid).
+    ("bad header method", gzip.BadGzipFile, lambda b: b[:2] + bytes([9]) + b[3:]),
+    # A flipped bit in the deflate stream: the block header stops being valid.
+    ("corrupt deflate stream", zlib.error, lambda b: b[:10] + bytes([b[10] ^ 1]) + b[11:]),
+    # Cut short, so the stream ends before its end-of-stream marker.
+    ("truncated", EOFError, lambda b: b[:20]),
+]
+
+
+def test_the_gzip_damage_cases_raise_the_exceptions_they_claim_to():
+    """Guard the guard: prove each case reaches a DIFFERENT exception type.
+
+    Without this, the parametrized test below passes just as happily with three
+    inputs that all raise the same thing, which is how it was originally wrong.
+    """
+    blob = gzip.compress(b"\x08\x03" * 40)
+    raised = {}
+    for label, expected, damage in GZIP_DAMAGE:
+        with pytest.raises(expected) as caught:
+            gzip.decompress(damage(blob))
+        raised[label] = type(caught.value)
+
+    assert len(set(raised.values())) == len(GZIP_DAMAGE), raised
+    # And they really are unrelated hierarchies, which is why one except clause
+    # naming only OSError missed two of them.
+    assert not issubclass(zlib.error, (OSError, EOFError))
+    assert issubclass(gzip.BadGzipFile, OSError)
+
+
+@pytest.mark.parametrize("label,expected,damage", GZIP_DAMAGE)
+def test_a_damaged_compressed_payload_is_undecodable_not_an_unexpected_error(
+    label, expected, damage
+):
+    """Broken gzip raises across three unrelated exception hierarchies.
+
+    BadGzipFile is an OSError, a truncated stream is an EOFError, and a corrupt
+    deflate stream is a zlib.error, which is neither. Only the first was caught
+    here, so the other two escaped to the RX loop's backstop and were logged at
+    ERROR as "unexpected". The RX thread survived either way; what was wrong was
+    calling a damaged payload a bug in the library.
+    """
+    blob = gzip.compress(b"\x08\x03" * 40)
+    scene = registry.type_for(pa.SceneMessage)
+    text, seen = _feed(framing.encode_message(scene, damage(blob)))
+
+    assert "undecodable Scene payload" in text, label
+    assert "unexpected error" not in text, label
+    assert not [m for m in seen if isinstance(m, pa.SceneMessage)], label
+
+
+def test_a_value_error_from_parsing_is_reachable_under_the_pure_python_protobuf():
+    """Justify the ValueError in _handle_message's catch tuple.
+
+    Nothing in this suite reaches it, because the installed protobuf uses the
+    `upb` implementation, which raises DecodeError for invalid UTF-8 in a string
+    field. The PURE-PYTHON implementation, which any user can select with
+    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python, raises UnicodeDecodeError
+    instead - and that is a ValueError.
+
+    So the guard is deliberate breadth rather than a leftover, and this test is
+    what would notice if protobuf ever stopped behaving that way, at which point
+    the ValueError could come out of the tuple.
+    """
+    source = textwrap.dedent(
+        """
+        from google.protobuf.internal import api_implementation
+        from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
+        assert api_implementation.Type() == "python", api_implementation.Type()
+        try:
+            pa.SceneLabelMessage().ParseFromString(b"\\x22\\x02\\xff\\xfe")
+        except Exception as exc:
+            print(type(exc).__name__, isinstance(exc, ValueError))
+        else:
+            print("NO-RAISE", False)
+        """
+    )
+    env = {**os.environ, "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION": "python",
+           "PYTHONPATH": str(pathlib.Path(__file__).resolve().parents[1])}
+    result = subprocess.run([sys.executable, "-c", source], env=env,
+                            capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    name, is_value_error = result.stdout.split()
+    assert is_value_error == "True", f"{name} is not a ValueError"
+    assert name == "UnicodeDecodeError", name
+
+
+def test_a_compressed_flag_disagreeing_with_the_magic_bytes_is_reported():
+    """The one thing that would tell us the flag reading has gone stale.
+
+    Compression is detected by the magic bytes on purpose (ADR-0019), and the
+    argument for that rests on the flag and the magic bytes agreeing on all
+    15,675 messages measured - on CorOS 4.0.1, and nowhere else. If a firmware
+    ever disagrees, the library should say so rather than silently discarding
+    half the evidence. The magic bytes still decide what happens to the payload.
+    """
+    scene = registry.type_for(pa.SceneMessage)
+    payload = pa.SceneMessage(action=pa.MessageAction.UPDATE).SerializeToString()
+    reports = framing.encode_message(scene, payload)
+    assert len(reports) == 1, "this test hand-edits a single-report trailer"
+
+    # Set COMPRESSED on a payload that is plainly not gzip.
+    report = bytearray(reports[0])
+    trailer_start = 3 + report[1] - framing.TRAILER_SIZE
+    report[trailer_start + framing.TRAILER_COMPRESSED] = 1
+    assert framing.decode_reports([bytes(report)]).compressed is True
+
+    text, seen = _feed([bytes(report)])
+
+    assert "COMPRESSED flag says True" in text
+    assert "lacks the gzip magic bytes" in text
+    # ... and the message still arrives, because the magic bytes are the test.
+    assert [m for m in seen if isinstance(m, pa.SceneMessage)]
+
+
+def test_agreement_between_the_flag_and_the_magic_bytes_is_not_reported():
+    """The quiet case stays quiet, or the log line is worthless."""
+    scene = registry.type_for(pa.SceneMessage)
+    payload = pa.SceneMessage(action=pa.MessageAction.UPDATE).SerializeToString()
+    text, seen = _feed(framing.encode_message(scene, payload))
+
+    assert "COMPRESSED flag" not in text
+    assert [m for m in seen if isinstance(m, pa.SceneMessage)]
