@@ -2038,6 +2038,23 @@ def test_settings_reads_general_settings_and_requires_a_full_push():
     assert match(pa.GeneralSettingsMessage(screen_brightness=1)) is False
 
 
+def test_inhibited_modules_reads_both_explicit_states():
+    full = pa.CompilerInhibitedModulesMessage(action=pa.MessageAction.UPDATE,
+                                              global_gate=False,
+                                              global_eq=False)
+    qc = client.QuadCortex(StateTransport(full))
+    got = qc.inhibited_modules()
+    assert got is full
+    sent = qc._t.sent[-1]
+    assert isinstance(sent, pa.CompilerInhibitedModulesMessage)
+    assert sent.action == pa.MessageAction.READ
+    assert sent.SerializeToString() == b"\x08\x03"
+    match = qc._t.matches[-1]
+    assert match(full) is True
+    assert match(pa.CompilerInhibitedModulesMessage(global_gate=False)) is False
+    assert match(pa.CompilerInhibitedModulesMessage(global_eq=False)) is False
+
+
 def test_update_settings_sends_only_the_named_fields():
     qc = client.QuadCortex(FakeTransport())
     qc.update_settings(screen_brightness=60, swap_tempo_tuner_access=True)

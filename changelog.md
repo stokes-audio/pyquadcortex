@@ -84,6 +84,13 @@ Fixed alongside it: a damaged gzip payload could raise `EOFError` or
 `zlib.error`, neither of which was caught, so it was reported as an unexpected
 internal error rather than as the damaged payload it is.
 
+### Read which global modules DSP load inhibited
+
+`inhibited_modules()` reads the two booleans the unit reports when processing
+load automatically disables the Input Gate or Global EQ. The reader requires
+both optional fields to be explicitly present, so protobuf's absent-field
+default cannot be mistaken for a real false state.
+
 ### The wrong unit is now caught before the code runs
 
 ```python

@@ -20,10 +20,10 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 105 features audited: **65 yes**, **8 partly**, **21 no**, **11 n/a**.
+Of 105 features audited: **66 yes**, **7 partly**, **21 no**, **11 n/a**.
 
 Of the 93 features a host could plausibly drive - everything above except the 11 marked
-n/a - **65 are fully covered** and 8 more are partly covered, which here means the state
+n/a - **66 are fully covered** and 7 more are partly covered, which here means the state
 is readable and at least one field of it is confirmed writable, with the neighbours the
 same shape but not individually exercised. Only 20 remain untouched.
 
@@ -92,7 +92,7 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | Remove a block | yes | `remove_block()` (the DELETE action; an UPDATE with `hash: 0` is ignored) |
 | Move a block | yes | `move_block(from_row, from_col, to_row, to_col)`; a cross-row move makes the device create a branch |
 | DSP capacity refusal | partly | detected, not predicted: a refused placement raises `BlockRefused`. Headroom cannot be read - `CPULoad` never arrives |
-| Global EQ / Input Gate auto-disable under load | partly | `CompilerInhibitedModules{global_gate, global_eq}` is decoded and arrives on grid edits. The manual confirms this is the documented behaviour when a preset exceeds resources. Not surfaced in the API |
+| Global EQ / Input Gate auto-disable under load | yes | `inhibited_modules()` reads `CompilerInhibitedModules{global_gate, global_eq}`; the same state also arrives on grid edits. The manual confirms this is the documented behaviour when a preset exceeds resources |
 | Input blocks: assign a physical input | yes | `set_chain_input()` |
 | Output blocks: assign a destination | yes | `set_chain_output()`. 16-18 are internal row-to-row; 19 (MULTIPLE) is the Multi-Out |
 | Input Gate Control | yes | `set_param(LaneInput(row), ...)` - NOISE REDUCTION, BYPASS, INPUT GAIN, per scene. GAIN REDUCTION is a meter |

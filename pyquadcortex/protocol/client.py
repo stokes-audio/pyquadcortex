@@ -2571,6 +2571,25 @@ class QuadCortex:
         return self._read_state(pa.GlobalEQMessage,
                                 lambda m: m.HasField("bypassed"), timeout)
 
+    def inhibited_modules(self, timeout: float = 10.0):
+        """Whether DSP load has automatically disabled the Input Gate or Global EQ.
+
+        Returns the raw ``CompilerInhibitedModules`` message. ``global_gate`` and
+        ``global_eq`` are true while the corresponding global module is inhibited.
+        Both fields are required in the reply so an absent optional field is never
+        mistaken for an explicit false.
+
+        Confirmed read-only on hardware: a ``CompilerInhibitedModules{READ}``
+        returned an UPDATE carrying both explicit false fields on Quad Cortex,
+        CorOS 4.1.0 / firmware d14e. The same message type was already observed
+        arriving after grid edits when DSP load changes the inhibited state.
+        """
+        return self._read_state(
+            pa.CompilerInhibitedModulesMessage,
+            lambda m: m.HasField("global_gate") and m.HasField("global_eq"),
+            timeout,
+        )
+
     def set_global_eq_bypassed(self, bypassed: bool = True):
         """Turn the Global EQ off or on. Confirmed writable on hardware.
 

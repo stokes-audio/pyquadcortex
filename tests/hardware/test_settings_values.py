@@ -22,12 +22,28 @@ import pytest
 
 from pyquadcortex.protocol import client, units, values
 from pyquadcortex.protocol.enums import Input
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 SETTLE = 2.0
 
 #: The port these tests drive. Input 1 is the one the suite's other tests leave
 #: alone, and its gain is restored in teardown either way.
 PORT = Input.INPUT_1
+
+
+def test_inhibited_modules_is_a_complete_read_only_snapshot(qc):
+    """Both false fields were explicitly present on CorOS 4.1.0 / d14e.
+
+    Presence matters here: protobuf also returns false when an optional field was
+    never sent, and reporting that default as device state would be a guess.
+    """
+    for _ in range(2):
+        state = qc.inhibited_modules()
+        assert state.action == pa.MessageAction.UPDATE
+        assert state.HasField("global_gate")
+        assert state.HasField("global_eq")
+        assert isinstance(state.global_gate, bool)
+        assert isinstance(state.global_eq, bool)
 
 
 def _input_level(qc, port_id):
