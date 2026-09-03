@@ -1,0 +1,10 @@
+{
+    "note": "REAL captured frame (windows-session-01-nonaudio.pcapng frame 1363, IN, CorOS 4.0.1). The QC's reply to that same License READ. The ENCRYPTED trailer byte is 1 and the 17-byte payload is not protobuf; ParseFromString fails on it. pyquadcortex does not decrypt these (see docs/protocol.md 2.3), it labels them.",
+    "message_type": "License",
+    "payload_hex": "51f499f9b3a027351a7c861b96ac46d3f8",
+    "trailer_hex": "3a0000000100a2b6",
+    "encrypted": true,
+    "compressed": false,
+    "device_bytes_hex": "a2b6",
+    "frame_hex": "0119c051f499f9b3a027351a7c861b96ac46d3f83a0000000100a2b60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+}

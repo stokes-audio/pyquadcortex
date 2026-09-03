@@ -26,6 +26,7 @@ confirming each finding live against hardware.
   - [2.1 Report layout](#21-report-layout)
   - [2.2 Fragmentation and reassembly](#22-fragmentation-and-reassembly)
   - [2.3 The message envelope (trailer)](#23-the-message-envelope-trailer)
+  - [The two flag bytes, confirmed](#the-two-flag-bytes-confirmed)
   - [2.4 Compressed payloads](#24-compressed-payloads)
   - [2.5 Annotated real frames](#25-annotated-real-frames)
 - [3. Message types and actions](#3-message-types-and-actions)
@@ -213,8 +214,9 @@ A reassembled logical message is `protobuf ++ trailer(8)`:
 ```
 offset  size  field
 0       n     protobuf-serialized message (see the recovered schema)
-n       2     CortexMessageType.Enum value, uint16 LITTLE-ENDIAN
-n+2     4     zero in every observed frame, except as noted below
+n       4     CortexMessageType.Enum value, uint32 LITTLE-ENDIAN
+n+4     1     ENCRYPTED: 1 = the payload is not protobuf and cannot be read
+n+5     1     COMPRESSED: 1 = the payload is a gzip stream
 n+6     2     zero from the host; the device fills varying nonzero values
 ```
 
@@ -226,14 +228,81 @@ Two things are surprising and worth stating plainly:
 
 The device-filled bytes at `n+6` do not match common CRC-16 variants and their
 meaning is unknown. It is safe to send zeros there and to ignore them on
-receive.
+receive. They stay an open question.
 
-The zero region at `n+2` is not entirely inert: device messages whose payload is
-**not** protobuf (`RecallPreset` pushes, `License`, `CloudLogin`) carry a
-nonzero byte inside those four bytes, which looks like a "raw payload" flag.
-This interpretation is an inference, not a confirmed field; the library does not
-rely on it, and instead detects compressed payloads by their gzip magic bytes
-and tolerates unparseable ones.
+#### The two flag bytes, confirmed
+
+The bytes at `n+4` and `n+5` were read as zeros for a long time, and the "raw
+payload flag" this document used to describe as an inference was the same two
+bytes seen dimly. Both are now confirmed.
+
+**Method.** Two runs, offline then live.
+
+*Offline*, and the one that carries the weight: every logical message in the
+three USBPcap captures of Cortex Control 4.0.1 was reassembled and its whole
+trailer recorded, both directions.
+`research/captures/windows-session-0{1,2,3}-nonaudio.pcapng` in the lab repo,
+15,675 messages, device on CorOS 4.0.1 (`zenos_git_hash: 4.0.1`, app firmware
+`d14e`). The check is `research/scripts/trailer_flags.py` in that repo. It is
+the only run containing a `CloudLogin` exchange, because this library never
+logs in.
+
+*Live*, 2026-09-03, on the unit through this library's own client on macOS
+rather than Cortex Control: 1,000 messages over a connect burst, a full folder
+listing and one recall, with the same result on every row below. Same firmware,
+so it is evidence about a different client and a different host, **not** about a
+newer CorOS. `research/scripts/trailer_flags_live.py`.
+
+It also settles a practical point: seeing the ENCRYPTED flag needs no cloud or
+account operation. `License` is already in the handshake's subscribe burst, so
+an ordinary `connect()` provokes the encrypted reply.
+
+| what | result |
+| --- | --- |
+| `n+2` and `n+3` | zero in all 15,675 messages, both directions |
+| `n+4` set | 13 messages, all of them `License` or `CloudLogin` |
+| `n+4` clear | 15,662 messages, none of which failed to parse for that reason |
+| `n+5` set | 39 messages, every one starting with the gzip magic `1f 8b` |
+| `n+5` vs the gzip magic | agree 15,675 out of 15,675 |
+| `n+6..n+7` | always zero from the host; nonzero on 2,700 of 14,539 device messages |
+
+The live run reproduced every row: `n+2`/`n+3` zero on all 1,000, the COMPRESSED
+flag and the gzip magic bytes agreeing 1000 out of 1000, ENCRYPTED on the
+`License` reply and nothing else, `File` arriving 778 plain and 20 gzipped in the
+one session, and `n+6..n+7` nonzero on 205 of 1,000.
+
+**Both flags describe the FRAME, not the message type.** That is the part worth
+keeping, because a per-type table would look right and be wrong:
+
+| type | direction | flag | payload |
+| --- | --- | --- | --- |
+| `License` | host to device | encrypted 0 | plain protobuf, `action: READ` |
+| `License` | device to host | encrypted 1 | 17 bytes, not protobuf |
+| `File` | device to host | compressed 0 | plain protobuf, x1,173 |
+| `File` | device to host | compressed 1 | gzip, x30 (the factory library listing) |
+| `RecallPreset` | device to host | compressed 0 | plain protobuf, x1 (a 9,326-byte push) |
+| `RecallPreset` | device to host | compressed 1 | gzip, x9 |
+
+**What "encrypted" means here, and what it does not.** What was measured is that
+the flag marks a payload a receiver must not parse as protobuf, and that only
+`License` and `CloudLogin` carry it. The name comes from the .NET library
+CortexUSB, which decrypts on the same flag. This library does neither: it reads
+the flag, labels the frame, and hands the bytes back untouched. See
+[ADR.md](ADR.md) (ADR-0019) and the note below.
+
+**Not reproduced: the compressed flag on types 32 and 33.** CortexUSB skips
+decompression for `KeepAlive` (32) and `GlobalTempo` (33) by default, which
+reads like an observation that those two set the compressed byte without
+carrying compressed data. In these captures they do not: `GlobalTempo` x3,785
+and `KeepAlive` x944, every one with both flags clear. Recorded as not
+reproduced on CorOS 4.0.1 rather than as disproved, since their exception list
+may come from firmware or a client we did not measure.
+
+**The type field's width is not observable.** Bytes `n+2` and `n+3` are always
+zero, and every message type in the schema is under 256, so a uint32 type and a
+uint16 type followed by two reserved zero bytes produce identical bytes on the
+wire. This document and the codec take the uint32 reading, which matches
+CortexUSB, and nothing depends on the choice. Do not record it as confirmed.
 
 ### 2.4 Compressed payloads
 
@@ -244,6 +313,16 @@ Two different, independent kinds of compression appear:
   message for the frame's type. `RecallPreset` pushes (carrying a full preset)
   do this, as does the factory-library folder listing. A receiver should gunzip
   before parsing when it sees the magic bytes.
+
+  The trailer's COMPRESSED byte says the same thing (see 2.3), and agreed with
+  the magic bytes on all 15,675 messages measured. **The library still tests the
+  magic bytes, not the flag.** The argument is CortexUSB's own exception list:
+  they read the flag and then had to add a skip-list for two message types.
+  Magic bytes need no exceptions, so the flag stays informational. `framing`
+  reports it, and logs a line if the two ever disagree, but the magic bytes
+  are what decide whether a payload is gunzipped. The agreement was measured on
+  CorOS 4.0.1 and nowhere else, so a firmware that broke it should say so rather
+  than fail quietly.
 - **Field-level gzip.** Large protobuf replies such as `ModelRepo` (roughly
   47 KB) instead gzip their content *inside* a normal protobuf `bytes` field, so
   the frame payload itself is plain protobuf.
@@ -257,9 +336,11 @@ A `Version` READ, single report (this is `tests/fixtures/frames/version_read.jso
 0a                  len = 10 (2 bytes protobuf + 8 trailer)
 c0                  flags = FIRST|LAST (complete message)
 08 03               protobuf: VersionMessage{action: READ}
-0a 00               trailer: type = 10 (Version), uint16 LE
-00 00 00 00 00 00   trailer: zeros
-<114 zero bytes>    padding to the 128-byte body
+0a 00 00 00         trailer: type = 10 (Version), uint32 LE
+00                  trailer: ENCRYPTED = 0
+00                  trailer: COMPRESSED = 0
+00 00               trailer: device bytes, zero from the host
+<116 zero bytes>    padding to the 128-byte body
 ```
 
 The first report of a session, `ResetCommsBuffers` (a session hello, not an
@@ -271,8 +352,9 @@ unlock):
 c0                  flags = complete
 08 00               protobuf: request_id = 0
 12 20 ...           protobuf: session_id = 32 hex characters
-34 00               trailer: type = 52 (ResetCommsBuffers), uint16 LE
-00 00 00 00 00 00   trailer: zeros
+34 00 00 00         trailer: type = 52 (ResetCommsBuffers), uint32 LE
+00 00               trailer: ENCRYPTED = 0, COMPRESSED = 0
+00 00               trailer: device bytes, zero from the host
 <82 zero bytes>     padding
 ```
 
@@ -283,8 +365,9 @@ A 290-byte `Version` reply from the device, spanning three input reports (this i
 report 1:  01 | 7e | 40 | <126 data bytes>   starts "Linux buildroot ..."
 report 2:  01 | 7e | 00 | <126 data bytes>   middle: no header of any kind
 report 3:  01 | 2e | 80 | <46 data bytes>    last 8 bytes are the trailer:
-                                               0a 00        type = 10 (Version)
-                                               00 00 00 00  zeros
+                                               0a 00 00 00  type = 10 (Version)
+                                               00           ENCRYPTED = 0
+                                               00           COMPRESSED = 0
                                                60 b3        device-filled, ignored
            + 80 bytes of stale padding
 ```
@@ -292,6 +375,23 @@ report 3:  01 | 2e | 80 | <46 data bytes>    last 8 bytes are the trailer:
 The `Version` reply carries the device's kernel string, `zenos` version,
 `app_fw_version`, bootloader version, MAC address, and serial number, among
 other fields (see `VersionMessage` in the schema).
+
+A `License` reply from the device, the smallest frame with a flag set (this is
+`tests/fixtures/frames/license_reply_encrypted.json`):
+
+```
+01                  report ID 0x01 (device->host input report)
+19                  len = 25 (17 payload + 8 trailer)
+c0                  flags = FIRST|LAST
+51 f4 99 f9 ...     payload: 17 bytes, NOT protobuf
+3a 00 00 00         trailer: type = 58 (License), uint32 LE
+01                  trailer: ENCRYPTED = 1
+00                  trailer: COMPRESSED = 0
+a2 b6               trailer: device-filled, ignored
+```
+
+The host's `License` READ that provoked it carries `08 03` and ENCRYPTED = 0
+(`tests/fixtures/frames/license_read.json`). Same message type, opposite flag.
 
 ## 3. Message types and actions
 
@@ -3208,9 +3308,17 @@ Stated explicitly so nobody builds on a guess:
 - **The two device-filled trailer bytes** (offset `n+6`) have no known meaning.
   They do not match common CRC-16 variants. Sending zeros works; ignoring them
   on receive works.
-- **The "raw payload" trailer flag** at offset `n+2` is an inference from the
-  observation that non-protobuf device payloads carry a nonzero byte there. The
-  exact field layout and semantics are unconfirmed.
+- ~~**The "raw payload" trailer flag**~~ - ANSWERED. It is two flag bytes, not
+  one, and they sit at `n+4` (ENCRYPTED) and `n+5` (COMPRESSED). Confirmed on
+  2026-09-03 over 15,675 logical messages from three USBPcap captures of Cortex
+  Control 4.0.1, in both directions: ENCRYPTED appears only on `License` and
+  `CloudLogin`, COMPRESSED agrees with the gzip magic bytes 15675/15675, and
+  both vary WITHIN a single message type, so neither is a property of the type.
+  See [section 2.3](#23-the-message-envelope-trailer). Two smaller things stay
+  open, and are listed here rather than folded into the answer: the type field's
+  width is not observable (the high two bytes are always zero and every type is
+  under 256), and the reason CortexUSB skips decompression for types 32 and 33
+  was not reproduced on this firmware.
 - ~~**`FileMessage.type`** was always `0`~~ - ANSWERED: it is a category selector,
   `0` presets / `1` IRs / `2` captures, established with request_id-attributed sweeps
   (see the IR section) and independently corroborated by a state-tracking session that

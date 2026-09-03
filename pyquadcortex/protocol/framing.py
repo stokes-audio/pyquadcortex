@@ -1,8 +1,8 @@
 """HID frame codec for the Quad Cortex USB-HID protobuf transport.
 
-This module converts between logical messages ``(message_type, protobuf_bytes)``
-and the raw 129-byte HID reports exchanged with the device. It deals ONLY in
-bytes and integers: no hidapi, no protobuf. ``message_type`` is just an int.
+This module converts between logical messages and the raw 129-byte HID reports
+exchanged with the device. It deals ONLY in bytes and integers: no hidapi, no
+protobuf. ``message_type`` is just an int.
 
 Confirmed wire format (USBPcap capture of Cortex Control 4.0.1; see
 docs/protocol.md):
@@ -18,13 +18,45 @@ docs/protocol.md):
     report-id/len/flags bytes themselves. Non-final fragments always carry
     a full 126 (= 128 - 2) bytes; the final fragment's ``len`` says how many
     of its data bytes are meaningful (the rest is padding/stale buffer).
-  * The reassembled logical body is ``protobuf ++ trailer(8)`` where
-    ``trailer = [message_type u16 LE][4 zero bytes][2 bytes: zeros from the
-    host; the device fills values whose meaning is unknown - ignore them]``.
+  * The reassembled logical body is ``protobuf ++ trailer(8)``, and the trailer
+    is ``[message_type u32 LE][encrypted u8][compressed u8][2 device bytes]``.
     The message type tag lives in the TRAILER, not a header.
 
 There is no total-length field: reassembly is driven purely by the flags.
+
+The trailer's two flag bytes
+----------------------------
+
+Confirmed 2026-09-03 twice over. Offline across three USBPcap captures of
+Cortex Control 4.0.1 (CorOS 4.0.1), 15,675 logical messages in both directions,
+and live on the unit through this library's own client, 1,000 messages, which
+reproduced every result below. Same firmware both times, so this is evidence
+about two clients rather than two CorOS versions. What was measured:
+
+* ``encrypted`` was set on 13 messages and only ever on ``License`` and
+  ``CloudLogin``. Every one of those 13 payloads fails to parse as protobuf,
+  and every one of the other 15,662 does not fail for that reason. **This
+  library labels such a payload and hands it back untouched; it does not
+  decrypt one, and nothing in it will.**
+* ``compressed`` was set on 39 messages, and agreed with the payload's gzip
+  magic bytes 15675 times out of 15675 (1000 out of 1000 live). The library
+  still detects compression by the magic bytes rather than by this flag - see
+  docs/protocol.md 2.4 for why. The flag never decides what happens to a
+  payload; the transport does compare the two and logs a line if they ever
+  disagree, since that agreement was only ever measured on one firmware.
+
+Both flags describe the FRAME, not the message type: a ``License`` READ from
+the host is unflagged while the device's reply to it is encrypted, and a
+``File`` reply appears both compressed and not. Anything keyed on the message
+type would get one of those wrong.
+
+The four bytes at trailer offset 0 are read as a uint32. Bytes 2 and 3 were
+zero in all 15,675 messages, and every message type is under 256, so a uint16
+type plus two reserved zero bytes fits the evidence equally well. The width is
+not observable; the flag positions that follow it are.
 """
+
+from dataclasses import dataclass
 
 # --- Confirmed HID-layer constants -------------------------------------------
 REPORT_SIZE = 128  # body bytes per report (report-ID byte is separate)
@@ -36,21 +68,52 @@ FLAG_FIRST = 0x40
 FLAG_LAST = 0x80
 # Per-report data capacity: the 128-byte body minus the [len][flags] prefix.
 CHUNK_SIZE = REPORT_SIZE - 2  # 126
-# Trailer appended to the protobuf payload before chunking:
-# [message_type u16 LE][6 bytes; host sends zeros].
+# Trailer appended to the protobuf payload before chunking. Offsets are from the
+# start of the trailer, i.e. from ``n`` where the payload is ``n`` bytes long.
 TRAILER_SIZE = 8
+TRAILER_TYPE = slice(0, 4)  # message type, uint32 LE
+TRAILER_ENCRYPTED = 4  # 1 = payload is not protobuf and we cannot read it
+TRAILER_COMPRESSED = 5  # 1 = payload is a gzip stream
+TRAILER_DEVICE = slice(6, 8)  # device-filled, meaning still unknown
+
+
+@dataclass(frozen=True)
+class Frame:
+    """One reassembled logical message, with its envelope read out.
+
+    ``payload`` is exactly what the trailer wrapped: still gzipped if
+    ``compressed``, still encrypted if ``encrypted``. Decompression belongs to
+    the caller (``transport._handle_message`` does it by magic bytes), and
+    decryption belongs to nobody - see the module docstring.
+
+    ``device_bytes`` are the two trailer bytes at offset 6, which have no known
+    meaning. The host sends zeros; the device fills them on some frames. They
+    are reported here rather than dropped so that nothing has to re-read the
+    frame to see them, but no code in this library depends on their value.
+    """
+
+    message_type: int
+    payload: bytes
+    encrypted: bool
+    compressed: bool
+    device_bytes: bytes
 
 
 def encode_message(message_type: int, payload: bytes) -> list[bytes]:
     """Frame one logical message into one or more 129-byte HID output reports.
 
-    Appends the 8-byte trailer (``[message_type u16 LE]`` + six zero bytes) to
-    ``payload``, splits the result into 126-byte chunks, and wraps each chunk as
-    ``[OUT_REPORT_ID][len][flags][chunk, zero padded to 126]``. The first
-    chunk's flags carry FLAG_FIRST, the last FLAG_LAST (a single-report message
-    carries both, 0xC0).
+    Appends the 8-byte trailer to ``payload``, splits the result into 126-byte
+    chunks, and wraps each chunk as ``[OUT_REPORT_ID][len][flags][chunk, zero
+    padded to 126]``. The first chunk's flags carry FLAG_FIRST, the last
+    FLAG_LAST (a single-report message carries both, 0xC0).
+
+    The host never sets the ENCRYPTED or COMPRESSED flags and never fills the
+    two device bytes, so everything after the type is zero. That is what
+    Cortex Control 4.0.1 sends too, in all 1,136 host frames measured.
     """
-    body = payload + message_type.to_bytes(2, "little") + bytes(TRAILER_SIZE - 2)
+    trailer = bytearray(TRAILER_SIZE)
+    trailer[TRAILER_TYPE] = message_type.to_bytes(4, "little")
+    body = payload + bytes(trailer)
 
     chunks = [body[i : i + CHUNK_SIZE] for i in range(0, len(body), CHUNK_SIZE)]
 
@@ -65,15 +128,14 @@ def encode_message(message_type: int, payload: bytes) -> list[bytes]:
     return reports
 
 
-def decode_reports(reports: list[bytes]) -> tuple[int, bytes]:
+def decode_reports(reports: list[bytes]) -> Frame:
     """Reassemble one logical message from one or more HID reports.
 
     Strips each report's leading report-ID byte (WITHOUT asserting its value),
     concatenates each report's ``len`` valid data bytes, then splits the
-    reassembled body into ``(message_type, protobuf_bytes)`` by reading the
-    8-byte trailer. Raises ``ValueError`` on structurally invalid input (no
-    FIRST flag on the first report, no LAST on the final one, or a body too
-    short to hold the trailer).
+    reassembled body into a :class:`Frame` by reading the 8-byte trailer. Raises
+    ``ValueError`` on structurally invalid input (no FIRST flag on the first
+    report, no LAST on the final one, or a body too short to hold the trailer).
     """
     if not reports:
         raise ValueError("decode_reports requires at least one report")
@@ -96,11 +158,14 @@ def decode_reports(reports: list[bytes]) -> tuple[int, bytes]:
             f"reassembled body is {len(body)} bytes, shorter than the "
             f"{TRAILER_SIZE}-byte trailer"
         )
-    payload, trailer = bytes(body[:-TRAILER_SIZE]), body[-TRAILER_SIZE:]
-    message_type = int.from_bytes(trailer[0:2], "little")
-    # trailer[2:6] is always zero on the wire; trailer[6:8] is zero from the
-    # host but carries unknown nonzero values from the device. Both ignored.
-    return message_type, payload
+    payload, trailer = bytes(body[:-TRAILER_SIZE]), bytes(body[-TRAILER_SIZE:])
+    return Frame(
+        message_type=int.from_bytes(trailer[TRAILER_TYPE], "little"),
+        payload=payload,
+        encrypted=bool(trailer[TRAILER_ENCRYPTED]),
+        compressed=bool(trailer[TRAILER_COMPRESSED]),
+        device_bytes=trailer[TRAILER_DEVICE],
+    )
 
 
 def is_complete(reports: list[bytes]) -> bool:
