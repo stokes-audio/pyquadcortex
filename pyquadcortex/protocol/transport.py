@@ -14,7 +14,7 @@ speaks the Quad Cortex framed protocol. It:
   * runs a background keepalive thread that periodically pokes the device so it
     keeps the session alive.
 
-The transport deals only in ``framing`` (bytes <-> ``(type, payload)``) and
+The transport deals only in ``framing`` (bytes <-> ``framing.Frame``) and
 ``registry`` (type tag <-> protobuf class). The envelope is confirmed against
 a real Cortex Control session (see docs/protocol.md).
 Write errors are EXPECTED: the QC stalls every SET_REPORT's status stage after
@@ -40,6 +40,8 @@ import logging
 import math
 import threading
 import time
+import typing
+import zlib
 
 from google.protobuf.message import DecodeError
 
@@ -73,6 +75,25 @@ _DELIVERY_GRACE = 0.5
 # message ever reaches the cap, so it never triggers on good traffic.
 _MAX_MESSAGE_BODY = 1 << 20  # bytes of reassembled body tolerated per message
 _MAX_REPORTS_PER_MESSAGE = math.ceil(_MAX_MESSAGE_BODY / framing.CHUNK_SIZE)
+
+
+def _type_name(message_type: int) -> str:
+    """Name a message type for a log line, without ever raising into the RX path.
+
+    The schema names more types than ``registry`` has classes for, and the wire
+    can carry a number the schema has never heard of. Both have to come out as
+    something readable rather than as an exception on the thread that must not
+    die.
+    """
+    try:
+        # A `cast` rather than `Enum.ValueType(...)`, for the same reason
+        # registry.class_for uses one: that constructor is `int` at runtime, so
+        # it would quietly convert a bad value instead of letting Name raise.
+        return pa.CortexMessageType.Enum.Name(
+            typing.cast("pa.CortexMessageType.Enum.ValueType", message_type)
+        )
+    except ValueError:
+        return f"type {message_type}"
 
 
 class DeviceLostError(ConnectionError):
@@ -620,28 +641,66 @@ class Transport:
     def _handle_message(self, reports):
         """Decode, parse, and dispatch one fully-buffered logical message.
 
-        Any failure (unknown type, bad frame, protobuf parse error) is logged and
-        swallowed so the RX thread keeps running. The buffer was already reset by
-        the caller, so a bad frame cannot wedge the stream.
+        Any failure is logged and swallowed so the RX thread keeps running. The
+        buffer was already reset by the caller, so a bad frame cannot wedge the
+        stream.
+
+        Three separate things can stop a frame reaching a listener, and they are
+        logged separately because they mean different things. An ENCRYPTED frame
+        and an unregistered type are both ordinary device chatter. A frame that
+        is neither and still will not parse is the only one that suggests
+        something is actually wrong, so it is the only one that keeps the
+        traceback.
         """
         try:
-            msg_type, payload = framing.decode_reports(reports)
-            # Confirmed by capture: the device gzip-compresses some
-            # payloads at the frame level (e.g. RecallPreset pushes carrying a
-            # full BinaryPreset). The decompressed bytes are the ordinary
-            # protobuf message for that type.
+            frame = framing.decode_reports(reports)
+        except ValueError:
+            log.debug("skipping malformed inbound frame", exc_info=True)
+            return
+
+        if frame.encrypted:
+            # Confirmed on CorOS 4.0.1: only License and CloudLogin, and their
+            # payloads are not protobuf. This library reads the flag and stops
+            # there - it does not decrypt. See docs/protocol.md section 2.3.
+            log.debug(
+                "skipping encrypted %s payload (%d bytes)",
+                _type_name(frame.message_type),
+                len(frame.payload),
+            )
+            return
+
+        try:
+            cls = registry.class_for(frame.message_type)
+        except KeyError:
+            log.debug(
+                "skipping unregistered message type %d", frame.message_type
+            )
+            return
+
+        payload = frame.payload
+        try:
+            # Confirmed by capture: the device gzip-compresses some payloads at
+            # the frame level (e.g. RecallPreset pushes carrying a full
+            # BinaryPreset). The decompressed bytes are the ordinary protobuf
+            # message for that type. The trailer's COMPRESSED flag agrees with
+            # these magic bytes on every frame measured, but the magic bytes
+            # stay the test - see docs/protocol.md section 2.4.
             if payload[:2] == b"\x1f\x8b":
                 payload = gzip.decompress(payload)
-            cls = registry.class_for(msg_type)
             message = cls()
             message.ParseFromString(payload)
-        except (KeyError, DecodeError, ValueError, OSError):
-            # Expected on some device broadcasts: unknown/unregistered types
-            # and non-protobuf "raw payload" pushes (e.g. License, CloudLogin -
-            # their trailer flags a non-protobuf body). OSError covers
-            # gzip.BadGzipFile. The RX thread survives; this is normal device
-            # chatter we don't consume, so log at debug to avoid stderr noise.
-            log.debug("skipping undecodable inbound message", exc_info=True)
+        except (DecodeError, ValueError, OSError, EOFError, zlib.error):
+            # A damaged gzip payload raises across three unrelated hierarchies:
+            # BadGzipFile is an OSError, a truncated stream is an EOFError, and a
+            # corrupt body is a zlib.error, which is neither. All three are the
+            # same event - a compressed payload we could not read - and all three
+            # have to land here rather than in the RX loop's backstop. Nothing
+            # above explains this case, so it keeps the traceback.
+            log.debug(
+                "skipping undecodable %s payload",
+                _type_name(frame.message_type),
+                exc_info=True,
+            )
             return
         self._dispatch(message)
 

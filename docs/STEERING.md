@@ -95,6 +95,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0016 | Parameter values carry their own scale, and the protocol layer may speak the device's units |
 | ADR-0017 | Every setting takes a typed value, and says so when it has no scale to convert against |
 | ADR-0018 | A parameter constant carries its unit, and CI runs a type checker |
+| ADR-0019 | The frame trailer's flags are read and reported; an encrypted payload is labelled, not decrypted |
 
 ## 8. Open Questions
 
@@ -133,6 +134,29 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-09-03 - The trailer's two unread bytes are named (ADR-0019)
+
+**What changed:** `framing.decode_reports` returns a frozen `Frame` instead of a
+`(type, payload)` tuple, naming the whole trailer: the message type, the
+ENCRYPTED byte at `n+4`, the COMPRESSED byte at `n+5`, and the two device bytes
+at `n+6` that still mean nothing. The RX path tells three cases apart that used
+to share one log line: an encrypted payload, an unregistered message type, and
+a payload that is genuinely corrupt.
+
+**Why:** `protocol.md` had an open question about a "raw payload flag" inferred
+from a nonzero byte somewhere after the message type. Reading the .NET library
+CortexUSB suggested the tidier shape, and the three USBPcap captures already in
+the lab repo could settle it without touching hardware. They did: 15,675
+logical messages on CorOS 4.0.1, both directions. ENCRYPTED appears 13 times and
+only on `License` and `CloudLogin`; COMPRESSED agrees with the gzip magic bytes
+every single time. Both flags vary within one message type, so a per-type table
+would have been wrong.
+
+**What did NOT change, on purpose:** compression is still detected by the gzip
+magic bytes, because a flag needs an exception list and magic bytes do not. And
+nothing decrypts. An encrypted frame is labelled and dropped. See ADR-0019 for
+why that is a decision rather than a gap.
 
 ### 2026-08-28 - Constants carry their unit, and mypy runs in CI (ADR-0018)
 

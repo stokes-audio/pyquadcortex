@@ -16,7 +16,12 @@ response is race-free: the waiter is always registered before the reply lands.
 """
 
 import collections
+import contextlib
+import gzip
 import itertools
+import json
+import logging
+import pathlib
 import struct
 import threading
 import time
@@ -51,10 +56,10 @@ class FakeHid:
     def write(self, report):
         report = bytes(report)
         self.writes.append(report)
-        msg_type, payload = framing.decode_reports([report])
-        if registry.class_for(msg_type) is pa.VersionMessage:
+        frame = framing.decode_reports([report])
+        if registry.class_for(frame.message_type) is pa.VersionMessage:
             req = pa.VersionMessage()
-            req.ParseFromString(payload)
+            req.ParseFromString(frame.payload)
             resp = pa.VersionMessage(action=pa.MessageAction.READ)
             if req.HasField("request_id"):
                 resp.request_id = req.request_id
@@ -245,8 +250,8 @@ def test_keepalive_is_sent_periodically():
     try:
         def saw_keepalive():
             for report in list(fake.writes):
-                msg_type, _ = framing.decode_reports([report])
-                if registry.class_for(msg_type) is pa.KeepAliveMessage:
+                frame = framing.decode_reports([report])
+                if registry.class_for(frame.message_type) is pa.KeepAliveMessage:
                     return True
             return False
 
@@ -732,3 +737,143 @@ def test_loss_wakes_a_blocked_request_fast_with_the_real_error():
         assert isinstance(result["error"], transport.DeviceLostError)
     finally:
         t.stop()
+
+
+# -- what the RX path says when a frame does not reach a listener --------------
+#
+# Three different things stop a frame, and until the trailer's ENCRYPTED byte was
+# read (docs/protocol.md 2.3) they all produced one line: "skipping undecodable
+# inbound message". They mean different things, so they log differently now.
+
+
+def _captured_frame(name):
+    """Load one REAL captured frame from tests/fixtures/frames."""
+    fixture = json.loads(
+        (pathlib.Path(__file__).parent / "fixtures" / "frames" / name).read_text()
+    )
+    return fixture, [
+        bytes.fromhex(h)
+        for h in fixture.get("frames_hex", [fixture.get("frame_hex")])
+    ]
+
+
+@contextlib.contextmanager
+def caplog_at(level):
+    """Collect pyquadcortex.protocol.transport records at ``level``."""
+    records = []
+
+    class _Sink(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    logger = logging.getLogger("pyquadcortex.protocol.transport")
+    sink = _Sink()
+    old_level, old_propagate = logger.level, logger.propagate
+    logger.addHandler(sink)
+    logger.setLevel(level)
+    try:
+        yield records
+    finally:
+        logger.removeHandler(sink)
+        logger.setLevel(old_level)
+        logger.propagate = old_propagate
+
+
+def _feed(reports, level="DEBUG"):
+    """Push reports at a live transport and return (log text, seen messages)."""
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    seen = []
+    t.add_listener(seen.append)
+    t.start()
+    try:
+        with caplog_at(level) as records:
+            for report in reports:
+                fake.inject(report)
+            assert _wait_until(lambda: fake.pending_reads() == 0)
+            # The RX thread must have survived: a normal request still works.
+            resp = t.request(
+                pa.VersionMessage(action=pa.MessageAction.READ),
+                timeout=REQUEST_TIMEOUT,
+            )
+        assert isinstance(resp, pa.VersionMessage)
+    finally:
+        t.stop()
+    return "\n".join(r.getMessage() for r in records), seen
+
+
+def test_an_encrypted_push_is_reported_as_encrypted_not_as_a_bad_parse():
+    """A real encrypted License reply, straight off the wire.
+
+    Before the trailer flag was read this frame reached ParseFromString, failed,
+    and was logged as undecodable - indistinguishable from corruption. It is
+    recognised now, and it still must not reach a listener, because we cannot
+    read it.
+    """
+    _fixture, frames = _captured_frame("license_reply_encrypted.json")
+    text, seen = _feed(frames)
+
+    assert "encrypted License payload" in text
+    assert "undecodable" not in text
+    assert not [m for m in seen if isinstance(m, pa.LicenseMessage)]
+
+
+def test_an_unregistered_message_type_says_so_by_number():
+    unknown = 60000  # not a CortexMessageType the registry knows
+    text, _seen = _feed(framing.encode_message(unknown, b"\x08\x03"))
+
+    assert f"unregistered message type {unknown}" in text
+    assert "encrypted" not in text
+    assert "undecodable" not in text
+
+
+def test_a_corrupt_payload_is_still_reported_as_undecodable():
+    """The one case that means something is actually wrong keeps its own line.
+
+    A registered type, the ENCRYPTED flag clear, and bytes that are not a valid
+    protobuf message for it. Nothing else explains this, so it stays "undecodable"
+    and keeps the traceback.
+    """
+    # Field 1, wire type 2 (length-delimited), length 0x7f, then nothing.
+    corrupt = b"\x0a\x7f"
+    scene = registry.type_for(pa.SceneMessage)
+    text, seen = _feed(framing.encode_message(scene, corrupt))
+
+    assert "undecodable Scene payload" in text
+    assert "encrypted" not in text
+    assert not [m for m in seen if isinstance(m, pa.SceneMessage)]
+
+
+def test_a_malformed_frame_is_reported_separately_from_a_bad_payload():
+    """A frame the codec itself rejects never gets as far as a message type."""
+    body = bytes([4, 0xC0, 0xDE, 0xAD, 0xBE, 0xEF])  # body shorter than the trailer
+    report = bytes([framing.OUT_REPORT_ID]) + body + bytes(129 - 1 - len(body))
+    text, _seen = _feed([report])
+
+    assert "malformed inbound frame" in text
+    assert "undecodable" not in text
+
+
+@pytest.mark.parametrize("label,damage", [
+    ("truncated", lambda blob: blob[:20]),          # raises EOFError
+    ("corrupt body", lambda blob: blob[:12] + b"\xff" * 30 + blob[-8:]),  # zlib.error
+    ("magic bytes only", lambda _blob: b"\x1f\x8bJUNK"),                  # EOFError
+])
+def test_a_damaged_compressed_payload_is_undecodable_not_an_unexpected_error(
+    label, damage
+):
+    """Broken gzip raises across three unrelated exception hierarchies.
+
+    BadGzipFile is an OSError, a truncated stream is an EOFError, and a corrupt
+    body is a zlib.error. Only the first was caught here, so the other two
+    escaped to the RX loop's backstop and were logged at ERROR as "unexpected".
+    The RX thread survived either way; what was wrong was calling a damaged
+    payload a bug in the library.
+    """
+    blob = gzip.compress(b"\x08\x03" * 40)
+    scene = registry.type_for(pa.SceneMessage)
+    text, seen = _feed(framing.encode_message(scene, damage(blob)))
+
+    assert "undecodable Scene payload" in text, label
+    assert "unexpected error" not in text, label
+    assert not [m for m in seen if isinstance(m, pa.SceneMessage)], label
