@@ -20,14 +20,13 @@ correction.
 
 ## Unreleased
 
-### Refresh the generated CorOS 4.1.0 model catalog
+### BREAKING: refresh the generated CorOS 4.1.0 model catalog
 
 The generated API now covers 420 factory models and 148 fixed option enums,
 including the delay, pitch, morph, reverb, compressor, and EQ models exposed by
 the CorOS 4.1.0 catalog.
 
-**Breaking:** catalog labels changed public generated names. The migration map
-for removed names is:
+Catalog labels changed public generated names. The migration map is:
 
 | Before | After |
 |---|---|
@@ -42,6 +41,7 @@ for removed names is:
 | `MicrotubesVmt.*` parameters | `DouglasVintageMt.*` (same member names) |
 | `MonoSynth.*` parameters | `OverlordSynth.*` (same member names) |
 | `Minivoicer.V1_INTER`, `V2_INTER` | `Minivoicer.V1_INTERVAL`, `V2_INTERVAL` |
+| `MinivoicerMode.MAJOR`, `MINOR`, `CHROM` | `MAJOR`, `HARMONIC_MINOR`, `NATURAL_MINOR`, `MELODIC_MINOR`, `CHROMATIC`; stored value 2 changes from chromatic to natural minor |
 | `CoryWongDelayYYMode` | `Mode2` |
 | `Input` | `MishaRhythmInput` |
 | `Legendary87MRatio` | `Ratio5` |
@@ -54,10 +54,14 @@ for removed names is:
 | `Speed` | `RotaryAttack` |
 | `V1Inter` | `MinivoicerV1Interval` |
 
-The first ten option-enum replacements retain the old members and values.
+Ten of the eleven renamed option-enum classes retain their old members and
+values; `Scale` is the exception.
 `OverlordSynthScale` expands the former `Scale`: `MAJOR` remains 0, while the
 old `MINOR = 1` is replaced by `HARMONIC_MINOR = 1`, `MELODIC_MINOR = 2`, and
 `NATURAL_MINOR = 3`.
+
+The Overlord Synth `SCALE` parameter also changes widget type from `switch` to
+`comboBox`; callers must select the 4.1 enum rather than pass a boolean.
 
 ### `framing.decode_reports` returns a `Frame`, not a tuple
 

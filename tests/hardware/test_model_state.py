@@ -19,17 +19,22 @@ as having unsaved changes, which is what an edit does and what discarding it
 would have to un-do by throwing the owner's work away. Nothing here saves,
 recalls, deletes or renames anything.
 
-**Dirty pushes are not a per-edit contract.** The first edit of a clean preset
-gets an announcement. An already-dirty preset has both stayed silent and restated
-true on this firmware, so the write-through check decides from what actually
-arrived during its window.
+**One flag transition per run.** ``PresetDirty`` announces a CHANGE of the flag,
+not an edit (``docs/protocol.md``), so the first edit of a run gets an
+announcement and the rest do not. The two editing tests are written around that
+rather than against it: the first takes the transition and skips if the preset
+arrived already dirty, and the second expects whichever outcome its own
+before-reading predicts.
 
-To exercise the confirmed branch from a known clean start, run::
+One consequence worth knowing before reading a green run: in a whole-file run the
+write-through test is the second edit, so it exercises the TIMED-OUT branch and
+its self-correction. Its CONFIRMED branch needs to be the first edit of a run::
 
     pytest tests/hardware --hardware -k write_through
 
-Both outcomes are pinned: a matching push confirms, while silence times out and
-forces a corrective read.
+Both were run while this file was written (2026-08-14, d14e): CONFIRMED settled in
+612 ms with the unit sending a ``PresetDirty``, and the timed-out branch saw the
+unit send a ``Grid`` echo and nothing else.
 """
 import collections
 import threading
@@ -50,14 +55,6 @@ PATIENCE = 10.0
 
 #: Long enough to see the tempo stream several times over at any tempo.
 QUIET_WATCH = 6.0
-
-
-def _retry_read(fn):
-    """The first state read after connect is occasionally dropped on d14e."""
-    try:
-        return fn()
-    except TimeoutError:
-        return fn()
 
 
 class CountingClient:
@@ -137,7 +134,7 @@ def _first_occupied_block(qc):
     Wire coordinates on purpose: this drives the PROTOCOL client directly, which
     keeps its zero-based indexes, so there is nothing here to convert.
     """
-    preset = _retry_read(qc.read_current_preset)
+    preset = qc.read_current_preset()
     for column, model in enumerate(preset.chains[0].models):
         if model.hash:
             was = next(p.param_values[0].float_value
@@ -177,8 +174,8 @@ def test_nothing_the_burst_delivered_is_read_again_on_first_access(
         "again, which is the round trip the cache exists to avoid")
 
 
-def test_the_burst_does_not_warm_what_the_unit_never_announces(burst_warmed,
-                                                              handshake_burst):
+def test_the_burst_does_not_warm_what_the_unit_never_announces(
+        burst_warmed, handshake_burst, record_property):
     """The other half, and the reason the read path exists.
 
     The unit does send a ``Version`` during the handshake, but it is the answer
@@ -186,15 +183,18 @@ def test_the_burst_does_not_warm_what_the_unit_never_announces(burst_warmed,
     of the unit's own fields. So identity is exactly the case section 9's third
     column is for: where the unit does not tell us, we ask.
 
-    The count is bounded because the answer to our version announce is not
-    reliable across rapid reconnects: this unit has produced either zero or one.
-    ``_hello`` sends no host ``Version`` READ, so more than one would still mean
-    the handshake changed under us.
+    The count is asserted because the empty cache below is not evidence for that
+    story: it was equally true of the story this replaced, which had the unit
+    volunteering a ``Version`` READ of its own during connect. ``_hello`` sends
+    no host ``Version`` READ, and the unit only asks when asked, so one is the
+    number - and a second would mean the handshake has changed under us.
     """
     versions = handshake_burst.names().count("VersionMessage")
-    assert versions <= 1, (
-        f"the connect burst carried {versions} Version messages; zero or one is "
-        f"observed, and _hello sends no Version READ")
+    record_property("connect_burst_version_count", versions)
+    assert versions == 1, (
+        f"the connect burst carried {versions} Version message(s), not the one "
+        f"answering our version announce. Section 4 of docs/protocol.md says "
+        f"the unit asks for our version only when we ask for its.")
     assert burst_warmed["identity"] == {}, (
         f"the burst carried the unit's own identity after all, which is worth "
         f"knowing - it held {burst_warmed['identity']}. If that is now true, "
@@ -294,11 +294,11 @@ def test_an_edit_the_model_did_not_make_reaches_its_cache(qc, model_cache,
     available per run, and this test is the one that gets it - which is why it
     comes before the write-through test in this file.
     """
-    if _retry_read(qc.preset_dirty):
+    if qc.preset_dirty():
         pytest.skip(
-        "the loaded preset already has unsaved changes, so another edit is not "
-        "guaranteed to announce the flag and this test could not say anything. "
-        "Save or reload "
+            "the loaded preset already has unsaved changes, and the unit only "
+            "announces the flag when it CHANGES - so an edit now would tell the "
+            "model nothing and this test could not say anything. Save or reload "
             "the preset on the unit and run this again.")
     column, was = _first_occupied_block(qc)
     restores("row 1 first block, parameter 0", lambda: qc.set_param(Block(0, column), 0, Encoded(was)))
@@ -310,7 +310,7 @@ def test_an_edit_the_model_did_not_make_reaches_its_cache(qc, model_cache,
     try:
         qc.set_param(Block(0, column), 0,
                  Encoded(0.75 if abs(was - 0.75) > 0.05 else 0.25))
-        assert _wait_until(lambda: any(m.is_dirty for m in announcements.seen())), (
+        assert _wait_until(lambda: announcements.seen()), (
             f"the unit said nothing about unsaved changes for an edit it "
             f"accepted. It sent {everything.tally()} during the window, so read "
             f"that before blaming the unit for saying nothing.")
@@ -318,7 +318,7 @@ def test_an_edit_the_model_did_not_make_reaches_its_cache(qc, model_cache,
         qc.remove_listener(announcements)
         qc.remove_listener(everything)
 
-    announced = any(m.is_dirty for m in announcements.seen())
+    announced = bool(announcements.seen()[-1].is_dirty)
     record_property("unit_announced_is_dirty", announced)
     assert announced is True, "the unit announced an edit as leaving no unsaved changes"
     assert model_cache.cached("dirty")["is_dirty"] is True, (
@@ -337,16 +337,18 @@ def test_a_write_through_the_cache_is_settled_by_what_the_unit_says(
 
     * on a clean preset the edit changes the flag, the unit announces it, and the
       write is CONFIRMED;
-    * on an already-dirty preset the unit may either stay silent or restate true.
-      The watcher must time out in the first case and confirm in the second; what
-      arrived during this write decides, rather than the prior dirty flag.
+    * on an already-dirty preset the unit announces nothing (``protocol.md``,
+      "``PresetDirty`` announces a CHANGE of flag"), so the write TIMES OUT and
+      the cache marks that entry - and the re-read that follows gets the truth
+      from the unit. That is the self-correction section 10 is for, on the one
+      occasion this suite can produce it honestly.
 
     ``different`` stays an offline test: it is by definition a bug in our code.
     """
     column, was = _first_occupied_block(qc)
     restores("row 1 first block, parameter 0", lambda: qc.set_param(Block(0, column), 0, Encoded(was)))
     target = 0.75 if abs(was - 0.75) > 0.05 else 0.25
-    already_dirty = _retry_read(qc.preset_dirty)
+    already_dirty = qc.preset_dirty()
     record_property("preset_was_already_dirty", already_dirty)
 
     everything = Pushes()
@@ -370,9 +372,7 @@ def test_a_write_through_the_cache_is_settled_by_what_the_unit_says(
         f"the unit did not echo the parameter write at all, so this test is "
         f"measuring a write that never landed - it sent {everything.tally()}")
 
-    dirty_pushes = [m for m in everything.seen()
-                    if isinstance(m, pa.PresetDirtyMessage) and m.is_dirty]
-    if already_dirty and not dirty_pushes:
+    if already_dirty:
         assert watch.outcome is WatchOutcome.TIMED_OUT, (
             f"the unit had nothing to announce and the watcher claimed "
             f"{watch.outcome} anyway ({watch.disagreement})")
@@ -397,36 +397,21 @@ def test_the_metronome_stream_costs_the_cache_nothing(qc, model_cache, counted):
     not, so a cache that treated inbound messages as "something changed, go
     re-read" would re-read for the length of the session.
     """
-    # Let any Grid echoes from the preceding edit/restore finish before taking
-    # the baseline. Those messages correctly invalidate the preset entry and
-    # are not part of the metronome stream this test is measuring.
-    time.sleep(2.0)
     for entry in entries.ENTRIES:
         model_cache.value(entry.name, sorted(entry.fields())[0])
     counted.reads.clear()
 
     stream = Pushes("GlobalTempoMessage")
-    traffic = Pushes()
     qc.add_listener(stream)
-    qc.add_listener(traffic)
     try:
         time.sleep(QUIET_WATCH)
     finally:
         qc.remove_listener(stream)
-        qc.remove_listener(traffic)
 
     assert len(stream.seen()) >= 2, (
         f"the unit pushed {len(stream.seen())} GlobalTempo message(s) in "
         f"{QUIET_WATCH}s, so this test saw no stream to be quiet about")
     marked = [entry.name for entry in entries.ENTRIES
               if model_cache.needs_read(entry.name)]
-    contaminants = sorted({type(message).__name__ for message in traffic.seen()
-                           if type(message) in entries.FEEDS
-                           and not isinstance(message, pa.GlobalTempoMessage)})
-    if marked and contaminants:
-        pytest.skip(
-            f"the metronome window also received {contaminants}, so it cannot "
-            f"attribute the {marked} invalidation to tempo"
-        )
     assert not marked, f"the tempo stream marked {marked} for re-reading"
     assert not counted.reads, f"the cache read {dict(counted.reads)} while idle"

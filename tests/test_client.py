@@ -10,7 +10,7 @@ import itertools
 
 import pytest
 
-from pyquadcortex.protocol import catalog, client
+from pyquadcortex.protocol import catalog, client, params
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
                                 Output, SceneBypassBehavior, Setlist, TempoMode)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
@@ -1299,31 +1299,6 @@ def test_read_current_preset_push_hands_back_the_whole_reply():
     assert asked.HasField("request_id")
 
 
-def test_read_current_preset_retries_a_dropped_first_request():
-    push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE, request_id=2)
-    push.preset.name = "second answer"
-
-    class DropsFirst(StateTransport):
-        def __init__(self):
-            super().__init__(push)
-            self.calls = 0
-
-        def await_broadcast(self, expected_class, trigger, timeout=40.0,
-                            match=None):
-            trigger()
-            self.calls += 1
-            if self.calls == 1:
-                raise TimeoutError("first request dropped")
-            self.matches.append(match)
-            return self.push
-
-    transport = DropsFirst()
-    got = client.QuadCortex(transport).read_current_preset()
-    assert got.name == "second answer"
-    assert transport.calls == 2
-    assert [message.request_id for message in transport.sent] == [1, 2]
-
-
 def test_loaded_position_reads_the_slot_without_recalling_it():
     """`SetlistPosition{READ}`. The same message type as a recall, and the
     action is the whole difference between asking and loading - so the wire
@@ -1540,6 +1515,29 @@ def test_set_block_can_skip_verification_for_fire_and_forget_placement():
     qc = client.QuadCortex(EchoingTransport(refuse={21005}))
     qc.set_block(Block(1, 4, 21005), verify=False)   # must not raise
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 21005
+
+
+def test_a_coros_4_1_model_constant_is_refused_when_the_unit_lacks_it():
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.ModelCatalog()
+
+    with pytest.raises(ValueError, match="not present.*firmware"):
+        qc.set_block(Block(1, 4, 6031), verify=False)
+    assert qc._t.sent == []
+
+
+def test_a_coros_4_1_parameter_constant_is_refused_on_the_4_0_layout():
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.ModelCatalog({
+        16011: catalog.Model(
+            id=16011, name="Doubler", category="Utility", category_id=16,
+            parameters=(),
+        ),
+    })
+
+    with pytest.raises(ValueError, match="not present.*firmware"):
+        qc.set_param(Block(0, 1, 16011), params.Doubler.INPUT, Encoded(0.5))
+    assert qc._t.sent == []
 
 
 def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():

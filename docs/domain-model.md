@@ -1413,6 +1413,12 @@ The counts are from the shipped catalog, 3,809 parameters.
 | `mid_string` | 36 | The sibling of `min_string` and `max_string`, which we do read. Presumably a label at some middle position, but WHICH position is not stated anywhere, so it cannot be used. |
 | `isplayPos` | 1 | `displayPos` with the `d` missing. The device's own typo. Recorded rather than silently accepted as an alias, because a parser that took both would hide that the catalog has a defect. |
 
+CorOS 4.1 option labels for the Multivoicer's `VOICING` parameter contain `¤`
+between a group name and its choice (for example `Triads¤Closed Triad`). The
+generator currently flattens that unexplained separator to `_` in Python member
+names while preserving the original labels in `OPTION_LABELS`; no hierarchy or
+other semantic meaning is inferred from it.
+
 On `<Model>`, `blob` is also unexplained: a same-length string of letters that
 **changes between fetches**. Two dumps of one unit taken minutes apart differed
 on 338 models and on nothing else. A per-fetch token of some kind, not content.
