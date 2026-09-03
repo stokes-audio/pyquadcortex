@@ -634,10 +634,66 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
     )
 
 
+def _effective_parameter_elements(
+    model,
+    models: dict[int, ET.Element],
+    resolving: tuple[int, ...] = (),
+) -> tuple[tuple[int, ET.Element], ...]:
+    """Return a model's parameters at their effective wire indexes.
+
+    ModelRepo models may ``clone`` another model and publish only the
+    parameters they replace.  Each child parameter's ``replaces`` attribute is
+    the inherited wire index; child parameters without one extend the inherited
+    list.  This is used heavily by cabs, whose visible entries otherwise appear
+    to contain only two local parameters instead of the 21 controls on the
+    wire.
+
+    A missing clone target is treated like an ordinary model.  That preserves
+    the parser's tolerance of partial repositories while cycles are rejected:
+    there is no safe parameter layout to infer from a cycle.
+    """
+    model_id = _as_int(model.get("id"))
+    if model_id is not None and model_id in resolving:
+        chain = " -> ".join(str(ident) for ident in (*resolving, model_id))
+        raise ValueError(f"ModelRepo clone cycle: {chain}")
+
+    clone_id = _as_int(model.get("clones"))
+    base = models.get(clone_id) if clone_id is not None else None
+    if base is None:
+        effective = list(enumerate(model.findall("Parameter")))
+    else:
+        inherited = _effective_parameter_elements(
+            base,
+            models,
+            (*resolving, model_id) if model_id is not None else resolving,
+        )
+        by_index = dict(inherited)
+        next_index = max(by_index, default=-1) + 1
+        for parameter in model.findall("Parameter"):
+            replaced = _as_int(parameter.get("replaces"))
+            index = next_index if replaced is None else replaced
+            by_index[index] = parameter
+            next_index = max(next_index, index + 1)
+        effective = sorted(by_index.items())
+
+    indexes = [index for index, _ in effective]
+    if indexes != list(range(len(indexes))):
+        raise ValueError(
+            f"ModelRepo model {model_id} resolves to non-contiguous parameter "
+            f"indexes {indexes}"
+        )
+    return tuple(effective)
+
+
 def parse_model_repo(payload: bytes) -> ModelCatalog:
     """Parse a device ModelRepo payload into a :class:`ModelCatalog`."""
     root = ET.fromstring(_extract_xml(payload))
     catalog = ModelCatalog()
+    elements = {
+        model_id: element
+        for element in root.iter("Model")
+        if (model_id := _as_int(element.get("id"))) is not None
+    }
     for category in root.findall("Category"):
         category_id = _as_int(category.get("id"))
         category_name = category.get("name", "")
@@ -647,8 +703,10 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
             if model_id is None:
                 continue
             parameters = tuple(
-                _parameter(i, p, element.get("name", ""))
-                for i, p in enumerate(element.findall("Parameter"))
+                _parameter(index, parameter, element.get("name", ""))
+                for index, parameter in _effective_parameter_elements(
+                    element, elements
+                )
             )
             catalog.models[model_id] = Model(
                 id=model_id,

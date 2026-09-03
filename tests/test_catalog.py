@@ -125,6 +125,91 @@ def test_parameters_are_ordered_and_carry_metadata(cat):
     assert cat[5005].parameters[0].units == "dB"
 
 
+def test_cloned_models_inherit_and_replace_parameters_at_wire_indexes():
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model id="12000" name="Cab Layout" hidden="true">
+    <Parameter name="BYPASS" min="0" max="1" defaultValue="0" type="switch"/>
+    <Parameter name="IR 1" min="0" max="999" defaultValue="base-1" type="string"/>
+    <Parameter name="LEVEL" min="-40" max="6" defaultValue="0" type="float" units="dB"/>
+    <Parameter name="IR 2" min="0" max="999" defaultValue="base-2" type="string"/>
+  </Model>
+  <Model id="12001" name="Visible Cab" clones="12000">
+    <Parameter name="CHILD IR 1" replaces="1" min="0" max="999" defaultValue="child-1" type="string"/>
+    <Parameter name="CHILD IR 2" replaces="3" min="0" max="999" defaultValue="child-2" type="string"/>
+    <Parameter name="EXTRA" min="0" max="10" defaultValue="5" type="float"/>
+  </Model>
+</Category>
+</Models>""")
+
+    cab = catalog.parse_model_repo(make_payload(xml))[12001]
+
+    assert [p.index for p in cab.parameters] == [0, 1, 2, 3, 4]
+    assert [p.name for p in cab.parameters] == [
+        "BYPASS", "CHILD IR 1", "LEVEL", "CHILD IR 2", "EXTRA"
+    ]
+    assert cab.parameters[1].default == 0.0  # string defaults remain lenient
+    assert cab.parameters[2].units == "dB"  # untouched inherited metadata
+    assert cab.parameters[4].default == 5.0
+
+
+def test_clone_inheritance_is_recursive():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+        <Parameter name="B" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="Middle" clones="1">
+        <Parameter name="MIDDLE B" replaces="1" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="3" name="Leaf" clones="2">
+        <Parameter name="LEAF A" replaces="0" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    leaf = catalog.parse_model_repo(make_payload(xml))[3]
+
+    assert [(p.index, p.name) for p in leaf.parameters] == [
+        (0, "LEAF A"), (1, "MIDDLE B")
+    ]
+
+
+def test_missing_clone_target_falls_back_to_local_parameters():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Partial" clones="999">
+        <Parameter name="LOCAL" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    model = catalog.parse_model_repo(make_payload(xml))[1]
+
+    assert [(p.index, p.name) for p in model.parameters] == [(0, "LOCAL")]
+
+
+def test_clone_cycles_are_rejected():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="One" clones="2"/>
+      <Model id="2" name="Two" clones="1"/>
+    </Category></Models>"""
+
+    with pytest.raises(ValueError, match=r"clone cycle: 1 -> 2 -> 1"):
+        catalog.parse_model_repo(make_payload(xml))
+
+
+def test_non_contiguous_clone_indexes_are_rejected():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="Broken" clones="1">
+        <Parameter name="C" replaces="2" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    with pytest.raises(ValueError, match="non-contiguous parameter indexes"):
+        catalog.parse_model_repo(make_payload(xml))
+
+
 def test_lookup_parameter_by_name_is_case_insensitive(cat):
     assert cat[1].parameter("gain").index == 0
     assert cat[1].parameter("TREBLE").index == 1
