@@ -209,6 +209,20 @@ def test_send_sequence_rejects_negative_timing(delay, interval):
         t.send_sequence([], delay=delay, interval=interval)
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_send_sequence_rejects_non_finite_timing(value):
+    t = transport.Transport(FakeHid(), keepalive_interval=QUIET_KEEPALIVE)
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        t.send_sequence([], delay=value)
+
+
+@pytest.mark.parametrize("value", [True, "0.02"])
+def test_send_sequence_rejects_non_numeric_timing(value):
+    t = transport.Transport(FakeHid(), keepalive_interval=QUIET_KEEPALIVE)
+    with pytest.raises(TypeError, match="real number"):
+        t.send_sequence([], interval=value)
+
+
 def test_multi_report_reassembly():
     # A 300-char kernel-version string makes the response payload > 128 bytes so
     # it spans multiple input reports; the transport must reassemble them.

@@ -2636,9 +2636,9 @@ class QuadCortex:
                                                   show=shown))
 
     def capture_screen(self, timeout: float = 10.0) -> bytes:
-        """Return a PNG of the unit's current 800 x 480 display.
+        """Return a PNG of the unit's current physical display.
 
-        Confirmed on QC CorOS 4.1.0. CorOS answers
+        Confirmed at 800 x 480 on QC CorOS 4.1.0. CorOS answers
         ``RemoteControl{READ, screenshot:{}}`` with an asynchronous,
         uncorrelated ``UPDATE`` carrying the PNG, so a type waiter is installed
         before the read. Replies that are not screenshot PNGs are ignored.

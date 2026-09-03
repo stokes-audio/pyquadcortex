@@ -261,8 +261,13 @@ class Transport:
         sequence is written under ``_write_lock`` so a keepalive or concurrent
         caller cannot split a timing-sensitive device gesture.
         """
-        if delay < 0 or interval < 0:
-            raise ValueError("sequence delay and interval must be non-negative")
+        for name, value in (("delay", delay), ("interval", interval)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"sequence {name} must be a real number")
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(
+                    f"sequence {name} must be finite and non-negative"
+                )
         self._check_lost()
         encoded = []
         for message in messages:
