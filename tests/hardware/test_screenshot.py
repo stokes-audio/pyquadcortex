@@ -2,9 +2,18 @@
 
 import struct
 
+import pytest
+
 
 def test_current_preset_screenshot_has_the_observed_png_dimensions(qc):
     """The request is addressed from live state and does not change that state."""
+    factory_count = len(qc.catalog.factory_models())
+    if factory_count == 412:
+        pytest.skip("preset screenshots are only established on CorOS 4.1.0")
+    assert factory_count == 420, (
+        f"unidentified catalog with {factory_count} factory models; do not infer "
+        "Screenshot support"
+    )
     before = qc.loaded_position()
     folders = qc.list_folders(seconds=20.0)
     folder = next(
