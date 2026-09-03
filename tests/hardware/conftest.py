@@ -90,7 +90,7 @@ def pytest_collection_modifyitems(session, config, items):
     if config.getoption("--hardware"):
         return
     gated = sorted({
-        str(path.relative_to(ROOT))
+        path.relative_to(ROOT).as_posix()
         for path in map(_resolved, items)
         if path is not None and path.is_relative_to(SUITE)
     })

@@ -81,7 +81,11 @@ def test_the_pre_flip_snapshot_is_byte_for_byte_what_0_40_0_shipped():
     drops a name is to delete that name from here. Pinning the hash means the
     fixture and the export list can only be changed together and on purpose.
     """
-    digest = hashlib.sha256(PRE_FLIP_INIT.read_bytes()).hexdigest()
+    # Git may check a text fixture out with CRLF on Windows. The pinned source
+    # was committed with LF, so normalize that one permitted text conversion
+    # while keeping every content byte under the hash.
+    content = PRE_FLIP_INIT.read_bytes().replace(b"\r\n", b"\n")
+    digest = hashlib.sha256(content).hexdigest()
     assert digest == PRE_FLIP_INIT_SHA256, (
         f"{PRE_FLIP_INIT.name} no longer matches "
         f"`git show 94e5053:pyquadcortex/__init__.py`. If the snapshot really "
