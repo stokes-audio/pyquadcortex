@@ -190,9 +190,10 @@ that type are dropped as undecodable.
 ### client.py
 
 `QuadCortex` is the public API. It builds protobuf messages and calls
-`send` / `request` / `await_broadcast` / `next_request_id` on whatever transport
-object was injected into its constructor. It deliberately imports no hidapi and
-never touches a report, a frame, or a byte offset.
+`send` / `send_sequence` / `request` / `await_broadcast` /
+`next_request_id` on whatever transport object was injected into its
+constructor. It deliberately imports no hidapi and never touches a report, a
+frame, or a byte offset.
 
 **Why this split matters:** because `QuadCortex` only depends on four transport
 methods, the whole high-level API is testable with a ~20-line fake (see

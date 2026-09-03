@@ -20,12 +20,12 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 105 features audited: **65 yes**, **8 partly**, **21 no**, **11 n/a**.
+Of 105 features audited: **65 yes**, **9 partly**, **21 no**, **10 n/a**.
 
-Of the 93 features a host could plausibly drive - everything above except the 11 marked
-n/a - **65 are fully covered** and 8 more are partly covered, which here means the state
+Of the 95 features a host could plausibly drive - everything above except the 10 marked
+n/a - **65 are fully covered** and 9 more are partly covered, which here means the state
 is readable and at least one field of it is confirmed writable, with the neighbours the
-same shape but not individually exercised. Only 20 remain untouched.
+same shape but not individually exercised. Only 21 remain untouched.
 
 Both paragraphs now count the same table. They had drifted apart: this one still read
 91/65/13/14 from an earlier revision, which no longer matched a row-by-row count.
@@ -78,7 +78,7 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | yes | `set_usb_port()`, all three confirmed writable. Like the other I/O ports they must travel one field per message, which the method now does for you. The headphone output's own level is NOT writable |
 | Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | yes | `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)` and `set_global_eq_bypassed()`. Every control is reachable. `gain` takes `Db` over -12..+12 - the MANUAL's span on two points, queued to be driven on screen - while `frequency`, `q` and the OUT level take `Encoded`, their mappings being unknown |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
-| Footswitch presses, touch gestures, encoders | n/a | physical |
+| Footswitch presses, touch gestures, encoders | partly | `tap_screen(x, y)` reproduces a touchscreen tap at a raw 800 x 480 pixel coordinate using the hardware-verified inverted RELEASE/PRESS pair; `capture_screen()` reads the current display back as PNG. Footswitches and encoders remain physical controls |
 
 ## 04 The Grid
 

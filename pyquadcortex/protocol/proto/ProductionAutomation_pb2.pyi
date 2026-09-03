@@ -101,7 +101,9 @@ class CortexMessageType(_message.Message):
         SetTestPresetInputOutputPorts: CortexMessageType._Enum.ValueType  # 68
         SetTestPresetSplitMixPoints: CortexMessageType._Enum.ValueType  # 69
         GenerateTestPreset: CortexMessageType._Enum.ValueType  # 70
-        NumberOfMessageTypes: CortexMessageType._Enum.ValueType  # 71
+        ModelPreset: CortexMessageType._Enum.ValueType  # 71
+        RemoteControl: CortexMessageType._Enum.ValueType  # 72
+        NumberOfMessageTypes: CortexMessageType._Enum.ValueType  # 73
 
     class Enum(_Enum, metaclass=_EnumEnumTypeWrapper): ...
     Undefined: CortexMessageType.Enum.ValueType  # 0
@@ -175,7 +177,9 @@ class CortexMessageType(_message.Message):
     SetTestPresetInputOutputPorts: CortexMessageType.Enum.ValueType  # 68
     SetTestPresetSplitMixPoints: CortexMessageType.Enum.ValueType  # 69
     GenerateTestPreset: CortexMessageType.Enum.ValueType  # 70
-    NumberOfMessageTypes: CortexMessageType.Enum.ValueType  # 71
+    ModelPreset: CortexMessageType.Enum.ValueType  # 71
+    RemoteControl: CortexMessageType.Enum.ValueType  # 72
+    NumberOfMessageTypes: CortexMessageType.Enum.ValueType  # 73
 
     def __init__(
         self,
@@ -6736,3 +6740,340 @@ class GenerateTestPresetMessage(_message.Message):
     def WhichOneof(self, oneof_group: _WhichOneofArgType__request_id) -> _WhichOneofReturnType__request_id | None: ...
 
 Global___GenerateTestPresetMessage: _TypeAlias = GenerateTestPresetMessage  # noqa: Y015
+
+@_typing.final
+class ModelPresetID(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    VALUE_FIELD_NUMBER: _builtins.int
+    IS_FACTORY_FIELD_NUMBER: _builtins.int
+    HASH_FIELD_NUMBER: _builtins.int
+    value: _builtins.str
+    is_factory: _builtins.bool
+    hash: _builtins.int
+    def __init__(
+        self,
+        *,
+        value: _builtins.str | None = ...,
+        is_factory: _builtins.bool | None = ...,
+        hash: _builtins.int | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_hash", b"_hash", "_is_factory", b"_is_factory", "_value", b"_value", "hash", b"hash", "is_factory", b"is_factory", "value", b"value"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_hash", b"_hash", "_is_factory", b"_is_factory", "_value", b"_value", "hash", b"hash", "is_factory", b"is_factory", "value", b"value"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__hash: _TypeAlias = _typing.Literal["hash"]  # noqa: Y015
+    _WhichOneofArgType__hash: _TypeAlias = _typing.Literal["_hash", b"_hash"]  # noqa: Y015
+    _WhichOneofReturnType__is_factory: _TypeAlias = _typing.Literal["is_factory"]  # noqa: Y015
+    _WhichOneofArgType__is_factory: _TypeAlias = _typing.Literal["_is_factory", b"_is_factory"]  # noqa: Y015
+    _WhichOneofReturnType__value: _TypeAlias = _typing.Literal["value"]  # noqa: Y015
+    _WhichOneofArgType__value: _TypeAlias = _typing.Literal["_value", b"_value"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__hash) -> _WhichOneofReturnType__hash | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__is_factory) -> _WhichOneofReturnType__is_factory | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__value) -> _WhichOneofReturnType__value | None: ...
+
+Global___ModelPresetID: _TypeAlias = ModelPresetID  # noqa: Y015
+
+@_typing.final
+class ModelPreset(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    ID_FIELD_NUMBER: _builtins.int
+    NAME_FIELD_NUMBER: _builtins.int
+    IS_DEFAULT_FIELD_NUMBER: _builtins.int
+    MODEL_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
+    is_default: _builtins.bool
+    @_builtins.property
+    def id(self) -> Global___ModelPresetID: ...
+    @_builtins.property
+    def model(self) -> _Preset_pb2.Model: ...
+    def __init__(
+        self,
+        *,
+        id: Global___ModelPresetID | None = ...,
+        name: _builtins.str | None = ...,
+        is_default: _builtins.bool | None = ...,
+        model: _Preset_pb2.Model | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_id", b"_id", "_is_default", b"_is_default", "_model", b"_model", "_name", b"_name", "id", b"id", "is_default", b"is_default", "model", b"model", "name", b"name"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_id", b"_id", "_is_default", b"_is_default", "_model", b"_model", "_name", b"_name", "id", b"id", "is_default", b"is_default", "model", b"model", "name", b"name"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__id: _TypeAlias = _typing.Literal["id"]  # noqa: Y015
+    _WhichOneofArgType__id: _TypeAlias = _typing.Literal["_id", b"_id"]  # noqa: Y015
+    _WhichOneofReturnType__is_default: _TypeAlias = _typing.Literal["is_default"]  # noqa: Y015
+    _WhichOneofArgType__is_default: _TypeAlias = _typing.Literal["_is_default", b"_is_default"]  # noqa: Y015
+    _WhichOneofReturnType__model: _TypeAlias = _typing.Literal["model"]  # noqa: Y015
+    _WhichOneofArgType__model: _TypeAlias = _typing.Literal["_model", b"_model"]  # noqa: Y015
+    _WhichOneofReturnType__name: _TypeAlias = _typing.Literal["name"]  # noqa: Y015
+    _WhichOneofArgType__name: _TypeAlias = _typing.Literal["_name", b"_name"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__id) -> _WhichOneofReturnType__id | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__is_default) -> _WhichOneofReturnType__is_default | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__model) -> _WhichOneofReturnType__model | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__name) -> _WhichOneofReturnType__name | None: ...
+
+Global___ModelPreset: _TypeAlias = ModelPreset  # noqa: Y015
+
+@_typing.final
+class ModelPresetMessage(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    ACTION_FIELD_NUMBER: _builtins.int
+    REQUEST_ID_FIELD_NUMBER: _builtins.int
+    PRESETS_FIELD_NUMBER: _builtins.int
+    CREATE_FROM_ROW_FIELD_NUMBER: _builtins.int
+    CREATE_FROM_COLUMN_FIELD_NUMBER: _builtins.int
+    CREATE_FROM_HASH_FIELD_NUMBER: _builtins.int
+    LOADED_ROW_FIELD_NUMBER: _builtins.int
+    LOADED_COLUMN_FIELD_NUMBER: _builtins.int
+    LOADED_HASH_FIELD_NUMBER: _builtins.int
+    LOADED_CAPTURE_VERSION_FIELD_NUMBER: _builtins.int
+    LOADED_PRESET_ID_FIELD_NUMBER: _builtins.int
+    action: Global___MessageAction.Enum.ValueType
+    request_id: _builtins.int
+    create_from_row: _builtins.int
+    create_from_column: _builtins.int
+    create_from_hash: _builtins.int
+    loaded_row: _builtins.int
+    loaded_column: _builtins.int
+    loaded_hash: _builtins.int
+    loaded_capture_version: _builtins.int
+    @_builtins.property
+    def presets(self) -> _containers.RepeatedCompositeFieldContainer[Global___ModelPreset]: ...
+    @_builtins.property
+    def loaded_preset_id(self) -> Global___ModelPresetID: ...
+    def __init__(
+        self,
+        *,
+        action: Global___MessageAction.Enum.ValueType = ...,
+        request_id: _builtins.int | None = ...,
+        presets: _abc.Iterable[Global___ModelPreset] | None = ...,
+        create_from_row: _builtins.int | None = ...,
+        create_from_column: _builtins.int | None = ...,
+        create_from_hash: _builtins.int | None = ...,
+        loaded_row: _builtins.int | None = ...,
+        loaded_column: _builtins.int | None = ...,
+        loaded_hash: _builtins.int | None = ...,
+        loaded_capture_version: _builtins.int | None = ...,
+        loaded_preset_id: Global___ModelPresetID | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_create_from_column", b"_create_from_column", "_create_from_hash", b"_create_from_hash", "_create_from_row", b"_create_from_row", "_loaded_capture_version", b"_loaded_capture_version", "_loaded_column", b"_loaded_column", "_loaded_hash", b"_loaded_hash", "_loaded_preset_id", b"_loaded_preset_id", "_loaded_row", b"_loaded_row", "_request_id", b"_request_id", "create_from_column", b"create_from_column", "create_from_hash", b"create_from_hash", "create_from_row", b"create_from_row", "loaded_capture_version", b"loaded_capture_version", "loaded_column", b"loaded_column", "loaded_hash", b"loaded_hash", "loaded_preset_id", b"loaded_preset_id", "loaded_row", b"loaded_row", "request_id", b"request_id"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_create_from_column", b"_create_from_column", "_create_from_hash", b"_create_from_hash", "_create_from_row", b"_create_from_row", "_loaded_capture_version", b"_loaded_capture_version", "_loaded_column", b"_loaded_column", "_loaded_hash", b"_loaded_hash", "_loaded_preset_id", b"_loaded_preset_id", "_loaded_row", b"_loaded_row", "_request_id", b"_request_id", "action", b"action", "create_from_column", b"create_from_column", "create_from_hash", b"create_from_hash", "create_from_row", b"create_from_row", "loaded_capture_version", b"loaded_capture_version", "loaded_column", b"loaded_column", "loaded_hash", b"loaded_hash", "loaded_preset_id", b"loaded_preset_id", "loaded_row", b"loaded_row", "presets", b"presets", "request_id", b"request_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__create_from_column: _TypeAlias = _typing.Literal["create_from_column"]  # noqa: Y015
+    _WhichOneofArgType__create_from_column: _TypeAlias = _typing.Literal["_create_from_column", b"_create_from_column"]  # noqa: Y015
+    _WhichOneofReturnType__create_from_hash: _TypeAlias = _typing.Literal["create_from_hash"]  # noqa: Y015
+    _WhichOneofArgType__create_from_hash: _TypeAlias = _typing.Literal["_create_from_hash", b"_create_from_hash"]  # noqa: Y015
+    _WhichOneofReturnType__create_from_row: _TypeAlias = _typing.Literal["create_from_row"]  # noqa: Y015
+    _WhichOneofArgType__create_from_row: _TypeAlias = _typing.Literal["_create_from_row", b"_create_from_row"]  # noqa: Y015
+    _WhichOneofReturnType__loaded_capture_version: _TypeAlias = _typing.Literal["loaded_capture_version"]  # noqa: Y015
+    _WhichOneofArgType__loaded_capture_version: _TypeAlias = _typing.Literal["_loaded_capture_version", b"_loaded_capture_version"]  # noqa: Y015
+    _WhichOneofReturnType__loaded_column: _TypeAlias = _typing.Literal["loaded_column"]  # noqa: Y015
+    _WhichOneofArgType__loaded_column: _TypeAlias = _typing.Literal["_loaded_column", b"_loaded_column"]  # noqa: Y015
+    _WhichOneofReturnType__loaded_hash: _TypeAlias = _typing.Literal["loaded_hash"]  # noqa: Y015
+    _WhichOneofArgType__loaded_hash: _TypeAlias = _typing.Literal["_loaded_hash", b"_loaded_hash"]  # noqa: Y015
+    _WhichOneofReturnType__loaded_preset_id: _TypeAlias = _typing.Literal["loaded_preset_id"]  # noqa: Y015
+    _WhichOneofArgType__loaded_preset_id: _TypeAlias = _typing.Literal["_loaded_preset_id", b"_loaded_preset_id"]  # noqa: Y015
+    _WhichOneofReturnType__loaded_row: _TypeAlias = _typing.Literal["loaded_row"]  # noqa: Y015
+    _WhichOneofArgType__loaded_row: _TypeAlias = _typing.Literal["_loaded_row", b"_loaded_row"]  # noqa: Y015
+    _WhichOneofReturnType__request_id: _TypeAlias = _typing.Literal["request_id"]  # noqa: Y015
+    _WhichOneofArgType__request_id: _TypeAlias = _typing.Literal["_request_id", b"_request_id"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__create_from_column) -> _WhichOneofReturnType__create_from_column | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__create_from_hash) -> _WhichOneofReturnType__create_from_hash | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__create_from_row) -> _WhichOneofReturnType__create_from_row | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__loaded_capture_version) -> _WhichOneofReturnType__loaded_capture_version | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__loaded_column) -> _WhichOneofReturnType__loaded_column | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__loaded_hash) -> _WhichOneofReturnType__loaded_hash | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__loaded_preset_id) -> _WhichOneofReturnType__loaded_preset_id | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__loaded_row) -> _WhichOneofReturnType__loaded_row | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__request_id) -> _WhichOneofReturnType__request_id | None: ...
+
+Global___ModelPresetMessage: _TypeAlias = ModelPresetMessage  # noqa: Y015
+
+@_typing.final
+class RemoteControlMouse(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    class _Type:
+        ValueType = _typing.NewType("ValueType", _builtins.int)
+        V: _TypeAlias = ValueType  # noqa: Y015
+
+    class _TypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[RemoteControlMouse._Type.ValueType], _builtins.type):
+        DESCRIPTOR: _descriptor.EnumDescriptor
+        PRESS: RemoteControlMouse._Type.ValueType  # 0
+        RELEASE: RemoteControlMouse._Type.ValueType  # 1
+        MOVE: RemoteControlMouse._Type.ValueType  # 2
+        TAP: RemoteControlMouse._Type.ValueType  # 3
+        DRAG: RemoteControlMouse._Type.ValueType  # 4
+
+    class Type(_Type, metaclass=_TypeEnumTypeWrapper): ...
+    PRESS: RemoteControlMouse.Type.ValueType  # 0
+    RELEASE: RemoteControlMouse.Type.ValueType  # 1
+    MOVE: RemoteControlMouse.Type.ValueType  # 2
+    TAP: RemoteControlMouse.Type.ValueType  # 3
+    DRAG: RemoteControlMouse.Type.ValueType  # 4
+
+    X_FIELD_NUMBER: _builtins.int
+    Y_FIELD_NUMBER: _builtins.int
+    TYPE_FIELD_NUMBER: _builtins.int
+    TO_X_FIELD_NUMBER: _builtins.int
+    TO_Y_FIELD_NUMBER: _builtins.int
+    x: _builtins.float
+    y: _builtins.float
+    type: Global___RemoteControlMouse.Type.ValueType
+    to_x: _builtins.float
+    to_y: _builtins.float
+    def __init__(
+        self,
+        *,
+        x: _builtins.float = ...,
+        y: _builtins.float = ...,
+        type: Global___RemoteControlMouse.Type.ValueType = ...,
+        to_x: _builtins.float = ...,
+        to_y: _builtins.float = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["to_x", b"to_x", "to_y", b"to_y", "type", b"type", "x", b"x", "y", b"y"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
+
+Global___RemoteControlMouse: _TypeAlias = RemoteControlMouse  # noqa: Y015
+
+@_typing.final
+class RemoteControlScreenshot(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    PAYLOAD_FIELD_NUMBER: _builtins.int
+    X_FIELD_NUMBER: _builtins.int
+    Y_FIELD_NUMBER: _builtins.int
+    W_FIELD_NUMBER: _builtins.int
+    H_FIELD_NUMBER: _builtins.int
+    payload: _builtins.bytes
+    x: _builtins.int
+    y: _builtins.int
+    w: _builtins.int
+    h: _builtins.int
+    def __init__(
+        self,
+        *,
+        payload: _builtins.bytes | None = ...,
+        x: _builtins.int | None = ...,
+        y: _builtins.int | None = ...,
+        w: _builtins.int | None = ...,
+        h: _builtins.int | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_h", b"_h", "_payload", b"_payload", "_w", b"_w", "_x", b"_x", "_y", b"_y", "h", b"h", "payload", b"payload", "w", b"w", "x", b"x", "y", b"y"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_h", b"_h", "_payload", b"_payload", "_w", b"_w", "_x", b"_x", "_y", b"_y", "h", b"h", "payload", b"payload", "w", b"w", "x", b"x", "y", b"y"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__h: _TypeAlias = _typing.Literal["h"]  # noqa: Y015
+    _WhichOneofArgType__h: _TypeAlias = _typing.Literal["_h", b"_h"]  # noqa: Y015
+    _WhichOneofReturnType__payload: _TypeAlias = _typing.Literal["payload"]  # noqa: Y015
+    _WhichOneofArgType__payload: _TypeAlias = _typing.Literal["_payload", b"_payload"]  # noqa: Y015
+    _WhichOneofReturnType__w: _TypeAlias = _typing.Literal["w"]  # noqa: Y015
+    _WhichOneofArgType__w: _TypeAlias = _typing.Literal["_w", b"_w"]  # noqa: Y015
+    _WhichOneofReturnType__x: _TypeAlias = _typing.Literal["x"]  # noqa: Y015
+    _WhichOneofArgType__x: _TypeAlias = _typing.Literal["_x", b"_x"]  # noqa: Y015
+    _WhichOneofReturnType__y: _TypeAlias = _typing.Literal["y"]  # noqa: Y015
+    _WhichOneofArgType__y: _TypeAlias = _typing.Literal["_y", b"_y"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__h) -> _WhichOneofReturnType__h | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__payload) -> _WhichOneofReturnType__payload | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__w) -> _WhichOneofReturnType__w | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__x) -> _WhichOneofReturnType__x | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__y) -> _WhichOneofReturnType__y | None: ...
+
+Global___RemoteControlScreenshot: _TypeAlias = RemoteControlScreenshot  # noqa: Y015
+
+@_typing.final
+class RemoteControlGraphicsTree(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    PAYLOAD_FIELD_NUMBER: _builtins.int
+    payload: _builtins.str
+    def __init__(
+        self,
+        *,
+        payload: _builtins.str | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_payload", b"_payload", "payload", b"payload"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_payload", b"_payload", "payload", b"payload"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__payload: _TypeAlias = _typing.Literal["payload"]  # noqa: Y015
+    _WhichOneofArgType__payload: _TypeAlias = _typing.Literal["_payload", b"_payload"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__payload) -> _WhichOneofReturnType__payload | None: ...
+
+Global___RemoteControlGraphicsTree: _TypeAlias = RemoteControlGraphicsTree  # noqa: Y015
+
+@_typing.final
+class RemoteControlMessage(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
+
+    ACTION_FIELD_NUMBER: _builtins.int
+    REQUEST_ID_FIELD_NUMBER: _builtins.int
+    MOUSE_FIELD_NUMBER: _builtins.int
+    SCREENSHOT_FIELD_NUMBER: _builtins.int
+    GRAPHICS_TREE_FIELD_NUMBER: _builtins.int
+    action: Global___MessageAction.Enum.ValueType
+    request_id: _builtins.int
+    @_builtins.property
+    def mouse(self) -> Global___RemoteControlMouse: ...
+    @_builtins.property
+    def screenshot(self) -> Global___RemoteControlScreenshot: ...
+    @_builtins.property
+    def graphics_tree(self) -> Global___RemoteControlGraphicsTree: ...
+    def __init__(
+        self,
+        *,
+        action: Global___MessageAction.Enum.ValueType = ...,
+        request_id: _builtins.int | None = ...,
+        mouse: Global___RemoteControlMouse | None = ...,
+        screenshot: Global___RemoteControlScreenshot | None = ...,
+        graphics_tree: Global___RemoteControlGraphicsTree | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_graphics_tree", b"_graphics_tree", "_mouse", b"_mouse", "_request_id", b"_request_id", "_screenshot", b"_screenshot", "graphics_tree", b"graphics_tree", "mouse", b"mouse", "request_id", b"request_id", "screenshot", b"screenshot"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_graphics_tree", b"_graphics_tree", "_mouse", b"_mouse", "_request_id", b"_request_id", "_screenshot", b"_screenshot", "action", b"action", "graphics_tree", b"graphics_tree", "mouse", b"mouse", "request_id", b"request_id", "screenshot", b"screenshot"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType__graphics_tree: _TypeAlias = _typing.Literal["graphics_tree"]  # noqa: Y015
+    _WhichOneofArgType__graphics_tree: _TypeAlias = _typing.Literal["_graphics_tree", b"_graphics_tree"]  # noqa: Y015
+    _WhichOneofReturnType__mouse: _TypeAlias = _typing.Literal["mouse"]  # noqa: Y015
+    _WhichOneofArgType__mouse: _TypeAlias = _typing.Literal["_mouse", b"_mouse"]  # noqa: Y015
+    _WhichOneofReturnType__request_id: _TypeAlias = _typing.Literal["request_id"]  # noqa: Y015
+    _WhichOneofArgType__request_id: _TypeAlias = _typing.Literal["_request_id", b"_request_id"]  # noqa: Y015
+    _WhichOneofReturnType__screenshot: _TypeAlias = _typing.Literal["screenshot"]  # noqa: Y015
+    _WhichOneofArgType__screenshot: _TypeAlias = _typing.Literal["_screenshot", b"_screenshot"]  # noqa: Y015
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__graphics_tree) -> _WhichOneofReturnType__graphics_tree | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__mouse) -> _WhichOneofReturnType__mouse | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__request_id) -> _WhichOneofReturnType__request_id | None: ...
+    @_typing.overload
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__screenshot) -> _WhichOneofReturnType__screenshot | None: ...
+
+Global___RemoteControlMessage: _TypeAlias = RemoteControlMessage  # noqa: Y015
