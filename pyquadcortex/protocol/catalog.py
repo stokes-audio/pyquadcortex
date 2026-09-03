@@ -187,6 +187,23 @@ class Parameter:
     exp_assignable: bool = True
     #: Whether the screen shows this without a decimal point.
     show_as_integer: bool = False
+    #: What the screen shows at the midpoint instead of a number, from
+    #: ``mid_string``. Most commonly ``"C"`` for a pan control.
+    mid_label: str = ""
+    #: This control's position in the model's on-device editor, from
+    #: ``displayPos``. ``None`` when the catalog does not assign one; internal
+    #: parameters such as bypass and IR paths commonly omit it.
+    display_position: int | None = None
+    #: Parameter indexes named by the catalog's ``toggleOn`` attribute. These
+    #: describe controls whose on-state makes this parameter applicable.
+    toggle_on: tuple[int, ...] = ()
+    #: Parameter indexes named by ``toggleOff``. Their off-state makes this
+    #: parameter applicable.
+    toggle_off: tuple[int, ...] = ()
+    #: Option indexes named by ``toggleStep`` for conditional controls.
+    toggle_steps: tuple[int, ...] = ()
+    #: The related parameter index named by ``linkedSceneMode``.
+    linked_scene_mode: int | None = None
 
     @property
     def floor(self) -> "values.Real | None":
@@ -629,6 +646,12 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         dynamic=p.get("dynamic") == "true",
         min_label=p.get("min_string", ""),
         max_label=p.get("max_string", ""),
+        mid_label=p.get("mid_string", ""),
+        display_position=_as_int(p.get("displayPos")),
+        toggle_on=_parse_indexes(p.get("toggleOn")),
+        toggle_off=_parse_indexes(p.get("toggleOff")),
+        toggle_steps=_parse_indexes(p.get("toggleStep")),
+        linked_scene_mode=_as_int(p.get("linkedSceneMode")),
         exp_assignable=p.get("expAssignable") != "false",
         show_as_integer=p.get("showAsInteger") == "true",
     )
@@ -662,7 +685,7 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 hidden=element.get("hidden") is not None,
                 internal=element.get("internal") is not None,
                 category_hidden=category_hidden,
-                replaces=_parse_replaces(element.get("replaces")),
+                replaces=_parse_indexes(element.get("replaces")),
             )
 
     # Second pass: a model is superseded once some other model claims to replace
@@ -673,8 +696,8 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
     return catalog
 
 
-def _parse_replaces(value: str | None) -> tuple[int, ...]:
-    """Parse a ``replaces`` attribute: one id, or several comma-separated."""
+def _parse_indexes(value: str | None) -> tuple[int, ...]:
+    """Parse one integer, or a comma-separated list of integers."""
     if not value:
         return ()
     ids = []
