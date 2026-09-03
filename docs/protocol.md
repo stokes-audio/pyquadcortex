@@ -2739,7 +2739,10 @@ visually on the device's own screen.
 | Operation | Wire shape (brief) | Verified by | Notes |
 |---|---|---|---|
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
-| version read | `Version{action: READ}` | read-back | serial and firmware returned. TWO messages come back: the `UPDATE` with fifteen fields, then the device's own `Version{READ}` 0.5-0.8 ms later |
+| version read | `Version{action: READ}` | read-back | serial and firmware returned on 4.0.1 and 4.1.0. TWO messages come back: the `UPDATE` with fifteen fields, then the device's own bare `Version{READ}` about 1 ms later; `version()` filters out that echo |
+| `set_device_name` | `Version{UPDATE, custom_name}` | read-back + on-unit | sparse echo, read-back, and restoration confirmed on CorOS 4.0.1 and 4.1.0 / firmware d14e |
+| `undo` / `redo` | `UndoRedo{UPDATE, undo}` / `{UPDATE, redo}` | read-back + on-unit | a bypass edit was reversed and reapplied on disposable preset copies on CorOS 4.0.1 and 4.1.0 / firmware d14e; empty-history behaviour is unknown |
+| `inhibited_modules` | `CompilerInhibitedModules{READ}` | read-back | explicit false/false reply `08 01 18 00 20 00` on CorOS 4.0.1 and 4.1.0 / firmware d14e; true semantics are schema-derived, not yet observed |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply, which carries `reason` beside the preset |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured. A READ names no slot - an UPDATE that did would recall it |

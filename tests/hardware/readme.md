@@ -7,10 +7,10 @@ that **a successful run leaves the unit exactly as it found it**.
 pytest tests/hardware --hardware
 ```
 
-The native undo/redo test has a second guard because it needs a disposable
-loaded preset. Set `PYQUADCORTEX_UNDO_SCRATCH_SLOT` to that preset's zero-based
-slot index; the test refuses to run if a different slot is loaded or the preset
-already has unsaved changes.
+The native undo/redo test makes its own disposable copy of the loaded preset in
+an empty My Presets slot, edits that copy, recalls the original, and deletes the
+copy. Saving the copy resets its instrument tag and default scene; those changes
+exist only on the disposable preset.
 
 `pytest --hardware` from the repo root works too, since the rename described
 below, and it runs BOTH suites - the offline one and this one, against your unit.
@@ -66,8 +66,9 @@ collecting under the flag, so the rule does not depend on being remembered.
 - **Quit Cortex Control.** It holds the USB HID interface exclusively.
 - Expect the unit to be edited. Every test snapshots what it touches and restores
   it in teardown, pass or fail, but the edits are real while they happen.
-- Nothing here saves a preset, so the unsaved-edit escape hatch still applies: if
-  a run dies badly, recalling any preset discards whatever it left on the grid.
+- The undo/redo test saves a disposable preset and resets that copy's instrument
+  tag and default scene. It registers independent cleanup steps to recall the
+  original and delete the copy even when another restore step fails.
 
 ## If a restore fails
 

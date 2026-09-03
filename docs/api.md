@@ -65,7 +65,8 @@ already read and need no connection; calling them as methods raises
 | **Watch what the unit pushes** | `add_listener(fn)`, `remove_listener(fn)` - your `fn` is called with every message the unit sends, asked for or not. It runs on the transport's read thread, so it must not block and may not read from the device. To catch the connect handshake's own burst of state, register before it with `protocol.connect(before_handshake=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `set_global_bypass()`, `set_master_volume_assignment()`, `mode()`, `set_mode()`, `set_mode_cycle()`, `set_gig_view()` |
-| **Global EQ** | `global_eq()`, `inhibited_modules()`, `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)`, `set_global_eq_bypassed()` |
+| **Inhibited global modules** | `inhibited_modules()` |
+| **Global EQ** | `global_eq()`, `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)`, `set_global_eq_bypassed()` |
 | **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
 | **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`, `set_tuner_mute()`, `looper()` (states named by `LooperState`) |
 | **List parameters** | `set_param_option(cell, param, option, source)`, `protocol.param_options(preset, ...)` - includes a block's side-chain SOURCE |

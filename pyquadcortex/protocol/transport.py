@@ -123,7 +123,8 @@ class Transport:
         self._dev = device
         self._keepalive_interval = keepalive_interval
         self._ids = itertools.count(1)
-        self._pending = {}  # request_id -> (Event, [response|None], request class)
+        # request_id -> (Event, [response|None], request class, reply predicate)
+        self._pending = {}
         # Waiters for UNSOLICITED device broadcasts, matched by message class
         # (e.g. the RecallPreset push the device emits when a preset is
         # recalled - it carries no request_id to correlate on). List of
@@ -203,7 +204,7 @@ class Transport:
             waiters, self._type_waiters = self._type_waiters, []
         # Slots stay None; the woken callers see device_lost set and raise
         # DeviceLostError instead of returning None or waiting out a timeout.
-        for ev, _slot, _cls in pending.values():
+        for ev, _slot, _cls, _match in pending.values():
             ev.set()
         for _cls, _match, ev, _slot in waiters:
             ev.set()
@@ -283,7 +284,7 @@ class Transport:
         with self._lock:
             return next(self._ids)
 
-    def request(self, message, timeout=5.0):
+    def request(self, message, timeout=5.0, match=None):
         """Send ``message`` and block until the matching response arrives.
 
         Assigns a fresh ``request_id``, registers a waiter BEFORE writing (so a
@@ -297,8 +298,10 @@ class Transport:
         request triggers a cascade of OTHER-type messages that all echo the
         request's id (recalling a preset emits UndoRedo/Grid/Scene/... all with
         the same request_id before the SetlistPosition echo). So the reply is
-        the first inbound message whose TYPE matches the request's, and whose
-        request_id - if present on both sides - matches too.
+        the first inbound message whose TYPE matches the request's, whose
+        request_id - if present on both sides - matches too, and which satisfies
+        the optional ``match`` predicate. A same-type message rejected by the
+        predicate is left unmatched while the request keeps waiting.
 
         Refused when called from the RX thread, where it could only ever time out
         (see ``_refuse_read_from_rx``).
@@ -309,7 +312,7 @@ class Transport:
         slot = [None]
         with self._lock:
             rid = next(self._ids)
-            self._pending[rid] = (ev, slot, type(message))
+            self._pending[rid] = (ev, slot, type(message), match)
         message.request_id = rid
         try:
             self.send(message)
@@ -749,18 +752,18 @@ class Transport:
         with self._lock:
             entry = None
             if rid is not None and rid in self._pending:
-                _ev, _slot, cls = self._pending[rid]
-                if cls is type(message):
+                _ev, _slot, cls, match = self._pending[rid]
+                if cls is type(message) and (match is None or match(message)):
                     entry = self._pending.pop(rid)
             if entry is None and rid is None:
                 # No id on the reply (READ replies): first same-type waiter wins.
                 for pending_rid in sorted(self._pending):
-                    _ev, _slot, cls = self._pending[pending_rid]
-                    if cls is type(message):
+                    _ev, _slot, cls, match = self._pending[pending_rid]
+                    if cls is type(message) and (match is None or match(message)):
                         entry = self._pending.pop(pending_rid)
                         break
         if entry is not None:
-            ev, slot, _cls = entry
+            ev, slot, _cls, _match = entry
             slot[0] = message
             ev.set()
             return

@@ -35,8 +35,9 @@ class FakeTransport:
     def send(self, msg):
         self.sent.append(msg)
 
-    def request(self, msg, timeout=5.0):
+    def request(self, msg, timeout=5.0, match=None):
         self.sent.append(msg)
+        self.last_match = match
         return self.canned.get(type(msg).__name__)
 
     def next_request_id(self):
@@ -463,6 +464,29 @@ def test_move_preset_sends_file_move():
 # -- session hello -------------------------------------------------------------
 
 
+def test_version_requires_the_full_update_and_ignores_the_trailing_read_echo():
+    full = pa.VersionMessage(
+        action=pa.MessageAction.UPDATE,
+        device_serial_number="QCS0000001",
+        app_fw_version="d14e",
+    )
+    fake = FakeTransport({"VersionMessage": full})
+    qc = client.QuadCortex(fake)
+
+    assert qc.version(timeout=3.5) is full
+    sent = fake.sent[-1]
+    assert isinstance(sent, pa.VersionMessage)
+    assert sent.action == pa.MessageAction.READ
+    assert not sent.HasField("request_id")  # the fake records before Transport assigns it
+    assert fake.last_match(full) is True
+    assert fake.last_match(pa.VersionMessage(
+        action=pa.MessageAction.READ,
+    )) is False
+    assert fake.last_match(pa.VersionMessage(
+        action=pa.MessageAction.UPDATE,
+    )) is False
+
+
 def test_set_device_name_sends_a_sparse_version_update():
     qc = client.QuadCortex(FakeTransport())
 
@@ -471,6 +495,10 @@ def test_set_device_name_sends_a_sparse_version_update():
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.VersionMessage)
     assert sent.SerializeToString() == b"\x08\x01\x7a\x08Stage QC"
+
+    with pytest.raises(TypeError):
+        qc.set_device_name(None)
+    assert qc._t.sent[-1] is sent
 
 
 def test_undo_and_redo_send_the_confirmed_sparse_updates():

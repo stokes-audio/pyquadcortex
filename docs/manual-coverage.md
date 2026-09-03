@@ -22,10 +22,10 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 Of 105 features audited: **68 yes**, **7 partly**, **19 no**, **11 n/a**.
 
-Of the 93 features a host could plausibly drive - everything above except the 11 marked
+Of the 94 features a host could plausibly drive - everything above except the 11 marked
 n/a - **68 are fully covered** and 7 more are partly covered, which here means the state
 is readable and at least one field of it is confirmed writable, with the neighbours the
-same shape but not individually exercised. Only 20 remain untouched.
+same shape but not individually exercised. Only 19 remain untouched.
 
 Both paragraphs now count the same table. They had drifted apart: this one still read
 91/65/13/14 from an earlier revision, which no longer matched a row-by-row count.
@@ -185,7 +185,7 @@ on 25, 9 and 56 as `led_brightness` was 28, 13 and 59).
 | STOMP MODE BYPASS (auto-assign on load) | yes | `update_settings(stomp_mode_auto_assign=...)`, confirmed writable |
 | HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | yes | all three confirmed writable via `update_settings()`. `set_hold_timing()` takes `Milliseconds` and writes the index the device stores - the unit offers 500-1000 ms in 100 ms steps and the field is the index, confirmed by reading 3 while the screen showed 800 ms. `hold_timing_ms()` reads it back |
 | LATENCY COMPENSATION | yes | `update_settings(enable_dynamic_delay_compensation=...)`, confirmed writable |
-| Device name | yes | `set_device_name()` sends sparse `Version{UPDATE, custom_name}`; live read-back matched, and restoring the prior name survived reconnect |
+| Device name | yes | `set_device_name()` sends sparse `Version{UPDATE, custom_name}`; read-back and restoration matched on CorOS 4.0.1 and 4.1.0. Reconnect persistence has not been tested |
 | Firmware and serial | yes | `version()` |
 | Diagnostics (DSP, footswitches, USB) | no | `ModuleStats` is decoded and subscribed; `Diagnostics`, `DSPCommsDiagnostics` are not |
 | CorOS updates | no | `Updater` is decoded and subscribed; never driven. Risky to explore |

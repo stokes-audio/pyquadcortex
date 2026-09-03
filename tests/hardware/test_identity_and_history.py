@@ -1,19 +1,21 @@
 """Reversible device-name and edit-history checks against a real unit."""
 
-import os
 import time
 
 import pytest
 
 from pyquadcortex import protocol
-from pyquadcortex.protocol import Block
+from pyquadcortex.protocol.enums import Setlist
 
 
 SETTLE = 1.0
 
 
 def test_device_name_round_trips_and_is_restored(qc):
-    before = qc.version().custom_name
+    identity = qc.version()
+    if not identity.HasField("custom_name"):
+        pytest.skip("the unit has no device name to restore without inventing one")
+    before = identity.custom_name
     probe = "pyquadcortex probe"
     if before == probe:
         probe = "pyquadcortex probe 2"
@@ -29,56 +31,69 @@ def test_device_name_round_trips_and_is_restored(qc):
     assert qc.version().custom_name == before
 
 
-def test_undo_and_redo_reverse_and_reapply_a_scratch_edit(qc):
-    """Opt-in twice: --hardware plus the exact disposable slot in the env."""
-    configured = os.environ.get("PYQUADCORTEX_UNDO_SCRATCH_SLOT")
-    if configured is None:
-        pytest.skip("set PYQUADCORTEX_UNDO_SCRATCH_SLOT to a disposable loaded slot")
+def test_undo_and_redo_reverse_and_reapply_a_scratch_edit(qc, restores):
+    """Create, edit, and remove a test-owned copy of the loaded preset."""
+    original = qc.loaded_position()
+    for field in ("folder_key", "position", "is_factory"):
+        assert original.HasField(field), f"loaded position omitted {field}"
+    original_scene = int(qc.active_scene())
 
-    position = qc.loaded_position()
-    expected = int(configured)
-    assert position.position == expected, (
-        f"scratch slot {expected} is configured, but slot {position.position} is loaded"
+    scratch_name = "pyquadcortex undo probe"
+    slots = qc.list_presets(Setlist.USER, include_empty=True)
+    assert not any(e.HasField("name") and e.name == scratch_name for e in slots), (
+        f"delete the existing {scratch_name!r} preset before running this test"
     )
-    assert qc.preset_dirty() is False, (
-        "save or reload the scratch preset first"
-    )
+    empty = next((e for e in slots
+                  if e.HasField("index")
+                  and (not e.HasField("name") or not e.name)), None)
+    if empty is None:
+        pytest.skip("My Presets has no empty slot for the disposable copy")
 
-    target = Block(0, 6)
-    before_preset = qc.read_current_preset()
+    def delete_scratch():
+        qc.delete_preset(Setlist.USER, scratch_name)
+        qc.wait_for_listing(
+            Setlist.USER,
+            until=lambda entries: not any(
+                e.HasField("name") and e.name == scratch_name for e in entries
+            ),
+            timeout=30.0,
+        )
+
+    restores("delete the undo-test scratch preset", delete_scratch)
+    restores("restore the original active scene",
+             lambda: qc.switch_scene(original_scene))
+    restores("recall the originally loaded preset", lambda: qc.read_preset(
+        original.folder_key, original.position,
+        is_factory=original.is_factory, timeout=30.0,
+    ))
+
+    stored = qc.save_current_preset(
+        Setlist.USER, empty.index, scratch_name,
+        confirm=True, confirm_timeout=30.0,
+    )
+    assert stored == scratch_name, "the disposable copy was not confirmed"
+    before_preset = qc.read_preset(Setlist.USER, empty.index, timeout=30.0)
+    occupied = protocol.blocks(before_preset)
+    if not occupied:
+        pytest.skip("the loaded preset has no block whose bypass can be edited")
+    target = occupied[0]
     before_scene = int(qc.active_scene())
     before = protocol.bypass_state(before_preset, target).scenes[before_scene]
-    name = before_preset.name
 
-    try:
-        qc.set_bypass(target, not before)
-        time.sleep(SETTLE)
-        assert protocol.bypass_state(
-            qc.read_current_preset(), target
-        ).scenes[before_scene] is not before
+    qc.set_bypass(target, not before)
+    time.sleep(SETTLE)
+    assert protocol.bypass_state(
+        qc.read_current_preset(), target
+    ).scenes[before_scene] is not before
 
-        qc.undo()
-        time.sleep(SETTLE)
-        assert protocol.bypass_state(
-            qc.read_current_preset(), target
-        ).scenes[before_scene] is before
-
-        qc.redo()
-        time.sleep(SETTLE)
-        assert protocol.bypass_state(
-            qc.read_current_preset(), target
-        ).scenes[before_scene] is not before
-    finally:
-        now = protocol.bypass_state(
-            qc.read_current_preset(), target
-        ).scenes[before_scene]
-        if now is not before:
-            qc.set_bypass(target, before)
-            time.sleep(SETTLE)
-        qc.save_current_preset(position.folder_key, position.position, name,
-                               confirm=True, confirm_timeout=30.0)
-
+    qc.undo()
+    time.sleep(SETTLE)
     assert protocol.bypass_state(
         qc.read_current_preset(), target
     ).scenes[before_scene] is before
-    assert qc.preset_dirty() is False
+
+    qc.redo()
+    time.sleep(SETTLE)
+    assert protocol.bypass_state(
+        qc.read_current_preset(), target
+    ).scenes[before_scene] is not before

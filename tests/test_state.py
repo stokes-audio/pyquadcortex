@@ -97,7 +97,7 @@ class LoopbackTransport:
         self.push(reply)
         return reply
 
-    def request(self, message, timeout=5.0):
+    def request(self, message, timeout=5.0, match=None):
         name = type(message).__name__
         self.sent.append(message)
         self.reads[name] += 1
@@ -109,6 +109,8 @@ class LoopbackTransport:
         if callable(reply):
             reply = reply()
         self.push(reply)          # every listener sees it first...
+        if match is not None and not match(reply):
+            raise TimeoutError(f"the canned {name} did not satisfy the waiter")
         return reply              # ...and only then does the caller wake
 
     # -- the unit's side ------------------------------------------------------
@@ -757,19 +759,18 @@ def test_a_second_access_of_the_same_entry_costs_no_round_trip(link):
     assert transport.reads["VersionMessage"] == 1
 
 
-def test_a_read_replaces_the_entry_rather_than_merging_into_it(link):
-    """A read is the unit's whole answer, so a field it does not carry is a
-    field the unit did not confirm. Leaving the old value in place would report
-    something no read has returned."""
+def test_an_incomplete_version_update_does_not_complete_the_read(link):
+    """A partial Version UPDATE may warm the cache, but is not a full reply."""
     transport, cache = link
     assert cache.value("identity", "device_serial_number") == "QCS0000001"
     cache.mark_for_reread("identity", "this test")
     transport.replies["VersionMessage"] = lambda: version_reply(
         app_fw_version="d15a")
 
-    assert cache.value("identity", "app_fw_version") == "d15a"
-    with pytest.raises(RuntimeError, match="device_serial_number"):
-        cache.value("identity", "device_serial_number")
+    with pytest.raises(TimeoutError):
+        cache.value("identity", "app_fw_version")
+    assert cache.cached("identity")["app_fw_version"] == "d15a"
+    assert cache.needs_read("identity") is True
 
 
 def test_a_field_the_unit_did_not_send_is_refused_not_reported_empty(link):
@@ -778,7 +779,7 @@ def test_a_field_the_unit_did_not_send_is_refused_not_reported_empty(link):
     transport, cache = link
     transport.replies["VersionMessage"] = lambda: version_reply(
         app_fw_version="d14e")
-    with pytest.raises(RuntimeError, match="device_serial_number"):
+    with pytest.raises(TimeoutError):
         cache.value("identity", "device_serial_number")
 
 
@@ -786,7 +787,7 @@ def test_an_incomplete_answer_leaves_a_retry_able_to_recover(link):
     transport, cache = link
     transport.replies["VersionMessage"] = lambda: version_reply(
         app_fw_version="d14e")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(TimeoutError):
         cache.value("identity", "device_serial_number")
 
     transport.replies["VersionMessage"] = full_version_reply
@@ -801,7 +802,7 @@ def test_the_field_the_unit_did_send_is_still_answered_from_the_cache(link):
     transport, cache = link
     transport.replies["VersionMessage"] = lambda: version_reply(
         app_fw_version="d14e")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(TimeoutError):
         cache.value("identity", "device_serial_number")
 
     assert cache.value("identity", "app_fw_version") == "d14e"
@@ -1277,7 +1278,9 @@ def test_a_write_that_races_the_close_leaves_no_thread_behind(link):
 
     cache._watchdog.add(_a_watch_for_the_race())
 
-    assert set(_watchdog_threads()) == existing
+    # A watchdog from another test may finish during a combined offline +
+    # hardware run; the invariant is that this operation starts no NEW thread.
+    assert set(_watchdog_threads()) <= existing
 
 
 def _a_watch_for_the_race():
@@ -1298,10 +1301,12 @@ def test_the_watchdog_firing_as_the_connection_closes_does_not_raise(link):
 
 def test_no_watchdog_runs_until_something_is_written(link):
     transport, cache = link
+    # Baseline other live caches in a combined offline + hardware run. Some may
+    # finish during this test; only a newly-created watchdog would be a failure.
     existing = set(_watchdog_threads())
     cache.value("identity", "app_fw_version")
     transport.push(dirty_push(True))
-    assert set(_watchdog_threads()) == existing
+    assert set(_watchdog_threads()) <= existing
 
 
 def _watchdog_threads():

@@ -88,7 +88,8 @@ internal error rather than as the damaged payload it is.
 
 `set_device_name()` changes the name shown by the device with a sparse Version
 update. `undo()` and `redo()` drive the unit's native editable-preset history;
-their four-byte wire payloads and live state transitions are pinned by tests.
+their four-byte wire payloads are pinned offline, and their state transitions
+by a guarded hardware test against a disposable preset copy.
 
 ### The offline suite is portable to Windows checkouts
 

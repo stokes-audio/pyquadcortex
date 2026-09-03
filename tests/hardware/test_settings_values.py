@@ -37,13 +37,13 @@ def test_inhibited_modules_is_a_complete_read_only_snapshot(qc):
     Presence matters here: protobuf also returns false when an optional field was
     never sent, and reporting that default as device state would be a guess.
     """
+    # Read twice because a first state READ can be dropped; both successful
+    # replies must carry explicit fields rather than protobuf defaults.
     for _ in range(2):
         state = qc.inhibited_modules()
         assert state.action == pa.MessageAction.UPDATE
         assert state.HasField("global_gate")
         assert state.HasField("global_eq")
-        assert isinstance(state.global_gate, bool)
-        assert isinstance(state.global_eq, bool)
 
 
 def _input_level(qc, port_id):
