@@ -1303,6 +1303,51 @@ class QuadCortex:
             match=lambda m: (m.HasField("request_id")
                              and m.request_id == request_id))
 
+    def preset_screenshot(
+        self,
+        folder_name: str,
+        position: int,
+        is_factory: bool = False,
+        timeout: float = 10.0,
+    ) -> bytes:
+        """Return the device-rendered preset view as PNG bytes.
+
+        ``folder_name`` is the display name (for example ``"My Presets"``),
+        not the folder key used by :meth:`recall_preset`. ``position`` is the
+        same zero-based linear slot index used by the other preset methods.
+        Entries from :meth:`list_folders` provide both ``name`` and
+        ``is_factory`` when the folder is not already known.
+
+        The address fields are mandatory in practice. A bare ``Screenshot``
+        READ is ignored, while a correctly addressed request replies with an
+        800 x 384 PNG and echoes the request id. Confirmed on hardware with two
+        different user-preset slots on CorOS 4.1.0; this reads only and does not
+        recall the requested preset or change the screen.
+        """
+        if not isinstance(folder_name, str) or not folder_name:
+            raise ValueError("folder_name must be a non-empty display name")
+        if not isinstance(position, int) or isinstance(position, bool) or position < 0:
+            raise ValueError("position must be a non-negative integer")
+
+        reply = self._t.request(
+            pa.ScreenshotMessage(
+                action=pa.MessageAction.READ,
+                folder_name=folder_name,
+                is_factory=is_factory,
+                index=position,
+            ),
+            timeout=timeout,
+        )
+        if reply is None or not reply.HasField("png"):
+            raise RuntimeError("the device's Screenshot reply did not contain PNG data")
+        image = bytes(reply.png)
+        if not image.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RuntimeError("the device's Screenshot reply was not a PNG image")
+        if (reply.folder_name != folder_name or reply.is_factory != is_factory
+                or reply.index != position):
+            raise RuntimeError("the device's Screenshot reply addressed a different preset")
+        return image
+
     def active_scene(self, timeout: float = 10.0):
         """Which scene the unit is on right now, as a :class:`~pyquadcortex.protocol.Scene`.
 

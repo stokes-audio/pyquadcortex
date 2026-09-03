@@ -20,6 +20,19 @@ correction.
 
 ## Unreleased
 
+### Preset screenshots can be read as PNGs
+
+`protocol.connect()` now exposes
+`preset_screenshot(folder_name, position, is_factory=False)`. It returns the
+800 x 384 PNG rendered by the device for that preset address without recalling
+the preset or changing the unit's screen. The folder argument is its display
+name (`"My Presets"`), not its filesystem-like key; `list_folders()` supplies
+the name and factory flag for discovered folders.
+
+The address is not optional on the wire: a bare `Screenshot{READ}` is ignored.
+The method checks that the reply contains a PNG and echoes the requested folder,
+factory flag, and slot before returning the bytes.
+
 ### You can read back which expression pedals are assigned
 
 `set_expression` could always write an assignment. Nothing could read one back:

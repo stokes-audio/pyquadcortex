@@ -184,6 +184,77 @@ def test_list_presets_ignores_listings_for_other_setlists():
     assert fake.last_match(empty) is False
 
 
+# -- preset screenshots ------------------------------------------------------
+
+
+def test_preset_screenshot_sends_the_complete_address_and_returns_png_bytes():
+    png = b"\x89PNG\r\n\x1a\n" + b"device image"
+    reply = pa.ScreenshotMessage(
+        action=pa.MessageAction.UPDATE,
+        folder_name="Factory Library",
+        is_factory=True,
+        index=17,
+        png=png,
+    )
+    fake = FakeTransport({"ScreenshotMessage": reply})
+
+    result = client.QuadCortex(fake).preset_screenshot(
+        "Factory Library", 17, is_factory=True, timeout=12.5)
+
+    assert result == png
+    sent = fake.sent[-1]
+    assert isinstance(sent, pa.ScreenshotMessage)
+    assert sent.action == pa.MessageAction.READ
+    assert sent.folder_name == "Factory Library"
+    assert sent.is_factory is True
+    assert sent.index == 17
+
+
+@pytest.mark.parametrize("folder_name, position", [("", 0), (None, 0), ("My Presets", -1),
+                                                    ("My Presets", 1.5),
+                                                    ("My Presets", True)])
+def test_preset_screenshot_rejects_invalid_addresses(folder_name, position):
+    with pytest.raises(ValueError):
+        client.QuadCortex(FakeTransport()).preset_screenshot(folder_name, position)
+
+
+def test_preset_screenshot_rejects_a_reply_without_png_data():
+    fake = FakeTransport({
+        "ScreenshotMessage": pa.ScreenshotMessage(
+            folder_name="My Presets", index=3,
+        ),
+    })
+    with pytest.raises(RuntimeError, match="did not contain PNG"):
+        client.QuadCortex(fake).preset_screenshot("My Presets", 3)
+
+
+def test_preset_screenshot_rejects_non_png_data():
+    fake = FakeTransport({
+        "ScreenshotMessage": pa.ScreenshotMessage(
+            folder_name="My Presets", index=3, png=b"not an image",
+        ),
+    })
+    with pytest.raises(RuntimeError, match="was not a PNG"):
+        client.QuadCortex(fake).preset_screenshot("My Presets", 3)
+
+
+@pytest.mark.parametrize("changed", ["folder", "factory", "position"])
+def test_preset_screenshot_rejects_a_reply_for_another_preset(changed):
+    reply = pa.ScreenshotMessage(
+        folder_name="My Presets", is_factory=False, index=3,
+        png=b"\x89PNG\r\n\x1a\nimage",
+    )
+    if changed == "folder":
+        reply.folder_name = "Another Setlist"
+    elif changed == "factory":
+        reply.is_factory = True
+    else:
+        reply.index = 4
+    fake = FakeTransport({"ScreenshotMessage": reply})
+    with pytest.raises(RuntimeError, match="different preset"):
+        client.QuadCortex(fake).preset_screenshot("My Presets", 3)
+
+
 # -- input rerouting (Phase B) ------------------------------------------------
 
 
