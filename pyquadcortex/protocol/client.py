@@ -4008,12 +4008,21 @@ class ExpressionAssignment(NamedTuple):
     target: "targets.ParamTarget"
     param_index: int
     pedal: int
-    minimum: values_module.Encoded
-    maximum: values_module.Encoded
+    #: ``None`` where the unit did not send that end. Never seen in any
+    #: committed fixture; carried because a protobuf default reported as the
+    #: unit's answer is exactly what `field_present` exists to prevent.
+    minimum: "values_module.Encoded | None"
+    maximum: "values_module.Encoded | None"
 
     @property
     def reversed(self) -> bool:
-        """Whether the heel is the LOUD end - `minimum` above `maximum`."""
+        """Whether the heel is the LOUD end - `minimum` above `maximum`.
+
+        ``False`` where either end is absent: with one end unknown there is no
+        ordering to report, and guessing one would be inventing the setting.
+        """
+        if self.minimum is None or self.maximum is None:
+            return False
         return float(self.minimum) > float(self.maximum)
 
 
@@ -4029,25 +4038,41 @@ _EXPRESSION_LANE_COLLECTIONS = (
 )
 
 
+def _sweep_or_none(prm, field: str):
+    """One sweep end, or ``None`` where the unit did not send it."""
+    if not field_present(prm, field):
+        return None
+    return values_module.Encoded(getattr(prm, field))
+
+
 def _assignments_on(entry, target) -> list:
     """The assigned parameters of one container entry."""
     found = []
     for position, prm in enumerate(entry.params):
-        # `expression: 0` is UNASSIGNED, which is what `clear_expression`
-        # writes, and the field has no presence - so a parameter nobody has
-        # touched reads the same as one whose pedal was removed.
-        if not prm.expression:
+        # `expression: 0` is UNASSIGNED - it is what `clear_expression`
+        # writes - and the device SENDS it, present on all 576 parameters
+        # across the committed fixtures. So "never touched" and "pedal
+        # removed" are the same answer, which is the right one: both mean no
+        # pedal.
+        if not (field_present(prm, "expression") and prm.expression):
             continue
         found.append(ExpressionAssignment(
             target=target,
-            # The POSITION, not `prm.index`. That field has no presence and
-            # reads 0 for all 576 parameters across every committed fixture, so
-            # trusting it would report every assignment as being on the first
-            # knob. `param_state` addresses positionally for the same reason.
+            # The POSITION, not `prm.index`. That field is proto3-optional
+            # so it HAS presence - and the device never sends it: absent on all
+            # 576 parameters across every committed fixture, measured with
+            # `field_present`. Reading it would report every assignment as
+            # being on the first knob. `param_state` addresses positionally for
+            # the same reason.
             param_index=position,
             pedal=prm.expression,
-            minimum=values_module.Encoded(prm.expression_min),
-            maximum=values_module.Encoded(prm.expression_max),
+            # Checked rather than read: both sit in synthetic oneofs, so an
+            # absent end is distinguishable from a real 0.0 - and reporting a
+            # protobuf default as the unit's answer is the guess CLAUDE.md
+            # forbids. Neither is absent anywhere in the fixtures; this is the
+            # rule holding, not a bug seen.
+            minimum=_sweep_or_none(prm, "expression_min"),
+            maximum=_sweep_or_none(prm, "expression_max"),
         ))
     return found
 
@@ -4061,22 +4086,37 @@ def expression_assignments(p: preset.BinaryPreset) -> list:
     assigned.
 
     **The index is the parameter's POSITION in ``params[]``.** The wire's own
-    ``index`` field has no presence and reads 0 for every parameter in every
-    preset looked at, so an assignment on the third knob would report as being
-    on the first. :func:`param_state` addresses positionally for the same
-    reason.
+    ``index`` field is proto3-optional, so it HAS presence - and the device
+    never sends it: absent on all 576 parameters across every committed
+    fixture. Reading it would put every assignment on the first knob.
+    :func:`param_state` addresses positionally for the same reason.
 
     Bypass assignments are a different feature on a different field and are NOT
     here - a pedal that BYPASSES a block is not a pedal on one of its knobs.
+
+    **Two places this does not look, neither established either way.**
+    ``Chain.splitter`` is NOT a second view of ``combined_splitter``: in every
+    committed fixture it is a different model, 10002 with three parameters
+    against 10004 with eight, and whether it can carry an assignment has never
+    been checked. :class:`~pyquadcortex.protocol.targets.Tempo` is a preset
+    target with no row, so it is outside ``chains`` entirely, and
+    :meth:`QuadCortex.set_expression` accepts any target. Both are gaps in
+    coverage rather than measured absences, and saying so beats calling this
+    list complete.
     """
     found = []
     for i, chain in enumerate(p.chains):
         row = chain.row if field_present(chain, "row") else i
         for j, model in enumerate(chain.models):
+            # Every row reports its full eight slots, empty ones included, so
+            # skip an unoccupied cell the way `blocks()` does rather than
+            # reporting an assignment against a block that is not there.
+            if not (field_present(model, "hash") and model.hash):
+                continue
             column = model.column if field_present(model, "column") else j
             found += _assignments_on(
                 model, targets.Block(row=row, column=column,
-                                     model_id=model.hash or None))
+                                     model_id=model.hash))
         for collection, address in _EXPRESSION_LANE_COLLECTIONS:
             for entry in getattr(chain, collection):
                 found += _assignments_on(entry, address(row=row))

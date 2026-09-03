@@ -270,14 +270,28 @@ does that and reads in the unit's own words:
 
 ```python
 for one in device.preset.blocks.pedals:
-    print(one)          # <EXP 2 on VOLUME (row 1): -40 dB to 3.2 dB>
+    print(one)          # <EXP 2 on VOLUME (row 1): Off to 3.2 dB>
 ```
 
-Two things worth knowing. **`minimum` above `maximum` reverses the pedal** -
-that is how the manual describes inverting a parameter, so the pair is not
-ordered and `reversed` is the question to ask. And **with no device attached
-there is no catalog**, so the sweep stays the wire's 0..1 and `in_real_units`
-tells you which you have, rather than a number converted against a guess.
+`grid.pedals` covers every container the reader walks - blocks, lanes, the
+mixer, the splitter. `block.pedals` narrows it to one placed block; the other
+block types have no `.pedals` of their own yet.
+
+Three things worth knowing.
+
+**`minimum` above `maximum` reverses the pedal** - that is how the manual
+describes inverting a parameter, so the pair is not ordered and `reversed` is
+the question to ask.
+
+**An end can be the OFF detent rather than a number.** On the level family wire
+`0.0` is a word on the screen, not the bottom of the dB scale: a lane VOLUME's
+law runs to -40 dB while its lowest numeric step is -39.5, and `set_param`
+refuses `Db(-40)` there. So a sweep starting at the heel reports
+`minimum_is_off` and prints `Off`, rather than a value the library would reject
+if you handed it back.
+
+**With no device attached there is no catalog**, so the sweep stays the wire's
+0..1. `in_real_units` is true only when both ends read in the knob's own units.
 
 Reading only, for now: assigning through the model is M2.
 

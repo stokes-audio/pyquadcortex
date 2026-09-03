@@ -210,13 +210,6 @@ def scene_name(binary_preset, scene) -> str:
     return "" if not label.strip() else label
 
 
-#: The two expression pedals, as the back panel labels them. The wire numbers
-#: them 1 and 2 and so does the screen, so nothing is converted here - the type
-#: exists so a pedal cannot be passed where a row or a slot is wanted, which is
-#: the same reason `FootswitchLetter` exists.
-EXPRESSION_PEDALS = (1, 2)
-
-
 def expression_assignments(binary_preset, catalog=None) -> tuple:
     """Every pedal assignment in a preset, in the screen's own terms.
 
@@ -232,9 +225,10 @@ def expression_assignments(binary_preset, catalog=None) -> tuple:
     guessed, which is the same answer `Parameter.floor` gives for an unmeasured
     bound.
 
-    Returns tuples of ``(row, slot, name, pedal, minimum, maximum, units)``
-    with ``slot`` and ``name`` ``None`` for a lane control, which has no slot
-    and whose parameter name needs a catalog the same way.
+    Returns tuples of ``(row, slot, name, pedal, minimum, maximum, units,
+    minimum_is_off, maximum_is_off, in_real_units)`` with ``slot`` and ``name``
+    ``None`` for a lane control, which has no slot and whose parameter name
+    needs a catalog the same way.
     """
     found = []
     for one in protocol.expression_assignments(binary_preset):
@@ -243,14 +237,51 @@ def expression_assignments(binary_preset, catalog=None) -> tuple:
         slot = (slot_from_wire(target.column)
                 if hasattr(target, "column") else None)
         name, units = None, ""
-        minimum, maximum = one.minimum, one.maximum
         spec = _spec_for(target, one.param_index, catalog)
         if spec is not None:
             name, units = spec.name, spec.units
-            minimum = spec.to_real(float(one.minimum))
-            maximum = spec.to_real(float(one.maximum))
-        found.append((row, slot, name, one.pedal, minimum, maximum, units))
+        minimum, min_off = _sweep_end(one.minimum, spec)
+        maximum, max_off = _sweep_end(one.maximum, spec)
+        # Whether these read in the knob's own units is decided HERE, by the
+        # layer that did or did not convert them. The model asking
+        # `isinstance(value, protocol.Encoded)` would be reaching past this
+        # boundary for the protocol layer's raw-scale type to answer a question
+        # this function already knows the answer to.
+        real = (spec is not None and not min_off and not max_off
+                and minimum is not None and maximum is not None)
+        found.append((row, slot, name, one.pedal,
+                      minimum, maximum, units, min_off, max_off, real))
     return tuple(found)
+
+
+def _sweep_end(wire, spec):
+    """One end of a sweep as the screen reads it, and whether it is OFF.
+
+    **Wire 0.0 is not the bottom of the dB scale on the level family - it is an
+    OFF detent**, and this is the whole reason this is a function rather than a
+    `to_real` call. A lane VOLUME's law runs to -40 dB while its lowest NUMERIC
+    step is -39.5, so converting wire 0.0 reports -40 dB: a value the screen
+    never shows and one `to_normalized` REFUSES if you hand it back. The first
+    version of this reader did exactly that, and the full sweep it got wrong is
+    the commonest assignment there is.
+
+    Below the measured floor the end stays the device's own 0..1 and is flagged
+    instead, because there is no number for it - which is what the screen says
+    by writing a word there.
+    """
+    if wire is None or spec is None:
+        # An end the unit did not send has nothing to convert and nothing to
+        # compare against a floor.
+        return wire, False
+    if spec.floor_wire and float(wire) < spec.floor_wire:
+        return wire, True
+    try:
+        return spec.to_real(float(wire)), False
+    except ValueError:
+        # `to_real` refuses a wire value outside 0..1, NaN included - four
+        # factory presets store NaN in `param_values`. One bad end degrades
+        # that end rather than taking down the whole reading.
+        return wire, False
 
 
 def _spec_for(target, param_index: int, catalog):

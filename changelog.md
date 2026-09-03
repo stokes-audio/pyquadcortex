@@ -33,16 +33,19 @@ The model reads it the way the unit shows it - `<EXP 2 on VOLUME (row 1):
 -40 dB to 3.2 dB>` - with rows and slots numbered from 1 and the sweep in the
 knob's own units. `block.pedals` narrows it to one cell.
 
-Two things it will not fake. `minimum` above `maximum` **reverses** the pedal,
-which is a setting, so the pair is reported rather than sorted and `reversed`
-is the question to ask. And with no device attached there is no catalog to ask
-for a knob's scale, so the sweep stays the wire's 0..1 and `in_real_units` says
-so.
+Three things it will not fake. `minimum` above `maximum` **reverses** the
+pedal, which is a setting, so the pair is reported rather than sorted and
+`reversed` is the question to ask. An end at the **OFF detent** prints `Off`
+rather than a number - on the level family wire `0.0` is a word on the screen,
+not -40 dB, and reporting the law's bottom there would hand you a value
+`set_param` refuses. And with no device attached there is no catalog to ask for
+a knob's scale, so the sweep stays the wire's 0..1 and `in_real_units` says so.
 
-Two wire traps are handled and worth knowing if you read the raw preset
-yourself: `params[].index` has no presence and reads 0 for every parameter, so
-the POSITION is the index; and `expression: 0` means unassigned, being what
-`clear_expression` writes.
+Two wire facts are handled and worth knowing if you read the raw preset
+yourself. `params[].index` is proto3-optional, so it HAS presence and the
+device simply never sends it - absent on all 576 parameters across the
+committed fixtures - which makes the POSITION the index. And `expression: 0`
+means unassigned, is what `clear_expression` writes, and IS sent.
 
 Reading only. Assigning through the model is M2.
 

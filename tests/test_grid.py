@@ -26,23 +26,47 @@ def load(name):
     return payload
 
 
+#: A lane VOLUME, with the law and the MEASURED floor the real one carries.
+#: The floor is the point: wire 0.0 is an OFF detent and -40 dB is the bottom
+#: of the LAW, and a catalog without it cannot tell a reader the difference -
+#: which is how the first version of `grid.pedals` came to report -40 dB for
+#: the commonest assignment there is, with every test passing.
+LANE_VOLUME = protocol.catalog.Parameter(
+    index=0, name="VOLUME", minimum=-40.0, maximum=12.0, default=0.0,
+    units="dB", type="float", floor_wire=0.01, floor_display=-39.5)
+
+#: A knob with no unit and no detent, so every position is a number.
+PLAIN_KNOB = protocol.catalog.Parameter(
+    index=0, name="WAH", minimum=0.0, maximum=1.0, default=0.0,
+    units="", type="float")
+
+
 class FakeCatalog:
-    """The unit's model repository, as far as a block is concerned."""
+    """The unit's model repository, as far as a block is concerned.
+
+    Models carry PARAMETERS now. They did not, and the cost was exact: every
+    pedal test ran the branch where no spec resolves, so the whole conversion
+    to real units - the feature's reason to exist - was never executed offline.
+    """
+
+    def __init__(self, parameters=()):
+        self._parameters = tuple(parameters)
 
     def __getitem__(self, model_id):
         if model_id == 999999:
             raise KeyError(f"no model with id {model_id} in this device's catalog")
         return protocol.Model(id=model_id, name=f"device-{model_id}",
-                              category="AMP", category_id=1)
+                              category="AMP", category_id=1,
+                              parameters=self._parameters)
 
 
 class FakePreset:
     """A preset as far as a grid is concerned: a wire payload, a catalogue, and
     which scene is active right now."""
 
-    def __init__(self, wire, active=SceneLetter.A):
+    def __init__(self, wire, active=SceneLetter.A, parameters=(), catalog=...):
         self.wire = wire
-        self.catalog = FakeCatalog()
+        self.catalog = (FakeCatalog(parameters) if catalog is ... else catalog)
         self.active_scene = active
 
 
@@ -437,3 +461,74 @@ def test_the_repr_reads_like_the_screen(structural):
     text = repr(live(structural).pedals[0])
     assert "EXP 1" in text
     assert "row 1 slot 2" in text
+
+
+def _with_params(wire, parameters, active=SceneLetter.A):
+    """A grid whose catalog actually describes the knob under the pedal."""
+    return grid_module.BlockGrid(FakePreset(wire, active, parameters=parameters))
+
+
+def test_a_sweep_end_at_the_off_detent_is_reported_as_off(structural):
+    """The bug this reader shipped with, and the reason it went unseen.
+
+    A lane VOLUME's law runs to -40 dB and its lowest NUMERIC step is -39.5:
+    wire 0.0 is an OFF detent, which is a word on the screen. Converting it
+    reports -40 dB - a value `to_normalized` REFUSES if you hand it back, so
+    the model was reporting something the library itself rejects. The fixture's
+    one assignment is a full 0.0..1.0 sweep, so this is the common case.
+    """
+    one = _with_params(structural, (LANE_VOLUME,)).pedals[0]
+    assert one.minimum_is_off, "wire 0.0 on this law is OFF, not -40 dB"
+    assert not one.maximum_is_off
+    assert float(one.maximum) == pytest.approx(12.0), "the top still converts"
+    assert not one.in_real_units, "an OFF end is not a value in the knob's units"
+    assert "Off to 12 dB" in repr(one)
+
+
+def test_a_knob_with_no_detent_converts_both_ends(structural):
+    """The other half: where every position IS a number, both ends convert and
+    the assignment reads wholly in the knob's own units."""
+    one = _with_params(structural, (PLAIN_KNOB,)).pedals[0]
+    assert not one.minimum_is_off and not one.maximum_is_off
+    assert one.in_real_units
+    assert one.parameter == "WAH"
+    assert (float(one.minimum), float(one.maximum)) == (0.0, 1.0)
+
+
+def test_the_converted_sweep_reads_in_the_knobs_units(structural):
+    """Above the detent the numbers are the screen's, not the wire's."""
+    model = structural.chains[0].models[1]
+    model.params[0].expression_min = 0.5
+    model.params[0].expression_max = 1.0
+    one = _with_params(structural, (LANE_VOLUME,)).pedals[0]
+    assert one.in_real_units
+    assert one.units == "dB"
+    assert float(one.minimum) == pytest.approx(-14.0)
+    assert "-14 dB to 12 dB" in repr(one)
+
+
+def test_a_converted_end_is_a_value_the_library_would_take_back(structural):
+    """The round trip that the -40 dB bug failed.
+
+    Anything this reader reports as a real value has to be one `to_normalized`
+    accepts - otherwise the model is handing out numbers its own writer
+    refuses.
+    """
+    model = structural.chains[0].models[1]
+    model.params[0].expression_min = 0.5
+    one = _with_params(structural, (LANE_VOLUME,)).pedals[0]
+    assert LANE_VOLUME.to_normalized(float(one.minimum)) == pytest.approx(0.5)
+    assert LANE_VOLUME.to_normalized(float(one.maximum)) == pytest.approx(1.0)
+
+
+def test_with_no_catalog_at_all_the_sweep_stays_the_wires(structural):
+    """The case the old test NAMED and did not construct.
+
+    It built a grid with a catalog that merely described nothing, which is a
+    different branch. This is a preset read with no unit attached.
+    """
+    grid = grid_module.BlockGrid(FakePreset(structural, catalog=None))
+    one = grid.pedals[0]
+    assert not one.in_real_units
+    assert one.parameter is None and one.units == ""
+    assert isinstance(one.minimum, protocol.Encoded)

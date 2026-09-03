@@ -146,20 +146,30 @@ class BlockGrid:
         """
         return tuple(
             PedalAssignment(row=row, slot=slot, parameter=name, pedal=pedal,
-                            minimum=minimum, maximum=maximum, units=units)
-            for row, slot, name, pedal, minimum, maximum, units
+                            minimum=minimum, maximum=maximum, units=units,
+                            minimum_is_off=min_off, maximum_is_off=max_off,
+                            in_real_units=real)
+            for (row, slot, name, pedal, minimum, maximum, units,
+                 min_off, max_off, real)
             in translate.expression_assignments(self.wire, self._catalog_or_none()))
 
     def _catalog_or_none(self):
-        """The unit's catalog, or ``None`` when there is no unit to ask.
+        """The unit's catalog, or ``None`` when there is none to ask.
 
         A preset can be read from a file with nothing attached, and a knob's
         scale comes from the device. Absent, the sweep ends stay the device's
         own 0..1 and say so, rather than being converted against a guess.
+
+        `AttributeError` ONLY, and narrowly on purpose. A blanket `except` here
+        turned every failure into "no unit attached, here are wire values" -
+        including a closed `Device`, which CLAUDE.md says must REFUSE a read
+        rather than answer, and a transport timeout. Both would have reached
+        the caller as a plausible 0..1 sweep instead of the refusal the model
+        layer exists to give, so they propagate.
         """
         try:
             return self.catalog
-        except Exception:
+        except AttributeError:
             return None
 
     @property

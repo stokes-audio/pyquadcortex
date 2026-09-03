@@ -55,30 +55,50 @@ class PedalAssignment:
     slot: int | None
     parameter: str | None
     pedal: int
-    minimum: float
-    maximum: float
+    #: ``None`` where the unit did not send that end - never seen, and carried
+    #: rather than defaulted, because a protobuf zero reported as the unit's
+    #: answer is the guess this layer exists to refuse.
+    minimum: float | None
+    maximum: float | None
     units: str
+    #: Whether that end sits at the knob's OFF detent rather than at a number.
+    #: The level family's wire 0.0 is a word on the screen, not -40 dB, so the
+    #: end keeps the device's own 0..1 and this says why. See
+    #: `translate.grid._sweep_end`.
+    minimum_is_off: bool = False
+    maximum_is_off: bool = False
+    #: Whether BOTH ends read in the knob's own units. Decided by
+    #: `translate.grid`, which is the layer that did or did not convert them -
+    #: reading it off the value's TYPE here would mean this module reaching
+    #: past the boundary for the protocol layer's raw-scale type.
+    in_real_units: bool = False
 
     @property
     def reversed(self) -> bool:
-        """Whether the HEEL is the loud end - ``minimum`` above ``maximum``."""
+        """Whether the HEEL is the loud end - ``minimum`` above ``maximum``.
+
+        ``False`` where either end is absent: with one end unknown there is no
+        ordering to report. An OFF end still compares, because it keeps the
+        wire value it was read from and OFF is always the quiet one.
+        """
+        if self.minimum is None or self.maximum is None:
+            return False
         return float(self.minimum) > float(self.maximum)
 
-    @property
-    def in_real_units(self) -> bool:
-        """Whether the sweep reads in the knob's own units.
-
-        False where no catalog was available to ask, which is a real state
-        rather than an error: a preset can be read with no unit attached.
-        """
-        return not isinstance(self.minimum, protocol.Encoded)
+    def _end(self, value, is_off: bool) -> str:
+        if is_off:
+            return "Off"
+        if value is None:
+            return "unsent"
+        unit = f" {self.units}" if self.units else ""
+        return f"{float(value):g}{unit}"
 
     def __repr__(self) -> str:
         where = f"row {self.row}" + (f" slot {self.slot}" if self.slot else "")
         what = self.parameter or "an undescribed parameter"
-        unit = f" {self.units}" if self.units else ""
         return (f"<EXP {self.pedal} on {what} ({where}): "
-                f"{float(self.minimum):g}{unit} to {float(self.maximum):g}{unit}>")
+                f"{self._end(self.minimum, self.minimum_is_off)} to "
+                f"{self._end(self.maximum, self.maximum_is_off)}>")
 
 
 @dataclass(frozen=True)
@@ -189,6 +209,11 @@ class DeviceBlock(Block):
 
         A pedal that BYPASSES this block is a different feature on a different
         field and is not here: it is not a pedal on one of its knobs.
+
+        Only a placed block has this. A lane, mixer or splitter assignment is
+        real and the reader covers it, but those are reached through
+        :attr:`BlockGrid.pedals` - there is no `.pedals` on `InputBlock`,
+        `OutputBlock`, `MixerBlock` or `SplitterBlock` yet.
         """
         return tuple(a for a in self._grid.pedals
                      if a.row == self.row and a.slot == self.slot)
