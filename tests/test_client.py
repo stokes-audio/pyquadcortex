@@ -499,6 +499,23 @@ def test_hello_performs_full_connect_handshake():
     )
 
 
+def test_hello_can_defer_only_the_initial_file_listing():
+    canned = {"ResetCommsBuffersMessage": pa.ResetCommsBuffersMessage()}
+    qc = client.QuadCortex(FakeTransport(canned))
+
+    qc._hello(settle=0, initial_file_listing=False)
+
+    subscription_names = {
+        type(message).__name__
+        for message in qc._t.sent
+        if getattr(message, "action", None) == pa.MessageAction.READ
+    }
+    assert "FileMessage" not in subscription_names
+    assert "RecallPresetMessage" in subscription_names
+    assert "GeneralSettingsMessage" in subscription_names
+    assert "ModelRepoMessage" in subscription_names
+
+
 # -- ergonomics: no magic numbers at the call site -----------------------------
 
 

@@ -232,7 +232,8 @@ class Device:
 
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
-            handshake_patience: float = 30.0) -> Device:
+            handshake_patience: float = 30.0,
+            initial_file_listing: bool = True) -> Device:
     """Open a Quad Cortex over USB and return it as a :class:`Device`.
 
     Finds and opens the device, starts the transport, and performs the connect
@@ -251,6 +252,9 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         handshake_patience: total seconds to keep re-attempting the handshake
             while the unit is openable but silent. See
             :func:`pyquadcortex.protocol.connect`, which this passes through to.
+        initial_file_listing: whether to enumerate the full folder tree during
+            the handshake. Set false to defer that traffic until a listing is
+            requested explicitly.
 
     The model subscribes to the unit's pushes BEFORE the handshake runs, which
     is the only moment early enough to hear the handshake's own burst of state -
@@ -274,5 +278,6 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
     state = DeviceState()
     client = protocol.connect(timeout=timeout, settle=settle,
                               handshake_patience=handshake_patience,
+                              initial_file_listing=initial_file_listing,
                               before_handshake=state.listen_on)
     return Device(client, _owns_client=True, _state=state)

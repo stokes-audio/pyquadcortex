@@ -351,16 +351,19 @@ def test_connect_hands_every_argument_to_the_protocol_layer(monkeypatch):
     openable-but-silent window.
     """
     seen = _spy_on_protocol_connect(monkeypatch)
-    pyquadcortex.connect(timeout=1.5, settle=0.25, handshake_patience=45.0)
+    pyquadcortex.connect(timeout=1.5, settle=0.25, handshake_patience=45.0,
+                         initial_file_listing=False)
     assert _without_the_hook(seen) == {
-        "timeout": 1.5, "settle": 0.25, "handshake_patience": 45.0}
+        "timeout": 1.5, "settle": 0.25, "handshake_patience": 45.0,
+        "initial_file_listing": False}
 
 
 def test_connect_passes_its_defaults_through_unchanged(monkeypatch):
     seen = _spy_on_protocol_connect(monkeypatch)
     pyquadcortex.connect()
     assert _without_the_hook(seen) == {
-        "timeout": 5.0, "settle": 2.0, "handshake_patience": 30.0}
+        "timeout": 5.0, "settle": 2.0, "handshake_patience": 30.0,
+        "initial_file_listing": True}
 
 
 def _spy_on_protocol_connect(monkeypatch):
