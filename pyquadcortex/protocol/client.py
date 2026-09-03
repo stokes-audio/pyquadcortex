@@ -1320,9 +1320,9 @@ class QuadCortex:
 
         The address fields are mandatory in practice. A bare ``Screenshot``
         READ is ignored, while a correctly addressed request replies with an
-        800 x 384 PNG and echoes the request id. Confirmed on hardware with two
-        different user-preset slots on CorOS 4.1.0; this reads only and does not
-        recall the requested preset or change the screen.
+        PNG (observed at 800 x 384) and echoes the request id. Confirmed on
+        hardware with two different user-preset slots on CorOS 4.1.0; this reads
+        only and does not recall the requested preset or change the screen.
         """
         if not isinstance(folder_name, str) or not folder_name:
             raise ValueError("folder_name must be a non-empty display name")

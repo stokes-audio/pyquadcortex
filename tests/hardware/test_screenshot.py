@@ -3,7 +3,7 @@
 import struct
 
 
-def test_current_preset_screenshot_is_a_complete_png(qc):
+def test_current_preset_screenshot_has_the_observed_png_dimensions(qc):
     """The request is addressed from live state and does not change that state."""
     before = qc.loaded_position()
     folders = qc.list_folders(seconds=20.0)
