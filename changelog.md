@@ -63,6 +63,35 @@ old `MINOR = 1` is replaced by `HARMONIC_MINOR = 1`, `MELODIC_MINOR = 2`, and
 The Overlord Synth `SCALE` parameter also changes widget type from `switch` to
 `comboBox`; callers must select the 4.1 enum rather than pass a boolean.
 
+### You can read back which expression pedals are assigned
+
+`set_expression` could always write an assignment. Nothing could read one back:
+
+```python
+protocol.expression_assignments(preset)   # the wire's rows, columns and 0..1
+device.preset.blocks.pedals               # the screen's rows, slots and dB
+```
+
+The model reads it the way the unit shows it - `<EXP 2 on VOLUME (row 1):
+Off to 3.2 dB>` - with rows and slots numbered from 1 and the sweep in the
+knob's own units. `block.pedals` narrows it to one cell.
+
+Three things it will not fake. `minimum` above `maximum` **reverses** the
+pedal, which is a setting, so the pair is reported rather than sorted and
+`reversed` is the question to ask. An end at the **OFF detent** prints `Off`
+rather than a number - on the level family wire `0.0` is a word on the screen,
+not -40 dB, and reporting the law's bottom there would hand you a value
+`set_param` refuses. And with no device attached there is no catalog to ask for
+a knob's scale, so the sweep stays the wire's 0..1 and `in_real_units` says so.
+
+Two wire facts are handled and worth knowing if you read the raw preset
+yourself. `params[].index` is proto3-optional, so it HAS presence and the
+device simply never sends it - absent on all 576 parameters across the
+committed fixtures - which makes the POSITION the index. And `expression: 0`
+means unassigned, is what `clear_expression` writes, and IS sent.
+
+Reading only. Assigning through the model is M2.
+
 ### `framing.decode_reports` returns a `Frame`, not a tuple
 
 ```python
