@@ -65,8 +65,13 @@ def _snapshot(qc, row=ROW):
 
 def _restore(qc, was, row=ROW):
     if was["expression"]:
+        # `LaneOutput(row)`, not `row=`: `set_expression` takes a TARGET and
+        # has no `row` keyword, so this raised TypeError on every restore that
+        # had an assignment to put back - surfacing as "COULD NOT RESTORE THE
+        # UNIT" rather than as the typo it is. Pre-dates the pedal-reader work;
+        # found while reviewing its neighbour.
         qc.set_expression(
-            row=row, param="VOLUME", pedal=was["expression"],
+            LaneOutput(row), "VOLUME", pedal=was["expression"],
             minimum=Encoded(was["minimum"]), maximum=Encoded(was["maximum"]))
     else:
         qc.clear_expression(LaneOutput(row), param="VOLUME")

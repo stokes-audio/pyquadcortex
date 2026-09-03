@@ -208,3 +208,97 @@ def scene_name(binary_preset, scene) -> str:
             f"has none - the unit stores eight")
     label = labels[index]
     return "" if not label.strip() else label
+
+
+def expression_assignments(binary_preset, catalog=None) -> tuple:
+    """Every pedal assignment in a preset, in the screen's own terms.
+
+    `protocol.expression_assignments` hands back wire rows, wire columns and
+    the sweep ends as the device's own 0..1. This is where all three become
+    what the unit shows: rows and slots numbered from 1, and the sweep in the
+    parameter's own units where the catalog describes it.
+
+    ``catalog`` is optional because a preset can be read with no device
+    attached, and the scale of a knob comes from the unit. Without one, or for
+    a parameter the catalog does not describe, ``minimum`` and ``maximum`` stay
+    the device's 0..1 and ``units`` is empty - said plainly rather than
+    guessed, which is the same answer `Parameter.floor` gives for an unmeasured
+    bound.
+
+    Returns tuples of ``(row, slot, name, pedal, minimum, maximum, units,
+    minimum_is_off, maximum_is_off, in_real_units)`` with ``slot`` and ``name``
+    ``None`` for a lane control, which has no slot and whose parameter name
+    needs a catalog the same way.
+    """
+    found = []
+    for one in protocol.expression_assignments(binary_preset):
+        target = one.target
+        row = row_from_wire(getattr(target, "row"))
+        slot = (slot_from_wire(target.column)
+                if hasattr(target, "column") else None)
+        name, units = None, ""
+        spec = _spec_for(target, one.param_index, catalog)
+        if spec is not None:
+            name, units = spec.name, spec.units
+        minimum, min_off = _sweep_end(one.minimum, spec)
+        maximum, max_off = _sweep_end(one.maximum, spec)
+        # Whether these read in the knob's own units is decided HERE, by the
+        # layer that did or did not convert them. The model asking
+        # `isinstance(value, protocol.Encoded)` would be reaching past this
+        # boundary for the protocol layer's raw-scale type to answer a question
+        # this function already knows the answer to.
+        real = (spec is not None and not min_off and not max_off
+                and minimum is not None and maximum is not None)
+        found.append((row, slot, name, one.pedal,
+                      minimum, maximum, units, min_off, max_off, real))
+    return tuple(found)
+
+
+def _sweep_end(wire, spec):
+    """One end of a sweep as the screen reads it, and whether it is OFF.
+
+    **Wire 0.0 is not the bottom of the dB scale on the level family - it is an
+    OFF detent**, and this is the whole reason this is a function rather than a
+    `to_real` call. A lane VOLUME's law runs to -40 dB while its lowest NUMERIC
+    step is -39.5, so converting wire 0.0 reports -40 dB: a value the screen
+    never shows and one `to_normalized` REFUSES if you hand it back. The first
+    version of this reader did exactly that, and the full sweep it got wrong is
+    the commonest assignment there is.
+
+    Below the measured floor the end stays the device's own 0..1 and is flagged
+    instead, because there is no number for it - which is what the screen says
+    by writing a word there.
+    """
+    if wire is None or spec is None:
+        # An end the unit did not send has nothing to convert and nothing to
+        # compare against a floor.
+        return wire, False
+    if spec.floor_wire and float(wire) < spec.floor_wire:
+        return wire, True
+    try:
+        return spec.to_real(float(wire)), False
+    except ValueError:
+        # `to_real` refuses a wire value outside 0..1, NaN included - four
+        # factory presets store NaN in `param_values`. One bad end degrades
+        # that end rather than taking down the whole reading.
+        return wire, False
+
+
+def _spec_for(target, param_index: int, catalog):
+    """The catalog parameter a sweep end belongs to, or ``None``.
+
+    ``None`` is a real answer and not a failure: with no device attached there
+    is no catalog, an index the catalog does not describe is a documented case,
+    and a bound nobody has measured makes the conversion refuse. In every one
+    of those the caller gets the device's own 0..1 and is told so, rather than
+    a number this layer invented.
+    """
+    if catalog is None:
+        return None
+    try:
+        spec = target.spec_at(param_index, lambda: catalog)
+    except (KeyError, ValueError):
+        return None
+    if spec is None or spec.minimum is None or spec.maximum is None:
+        return None
+    return spec

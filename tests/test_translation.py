@@ -832,6 +832,11 @@ PROTOCOL_CONVERSIONS = {
     # - the exact bug this boundary exists to stop, and harder to spot than a
     # bare `- 1` because it reads like construction rather than conversion.
     "blocks", "Block", "stomp_assignments", "StompAssignment",
+    # `expression_assignments` hands over a wire row, a wire column AND the
+    # sweep ends as the device's own 0..1 - all three of the things this
+    # boundary owns, in one return value. A model module calling it and
+    # reporting `minimum` to a player would be showing them the wire.
+    "expression_assignments", "ExpressionAssignment",
     "free_rows", "row_status", "RowStatus", "input_chain_rows",
     "splits", "Split",
     # `bypass_state` is here for what it HANDS OVER, not for what it takes:

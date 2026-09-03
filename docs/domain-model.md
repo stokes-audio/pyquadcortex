@@ -1288,7 +1288,7 @@ the n/a rows below where they intersect the API at all.
 | Footswitch (Stomp) assignment | `preset.stomps` | yes | multiple blocks per switch modeled |
 | Stomp label | `stomp.label` | yes | |
 | Stomp momentary | `stomp.momentary` | yes | RESTORED to the model. The manual never mentions it, but the unit's Assign footswitch modal has a Latching/Momentary toggle. Settable only when the switch drives ONE block - the device refuses multi-block switches silently, and the model should refuse them honestly |
-| Expression pedal assignment (MIN/MAX, reverse) | `param.expression` | yes | reversal by min>max, as documented |
+| Expression pedal assignment (MIN/MAX, reverse) | `grid.pedals`, `block.pedals` | yes | READ ONLY at M1, matching #13's scope. Reversal by min>max, as documented, and reported through `reversed` rather than sorted away. Hung off the GRID rather than `param.expression` because there is no `Parameter` object yet - #13 builds that and can delegate here. With no device attached the sweep stays the wire's 0..1 and `in_real_units` says so |
 | Expression bypass: three modes | `block.expression_bypass.mode` | yes | wire order differs from the manual's listing - absorbed |
 | Expression bypass: INVERT RANGE / SWITCH DELAY / LATCH EMULATION | `bypass.invert`, `bypass.switch_delay_ms`, `bypass.latch_emulation` | yes | `ExpressionBypassInfo{invert, delay_ms, latch_emulation}`; `delay_ms` is real milliseconds. SWITCH DELAY is greyed out in Switch mode, so it applies to Heel-Toe and Stop only, and LATCH EMULATION is greyed out in Heel-Toe mode - the two are mutually exclusive in the modes measured |
 | Expression pedal calibration | **omitted** | no | global setting; candidate `IOSettings`, unexplored |

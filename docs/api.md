@@ -54,7 +54,7 @@ already read and need no connection; calling them as methods raises
 | **Split and mix** | `set_param(Splitter(row), param, ...)`, `set_param(Mixer(row), param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(cell, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
 | **Parameter names** | `protocol.params` - a constant per parameter, so `params.LaneOutputParam.VOLUME` replaces `"VOLUME"`. It IS its wire index, so it skips the catalog fetch a name needs, and it carries the parameter's UNIT in its type so a type checker rejects the wrong one |
-| **Expression pedals** | `set_expression(target, param, pedal, minimum, maximum)` and `clear_expression(target, param)`, against ANY target - a block, the lane output or input, the mixer, the splitter |
+| **Expression pedals** | `set_expression(target, param, pedal, minimum, maximum)` and `clear_expression(target, param)`, against ANY target - a block, the lane output or input, the mixer, the splitter. `protocol.expression_assignments(preset)` reads back what is already assigned |
 | **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `protocol.midi_out(preset)` |
 | **Tempo MODE** | `tempo_mode()`, `set_tempo_mode(TempoMode.GLOBAL)` - global, and it picks which tempo block plays |
 | **Per-preset tempo** | `set_param(Tempo(), name, ...)`, `set_tempo_option(name, n)`, `protocol.tempo_params(preset)`, `set_tempo_led(on)`, `set_metronome_volume(v)` |
@@ -252,6 +252,48 @@ qc.set_param(Block(0, 1, comp), "THRESHOLD", Db(-20))
 
 That is worth preferring: parameter indices are positional, and not every index
 is a visible knob (a cab's are internal `ir selector` entries).
+
+### Reading back which pedals are assigned
+
+`set_expression` could always write an assignment; nothing read one back until
+`expression_assignments`:
+
+```python
+for one in protocol.expression_assignments(preset):
+    print(one.target.describe(), one.param_index, one.pedal,
+          one.minimum, one.maximum)
+```
+
+The sweep ends come back as `Encoded`, because they are positions of the
+parameter being swept and converting them needs the catalog. The model layer
+does that and reads in the unit's own words:
+
+```python
+for one in device.preset.blocks.pedals:
+    print(one)          # <EXP 2 on VOLUME (row 1): Off to 3.2 dB>
+```
+
+`grid.pedals` covers every container the reader walks - blocks, lanes, the
+mixer, the splitter. `block.pedals` narrows it to one placed block; the other
+block types have no `.pedals` of their own yet.
+
+Three things worth knowing.
+
+**`minimum` above `maximum` reverses the pedal** - that is how the manual
+describes inverting a parameter, so the pair is not ordered and `reversed` is
+the question to ask.
+
+**An end can be the OFF detent rather than a number.** On the level family wire
+`0.0` is a word on the screen, not the bottom of the dB scale: a lane VOLUME's
+law runs to -40 dB while its lowest numeric step is -39.5, and `set_param`
+refuses `Db(-40)` there. So a sweep starting at the heel reports
+`minimum_is_off` and prints `Off`, rather than a value the library would reject
+if you handed it back.
+
+**With no device attached there is no catalog**, so the sweep stays the wire's
+0..1. `in_real_units` is true only when both ends read in the knob's own units.
+
+Reading only, for now: assigning through the model is M2.
 
 ## Building a chain on an empty row
 

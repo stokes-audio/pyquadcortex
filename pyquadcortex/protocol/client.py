@@ -3986,6 +3986,143 @@ class StompAssignment(NamedTuple):
     footswitch: int
 
 
+class ExpressionAssignment(NamedTuple):
+    """One parameter with an expression pedal on it.
+
+    ``minimum`` and ``maximum`` are the two ends of the sweep as the WIRE
+    carries them, so they are :class:`~pyquadcortex.protocol.values.Encoded`.
+    They are positions of the parameter being swept, so converting them to that
+    parameter's own units needs the catalog - which is the model layer's job,
+    not this one's. See ``pyquadcortex.device`` for the same thing in dB.
+
+    ``minimum`` above ``maximum`` REVERSES the pedal, which is how the manual
+    describes inverting a parameter, so the pair is not ordered and must not be
+    sorted.
+
+    The field is ``param_index`` rather than ``index`` for two reasons, and the
+    second is the real one: it matches :func:`param_state`'s argument name, and
+    a `NamedTuple` field called ``index`` SHADOWS ``tuple.index``, so the
+    method would silently disappear from a public type.
+    """
+
+    target: "targets.ParamTarget"
+    param_index: int
+    pedal: int
+    #: ``None`` where the unit did not send that end. Never seen in any
+    #: committed fixture; carried because a protobuf default reported as the
+    #: unit's answer is exactly what `field_present` exists to prevent.
+    minimum: "values_module.Encoded | None"
+    maximum: "values_module.Encoded | None"
+
+    @property
+    def reversed(self) -> bool:
+        """Whether the heel is the LOUD end - `minimum` above `maximum`.
+
+        ``False`` where either end is absent: with one end unknown there is no
+        ordering to report, and guessing one would be inventing the setting.
+        """
+        if self.minimum is None or self.maximum is None:
+            return False
+        return float(self.minimum) > float(self.maximum)
+
+
+#: Which target addresses each row-keyed collection that can carry an
+#: assignment. `models` is NOT here: a block is keyed by column as well as row,
+#: so it is walked separately. `combined_splitter` is the splitter's, matching
+#: `targets.Splitter` - the device sends that one bare, with no key of its own.
+_EXPRESSION_LANE_COLLECTIONS = (
+    ("output_control", targets.LaneOutput),
+    ("input_control", targets.LaneInput),
+    ("mixer", targets.Mixer),
+    ("combined_splitter", targets.Splitter),
+)
+
+
+def _sweep_or_none(prm, field: str):
+    """One sweep end, or ``None`` where the unit did not send it."""
+    if not field_present(prm, field):
+        return None
+    return values_module.Encoded(getattr(prm, field))
+
+
+def _assignments_on(entry, target) -> list:
+    """The assigned parameters of one container entry."""
+    found = []
+    for position, prm in enumerate(entry.params):
+        # `expression: 0` is UNASSIGNED - it is what `clear_expression`
+        # writes - and the device SENDS it, present on all 576 parameters
+        # across the committed fixtures. So "never touched" and "pedal
+        # removed" are the same answer, which is the right one: both mean no
+        # pedal.
+        if not (field_present(prm, "expression") and prm.expression):
+            continue
+        found.append(ExpressionAssignment(
+            target=target,
+            # The POSITION, not `prm.index`. That field is proto3-optional
+            # so it HAS presence - and the device never sends it: absent on all
+            # 576 parameters across every committed fixture, measured with
+            # `field_present`. Reading it would report every assignment as
+            # being on the first knob. `param_state` addresses positionally for
+            # the same reason.
+            param_index=position,
+            pedal=prm.expression,
+            # Checked rather than read: both sit in synthetic oneofs, so an
+            # absent end is distinguishable from a real 0.0 - and reporting a
+            # protobuf default as the unit's answer is the guess CLAUDE.md
+            # forbids. Neither is absent anywhere in the fixtures; this is the
+            # rule holding, not a bug seen.
+            minimum=_sweep_or_none(prm, "expression_min"),
+            maximum=_sweep_or_none(prm, "expression_max"),
+        ))
+    return found
+
+
+def expression_assignments(p: preset.BinaryPreset) -> list:
+    """Every expression pedal assignment in ``p``, as :class:`ExpressionAssignment`.
+
+    The library could WRITE one of these before it could read one back, which
+    is the gap this closes: :meth:`QuadCortex.set_expression` is confirmed on
+    every container the unit has, and nothing reported what was already
+    assigned.
+
+    **The index is the parameter's POSITION in ``params[]``.** The wire's own
+    ``index`` field is proto3-optional, so it HAS presence - and the device
+    never sends it: absent on all 576 parameters across every committed
+    fixture. Reading it would put every assignment on the first knob.
+    :func:`param_state` addresses positionally for the same reason.
+
+    Bypass assignments are a different feature on a different field and are NOT
+    here - a pedal that BYPASSES a block is not a pedal on one of its knobs.
+
+    **Two places this does not look, neither established either way.**
+    ``Chain.splitter`` is NOT a second view of ``combined_splitter``: in every
+    committed fixture it is a different model, 10002 with three parameters
+    against 10004 with eight, and whether it can carry an assignment has never
+    been checked. :class:`~pyquadcortex.protocol.targets.Tempo` is a preset
+    target with no row, so it is outside ``chains`` entirely, and
+    :meth:`QuadCortex.set_expression` accepts any target. Both are gaps in
+    coverage rather than measured absences, and saying so beats calling this
+    list complete.
+    """
+    found = []
+    for i, chain in enumerate(p.chains):
+        row = chain.row if field_present(chain, "row") else i
+        for j, model in enumerate(chain.models):
+            # Every row reports its full eight slots, empty ones included, so
+            # skip an unoccupied cell the way `blocks()` does rather than
+            # reporting an assignment against a block that is not there.
+            if not (field_present(model, "hash") and model.hash):
+                continue
+            column = model.column if field_present(model, "column") else j
+            found += _assignments_on(
+                model, targets.Block(row=row, column=column,
+                                     model_id=model.hash))
+        for collection, address in _EXPRESSION_LANE_COLLECTIONS:
+            for entry in getattr(chain, collection):
+                found += _assignments_on(entry, address(row=row))
+    return found
+
+
 def stomp_assignments(p: preset.BinaryPreset) -> list:
     """Which blocks are bound to which footswitches, as :class:`StompAssignment`.
 

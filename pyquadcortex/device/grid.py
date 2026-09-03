@@ -19,6 +19,7 @@ import typing
 
 from pyquadcortex.device import translate
 from pyquadcortex.device.blocks import (DeviceBlock, InputBlock, MixerBlock,
+                                        PedalAssignment,
                                         OutputBlock, SplitterBlock)
 from pyquadcortex.device.errors import InactiveSceneError
 
@@ -128,6 +129,48 @@ class BlockGrid:
         return len(self._cells())
 
     # -- writing ---------------------------------------------------------------
+
+    @property
+    def pedals(self) -> tuple:
+        """Every expression pedal assignment in this preset, in the unit's words.
+
+        Read here rather than per block because that is the question a player
+        asks - "what are my pedals doing" - and because walking 32 cells to
+        find the one or two that carry an assignment is the caller doing the
+        library's work. A block filters this to its own; see
+        :attr:`DeviceBlock.pedals`.
+
+        Not scene-varying: assigning a pedal to a parameter EXCLUDES that
+        parameter from scene data, which is the unit's own rule, so there is
+        no per-scene answer to give.
+        """
+        return tuple(
+            PedalAssignment(row=row, slot=slot, parameter=name, pedal=pedal,
+                            minimum=minimum, maximum=maximum, units=units,
+                            minimum_is_off=min_off, maximum_is_off=max_off,
+                            in_real_units=real)
+            for (row, slot, name, pedal, minimum, maximum, units,
+                 min_off, max_off, real)
+            in translate.expression_assignments(self.wire, self._catalog_or_none()))
+
+    def _catalog_or_none(self):
+        """The unit's catalog, or ``None`` when there is none to ask.
+
+        A preset can be read from a file with nothing attached, and a knob's
+        scale comes from the device. Absent, the sweep ends stay the device's
+        own 0..1 and say so, rather than being converted against a guess.
+
+        `AttributeError` ONLY, and narrowly on purpose. A blanket `except` here
+        turned every failure into "no unit attached, here are wire values" -
+        including a closed `Device`, which CLAUDE.md says must REFUSE a read
+        rather than answer, and a transport timeout. Both would have reached
+        the caller as a plausible 0..1 sweep instead of the refusal the model
+        layer exists to give, so they propagate.
+        """
+        try:
+            return self.catalog
+        except AttributeError:
+            return None
 
     @property
     def writable(self) -> bool:
