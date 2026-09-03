@@ -20,6 +20,45 @@ correction.
 
 ## Unreleased
 
+### Refresh the generated CorOS 4.1.0 model catalog
+
+The generated API now covers 420 factory models and 148 fixed option enums,
+including the delay, pitch, morph, reverb, compressor, and EQ models exposed by
+the CorOS 4.1.0 catalog.
+
+**Breaking:** catalog labels changed public generated names. The migration map
+for removed names is:
+
+| Before | After |
+|---|---|
+| `BassOverdrive.MICROTUBES_B3K` | `BassOverdrive.DOUGLAS_MT_3K` |
+| `BassOverdrive.MICROTUBES_VMT` | `BassOverdrive.DOUGLAS_VINTAGE_MT` |
+| `CabsimBassM.N210C_DARKGLASS_M` | `CabsimBassM.N210_DOUGLAS_CERAMIC_M` |
+| `CabsimBassM.N212_DARKGLASS_NEO_M` | `CabsimBassM.N212_DOUGLAS_NEODYMIUM_M` |
+| `CabsimBassST.N210C_DARKGLASS_ST` | `CabsimBassST.N210_DOUGLAS_CERAMIC_ST` |
+| `CabsimBassST.N212_DARKGLASS_NEO_ST` | `CabsimBassST.N212_DOUGLAS_NEODYMIUM_ST` |
+| `Synth.MONO_SYNTH` | `Synth.OVERLORD_SYNTH` |
+| `MicrotubesB3k.*` parameters | `DouglasMt3k.*` (same member names) |
+| `MicrotubesVmt.*` parameters | `DouglasVintageMt.*` (same member names) |
+| `MonoSynth.*` parameters | `OverlordSynth.*` (same member names) |
+| `Minivoicer.V1_INTER`, `V2_INTER` | `Minivoicer.V1_INTERVAL`, `V2_INTERVAL` |
+| `CoryWongDelayYYMode` | `Mode2` |
+| `Input` | `MishaRhythmInput` |
+| `Legendary87MRatio` | `Ratio5` |
+| `MinivoicerRoot` | `Key` |
+| `MonoSynthMidiCh` | `MultivoicerMidiCh` |
+| `MonoSynthRoot` | `Root` |
+| `Multiplier` | `PhaseLockedLoopMultiplier` |
+| `OnOff` | `Freeze` |
+| `Scale` | `OverlordSynthScale` |
+| `Speed` | `RotaryAttack` |
+| `V1Inter` | `MinivoicerV1Interval` |
+
+The first ten option-enum replacements retain the old members and values.
+`OverlordSynthScale` expands the former `Scale`: `MAJOR` remains 0, while the
+old `MINOR = 1` is replaced by `HARMONIC_MINOR = 1`, `MELODIC_MINOR = 2`, and
+`NATURAL_MINOR = 3`.
+
 ### `framing.decode_reports` returns a `Frame`, not a tuple
 
 ```python

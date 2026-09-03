@@ -57,10 +57,10 @@ def test_constants_are_usable_where_a_model_is_expected():
 
 
 def test_count_is_the_full_factory_set():
-    # 412 factory models on CorOS as captured; a drift here means the generator
+    # 420 factory models on CorOS 4.1.0; a drift here means the generator
     # was re-run against a device with different content - re-check before
     # updating this number.
-    assert len(models.ALL) == 412
+    assert len(models.ALL) == 420
 
 
 def test_unknown_attribute_raises():

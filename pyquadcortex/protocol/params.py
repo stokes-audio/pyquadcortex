@@ -1618,8 +1618,8 @@ class WattBassModBright(ParamSet):
     OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
 
 
-class MicrotubesB3k(ParamSet):
-    """Microtubes® B3K (Bass Overdrive)."""
+class DouglasMt3k(ParamSet):
+    """Douglas MT 3K (Bass Overdrive)."""
 
     DRIVE: Param[NoUnit] = Param(0, 'DRIVE')    # float
     GROWL: Param[NoUnit] = Param(1, 'GROWL')    # switch
@@ -1648,8 +1648,8 @@ class SovietFuzz(ParamSet):
     VOLUME: Param[NoUnit] = Param(2, 'VOLUME')    # float
 
 
-class MicrotubesVmt(ParamSet):
-    """Microtubes® VMT (Bass Overdrive)."""
+class DouglasVintageMt(ParamSet):
+    """Douglas Vintage MT (Bass Overdrive)."""
 
     DRIVE: Param[NoUnit] = Param(0, 'DRIVE')    # float
     ERA: Param[NoUnit] = Param(1, 'ERA')    # float
@@ -1777,6 +1777,21 @@ class PluginGraphic9(ParamSet):
     LPF: Param[HertzUnit] = Param(10, 'LPF')    # float Hz
     Q: Param[NoUnit] = Param(11, 'Q')    # float
     OUTPUT: Param[DbUnit] = Param(12, 'OUTPUT')    # float dB
+
+
+class PluginParametric4(ParamSet):
+    """Plugin Parametric-4 (Equalizer)."""
+
+    HPF: Param[HertzUnit] = Param(0, 'HPF')    # float Hz
+    LO_GAIN: Param[DbUnit] = Param(1, 'LO_GAIN')    # float dB
+    LO_FREQ: Param[HertzUnit] = Param(2, 'LO_FREQ')    # float Hz
+    LO_MID_GAIN: Param[DbUnit] = Param(3, 'LO_MID_GAIN')    # float dB
+    LO_MID_FREQ: Param[HertzUnit] = Param(4, 'LO_MID_FREQ')    # float Hz
+    HI_MID_GAIN: Param[DbUnit] = Param(5, 'HI_MID_GAIN')    # float dB
+    HI_MID_FREQ: Param[HertzUnit] = Param(6, 'HI_MID_FREQ')    # float Hz
+    HI_GAIN: Param[DbUnit] = Param(7, 'HI_GAIN')    # float dB
+    HI_FREQ: Param[HertzUnit] = Param(8, 'HI_FREQ')    # float Hz
+    LPF: Param[HertzUnit] = Param(9, 'LPF')    # float Hz
 
 
 class Legendary87M(ParamSet):
@@ -1944,6 +1959,18 @@ class VcaCompSC(ParamSet):
     MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
     SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
     GAIN_REDUCTION: Param[DbUnit] = Param(7, 'GAIN_REDUCTION')    # grMeter dB
+
+
+class DouglasShiningCompM(ParamSet):
+    """Douglas Shining Comp (M) (Compressor)."""
+
+    INPUT: Param[DbUnit] = Param(0, 'INPUT')    # float dB
+    RATIO: Param[NoUnit] = Param(1, 'RATIO')    # rotarySwitch
+    ATTACK: Param[MillisecondsUnit] = Param(2, 'ATTACK')    # float ms
+    RELEASE: Param[SecondsUnit] = Param(3, 'RELEASE')    # float s
+    MAKEUP: Param[DbUnit] = Param(4, 'MAKEUP')    # float dB
+    MIX: Param[PercentUnit] = Param(5, 'MIX')    # float %
+    GAIN_REDUCTION: Param[DbUnit] = Param(6, 'GAIN_REDUCTION')    # grMeter dB
 
 
 class AnalogDelayM(ParamSet):
@@ -2294,6 +2321,63 @@ class CircularDelay(ParamSet):
     MOD_DEPTH: Param[PercentUnit] = Param(10, 'MOD_DEPTH')    # float %
     VINTAGE_MODE: Param[NoUnit] = Param(11, 'VINTAGE_MODE')    # switch
     TRAILS: Param[NoUnit] = Param(12, 'TRAILS')    # switch
+
+
+class CrystalDelay(ParamSet):
+    """Crystal Delay (Delay)."""
+
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SYNC: Param[NoUnit] = Param(1, 'SYNC')    # switch
+    DELAY_TIME_L: Param[MillisecondsUnit] = Param(2, 'DELAY_TIME_L')    # float ms
+    DELAY_TIME_R: Param[MillisecondsUnit] = Param(3, 'DELAY_TIME_R')    # float ms
+    SYNC_NOTE_L: Param[NoUnit] = Param(4, 'SYNC_NOTE_L')    # rotarySwitch
+    SYNC_NOTE_R: Param[NoUnit] = Param(5, 'SYNC_NOTE_R')    # rotarySwitch
+    CRYSTAL_1_PAN: Param[NoUnit] = Param(6, 'CRYSTAL_1_PAN')    # float
+    CRYSTAL_2_PAN: Param[NoUnit] = Param(7, 'CRYSTAL_2_PAN')    # float
+    CRYSTAL_1_GAIN: Param[DbUnit] = Param(8, 'CRYSTAL_1_GAIN')    # float dB
+    CRYSTAL_2_GAIN: Param[DbUnit] = Param(9, 'CRYSTAL_2_GAIN')    # float dB
+    MODE: Param[NoUnit] = Param(10, 'MODE')    # switch
+    FEEDBACK: Param[PercentUnit] = Param(11, 'FEEDBACK')    # float %
+    LOW_PASS: Param[HertzUnit] = Param(12, 'LOW_PASS')    # float Hz
+    HIGH_PASS: Param[HertzUnit] = Param(13, 'HIGH_PASS')    # float Hz
+    TRAILS: Param[NoUnit] = Param(14, 'TRAILS')    # switch
+
+
+class ArpeggioDelay(ParamSet):
+    """Arpeggio Delay (Delay)."""
+
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SYNC: Param[NoUnit] = Param(1, 'SYNC')    # switch
+    KEY: Param[NoUnit] = Param(2, 'KEY')    # comboBox
+    SCALE: Param[NoUnit] = Param(3, 'SCALE')    # comboBox
+    GLISSANDO: Param[MillisecondsUnit] = Param(4, 'GLISSANDO')    # float ms
+    TAP_1_ACTIVE: Param[NoUnit] = Param(5, 'TAP_1_ACTIVE')    # switch
+    TAP_1_SEMITONES: Param[NoUnit] = Param(6, 'TAP_1_SEMITONES')    # rotarySwitch
+    TAP_1_INTERVAL: Param[NoUnit] = Param(7, 'TAP_1_INTERVAL')    # rotarySwitch
+    TAP_1_DELAY_TIME: Param[MillisecondsUnit] = Param(8, 'TAP_1_DELAY_TIME')    # float ms
+    TAP_1_SYNC_NOTE: Param[NoUnit] = Param(9, 'TAP_1_SYNC_NOTE')    # rotarySwitch
+    TAP_1_LEVEL: Param[DbUnit] = Param(10, 'TAP_1_LEVEL')    # float dB
+    TAP_1_PAN: Param[NoUnit] = Param(11, 'TAP_1_PAN')    # float
+    TAP_2_ACTIVE: Param[NoUnit] = Param(12, 'TAP_2_ACTIVE')    # switch
+    TAP_2_SEMITONES: Param[NoUnit] = Param(13, 'TAP_2_SEMITONES')    # rotarySwitch
+    TAP_2_INTERVAL: Param[NoUnit] = Param(14, 'TAP_2_INTERVAL')    # rotarySwitch
+    TAP_2_DELAY_TIME: Param[MillisecondsUnit] = Param(15, 'TAP_2_DELAY_TIME')    # float ms
+    TAP_2_SYNC_NOTE: Param[NoUnit] = Param(16, 'TAP_2_SYNC_NOTE')    # rotarySwitch
+    TAP_2_LEVEL: Param[DbUnit] = Param(17, 'TAP_2_LEVEL')    # float dB
+    TAP_2_PAN: Param[NoUnit] = Param(18, 'TAP_2_PAN')    # float
+    TAP_3_ACTIVE: Param[NoUnit] = Param(19, 'TAP_3_ACTIVE')    # switch
+    TAP_3_SEMITONES: Param[NoUnit] = Param(20, 'TAP_3_SEMITONES')    # rotarySwitch
+    TAP_3_INTERVAL: Param[NoUnit] = Param(21, 'TAP_3_INTERVAL')    # rotarySwitch
+    TAP_3_DELAY_TIME: Param[MillisecondsUnit] = Param(22, 'TAP_3_DELAY_TIME')    # float ms
+    TAP_3_SYNC_NOTE: Param[NoUnit] = Param(23, 'TAP_3_SYNC_NOTE')    # rotarySwitch
+    TAP_3_LEVEL: Param[DbUnit] = Param(24, 'TAP_3_LEVEL')    # float dB
+    TAP_3_PAN: Param[NoUnit] = Param(25, 'TAP_3_PAN')    # float
+    FEEDBACK: Param[PercentUnit] = Param(26, 'FEEDBACK')    # float %
+    FEEDBACK_DELAY_TIME: Param[MillisecondsUnit] = Param(27, 'FEEDBACK_DELAY_TIME')    # float ms
+    FEEDBACK_SYNC_NOTE: Param[NoUnit] = Param(28, 'FEEDBACK_SYNC_NOTE')    # rotarySwitch
+    HIGH_PASS: Param[HertzUnit] = Param(29, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(30, 'LOW_PASS')    # float Hz
+    TRAILS: Param[NoUnit] = Param(31, 'TRAILS')    # switch
 
 
 class VintageChorus(ParamSet):
@@ -2918,6 +3002,21 @@ class BlossomSt(ParamSet):
     TRAILS: Param[NoUnit] = Param(13, 'TRAILS')    # switch
 
 
+class VintageDigital(ParamSet):
+    """Vintage Digital (Reverb)."""
+
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    SIZE: Param[PercentUnit] = Param(1, 'SIZE')    # float %
+    PRE_DELAY: Param[MillisecondsUnit] = Param(2, 'PRE_DELAY')    # float ms
+    DECAY: Param[PercentUnit] = Param(3, 'DECAY')    # float %
+    HF_DAMPING: Param[PercentUnit] = Param(4, 'HF_DAMPING')    # float %
+    MODULATION: Param[PercentUnit] = Param(5, 'MODULATION')    # float %
+    HIGH_PASS: Param[HertzUnit] = Param(6, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(7, 'LOW_PASS')    # float Hz
+    FREEZE: Param[NoUnit] = Param(8, 'FREEZE')    # toggleButton
+    TRAILS: Param[NoUnit] = Param(9, 'TRAILS')    # switch
+
+
 class BubbaWah(ParamSet):
     """Bubba Wah (Wah)."""
 
@@ -3090,6 +3189,7 @@ class PluginBlend(ParamSet):
     BLEND: Param[PercentUnit] = Param(4, 'BLEND')    # float %
     OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
     SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
+    BLEND_LEVEL: Param[DbUnit] = Param(7, 'BLEND_LEVEL')    # float dB
 
 
 class PluginGate(ParamSet):
@@ -3106,6 +3206,7 @@ class Doubler(ParamSet):
     DRY_LEVEL: Param[DbUnit] = Param(2, 'DRY_LEVEL')    # float dB
     FX_LEVEL: Param[DbUnit] = Param(3, 'FX_LEVEL')    # float dB
     TRIGGER: Param[NoUnit] = Param(4, 'TRIGGER')    # comboBox
+    INPUT: Param[NoUnit] = Param(5, 'INPUT')    # switch
 
 
 class PluginDoubler(ParamSet):
@@ -3116,6 +3217,7 @@ class PluginDoubler(ParamSet):
     DRY_LEVEL: Param[DbUnit] = Param(2, 'DRY_LEVEL')    # float dB
     FX_LEVEL: Param[DbUnit] = Param(3, 'FX_LEVEL')    # float dB
     TRIGGER: Param[NoUnit] = Param(4, 'TRIGGER')    # comboBox
+    INPUT: Param[NoUnit] = Param(5, 'INPUT')    # switch
 
 
 class TransparentBlend(ParamSet):
@@ -3128,6 +3230,7 @@ class TransparentBlend(ParamSet):
     BLEND: Param[PercentUnit] = Param(4, 'BLEND')    # float %
     OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
     SOURCE: Param[NoUnit] = Param(6, 'SOURCE')    # comboBox
+    BLEND_LEVEL: Param[DbUnit] = Param(7, 'BLEND_LEVEL')    # float dB
 
 
 class PhaseDoctor(ParamSet):
@@ -3182,11 +3285,11 @@ class Minivoicer(ParamSet):
     QUANTIZE: Param[NoUnit] = Param(4, 'QUANTIZE')    # switch
     V1_ACTIVE: Param[NoUnit] = Param(5, 'V1_ACTIVE')    # switch
     V1_LEVEL: Param[DbUnit] = Param(6, 'V1_LEVEL')    # float dB
-    V1_INTER: Param[NoUnit] = Param(7, 'V1_INTER')    # rotarySwitch
+    V1_INTERVAL: Param[NoUnit] = Param(7, 'V1_INTERVAL')    # rotarySwitch
     V1_PAN: Param[NoUnit] = Param(8, 'V1_PAN')    # float
     V2_ACTIVE: Param[NoUnit] = Param(9, 'V2_ACTIVE')    # switch
     V2_LEVEL: Param[DbUnit] = Param(10, 'V2_LEVEL')    # float dB
-    V2_INTER: Param[NoUnit] = Param(11, 'V2_INTER')    # rotarySwitch
+    V2_INTERVAL: Param[NoUnit] = Param(11, 'V2_INTERVAL')    # rotarySwitch
     V2_PAN: Param[NoUnit] = Param(12, 'V2_PAN')    # float
     HIGH_PASS: Param[HertzUnit] = Param(13, 'HIGH_PASS')    # float Hz
     LOW_PASS: Param[HertzUnit] = Param(14, 'LOW_PASS')    # float Hz
@@ -3209,6 +3312,67 @@ class Transpose(ParamSet):
     PITCH_COARSE: Param[SemitonesUnit] = Param(1, 'PITCH_COARSE')    # float Semitones
     PITCH_FINE: Param[CentsUnit] = Param(2, 'PITCH_FINE')    # float Cents
     SEMITONES: Param[SemitonesUnit] = Param(3, 'SEMITONES')    # float Semitones
+
+
+class Multivoicer(ParamSet):
+    """Multivoicer (Pitch)."""
+
+    DI_LEVEL: Param[DbUnit] = Param(0, 'DI_LEVEL')    # float dB
+    KEY: Param[NoUnit] = Param(1, 'KEY')    # comboBox
+    SCALE: Param[NoUnit] = Param(2, 'SCALE')    # comboBox
+    TUNING: Param[HertzUnit] = Param(3, 'TUNING')    # float Hz
+    QUANTIZE: Param[NoUnit] = Param(4, 'QUANTIZE')    # switch
+    V1_ACTIVE: Param[NoUnit] = Param(5, 'V1_ACTIVE')    # switch
+    V1_LEVEL: Param[DbUnit] = Param(6, 'V1_LEVEL')    # float dB
+    V1_INTERVAL: Param[NoUnit] = Param(7, 'V1_INTERVAL')    # rotarySwitch
+    V1_DETUNE: Param[CentsUnit] = Param(8, 'V1_DETUNE')    # float cents
+    V1_DELAY: Param[MillisecondsUnit] = Param(9, 'V1_DELAY')    # float ms
+    V1_PAN: Param[NoUnit] = Param(10, 'V1_PAN')    # float
+    V2_ACTIVE: Param[NoUnit] = Param(11, 'V2_ACTIVE')    # switch
+    V2_LEVEL: Param[DbUnit] = Param(12, 'V2_LEVEL')    # float dB
+    V2_INTERVAL: Param[NoUnit] = Param(13, 'V2_INTERVAL')    # rotarySwitch
+    V2_DETUNE: Param[CentsUnit] = Param(14, 'V2_DETUNE')    # float cents
+    V2_DELAY: Param[MillisecondsUnit] = Param(15, 'V2_DELAY')    # float ms
+    V2_PAN: Param[NoUnit] = Param(16, 'V2_PAN')    # float
+    V3_ACTIVE: Param[NoUnit] = Param(17, 'V3_ACTIVE')    # switch
+    V3_LEVEL: Param[DbUnit] = Param(18, 'V3_LEVEL')    # float dB
+    V3_INTERVAL: Param[NoUnit] = Param(19, 'V3_INTERVAL')    # rotarySwitch
+    V3_DETUNE: Param[CentsUnit] = Param(20, 'V3_DETUNE')    # float cents
+    V3_DELAY: Param[MillisecondsUnit] = Param(21, 'V3_DELAY')    # float ms
+    V3_PAN: Param[NoUnit] = Param(22, 'V3_PAN')    # float
+    V4_ACTIVE: Param[NoUnit] = Param(23, 'V4_ACTIVE')    # switch
+    V4_LEVEL: Param[DbUnit] = Param(24, 'V4_LEVEL')    # float dB
+    V4_INTERVAL: Param[NoUnit] = Param(25, 'V4_INTERVAL')    # rotarySwitch
+    V4_DETUNE: Param[CentsUnit] = Param(26, 'V4_DETUNE')    # float cents
+    V4_DELAY: Param[MillisecondsUnit] = Param(27, 'V4_DELAY')    # float ms
+    V4_PAN: Param[NoUnit] = Param(28, 'V4_PAN')    # float
+    HIGH_PASS: Param[HertzUnit] = Param(29, 'HIGH_PASS')    # float Hz
+    LOW_PASS: Param[HertzUnit] = Param(30, 'LOW_PASS')    # float Hz
+    TONE: Param[PercentUnit] = Param(31, 'TONE')    # float %
+    GLISSANDO: Param[MillisecondsUnit] = Param(32, 'GLISSANDO')    # float ms
+    UNISON: Param[PercentUnit] = Param(33, 'UNISON')    # float %
+    WIDTH: Param[PercentUnit] = Param(34, 'WIDTH')    # float %
+    OUTPUT: Param[DbUnit] = Param(35, 'OUTPUT')    # float dB
+    V1_NOTE: Param[NoUnit] = Param(36, 'V1_NOTE')    # float
+    V2_NOTE: Param[NoUnit] = Param(37, 'V2_NOTE')    # float
+    V3_NOTE: Param[NoUnit] = Param(38, 'V3_NOTE')    # float
+    V4_NOTE: Param[NoUnit] = Param(39, 'V4_NOTE')    # float
+    V1_SEMITONES: Param[NoUnit] = Param(40, 'V1_SEMITONES')    # float
+    V2_SEMITONES: Param[NoUnit] = Param(41, 'V2_SEMITONES')    # float
+    V3_SEMITONES: Param[NoUnit] = Param(42, 'V3_SEMITONES')    # float
+    V4_SEMITONES: Param[NoUnit] = Param(43, 'V4_SEMITONES')    # float
+    LEVEL: Param[DbUnit] = Param(44, 'LEVEL')    # float dB
+    PAN: Param[PercentUnit] = Param(45, 'PAN')    # float %
+    DETUNE: Param[PercentUnit] = Param(46, 'DETUNE')    # float %
+    DELAY: Param[PercentUnit] = Param(47, 'DELAY')    # float %
+    VOICE_VIEW: Param[NoUnit] = Param(48, 'VOICE_VIEW')    # switch
+    VOICING: Param[NoUnit] = Param(49, 'VOICING')    # comboBox
+    MIDI_CH: Param[NoUnit] = Param(50, 'MIDI_CH')    # comboBox
+    SOURCE: Param[NoUnit] = Param(51, 'SOURCE')    # comboBox
+    V1_NOTE_DISPLAY: Param[NoUnit] = Param(52, 'V1_NOTE_DISPLAY')    # float
+    V2_NOTE_DISPLAY: Param[NoUnit] = Param(53, 'V2_NOTE_DISPLAY')    # float
+    V3_NOTE_DISPLAY: Param[NoUnit] = Param(54, 'V3_NOTE_DISPLAY')    # float
+    V4_NOTE_DISPLAY: Param[NoUnit] = Param(55, 'V4_NOTE_DISPLAY')    # float
 
 
 class PitchCorrection(ParamSet):
@@ -3371,6 +3535,35 @@ class BitCrusherEngineM(ParamSet):
     BIT_DEPTH: Param[NoUnit] = Param(7, 'BIT_DEPTH')    # rotarySwitch bits
     SHAPE: Param[PercentUnit] = Param(8, 'SHAPE')    # float %
     TONE: Param[HertzUnit] = Param(9, 'TONE')    # float Hz
+
+
+class Glitch(ParamSet):
+    """Glitch (Morph)."""
+
+    MODE: Param[NoUnit] = Param(0, 'MODE')    # comboBox
+    SYNC_SOURCE: Param[NoUnit] = Param(1, 'SYNC_SOURCE')    # switch
+    BLOCK_TEMPO: Param[BpmUnit] = Param(2, 'BLOCK_TEMPO')    # float BPM
+    MIX: Param[PercentUnit] = Param(3, 'MIX')    # float %
+    FILTER: Param[PercentUnit] = Param(4, 'FILTER')    # float %
+    LOOP_LENGTH: Param[NoUnit] = Param(5, 'LOOP_LENGTH')    # rotarySwitch
+    READ_POINT: Param[NoUnit] = Param(6, 'READ_POINT')    # rotarySwitch
+    GRAIN_LENGTH: Param[NoUnit] = Param(7, 'GRAIN_LENGTH')    # rotarySwitch
+    G_OCCURRENCE: Param[NoUnit] = Param(8, 'G_OCCURRENCE')    # rotarySwitch
+    PITCH_AMT: Param[PercentUnit] = Param(9, 'PITCH_AMT')    # float %
+    PITCH_PATTERN: Param[NoUnit] = Param(10, 'PITCH_PATTERN')    # rotarySwitch
+    CHAOS: Param[PercentUnit] = Param(11, 'CHAOS')    # float %
+    TRAILS: Param[NoUnit] = Param(12, 'TRAILS')    # switch
+
+
+class RingModulator(ParamSet):
+    """Ring Modulator (Morph)."""
+
+    MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
+    PITCH_TRACKER: Param[NoUnit] = Param(1, 'PITCH_TRACKER')    # switch
+    FREQUENCY: Param[HertzUnit] = Param(2, 'FREQUENCY')    # float Hz
+    MULTIPLIER: Param[NoUnit] = Param(3, 'MULTIPLIER')    # rotarySwitch
+    OFFSET: Param[PercentUnit] = Param(4, 'OFFSET')    # float %
+    OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
 class LooperX(ParamSet):
@@ -3633,8 +3826,8 @@ class DualStLite(ParamSet):
     IR_2_NAME: Param[NoUnit] = Param(23, 'IR_2_NAME')    # string
 
 
-class MonoSynth(ParamSet):
-    """Mono Synth (Synth)."""
+class OverlordSynth(ParamSet):
+    """Overlord Synth (Synth)."""
 
     MIX: Param[PercentUnit] = Param(0, 'MIX')    # float %
     SENSITIVITY: Param[PercentUnit] = Param(1, 'SENSITIVITY')    # float %
@@ -3642,7 +3835,7 @@ class MonoSynth(ParamSet):
     TUNING: Param[HertzUnit] = Param(3, 'TUNING')    # float Hz
     QUANTIZE: Param[NoUnit] = Param(4, 'QUANTIZE')    # switch
     ROOT: Param[NoUnit] = Param(5, 'ROOT')    # comboBox
-    SCALE: Param[NoUnit] = Param(6, 'SCALE')    # switch
+    SCALE: Param[NoUnit] = Param(6, 'SCALE')    # comboBox
     SYNTH_ACTIVE: Param[NoUnit] = Param(7, 'SYNTH_ACTIVE')    # switch
     SYNTH_LEVEL: Param[DbUnit] = Param(8, 'SYNTH_LEVEL')    # float dB
     OSC1_ACTIVE: Param[NoUnit] = Param(9, 'OSC1_ACTIVE')    # switch
@@ -4056,16 +4249,17 @@ BY_MODEL = {
     2020: AmpedFlipTop6666,
     2021: WattBassModNormal,
     2022: WattBassModBright,
-    3000: MicrotubesB3k,
+    3000: DouglasMt3k,
     3001: Bddi,
     3004: SovietFuzz,
-    3006: MicrotubesVmt,
+    3006: DouglasVintageMt,
     3007: ExoticBassZBoost,
     4000: Parametric8,
     4001: Parametric3,
     4003: LowHighCut,
     4005: Graphic9,
     4006: PluginGraphic9,
+    4008: PluginParametric4,
     5001: Legendary87M,
     5004: SolidStateCompM,
     5005: VcaCompM,
@@ -4080,6 +4274,7 @@ BY_MODEL = {
     5019: Legendary87SC,
     5020: OptoCompSC,
     5021: VcaCompSC,
+    5025: DouglasShiningCompM,
     6001: AnalogDelayM,
     6002: SimplePingPongDelay,
     6003: SimpleDelaySt,
@@ -4095,6 +4290,8 @@ BY_MODEL = {
     6013: ReverseDelayM,
     6014: DualReverseDelay,
     6015: CircularDelay,
+    6026: CrystalDelay,
+    6031: ArpeggioDelay,
     7000: VintageChorus,
     7001: DualChorus,
     7002: Vibrato,
@@ -4135,6 +4332,7 @@ BY_MODEL = {
     8028: NordicConcertHallSt,
     8029: StudioPlate70St,
     8030: BlossomSt,
+    8039: VintageDigital,
     9010: BubbaWah,
     9012: BassWah,
     9013: CryingWah,
@@ -4168,6 +4366,7 @@ BY_MODEL = {
     18006: Wham,
     18007: Minivoicer,
     18010: Transpose,
+    18012: Multivoicer,
     18013: PitchCorrection,
     18014: ChiefOc2,
     18015: SubharmonicSynth,
@@ -4180,6 +4379,8 @@ BY_MODEL = {
     26002: PhaseLockedLoop,
     26003: BitCrusherSt,
     26004: BitCrusherEngineM,
+    26005: Glitch,
+    26006: RingModulator,
     27000: LooperX,
     29001: SingleM,
     29002: SingleSt,
@@ -4189,7 +4390,7 @@ BY_MODEL = {
     29006: SingleStLite,
     29007: DualMLite,
     29008: DualStLite,
-    30001: MonoSynth,
+    30001: OverlordSynth,
     5: Green808Legacy,
     1017: Ev101iiisRedEl34100wLegacy,
     1045: Solo100LeadLegacy,

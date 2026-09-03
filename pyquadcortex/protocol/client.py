@@ -1212,14 +1212,11 @@ class QuadCortex:
         watching it flip across a save. Also pushed unsolicited in the connect
         burst, so state trackers can subscribe rather than poll.
 
-        **The push announces a CHANGE of the flag, not an edit.** Measured
-        2026-08-14 as a controlled pair in one connection: the same ``set_param``
-        write produced a ``Grid`` echo AND a ``PresetDirty`` when the preset was
-        clean, and a ``Grid`` echo and nothing else when it was already dirty.
-        So do not wait on this to confirm an edit landed - it will time out on an
-        already-dirty preset, correctly, because the unit said nothing. The
-        ``Grid`` echo is the per-edit signal. See ``protocol.md``,
-        "``PresetDirty`` announces a CHANGE of flag, not an edit".
+        **The push is not a per-edit confirmation.** It reliably appeared when
+        the flag changed from clean to dirty. On an already-dirty preset this
+        firmware has both stayed silent and restated true, so waiting on it may
+        confirm or time out. The ``Grid`` echo is the per-edit signal. See
+        ``protocol.md``, "``PresetDirty`` usually announces a flag transition".
 
         ``is_dirty`` has no field presence, so absent simply IS false - do not
         try to distinguish them. And like most reads here, the FIRST request
@@ -1256,7 +1253,7 @@ class QuadCortex:
         """
         return self.read_current_preset_push(timeout=timeout).preset
 
-    def read_current_preset_push(self, timeout: float = 15.0):
+    def read_current_preset_push(self, timeout: float = 15.0, attempts: int = 2):
         """The whole ``RecallPreset`` reply, not just the preset inside it.
 
         Same request and same match as :meth:`read_current_preset` - this is
@@ -1268,14 +1265,27 @@ class QuadCortex:
         caller tracking state needs both from one answer. Confirmed on hardware
         2026-08-15: the connect burst's seed push sets ``action``, ``preset``
         and ``reason``, and so does the push a recall produces.
+
+        The first request is occasionally dropped on d14e, including during a
+        long hardware-suite connection. ``attempts`` therefore defaults to two;
+        each attempt gets ``timeout`` seconds and a fresh request id.
         """
-        request_id = self._t.next_request_id()
-        message = pa.RecallPresetMessage(action=pa.MessageAction.READ,
-                                         request_id=request_id)
-        return self._t.await_broadcast(
-            pa.RecallPresetMessage, lambda: self._t.send(message), timeout=timeout,
-            match=lambda m: (m.HasField("request_id")
-                             and m.request_id == request_id))
+        last_error = None
+        for _ in range(max(1, attempts)):
+            request_id = self._t.next_request_id()
+            message = pa.RecallPresetMessage(action=pa.MessageAction.READ,
+                                             request_id=request_id)
+            try:
+                return self._t.await_broadcast(
+                    pa.RecallPresetMessage, lambda: self._t.send(message),
+                    timeout=timeout,
+                    match=lambda m, rid=request_id: (
+                        m.HasField("request_id") and m.request_id == rid
+                    ))
+            except TimeoutError as exc:
+                last_error = exc
+        assert last_error is not None
+        raise last_error
 
     def loaded_position(self, timeout: float = 10.0):
         """Which preset slot is on the grid right now.

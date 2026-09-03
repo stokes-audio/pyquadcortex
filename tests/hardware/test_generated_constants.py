@@ -42,7 +42,9 @@ def live_catalog(qc):
 def test_the_committed_file_matches_this_unit(live_catalog, name):
     """Read-only: nothing is written to the unit, so no restore is needed."""
     generated = _generator(name).render(live_catalog)
-    committed = (REPO / "pyquadcortex" / "protocol" / f"{name}.py").read_text()
+    committed = (REPO / "pyquadcortex" / "protocol" / f"{name}.py").read_text(
+        encoding="utf-8"
+    )
     if generated == committed:
         return
 

@@ -1299,6 +1299,31 @@ def test_read_current_preset_push_hands_back_the_whole_reply():
     assert asked.HasField("request_id")
 
 
+def test_read_current_preset_retries_a_dropped_first_request():
+    push = pa.RecallPresetMessage(action=pa.MessageAction.UPDATE, request_id=2)
+    push.preset.name = "second answer"
+
+    class DropsFirst(StateTransport):
+        def __init__(self):
+            super().__init__(push)
+            self.calls = 0
+
+        def await_broadcast(self, expected_class, trigger, timeout=40.0,
+                            match=None):
+            trigger()
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("first request dropped")
+            self.matches.append(match)
+            return self.push
+
+    transport = DropsFirst()
+    got = client.QuadCortex(transport).read_current_preset()
+    assert got.name == "second answer"
+    assert transport.calls == 2
+    assert [message.request_id for message in transport.sent] == [1, 2]
+
+
 def test_loaded_position_reads_the_slot_without_recalling_it():
     """`SetlistPosition{READ}`. The same message type as a recall, and the
     action is the whole difference between asking and loading - so the wire
