@@ -236,12 +236,26 @@ The bytes at `n+4` and `n+5` were read as zeros for a long time, and the "raw
 payload flag" this document used to describe as an inference was the same two
 bytes seen dimly. Both are now confirmed.
 
-**Method.** Every logical message in the three USBPcap captures of Cortex
-Control 4.0.1 was reassembled and its whole trailer recorded, in both
-directions: `research/captures/windows-session-0{1,2,3}-nonaudio.pcapng` in the
-lab repo, 15,675 messages, device on CorOS 4.0.1 (`zenos_git_hash: 4.0.1`, app
-firmware `d14e`). The check is
-`research/scripts/trailer_flags.py` in that repo.
+**Method.** Two runs, offline then live.
+
+*Offline*, and the one that carries the weight: every logical message in the
+three USBPcap captures of Cortex Control 4.0.1 was reassembled and its whole
+trailer recorded, both directions.
+`research/captures/windows-session-0{1,2,3}-nonaudio.pcapng` in the lab repo,
+15,675 messages, device on CorOS 4.0.1 (`zenos_git_hash: 4.0.1`, app firmware
+`d14e`). The check is `research/scripts/trailer_flags.py` in that repo. It is
+the only run containing a `CloudLogin` exchange, because this library never
+logs in.
+
+*Live*, 2026-09-03, on the unit through this library's own client on macOS
+rather than Cortex Control: 1,000 messages over a connect burst, a full folder
+listing and one recall, with the same result on every row below. Same firmware,
+so it is evidence about a different client and a different host, **not** about a
+newer CorOS. `research/scripts/trailer_flags_live.py`.
+
+It also settles a practical point: seeing the ENCRYPTED flag needs no cloud or
+account operation. `License` is already in the handshake's subscribe burst, so
+an ordinary `connect()` provokes the encrypted reply.
 
 | what | result |
 | --- | --- |
@@ -251,6 +265,11 @@ firmware `d14e`). The check is
 | `n+5` set | 39 messages, every one starting with the gzip magic `1f 8b` |
 | `n+5` vs the gzip magic | agree 15,675 out of 15,675 |
 | `n+6..n+7` | always zero from the host; nonzero on 2,700 of 14,539 device messages |
+
+The live run reproduced every row: `n+2`/`n+3` zero on all 1,000, the COMPRESSED
+flag and the gzip magic bytes agreeing 1000 out of 1000, ENCRYPTED on the
+`License` reply and nothing else, `File` arriving 778 plain and 20 gzipped in the
+one session, and `n+6..n+7` nonzero on 205 of 1,000.
 
 **Both flags describe the FRAME, not the message type.** That is the part worth
 keeping, because a per-type table would look right and be wrong:

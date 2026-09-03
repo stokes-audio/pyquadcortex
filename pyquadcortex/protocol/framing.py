@@ -27,8 +27,11 @@ There is no total-length field: reassembly is driven purely by the flags.
 The trailer's two flag bytes
 ----------------------------
 
-Confirmed 2026-09-03 across three USBPcap captures of Cortex Control 4.0.1
-(CorOS 4.0.1), 15,675 logical messages in both directions:
+Confirmed 2026-09-03 twice over. Offline across three USBPcap captures of
+Cortex Control 4.0.1 (CorOS 4.0.1), 15,675 logical messages in both directions,
+and live on the unit through this library's own client, 1,000 messages, which
+reproduced every result below. Same firmware both times, so this is evidence
+about two clients rather than two CorOS versions. What was measured:
 
 * ``encrypted`` was set on 13 messages and only ever on ``License`` and
   ``CloudLogin``. Every one of those 13 payloads fails to parse as protobuf,
@@ -36,9 +39,11 @@ Confirmed 2026-09-03 across three USBPcap captures of Cortex Control 4.0.1
   library labels such a payload and hands it back untouched; it does not
   decrypt one, and nothing in it will.**
 * ``compressed`` was set on 39 messages, and agreed with the payload's gzip
-  magic bytes 15675 times out of 15675. The library still detects compression
-  by the magic bytes rather than by this flag - see docs/protocol.md 2.4 for
-  why - so the flag is reported and not acted on.
+  magic bytes 15675 times out of 15675 (1000 out of 1000 live). The library
+  still detects compression by the magic bytes rather than by this flag - see
+  docs/protocol.md 2.4 for why. The flag never decides what happens to a
+  payload; the transport does compare the two and logs a line if they ever
+  disagree, since that agreement was only ever measured on one firmware.
 
 Both flags describe the FRAME, not the message type: a ``License`` READ from
 the host is unflagged while the device's reply to it is encrypted, and a

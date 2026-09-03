@@ -148,7 +148,8 @@ a payload that is genuinely corrupt.
 from a nonzero byte somewhere after the message type. Reading the .NET library
 CortexUSB suggested the tidier shape, and the three USBPcap captures already in
 the lab repo could settle it without touching hardware. They did: 15,675
-logical messages on CorOS 4.0.1, both directions. ENCRYPTED appears 13 times and
+logical messages on CorOS 4.0.1, both directions. A live session through our own
+client reproduced it afterwards, on the same firmware. ENCRYPTED appears 13 times and
 only on `License` and `CloudLogin`; COMPRESSED agrees with the gzip magic bytes
 every single time. Both flags vary within one message type, so a per-type table
 would have been wrong.
