@@ -515,12 +515,16 @@ same thing with one deliberate difference: it does **not** issue a host
 version request - READ replies carry no `request_id` to disambiguate them, so
 the transport hands a `Version` with no id to whichever waiter is first in line.
 
-Skipping it also means the device asks nothing back. Measured 2026-08-27 on
-`d14e`: a connect through `_hello()` and its whole burst produce exactly one
-inbound `Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer
-to the announce, and eight seconds of idling after it produce none. So step 3
-above is a consequence of step 2 rather than something the device does on
-connecting.
+Skipping it also means the device asks nothing back, but whether the announce is
+acknowledged is firmware-specific. Measured 2026-08-27 on CorOS 4.0.1 / `d14e`:
+a connect through `_hello()` and its whole burst produce exactly one inbound
+`Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer to the
+announce, and eight seconds of idling after it produce none. Measured 2026-09-04
+on CorOS 4.1.0: four consecutive fresh connections produced zero inbound
+`Version` messages during the connect burst, while the subscribed state burst
+still arrived. On 4.0.1, step 3 above is therefore a consequence of step 2 rather
+than something the device does on connecting; 4.1.0 does not expose that
+acknowledgement on the wire.
 
 After the burst the device needs a moment before it treats the client as
 connected; a command sent too soon gets no push (observed as flaky preset-read

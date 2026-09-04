@@ -175,26 +175,33 @@ def test_nothing_the_burst_delivered_is_read_again_on_first_access(
 
 
 def test_the_burst_does_not_warm_what_the_unit_never_announces(
-        burst_warmed, handshake_burst, record_property):
+        qc, burst_warmed, handshake_burst, record_property):
     """The other half, and the reason the read path exists.
 
-    The unit does send a ``Version`` during the handshake, but it is the answer
-    to our version announce - it sets ``cortex_control_version_valid`` and none
-    of the unit's own fields. So identity is exactly the case section 9's third
-    column is for: where the unit does not tell us, we ask.
+    Neither measured firmware announces its identity during the handshake.
+    CorOS 4.0.1 sends only an acknowledgement of our version announce, carrying
+    ``cortex_control_version_valid`` and none of the unit's own fields; CorOS
+    4.1.0 does not send that acknowledgement. So identity is exactly the case
+    section 9's third column is for: where the unit does not tell us, we ask.
 
-    The count is asserted because the empty cache below is not evidence for that
-    story: it was equally true of the story this replaced, which had the unit
-    volunteering a ``Version`` READ of its own during connect. ``_hello`` sends
-    no host ``Version`` READ, and the unit only asks when asked, so one is the
-    number - and a second would mean the handshake has changed under us.
+    The count is firmware-specific. CorOS 4.0.1 answered the host's version
+    announce exactly once. Four consecutive fresh CorOS 4.1.0 connections on
+    2026-09-04 answered it zero times while still delivering the state burst.
+    The live catalog identifies which measured behavior this connection should
+    have; an unknown catalog size fails rather than silently relaxing the check.
     """
     versions = handshake_burst.names().count("VersionMessage")
     record_property("connect_burst_version_count", versions)
-    assert versions == 1, (
-        f"the connect burst carried {versions} Version message(s), not the one "
-        f"answering our version announce. Section 4 of docs/protocol.md says "
-        f"the unit asks for our version only when we ask for its.")
+    factory_count = len(qc.catalog.factory_models())
+    record_property("connect_burst_factory_model_count", factory_count)
+    expected_versions = {412: 1, 420: 0}
+    assert factory_count in expected_versions, (
+        f"the connected unit exposes {factory_count} factory models, so its "
+        f"connect-burst Version behavior has not been measured")
+    assert versions == expected_versions[factory_count], (
+        f"the {factory_count}-factory-model firmware sent {versions} Version "
+        f"message(s) during connect, not the measured "
+        f"{expected_versions[factory_count]}")
     assert burst_warmed["identity"] == {}, (
         f"the burst carried the unit's own identity after all, which is worth "
         f"knowing - it held {burst_warmed['identity']}. If that is now true, "

@@ -248,13 +248,13 @@ def _carries_unknown_fields(message) -> bool:
 #: ``CLAUDE.md``). That is an inference from scope rather than a measurement,
 #: which is why the read is still the fallback rather than a one-time fill.
 #:
-#: The unit does not announce this. The one ``Version`` the connect burst carries
-#: is the unit's answer to our version announce: it sets
-#: ``cortex_control_version_valid`` and none of the unit's own fields. So the
-#: burst does not warm this entry - and, because that field is one the entry does
-#: not keep, it MARKS it untrusted on every connect and never answers it. Either
-#: way first access reads, which is the case section 9's third column exists for:
-#: where the unit does not tell us, we ask.
+#: The unit does not announce its identity during connect. CorOS 4.0.1 answers
+#: our version announce with one ``Version`` carrying
+#: ``cortex_control_version_valid`` and none of the unit's own fields. CorOS
+#: 4.1.0 sent no ``Version`` during the connect burst in four consecutive fresh
+#: connections on 2026-09-04, while still delivering the state burst. Neither
+#: behavior warms this entry; first access reads, which is the case section 9's
+#: third column exists for: where the unit does not tell us, we ask.
 #:
 #: **The read costs two messages, and only one of them says anything.** The
 #: protocol is symmetric, so the unit answers a ``Version`` READ and then asks
