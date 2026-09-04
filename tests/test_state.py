@@ -81,14 +81,21 @@ class LoopbackTransport:
         name = message_class.__name__
         self.reads[name] += 1
         trigger()
-        try:
+        if name in self.broadcasts:
             reply = self.broadcasts[name]
-        except KeyError:                          # pragma: no cover - a test bug
+            if callable(reply):
+                reply = reply(self.sent[-1] if self.sent else None)
+        elif name in self.replies:
+            # A READ whose answer is a same-type message with no id to echo -
+            # `version()` since 2026-09-03 - waits by type and predicate, but
+            # the unit's answer is the same canned reply either way.
+            reply = self.replies[name]
+            if callable(reply):
+                reply = reply()
+        else:                                     # pragma: no cover - a test bug
             raise AssertionError(
                 f"the test asked the unit for a {name} broadcast and set no "
                 f"reply for it")
-        if callable(reply):
-            reply = reply(self.sent[-1] if self.sent else None)
         if match is not None and not match(reply):
             raise AssertionError(
                 f"the canned {name} does not satisfy the match the real read "
