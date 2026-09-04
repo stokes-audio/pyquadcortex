@@ -527,37 +527,6 @@ to the announce, and eight seconds of idling after it produce none. So step 3
 above is a consequence of step 2 rather than something the device does on
 connecting.
 
-## A `Version` READ is answered twice, and `request()` cannot tell the two apart
-
-Measured 2026-09-03 on CorOS 4.0.1 / d14e with a listener on every inbound
-`Version`. A host `Version{READ}` is answered by the full `UPDATE` with fifteen
-fields and, 1 ms later, by the device's own `Version{READ}` carrying `action`
-alone - the same question the device asks Cortex Control (section 4). Neither
-carries a `request_id`, and `Transport.request` correlates by type when no id is
-present, so the second message is handed to whichever `Version` waiter is
-registered when it lands. Five `version()` calls in a row returned full, empty,
-full, empty, full. With a second between calls the device's READ arrives while
-nobody is waiting and is dropped, which is why the pattern is easy to miss.
-
-The consequence is a read that answers `""` for `custom_name` and `""` for the
-serial every second call, with no error. `version()` therefore accepts only a
-`Version` carrying an identity field, `device_serial_number` or `app_fw_version`.
-The device's own READ carries neither, nor does the handshake's
-`cortex_control_version_valid` answer, so both are left for the RX path to log; a
-partial reply carrying one of the two is still returned, because the cache keeps
-what the unit sent and re-reads for the rest. A sparse host `Version{UPDATE, custom_name}`
-(a rename) is echoed once with the same two fields, does not re-run the
-handshake gate, and leaves reads answering - measured three times the same day.
-
-After the burst the device needs a moment before it treats the client as
-connected; a command sent too soon gets no push (observed as flaky preset-read
-timeouts). `connect(settle=...)` waits 2 seconds by default.
-
-The `RecallPreset` subscription produces a **seed push** of the currently loaded
-preset, delivered lazily (10 to 25 seconds later has been observed). Any code
-waiting for a preset push must be able to ignore it; see
-[section 5](#5-requestresponse-correlation).
-
 ### 4.3 Keepalive and disconnect
 
 Cortex Control sends `KeepAlive{action: UPDATE}` about once per second. The
@@ -591,6 +560,37 @@ or whether there is any ceiling on accumulated sessions. There is no evidence of
 leak, and no proof there is not one. Nothing here justifies a workaround; sending
 the goodbye is worth doing because it matches the real client, not because a fault
 was demonstrated.
+
+### 4.4 A `Version` READ is answered twice, and `request()` cannot tell the two apart
+
+Measured 2026-09-03 on CorOS 4.0.1 / d14e with a listener on every inbound
+`Version`. A host `Version{READ}` is answered by the full `UPDATE` with fifteen
+fields and, 1 ms later, by the device's own `Version{READ}` carrying `action`
+alone - the same question the device asks Cortex Control (section 4). Neither
+carries a `request_id`, and `Transport.request` correlates by type when no id is
+present, so the second message is handed to whichever `Version` waiter is
+registered when it lands. Five `version()` calls in a row returned full, empty,
+full, empty, full. With a second between calls the device's READ arrives while
+nobody is waiting and is dropped, which is why the pattern is easy to miss.
+
+The consequence is a read that answers `""` for `custom_name` and `""` for the
+serial every second call, with no error. `version()` therefore accepts only a
+`Version` carrying an identity field, `device_serial_number` or `app_fw_version`.
+The device's own READ carries neither, nor does the handshake's
+`cortex_control_version_valid` answer, so both are left for the RX path to log; a
+partial reply carrying one of the two is still returned, because the cache keeps
+what the unit sent and re-reads for the rest. A sparse host `Version{UPDATE, custom_name}`
+(a rename) is echoed once with the same two fields, does not re-run the
+handshake gate, and leaves reads answering - measured three times the same day.
+
+After the burst the device needs a moment before it treats the client as
+connected; a command sent too soon gets no push (observed as flaky preset-read
+timeouts). `connect(settle=...)` waits 2 seconds by default.
+
+The `RecallPreset` subscription produces a **seed push** of the currently loaded
+preset, delivered lazily (10 to 25 seconds later has been observed). Any code
+waiting for a preset push must be able to ignore it; see
+[section 5](#5-requestresponse-correlation).
 
 ## 5. Request/response correlation
 
@@ -2766,7 +2766,7 @@ visually on the device's own screen.
 | Operation | Wire shape (brief) | Verified by | Notes |
 |---|---|---|---|
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
-| version read | `Version{action: READ}` | read-back | serial and firmware returned. TWO messages come back: the `UPDATE` with fifteen fields, then the device's own `Version{READ}` 0.5-0.8 ms later. `version()` accepts only a `Version` carrying `device_serial_number` or `app_fw_version`, so the second one is never returned as the answer - see "A `Version` READ is answered twice" |
+| version read | `Version{action: READ}` | read-back | serial and firmware returned. TWO messages come back: the `UPDATE` with fifteen fields, then the device's own `Version{READ}` 0.5-0.8 ms later. `version()` accepts only a `Version` carrying `device_serial_number` or `app_fw_version`, so the second one is never returned as the answer; five back-to-back calls after that change all returned the full reply (2026-09-03) - see "A `Version` READ is answered twice" |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply, which carries `reason` beside the preset |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured. A READ names no slot - an UPDATE that did would recall it |
@@ -2827,6 +2827,7 @@ visually on the device's own screen.
 | `io_settings` / `set_input_level` / `set_output_level` | `IOSettings{READ}` / `{UPDATE, settings{in_port` or `out_port{port_id, level}}}` | read-back | sparse and port-keyed; also reports impedance, type, ground lift and `plugged` |
 | `global_eq` / `set_global_eq_bypassed` | `GlobalEQ{READ}` / `{UPDATE, bypassed}` | read-back | five bands reported as 28 parameters |
 | `mode` / `set_mode` | `Mode{READ}` / `{UPDATE, mode}` | read-back | a slot index; `available_modes` lists the configured slots |
+| host undo / redo (no client method yet; PR #42 adds `undo()` / `redo()`) | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | preset read-back | measured 2026-09-03 on Quad Cortex, CorOS 4.0.1 / d14e: `08 01 28 01` reversed a bypass edit on a scratch preset and `08 01 30 01` reapplied it, the edit restored and the preset saved clean afterwards. Reported by a contributor on 4.1.0. Whether the recall that follows carries `reason: UNDO` was not captured |
 | `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as UPDATE in 2-11 ms (two hardware sessions); `is_dirty` has no presence, absent IS false; flips false across a save; also pushed unsolicited, but only when the flag CHANGES - see below |
 | `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
 | `set_param(LaneInput(row), ...)` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |

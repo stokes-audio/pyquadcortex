@@ -471,8 +471,10 @@ class QuadCortex:
         does the handshake's ``cortex_control_version_valid`` answer. A partial
         reply carrying one of the two is still returned, because the cache keeps
         what the unit sent and re-reads for the rest (CLAUDE.md, "never cache an
-        incomplete reply as if it were complete"). See ``protocol.md``, "A
-        ``Version`` READ is answered twice".
+        incomplete reply as if it were complete"). Confirmed after the change,
+        same unit and day: five back-to-back calls through this path - a READ
+        with no ``request_id`` - all returned the full reply. See
+        ``protocol.md``, "A ``Version`` READ is answered twice".
         """
         return self._t.await_broadcast(
             pa.VersionMessage,

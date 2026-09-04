@@ -693,10 +693,10 @@ you re-check it.
 
 A new CorOS release is a new DEVICE PROFILE, not a replacement of the baseline
 (ADR-0020). Its constants, announce string and measured behaviours arrive as a
-registry entry beside the existing ones, and its observations are recorded in
-`protocol.md` beside the 4.0.1 record, dated and named. Name it by
-`zenos_git_hash`, the CorOS version, never by `app_fw`: d14e is reported on
-both 4.0.1 and 4.1.0.
+entry in the profile registry ADR-0020 calls for (not built yet), beside the
+existing profile, and its observations are recorded in `protocol.md` beside the
+4.0.1 record, dated and named. Name it by `zenos_git_hash`, the CorOS version,
+never by `app_fw`: a contributor reports d14e on 4.1.0 as well as 4.0.1 (PR #44).
 
 When measuring a new CorOS / Cortex Control release:
 

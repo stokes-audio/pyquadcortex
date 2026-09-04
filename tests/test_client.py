@@ -28,7 +28,7 @@ class FakeTransport:
         self.sent = []
         self.canned = canned or {}
         self.broadcast = None
-        self.last_match = None  # the match predicate read_preset passed, if any
+        self.last_match = None  # the predicate the last type-matched read passed (read_preset, version)
         self.listeners = []
         self._ids = itertools.count(1)
 
@@ -4360,6 +4360,10 @@ def test_version_insists_on_the_full_reply_and_ignores_the_units_own_read():
     # The connect burst's answer to our announce: an UPDATE, but not the identity.
     assert match(pa.VersionMessage(action=pa.MessageAction.UPDATE,
                                    cortex_control_version_valid=True)) is False
-    # A partial identity is still an answer; the cache's per-field rule owns it.
+    # A partial identity is still an answer; the cache's per-field rule owns it,
+    # and EITHER field is identity - a predicate on one alone would pass this test
+    # with the other, so both halves are held.
     assert match(pa.VersionMessage(action=pa.MessageAction.UPDATE,
                                    app_fw_version="d14e")) is True
+    assert match(pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                                   device_serial_number="QA00EE910")) is True

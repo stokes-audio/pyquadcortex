@@ -97,7 +97,11 @@ class ReplyingTransport:
         answer and a type-correlated wait cannot tell them apart. The reply and
         the trailing messages all reach the listeners, as on the wire; the
         caller gets the first one the predicate accepts."""
+        before = len(self.sent)
         trigger()
+        assert len(self.sent) == before + 1, (
+            "this double keys the canned reply off the ONE message the trigger "
+            "sends; a read that sends none or several needs a different double")
         reply = self.canned[type(self.sent[-1]).__name__]
         arrived = [reply] + self.trailing
         for message in arrived:
