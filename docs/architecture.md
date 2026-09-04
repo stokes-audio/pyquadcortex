@@ -691,7 +691,14 @@ and no schema version on the wire, so nothing tells you at runtime that a
 firmware update changed a message. Assume nothing survives a major update until
 you re-check it.
 
-When moving to a new CorOS / Cortex Control release:
+A new CorOS release is a new DEVICE PROFILE, not a replacement of the baseline
+(ADR-0020). Its constants, announce string and measured behaviours arrive as a
+registry entry beside the existing ones, and its observations are recorded in
+`protocol.md` beside the 4.0.1 record, dated and named. Name it by
+`zenos_git_hash`, the CorOS version, never by `app_fw`: d14e is reported on
+both 4.0.1 and 4.1.0.
+
+When measuring a new CorOS / Cortex Control release:
 
 1. **Re-recover and re-diff the schema.** The `.proto` files in
    `protocol/proto/` were recovered from the Cortex Control application for
