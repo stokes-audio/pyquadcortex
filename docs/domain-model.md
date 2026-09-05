@@ -1143,10 +1143,13 @@ tried rather than just what is unknown.
 ### Genuinely open
 
 - **`RecallPreset.reason` UNDO.** The value exists in the schema and has never been
-  observed. The protocol client can trigger grid-level undo with an
-  `UndoRedo{UPDATE, undo}` message, confirmed on CorOS 4.0.1 and 4.1.0, but that
-  operation did not produce a recalled preset carrying reason UNDO. The reason's
-  meaning therefore remains open even though host-driven undo itself does not.
+  observed. The unit's undo IS reachable from a host: a sparse `UndoRedo{UPDATE, undo:
+  true}` (`08 01 28 01`) reverses the last grid edit and `redo: true` (`08 01 30 01`)
+  reapplies it - measured 2026-09-03 on Quad Cortex, CorOS 4.0.1 / d14e, and by a
+  contributor on 4.1.0 (PR #42, where the client methods land). The touchscreen still has
+  no undo of its own beyond Looper X's. Whether the recall that follows a host undo
+  carries `reason: UNDO` was not captured in either session - both read the preset back
+  instead of watching the push - so this stays open, one listener away from an answer.
 - **Bypass persistence over MIDI.** The unit's own SCENE BYPASS BEHAVIOR wording groups
   **MIDI with footswitches**, not with the touchscreen - a distinction the manual's summary
   omits. A USB HID write was measured and behaves like the touchscreen, but the MIDI half
@@ -1415,6 +1418,15 @@ The counts are from the shipped catalog, 3,809 parameters.
 On `<Model>`, `blob` is also unexplained: a same-length string of letters that
 **changes between fetches**. Two dumps of one unit taken minutes apart differed
 on 338 models and on nothing else. A per-fetch token of some kind, not content.
+
+On `<Option>` labels, the character `¤` (U+00A4) appears as a separator inside a
+label - `Triads¤Closed Triad (3-R-5)` - in 27 labels of the CorOS 4.1.0 catalog a
+contributor regenerated (PR #44), and in none of the 4.0.1 catalog. It reads like a
+group-then-item split for a two-level menu, with the part before it shown as a
+heading. That is a guess, and it is untested: nobody has watched the unit's screen
+on those lists. The generator flattens the character to `_` and says nothing, so a
+constant name hides that the label had structure. Recorded here so the 4.1.0
+profile's constants carry the question rather than an answer.
 
 ### `stepNames` was right and our hand-chosen names were wrong
 

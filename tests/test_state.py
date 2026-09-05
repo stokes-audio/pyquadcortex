@@ -28,6 +28,12 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
+#: Reads whose reply is a same-type message with no request id, so the client
+#: waits by type and predicate while the reply is still the one a `request`
+#: would have returned. `version()` is the only one (client.py, 2026-09-03).
+SAME_TYPE_READS = {"VersionMessage"}
+
+
 class LoopbackTransport:
     """Canned replies, listeners notified first, every read counted.
 
@@ -81,14 +87,25 @@ class LoopbackTransport:
         name = message_class.__name__
         self.reads[name] += 1
         trigger()
-        try:
+        if name in self.broadcasts:
             reply = self.broadcasts[name]
-        except KeyError:                          # pragma: no cover - a test bug
+            if callable(reply):
+                reply = reply(self.sent[-1] if self.sent else None)
+        elif name in SAME_TYPE_READS and name in self.replies:
+            # A READ whose answer is a same-type message with no id to echo -
+            # `version()` since 2026-09-03 - waits by type and predicate, but
+            # the unit's answer is the same canned reply either way. Scoped to
+            # the reads that really work that way, so a test that files any
+            # other type in the wrong dict still hits the loud error below. A
+            # callable here takes no arguments, as `request` callables do; a
+            # `broadcasts` callable takes the triggering message.
+            reply = self.replies[name]
+            if callable(reply):
+                reply = reply()
+        else:                                     # pragma: no cover - a test bug
             raise AssertionError(
                 f"the test asked the unit for a {name} broadcast and set no "
                 f"reply for it")
-        if callable(reply):
-            reply = reply(self.sent[-1] if self.sent else None)
         if match is not None and not match(reply):
             raise AssertionError(
                 f"the canned {name} does not satisfy the match the real read "
@@ -759,18 +776,19 @@ def test_a_second_access_of_the_same_entry_costs_no_round_trip(link):
     assert transport.reads["VersionMessage"] == 1
 
 
-def test_an_incomplete_version_update_does_not_complete_the_read(link):
-    """A partial Version UPDATE may warm the cache, but is not a full reply."""
+def test_a_read_replaces_the_entry_rather_than_merging_into_it(link):
+    """A read is the unit's whole answer, so a field it does not carry is a
+    field the unit did not confirm. Leaving the old value in place would report
+    something no read has returned."""
     transport, cache = link
     assert cache.value("identity", "device_serial_number") == "QCS0000001"
     cache.mark_for_reread("identity", "this test")
     transport.replies["VersionMessage"] = lambda: version_reply(
         app_fw_version="d15a")
 
-    with pytest.raises(TimeoutError):
-        cache.value("identity", "app_fw_version")
-    assert cache.cached("identity")["app_fw_version"] == "d15a"
-    assert cache.needs_read("identity") is True
+    assert cache.value("identity", "app_fw_version") == "d15a"
+    with pytest.raises(RuntimeError, match="device_serial_number"):
+        cache.value("identity", "device_serial_number")
 
 
 def test_a_field_the_unit_did_not_send_is_refused_not_reported_empty(link):
@@ -779,7 +797,7 @@ def test_a_field_the_unit_did_not_send_is_refused_not_reported_empty(link):
     transport, cache = link
     transport.replies["VersionMessage"] = lambda: version_reply(
         app_fw_version="d14e")
-    with pytest.raises(TimeoutError):
+    with pytest.raises(RuntimeError, match="device_serial_number"):
         cache.value("identity", "device_serial_number")
 
 
@@ -787,7 +805,7 @@ def test_an_incomplete_answer_leaves_a_retry_able_to_recover(link):
     transport, cache = link
     transport.replies["VersionMessage"] = lambda: version_reply(
         app_fw_version="d14e")
-    with pytest.raises(TimeoutError):
+    with pytest.raises(RuntimeError):
         cache.value("identity", "device_serial_number")
 
     transport.replies["VersionMessage"] = full_version_reply
@@ -802,7 +820,7 @@ def test_the_field_the_unit_did_send_is_still_answered_from_the_cache(link):
     transport, cache = link
     transport.replies["VersionMessage"] = lambda: version_reply(
         app_fw_version="d14e")
-    with pytest.raises(TimeoutError):
+    with pytest.raises(RuntimeError):
         cache.value("identity", "device_serial_number")
 
     assert cache.value("identity", "app_fw_version") == "d14e"
