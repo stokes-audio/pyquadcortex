@@ -67,31 +67,43 @@ plan does not reopen them.
 
 ## Section 1: the registry and connect
 
-### Module
+### Modules
 
-`pyquadcortex/protocol/profiles.py`:
+Two new modules, so the import graph stays one-way. `client.py` needs the
+vocabulary (to guard methods and store `support`); the stubs need `client.py`
+(they subclass it); `session.py` needs both.
+
+`pyquadcortex/protocol/support.py` - vocabulary only, imports nothing from
+the package:
 
 - `class Support(Enum)`: `VERIFIED`, `EXPERIMENTAL`.
 - `class Evidence(Enum)`: `MAINTAINER` (measured on the maintainer's unit),
   `CONTRIBUTED` (measured by a contributor, not reproduced by the maintainer),
   `STUB` (nothing measured).
+- `EVERYTHING`: the sentinel `VERIFIED` value meaning "all operations".
+- `class Hardware` (frozen dataclass): `footswitches`, `expression_ports`.
+- `class NoSnapshot`: the placeholder described in section 2.
+- `unverified_text(cls, name)`: the one function that words a refusal, a
+  warning, and the `UnsupportedDevice` hint.
+
+`pyquadcortex/protocol/profiles.py` - imports `client.py`:
+
+- `class QuadCortex41(QuadCortex)` and `class QuadCortexMini(QuadCortex)`, the
+  stubs (section 5).
 - `class UnsupportedDevice(Exception)`: raised when resolution fails. Carries
   `device_type`, `coros_version`, and the registered profiles, and its message
   names what the unit said and what is registered, without offering a fallback.
-- `REGISTRY`: mapping `(DeviceType, coros_version: str) -> type[QuadCortex]`,
-  built by each class registering itself in `__init_subclass__` (and `QuadCortex`
-  registering explicitly at module end, since it has no subclass hook of its
-  own). One entry per `MEASURED_ON` string.
+- `registry() -> dict[(DeviceType, str), type[QuadCortex]]`: built from
+  `QuadCortex` plus `QuadCortex._PROFILES`, the list `QuadCortex.__init_subclass__`
+  appends every subclass to. One entry per `MEASURED_ON` string; a class with
+  an empty `MEASURED_ON` (the Mini) has no entry but is kept in a separate
+  `stubs()` list so the refusal can name it.
 - `resolve(version_message) -> type[QuadCortex]`: reads `device_type` and
-  `zenos_git_hash` from the reply, looks up the pair, raises `UnsupportedDevice`
-  otherwise. A class with `Evidence.STUB` and empty `MEASURED_ON` is never
-  matched, so the Mini resolves to a refusal that names it.
+  `zenos_git_hash` from the reply, looks the pair up, raises `UnsupportedDevice`
+  otherwise, naming a matching stub when the `device_type` has one.
 
-Import direction: `profiles.py` imports `client.py` (it needs the classes);
-`session.py` imports `profiles.py`. `client.py` does not import `profiles.py`;
-the `Support` enum lives in `profiles.py` and `client.py` receives a value, so
-the dependency stays one way. `pyquadcortex.protocol` re-exports `Support`,
-`Evidence`, `UnsupportedDevice`, `QuadCortex41`, `QuadCortexMini`.
+`session.py` imports `profiles.py`. `pyquadcortex.protocol` re-exports
+`Support`, `Evidence`, `UnsupportedDevice`, `QuadCortex41`, `QuadCortexMini`.
 
 ### Class attributes every profile declares
 
@@ -182,10 +194,10 @@ pyquadcortex/protocol/options.py    (shim)
   two stubs bind.
 - `QuadCortex.models`, `.params`, `.options` are class attributes bound to the
   `coros_4_0_1` modules. `qc.models` therefore follows the connection.
-- The `params.py` module docstring example uses a constant present in every
-  snapshot (`models.Reverb.SPRING_REVERB` or another the generator can prove
-  exists); the generator template no longer hard-codes a bass cab that was
-  renamed.
+- The `params.py` module docstring example is rendered from the catalog being
+  generated: the generator picks the first cab model in that catalog and writes
+  its constant name into the example, so the name exists in that snapshot by
+  construction. The template no longer hard-codes a bass cab that was renamed.
 
 ### Hardware comparison
 
@@ -213,7 +225,7 @@ operation. `OPERATIONS` is computed from the class, not maintained by hand.
 
 `QuadCortex.__init_subclass__(cls, **kw)`:
 
-1. Registers `cls` in `profiles.REGISTRY` for each string in `cls.MEASURED_ON`.
+1. Appends `cls` to `QuadCortex._PROFILES`, which `profiles.registry()` reads.
 2. If `cls.VERIFIED is EVERYTHING`, stops.
 3. For every operation name defined on `QuadCortex` that `cls` inherits without
    overriding and that is not in `cls.VERIFIED`, replaces the attribute on `cls`
@@ -224,15 +236,17 @@ The guard, `_guarded(name, inherited)`, at call time reads `self._support`:
 - `Support.VERIFIED`: raises `ControlNotDrivable(control=name,
   evidence=f"not yet verified on {cls.__name__} (CorOS {', '.join(MEASURED_ON)})",
   workaround=f"connect(support=Support.EXPERIMENTAL) to try it, or run
-  `pytest tests/hardware --hardware -m 'verifies({name})'` on your unit and add
-  the result to {cls.__name__}.VERIFIED")`. `ControlNotDrivable` is the refusal
+  `pytest tests/hardware --hardware --verifies {name}` on your unit and add
+  the result to {cls.__name__}.VERIFIED")`. `--verifies NAME` is a conftest
+  option that selects the tests marked with that operation (pytest's `-m`
+  cannot match a marker's arguments). `ControlNotDrivable` is the refusal
   type CLAUDE.md requires; all three fields are set.
 - `Support.EXPERIMENTAL`: logs one `WARNING` per operation name per instance
   ("{name} is not yet verified on {cls}; running it anyway") and calls the
   inherited function.
 
-The message text comes from one function, `_unverified_text(cls, name)`, used
-by both branches and by `UnsupportedDevice`, so wording cannot drift.
+The message text comes from `support.unverified_text(cls, name)`, used by both
+branches and by `UnsupportedDevice`, so wording cannot drift.
 
 `QuadCortex.__init__` gains `support: Support = Support.VERIFIED` and stores it.
 `qc.support` reads it back. `qc.unverified_operations` returns the set of
@@ -275,7 +289,8 @@ implicitly verified; the offline test below asserts it is also listed in
   nothing.
 - A marker `@pytest.mark.verifies("op", ...)` names the operations a hardware
   test exercises. Names are checked against `OPERATIONS` at collection; an
-  unknown name is a collection error.
+  unknown name is a collection error. `--verifies NAME` selects the tests that
+  carry that name.
 - At session end the conftest prints a report: profile, `MEASURED_ON`,
   operations whose marked tests all passed, operations whose marked tests
   failed or skipped, `passed - VERIFIED` (candidates to add) and
