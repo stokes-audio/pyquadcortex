@@ -90,6 +90,28 @@ class ReplyingTransport:
                 listener(message)   # listeners see a reply first (ADR-0009)
         return reply
 
+    def await_broadcast(self, expected_class, trigger, timeout=5.0, match=None):
+        """The same delivery as :meth:`request`, for a read that waits by type
+        and predicate rather than by request id - which ``version()`` does,
+        because the unit's own ``Version{READ}`` arrives right behind the
+        answer and a type-correlated wait cannot tell them apart. The reply and
+        the trailing messages all reach the listeners, as on the wire; the
+        caller gets the first one the predicate accepts."""
+        before = len(self.sent)
+        trigger()
+        assert len(self.sent) == before + 1, (
+            "this double keys the canned reply off the ONE message the trigger "
+            "sends; a read that sends none or several needs a different double")
+        reply = self.canned[type(self.sent[-1]).__name__]
+        arrived = [reply] + self.trailing
+        for message in arrived:
+            for listener in list(self.listeners):
+                listener(message)
+        for message in arrived:
+            if isinstance(message, expected_class) and (match is None or match(message)):
+                return message
+        raise TimeoutError(f"no {expected_class.__name__} the predicate accepted")
+
     def add_listener(self, listener):
         self.listeners.append(listener)
         return lambda: self.listeners.remove(listener)

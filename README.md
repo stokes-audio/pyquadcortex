@@ -35,7 +35,8 @@ with it.
 ## Status
 
 **Working, and verified on real hardware** on macOS (Apple Silicon) and Windows,
-against **CorOS / Cortex Control 4.0.1** (device firmware `d14e`). Every
+against **Quad Cortex, CorOS / Cortex Control 4.0.1** (device firmware `d14e`),
+the one device profile measured so far (ADR-0020 in `docs/ADR.md`). Every
 operation listed below has been exercised on a physical unit. The test suite runs
 fully offline, with no device attached.
 
