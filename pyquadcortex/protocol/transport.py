@@ -336,13 +336,19 @@ class Transport:
             self._check_lost()   # woken by _confirm_lost, not by a reply
         return slot[0]
 
-    def collect(self, expected_class, trigger, seconds, match=None):
-        """Fire ``trigger()`` and gather EVERY matching message for ``seconds``.
+    def collect(self, expected_class, trigger, seconds, match=None, until=None):
+        """Fire ``trigger()`` and gather matching messages for ``seconds``.
 
         The counterpart of :meth:`await_broadcast` for the case where one request
         provokes many pushes rather than one: a single ``File`` READ makes the
         device enumerate every folder it knows about, several hundred of them on
         the observed unit, arriving over ten to twenty seconds.
+
+        ``until``, if supplied, is a predicate that ends collection as soon as
+        it accepts the newest matching message. This serves finite chunk streams
+        whose final message marks itself; without it the collector keeps the
+        original fixed-window behavior and gathers every matching message until
+        ``seconds`` expires.
 
         Returns the messages in arrival order. Unlike a waiter, a collector does
         not consume messages - they still reach any waiter or other collector.
@@ -361,6 +367,8 @@ class Transport:
             trigger()
             deadline = time.monotonic() + seconds
             while time.monotonic() < deadline:
+                if got and until is not None and until(got[-1]):
+                    break
                 if self._device_lost is not None:
                     break        # nothing more is coming; return what arrived
                 time.sleep(0.1)

@@ -1388,7 +1388,7 @@ the n/a rows below where they intersect the API at all.
 | CC-only: device name display/edit | **omitted** | no | see Device name row |
 | CC-only: per-scene tempo claim | **omitted** | n/a | contradicts the unit; on-unit presentation wins |
 | CC-only: preset / plugin-preset / IR import from computer | **omitted** | no | candidate `File` with payloads; the import flow is unsolved (and IR import probing is hazardous - see CLAUDE.md) |
-| CC-only: local backups | **omitted** | no | `LocalBackup` unexplored |
+| CC-only: local backups | **omitted** | yes | protocol layer: `create_local_backup()`; no model wrapper yet |
 | CC-only: CorOS update via USB | **omitted** - permanently | no | `Updater` |
 | CC-only: keyboard shortcuts, window sizing | - | n/a | app UI |
 | CC-only: undo/redo shortcuts | **omitted** | no | see Undo/redo row |

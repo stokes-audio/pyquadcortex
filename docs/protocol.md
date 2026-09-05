@@ -2759,7 +2759,8 @@ See `protocol/proto/Preset.proto` for the full structure.
 ## Operation coverage
 
 Every operation the library exposes has been exercised live on hardware
-(firmware `d14e`, CorOS 4.0.1). "Verified by" means: **read-back** = device state
+(firmware `d14e`; CorOS 4.0.1 except where a row says otherwise). "Verified by"
+means: **read-back** = device state
 re-read over the protocol and asserted; **on-unit** = the change was confirmed
 visually on the device's own screen.
 
@@ -2767,6 +2768,7 @@ visually on the device's own screen.
 |---|---|---|---|
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
 | version read | `Version{action: READ}` | read-back | serial and firmware returned. TWO messages come back: the `UPDATE` with fifteen fields, then the device's own `Version{READ}` 0.5-0.8 ms later. `version()` accepts only a `Version` carrying `device_serial_number` or `app_fw_version`, so the second one is never returned as the answer; five back-to-back calls after that change all returned the full reply (2026-09-03) - see "A `Version` READ is answered twice" |
+| `create_local_backup` | `LocalBackup{CREATE}` then ordered `LocalBackup{UPDATE, backup_json, is_last_chunk}` pushes | read-back | CorOS 4.1.0 returned 12 chunks (11 x 150,000 characters plus the final 144,890), with one final marker. Replies carry no request id. The joined portable JSON wrapper and Base64 payload validate |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply, which carries `reason` beside the preset |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured. A READ names no slot - an UPDATE that did would recall it |
