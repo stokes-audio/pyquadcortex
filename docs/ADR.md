@@ -368,3 +368,30 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   - `docs/STEERING.md` and the `docs/protocol.md` header stop naming one baseline and name profiles with evidence levels. Every observation in `protocol.md` says which profile it was measured on. A 4.1 observation is written beside the 4.0.1 record, dated, never in place of it.
   - Contributed profiles are welcome, and they arrive as one registry entry, one snapshot, and observations tagged with their profile. The seam, the refusal rule and the evidence levels are the maintainer's to write, because they encode what "supported" means here.
   - Reversal is cheap until the second profile ships and expensive after: once code depends on `qc.models` meaning "my profile's snapshot", collapsing back to one namespace breaks every such caller. That is the one-way door this record closes.
+
+## ADR-0021: A timed device gesture is one atomic transport sequence
+
+- **Status:** Decided (2026-09-04)
+- **Decision:** A protocol operation made of timing-sensitive messages uses
+  `Transport.send_sequence`. The transport frames every message first, applies
+  any initial delay before taking the write lock, and holds that lock across all
+  writes and inter-message intervals. The high-level client chooses the messages
+  and measured timing but does not sleep or write reports itself.
+- **Context:** CorOS 4.1 touchscreen input needs two `RemoteControl` messages 20
+  ms apart, after a 300 ms settle following the connection's first screenshot
+  read. Two ordinary `send` calls put the sleep in `client.py` and allow the
+  keepalive thread or another caller to write between touch-down and touch-up.
+- **Options:** (a) an atomic transport sequence - chosen; (b) sleep between two
+  client `send` calls - rejected because timing belongs in the transport and the
+  pair can be interleaved; (c) send the pair without the measured interval -
+  rejected because it weakens the hardware-verified gesture; (d) hide the timing
+  in a UI adapter - rejected because every caller would need to rediscover the
+  same wire contract.
+- **Rationale:** The transport already owns write serialization and all
+  time-dependent protocol behavior. Extending that boundary keeps the client a
+  testable protobuf layer and makes the gesture indivisible on the HID stream.
+- **Consequences:** `QuadCortex` transport doubles implement `send_sequence`.
+  A long sequence blocks keepalives and other writers for its duration, so this
+  primitive is for short measured protocol sequences, not general scheduling.
+- **Open Questions:** Whether the 300 ms settle, 20 ms interval, and inverted
+  runtime meanings remain the same on firmware versions beyond CorOS 4.1.

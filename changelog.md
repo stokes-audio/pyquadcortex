@@ -42,6 +42,15 @@ A partial reply carrying one of the two is still returned; the state cache
 keeps what the unit sent and re-reads for the rest. Measured on Quad Cortex,
 CorOS 4.0.1 / d14e.
 
+### Control and capture the physical Quad Cortex screen
+
+`tap_screen(x, y)` taps a raw coordinate in the unit's 800 x 480 display
+space, using the timing and runtime-inverted RELEASE/PRESS values confirmed on
+QC CorOS 4.1.0. `capture_screen()` returns the current physical display as a
+PNG. The recovered schema and generated bindings now include `RemoteControl`
+at type 72, and offline tests pin the exact outbound bytes and asynchronous
+screenshot response shape.
+
 ### You can read back which expression pedals are assigned
 
 `set_expression` could always write an assignment. Nothing could read one back:

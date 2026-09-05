@@ -135,6 +135,94 @@ def test_request_response_round_trip():
     assert resp.request_id == 1  # first id from itertools.count(1)
 
 
+def test_send_sequence_frames_messages_and_applies_timing_atomically(monkeypatch):
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    sleeps = []
+    monkeypatch.setattr(transport.time, "sleep", sleeps.append)
+
+    t.send_sequence(
+        (
+            pa.RemoteControlMessage(
+                action=pa.MessageAction.UPDATE,
+                mouse=pa.RemoteControlMouse(x=184, y=147, type=1)),
+            pa.RemoteControlMessage(
+                action=pa.MessageAction.UPDATE,
+                mouse=pa.RemoteControlMouse(x=184, y=147, type=0)),
+        ),
+        delay=0.3,
+        interval=0.02,
+    )
+
+    frames = [framing.decode_reports([report]) for report in fake.writes]
+    assert [frame.message_type for frame in frames] == [72, 72]
+    assert [frame.payload.hex() for frame in frames] == [
+        "08011a0c0d0000384315000013431801",
+        "08011a0a0d000038431500001343",
+    ]
+    assert sleeps == [0.3, 0.02]
+
+
+def test_send_sequence_cannot_be_split_by_a_concurrent_writer(monkeypatch):
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    between_messages = threading.Event()
+    release_sequence = threading.Event()
+    concurrent_started = threading.Event()
+
+    def pause(_seconds):
+        between_messages.set()
+        assert release_sequence.wait(REQUEST_TIMEOUT)
+
+    monkeypatch.setattr(transport.time, "sleep", pause)
+    sequence = threading.Thread(target=lambda: t.send_sequence(
+        (
+            pa.RemoteControlMessage(action=pa.MessageAction.UPDATE),
+            pa.RemoteControlMessage(action=pa.MessageAction.UPDATE),
+        ),
+        interval=0.02,
+    ))
+    sequence.start()
+    assert between_messages.wait(REQUEST_TIMEOUT)
+
+    def send_concurrently():
+        concurrent_started.set()
+        t.send(pa.VersionMessage(action=pa.MessageAction.READ))
+
+    concurrent = threading.Thread(target=send_concurrently)
+    concurrent.start()
+    assert concurrent_started.wait(REQUEST_TIMEOUT)
+    assert concurrent.is_alive(), "the concurrent write entered the locked sequence"
+    release_sequence.set()
+    sequence.join(REQUEST_TIMEOUT)
+    concurrent.join(REQUEST_TIMEOUT)
+    assert not sequence.is_alive() and not concurrent.is_alive()
+
+    frames = [framing.decode_reports([report]) for report in fake.writes]
+    assert [frame.message_type for frame in frames] == [72, 72, 10]
+
+
+@pytest.mark.parametrize("delay,interval", [(-0.1, 0), (0, -0.1)])
+def test_send_sequence_rejects_negative_timing(delay, interval):
+    t = transport.Transport(FakeHid(), keepalive_interval=QUIET_KEEPALIVE)
+    with pytest.raises(ValueError):
+        t.send_sequence([], delay=delay, interval=interval)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_send_sequence_rejects_non_finite_timing(value):
+    t = transport.Transport(FakeHid(), keepalive_interval=QUIET_KEEPALIVE)
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        t.send_sequence([], delay=value)
+
+
+@pytest.mark.parametrize("value", [True, "0.02"])
+def test_send_sequence_rejects_non_numeric_timing(value):
+    t = transport.Transport(FakeHid(), keepalive_interval=QUIET_KEEPALIVE)
+    with pytest.raises(TypeError, match="real number"):
+        t.send_sequence([], interval=value)
+
+
 def test_multi_report_reassembly():
     # A 300-char kernel-version string makes the response payload > 128 bytes so
     # it spans multiple input reports; the transport must reassemble them.

@@ -5,6 +5,7 @@ It builds protobuf messages and hands them to a ``transport``-like object,
 which is dependency-injected via the constructor. The transport exposes:
 
   * ``send(message)``                  - fire-and-forget
+  * ``send_sequence(messages, ...)``   - an atomic, timed message sequence
   * ``request(message, timeout=...)``  - send and block for the correlated reply
 
 The client deliberately knows NOTHING about hidapi, HID reports, or the framing
@@ -28,6 +29,7 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 ``docs/protocol.md`` for the per-operation coverage table.
 """
 
+import math
 import time
 import typing
 import uuid
@@ -265,6 +267,9 @@ class QuadCortex:
         self._owned = _owned_resources or []
         # Populated on first use of .catalog (a ~47 KB fetch from the device).
         self._catalog = None
+        # CorOS ignores mouse messages until the first screenshot READ has
+        # initialized the remote-control surface for this connection.
+        self._remote_control_ready = False
 
     # -- catalog -------------------------------------------------------------
 
@@ -2649,6 +2654,69 @@ class QuadCortex:
         """Open or close Gig View on the unit. Confirmed on hardware."""
         return self._t.send(pa.ShowGigViewMessage(action=pa.MessageAction.UPDATE,
                                                   show=shown))
+
+    def capture_screen(self, timeout: float = 10.0) -> bytes:
+        """Return a PNG of the unit's current physical display.
+
+        Confirmed at 800 x 480 on QC CorOS 4.1.0. CorOS answers
+        ``RemoteControl{READ, screenshot:{}}`` with an asynchronous,
+        uncorrelated ``UPDATE`` carrying the PNG, so a type waiter is installed
+        before the read. Replies that are not screenshot PNGs are ignored.
+        """
+        reply = self._t.await_broadcast(
+            pa.RemoteControlMessage,
+            lambda: self._t.send(pa.RemoteControlMessage(
+                action=pa.MessageAction.READ,
+                screenshot=pa.RemoteControlScreenshot(),
+            )),
+            timeout=timeout,
+            match=lambda message: (
+                message.action == pa.MessageAction.UPDATE
+                and message.HasField("screenshot")
+                and message.screenshot.HasField("payload")
+                and message.screenshot.payload.startswith(b"\x89PNG\r\n\x1a\n")
+            ),
+        )
+        self._remote_control_ready = True
+        return bytes(reply.screenshot.payload)
+
+    def tap_screen(self, x: float, y: float) -> None:
+        """Tap a raw pixel coordinate on the unit's 800 x 480 touchscreen.
+
+        The coordinate space and two-message gesture were confirmed on QC
+        CorOS 4.1.0. Runtime semantics are inverted against the recovered enum
+        labels: wire value ``RELEASE=1`` begins the touch and ``PRESS=0`` ends
+        it. The nominal ``TAP`` type did not honour its coordinates.
+
+        The pair is fire-and-forget. The first call primes CorOS' remote-control
+        surface with :meth:`capture_screen`; the transport then sends the pair
+        atomically after the measured settle and inter-message intervals.
+        Prefer a semantic control where one exists.
+        """
+        for name, value, upper in (("x", x, 800), ("y", y, 480)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{name} must be a real pixel coordinate")
+            if not math.isfinite(value) or not 0 <= value < upper:
+                raise ValueError(f"{name} must be in the range 0 <= {name} < {upper}")
+
+        prime_delay = 0.0
+        if not self._remote_control_ready:
+            self.capture_screen()
+            prime_delay = 0.3
+        self._t.send_sequence(
+            (
+                pa.RemoteControlMessage(
+                    action=pa.MessageAction.UPDATE,
+                    mouse=pa.RemoteControlMouse(
+                        x=x, y=y, type=pa.RemoteControlMouse.RELEASE)),
+                pa.RemoteControlMessage(
+                    action=pa.MessageAction.UPDATE,
+                    mouse=pa.RemoteControlMouse(
+                        x=x, y=y, type=pa.RemoteControlMouse.PRESS)),
+            ),
+            delay=prime_delay,
+            interval=0.02,
+        )
 
     def list_folders(self, seconds: float = 20.0) -> list:
         """Every folder the device knows about, as :class:`Folder` entries.

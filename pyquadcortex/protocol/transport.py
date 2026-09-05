@@ -253,6 +253,38 @@ class Transport:
             for report in reports:
                 self._write_report(report)
 
+    def send_sequence(self, messages, *, interval=0.0, delay=0.0):
+        """Write several logical messages atomically, with controlled timing.
+
+        ``delay`` is applied before the first write and ``interval`` between
+        later writes.  Every message is framed before the delay, then the whole
+        sequence is written under ``_write_lock`` so a keepalive or concurrent
+        caller cannot split a timing-sensitive device gesture.
+        """
+        for name, value in (("delay", delay), ("interval", interval)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"sequence {name} must be a real number")
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(
+                    f"sequence {name} must be finite and non-negative"
+                )
+        self._check_lost()
+        encoded = []
+        for message in messages:
+            msg_type = registry.type_for(type(message))
+            encoded.append(framing.encode_message(
+                msg_type, message.SerializeToString()))
+        if not encoded:
+            return
+        if delay:
+            time.sleep(delay)
+        with self._write_lock:
+            for index, reports in enumerate(encoded):
+                for report in reports:
+                    self._write_report(report)
+                if interval and index + 1 < len(encoded):
+                    time.sleep(interval)
+
     def _write_report(self, report):
         """Write one HID output report, tolerating the QC's status-stage STALL.
 

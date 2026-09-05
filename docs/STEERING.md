@@ -97,6 +97,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0018 | A parameter constant carries its unit, and CI runs a type checker |
 | ADR-0019 | The frame trailer's flags are read and reported; an encrypted payload is labelled, not decrypted |
 | ADR-0020 | Connect resolves a device profile, and nothing else branches on firmware or model |
+| ADR-0021 | A timed device gesture is one atomic transport sequence |
 
 ## 8. Open Questions
 
@@ -135,6 +136,28 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-09-04 - Physical screen capture and touchscreen input (ADR-0021)
+
+**What changed:** The CorOS 4.1 schema now includes `ModelPreset` and message
+type 72, `RemoteControl`, with regenerated bindings and stubs.
+`QuadCortex.capture_screen()` reads the current 800 x 480 display as PNG, and
+`tap_screen(x, y)` sends the measured touchscreen gesture after lazily priming
+the remote-control surface. `Transport.send_sequence()` owns the 300 ms initial
+settle, the 20 ms gesture interval, and atomicity against concurrent writes.
+
+**Why:** Live tests on QC CorOS 4.1.0 established the complete path. Screenshot
+answers are asynchronous UPDATEs without request IDs. Mouse input is unreliable
+until one screenshot read initializes the surface. Runtime values are inverted
+against the recovered labels: RELEASE=1 begins the touch and PRESS=0 ends it;
+the labelled order leaves the UI held, while the nominal TAP ignores its
+coordinate. The verified pair at `(184, 147)` opened the intended block and the
+following framebuffer showed its parameter editor.
+
+**Scope of impact:** `protocol/proto/ProductionAutomation.proto`, generated
+bindings/stubs, protocol client and transport, offline tests, API/protocol/manual
+docs, changelog, CLAUDE.md, ADR.md, and this file. The model layer is unchanged:
+raw screen coordinates are a protocol-layer escape hatch, not a domain control.
 
 ### 2026-09-03 - One baseline becomes a registry of device profiles (ADR-0020)
 

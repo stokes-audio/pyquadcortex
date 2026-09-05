@@ -1,7 +1,8 @@
 """Tests for the high-level QuadCortex client (pyquadcortex.protocol.client).
 
 The client builds protobuf messages and hands them to a transport-like object
-exposing ``send(message)`` and ``request(message, timeout=...)``. It never
+exposing ``send(message)``, ``send_sequence(messages, ...)`` and
+``request(message, timeout=...)``. It never
 touches hidapi or framing directly. These tests inject a FakeTransport so the
 client can be exercised without a device.
 """
@@ -34,6 +35,10 @@ class FakeTransport:
 
     def send(self, msg):
         self.sent.append(msg)
+
+    def send_sequence(self, messages, *, interval=0.0, delay=0.0):
+        self.sent.extend(messages)
+        self.sequence_timing = (delay, interval)
 
     def request(self, msg, timeout=5.0):
         self.sent.append(msg)
@@ -2363,6 +2368,78 @@ def test_global_eq_and_mode_and_gig_view_writes():
     assert qc._t.sent[-1].mode == 2
     qc.set_gig_view(True)
     assert qc._t.sent[-1].show is True
+
+
+def test_capture_screen_waits_for_the_uncorrelated_png_update():
+    png = b"\x89PNG\r\n\x1a\nframe"
+    push = pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        screenshot=pa.RemoteControlScreenshot(payload=png),
+    )
+    transport = StateTransport(push)
+    qc = client.QuadCortex(transport)
+
+    assert qc.capture_screen(timeout=3.5) == png
+    assert qc._remote_control_ready is True
+
+    sent = transport.sent[-1]
+    assert isinstance(sent, pa.RemoteControlMessage)
+    assert sent.action == pa.MessageAction.READ
+    assert sent.HasField("screenshot")
+    assert not sent.screenshot.HasField("payload")
+    assert not sent.HasField("request_id")
+    assert sent.SerializeToString().hex() == "08032200"
+    match = transport.matches[-1]
+    assert match(push) is True
+    assert match(pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        screenshot=pa.RemoteControlScreenshot(payload=b"not a png"),
+    )) is False
+    assert match(pa.RemoteControlMessage(
+        action=pa.MessageAction.READ,
+        screenshot=pa.RemoteControlScreenshot(payload=png),
+    )) is False
+
+
+def test_tap_screen_primes_then_sends_the_verified_inverted_pair():
+    transport = StateTransport(pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        screenshot=pa.RemoteControlScreenshot(
+            payload=b"\x89PNG\r\n\x1a\nprime"),
+    ))
+    qc = client.QuadCortex(transport)
+
+    qc.tap_screen(184, 147)
+
+    prime, begin, end = transport.sent
+    assert prime.SerializeToString().hex() == "08032200"
+    assert begin.SerializeToString().hex() == "08011a0c0d0000384315000013431801"
+    assert end.SerializeToString().hex() == "08011a0a0d000038431500001343"
+    assert (begin.mouse.x, begin.mouse.y, begin.mouse.type) == pytest.approx(
+        (184, 147, pa.RemoteControlMouse.RELEASE))
+    assert (end.mouse.x, end.mouse.y, end.mouse.type) == pytest.approx(
+        (184, 147, pa.RemoteControlMouse.PRESS))
+    assert transport.sequence_timing == (0.3, 0.02)
+
+    qc.tap_screen(184, 147)
+    assert len(transport.sent) == 5
+    assert transport.sequence_timing == (0.0, 0.02)
+
+
+@pytest.mark.parametrize("x,y,exception", [
+    (-1, 0, ValueError),
+    (800, 0, ValueError),
+    (0, 480, ValueError),
+    (float("inf"), 0, ValueError),
+    (float("nan"), 0, ValueError),
+    (True, 0, TypeError),
+    ("184", 147, TypeError),
+])
+def test_tap_screen_rejects_invalid_coordinates(x, y, exception):
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(exception):
+        qc.tap_screen(x, y)
+    assert qc._t.sent == []
 
 
 def test_mode_reader_waits_for_a_push_carrying_mode():
