@@ -35,8 +35,9 @@ class FakeTransport:
     def send(self, msg):
         self.sent.append(msg)
 
-    def request(self, msg, timeout=5.0):
+    def request(self, msg, timeout=5.0, match=None):
         self.sent.append(msg)
+        self.last_match = match
         return self.canned.get(type(msg).__name__)
 
     def next_request_id(self):
@@ -461,6 +462,38 @@ def test_move_preset_sends_file_move():
 
 
 # -- session hello -------------------------------------------------------------
+
+
+def test_set_device_name_sends_a_sparse_version_update():
+    qc = client.QuadCortex(FakeTransport())
+
+    qc.set_device_name("Stage QC")
+
+    sent = qc._t.sent[-1]
+    assert isinstance(sent, pa.VersionMessage)
+    assert sent.SerializeToString() == b"\x08\x01\x7a\x08Stage QC"
+
+    with pytest.raises(TypeError):
+        qc.set_device_name(None)
+    assert qc._t.sent[-1] is sent
+
+
+def test_undo_and_redo_send_the_confirmed_sparse_updates():
+    qc = client.QuadCortex(FakeTransport())
+
+    qc.undo()
+    undo = qc._t.sent[-1]
+    assert isinstance(undo, pa.UndoRedoMessage)
+    assert undo.SerializeToString() == b"\x08\x01\x28\x01"
+    assert undo.HasField("undo")
+    assert not undo.HasField("redo")
+
+    qc.redo()
+    redo = qc._t.sent[-1]
+    assert isinstance(redo, pa.UndoRedoMessage)
+    assert redo.SerializeToString() == b"\x08\x01\x30\x01"
+    assert redo.HasField("redo")
+    assert not redo.HasField("undo")
 
 
 def test_hello_performs_full_connect_handshake():
@@ -2036,6 +2069,23 @@ def test_settings_reads_general_settings_and_requires_a_full_push():
     match = qc._t.matches[-1]
     assert match(full) is True
     assert match(pa.GeneralSettingsMessage(screen_brightness=1)) is False
+
+
+def test_inhibited_modules_reads_both_explicit_states():
+    full = pa.CompilerInhibitedModulesMessage(action=pa.MessageAction.UPDATE,
+                                              global_gate=False,
+                                              global_eq=False)
+    qc = client.QuadCortex(StateTransport(full))
+    got = qc.inhibited_modules()
+    assert got is full
+    sent = qc._t.sent[-1]
+    assert isinstance(sent, pa.CompilerInhibitedModulesMessage)
+    assert sent.action == pa.MessageAction.READ
+    assert sent.SerializeToString() == b"\x08\x03"
+    match = qc._t.matches[-1]
+    assert match(full) is True
+    assert match(pa.CompilerInhibitedModulesMessage(global_gate=False)) is False
+    assert match(pa.CompilerInhibitedModulesMessage(global_eq=False)) is False
 
 
 def test_update_settings_sends_only_the_named_fields():

@@ -217,7 +217,8 @@ CONSTANT = re.compile(
 
 def _generated_constants():
     return [m for m in (CONSTANT.match(line)
-                        for line in PARAMS_PY.read_text().splitlines()) if m]
+                        for line in PARAMS_PY.read_text(
+                            encoding="utf-8").splitlines()) if m]
 
 
 def _spellings_the_device_publishes():

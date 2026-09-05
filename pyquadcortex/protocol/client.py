@@ -484,6 +484,41 @@ class QuadCortex:
                              or m.HasField("app_fw_version")),
         )
 
+    def set_device_name(self, name: str):
+        """Set the user-visible device name.
+
+        The update is deliberately sparse: only ``custom_name`` is sent, so
+        none of the other version/identity fields can be overwritten.
+        Confirmed on CorOS 4.0.1 and 4.1.0, firmware d14e: the unit echoed a
+        sparse Version UPDATE, and read-back and restoration matched.
+        """
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
+        self._t.send(pa.VersionMessage(
+            action=pa.MessageAction.UPDATE, custom_name=name
+        ))
+
+    def undo(self):
+        """Undo the most recent editable-preset operation.
+
+        Confirmed on CorOS 4.0.1 and 4.1.0, firmware d14e: a bypass edit was
+        reversed. Behaviour when the edit history is empty is not established.
+        """
+        self._t.send(pa.UndoRedoMessage(
+            action=pa.MessageAction.UPDATE, undo=True
+        ))
+
+    def redo(self):
+        """Redo the most recently undone editable-preset operation.
+
+        Confirmed on CorOS 4.0.1 and 4.1.0, firmware d14e: the bypass edit
+        reversed by :meth:`undo` was reapplied. Behaviour when the edit history
+        is empty is not established.
+        """
+        self._t.send(pa.UndoRedoMessage(
+            action=pa.MessageAction.UPDATE, redo=True
+        ))
+
     def find_preset(self, name: str, setlist: str = Setlist.USER,
                     timeout: float = 25.0):
         """Look a preset up by the name shown on the unit.
@@ -2590,6 +2625,25 @@ class QuadCortex:
         """The Global EQ state: ``bypassed`` plus its five bands."""
         return self._read_state(pa.GlobalEQMessage,
                                 lambda m: m.HasField("bypassed"), timeout)
+
+    def inhibited_modules(self, timeout: float = 10.0):
+        """Whether DSP load has automatically disabled the Input Gate or Global EQ.
+
+        Returns the raw ``CompilerInhibitedModules`` message. The schema names
+        ``global_gate`` and ``global_eq`` as the corresponding inhibited states;
+        only the explicit false/false reply has been observed. Both fields are
+        required so an absent optional field is never mistaken for false.
+
+        Confirmed read-only on hardware: a ``CompilerInhibitedModules{READ}``
+        returned ``08 01 18 00 20 00`` with both fields explicit on Quad Cortex,
+        CorOS 4.0.1 and 4.1.0 / firmware d14e. The same message type was already
+        observed after grid edits when DSP load changes the inhibited state.
+        """
+        return self._read_state(
+            pa.CompilerInhibitedModulesMessage,
+            lambda m: m.HasField("global_gate") and m.HasField("global_eq"),
+            timeout,
+        )
 
     def set_global_eq_bypassed(self, bypassed: bool = True):
         """Turn the Global EQ off or on. Confirmed writable on hardware.

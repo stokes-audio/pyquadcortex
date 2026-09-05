@@ -130,7 +130,7 @@ def main() -> int:
     cat = catalog.parse_model_repo(load_payload(args.payload))
     factory = cat.factory_models()
     source = render(cat)
-    pathlib.Path(args.out).write_text(source)
+    pathlib.Path(args.out).write_text(source, encoding="utf-8")
     print(f"wrote {args.out}: {len(factory)} factory models "
           f"of {len(cat)} total, {len({m.category for m in factory})} categories")
     return 0

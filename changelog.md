@@ -106,6 +106,27 @@ Fixed alongside it: a damaged gzip payload could raise `EOFError` or
 `zlib.error`, neither of which was caught, so it was reported as an unexpected
 internal error rather than as the damaged payload it is.
 
+### Rename the unit and drive preset undo/redo
+
+`set_device_name()` changes the name shown by the device with a sparse Version
+update. `undo()` and `redo()` drive the unit's native editable-preset history;
+their four-byte wire payloads are pinned offline, and their state transitions
+by a guarded hardware test against a disposable preset copy.
+
+### The offline suite is portable to Windows checkouts
+
+Hardware-gate diagnostics now spell repository-relative paths consistently on
+every platform, and the historical namespace fixture's pinned hash tolerates
+Git's CRLF checkout conversion while still hashing all source content. Catalog
+generators also write UTF-8 explicitly instead of inheriting Windows' code page.
+
+### Read which global modules DSP load inhibited
+
+`inhibited_modules()` reads the two booleans the unit reports when processing
+load automatically disables the Input Gate or Global EQ. The reader requires
+both optional fields to be explicitly present, so protobuf's absent-field
+default cannot be mistaken for a real false state.
+
 ### The wrong unit is now caught before the code runs
 
 ```python

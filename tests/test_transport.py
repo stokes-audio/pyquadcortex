@@ -135,6 +135,41 @@ def test_request_response_round_trip():
     assert resp.request_id == 1  # first id from itertools.count(1)
 
 
+def test_request_match_ignores_a_same_type_echo_and_waits_for_full_reply():
+    class EchoThenFull(FakeHid):
+        def write(self, report):
+            report = bytes(report)
+            self.writes.append(report)
+            frame = framing.decode_reports([report])
+            request = pa.VersionMessage()
+            request.ParseFromString(frame.payload)
+            echo = pa.VersionMessage(action=pa.MessageAction.READ)
+            full = pa.VersionMessage(
+                action=pa.MessageAction.UPDATE,
+                device_serial_number="QCS0000001",
+            )
+            for response in (echo, full):
+                self.inject(*framing.encode_message(
+                    registry.type_for(pa.VersionMessage),
+                    response.SerializeToString(),
+                ))
+            return len(report)
+
+    fake = EchoThenFull()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    t.start()
+    try:
+        reply = t.request(
+            pa.VersionMessage(action=pa.MessageAction.READ),
+            timeout=REQUEST_TIMEOUT,
+            match=lambda message: message.HasField("device_serial_number"),
+        )
+    finally:
+        t.stop()
+
+    assert reply.device_serial_number == "QCS0000001"
+
+
 def test_multi_report_reassembly():
     # A 300-char kernel-version string makes the response payload > 128 bytes so
     # it spans multiple input reports; the transport must reassemble them.
