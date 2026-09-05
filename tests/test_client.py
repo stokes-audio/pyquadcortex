@@ -28,7 +28,7 @@ class FakeTransport:
         self.sent = []
         self.canned = canned or {}
         self.broadcast = None
-        self.last_match = None  # the match predicate read_preset passed, if any
+        self.last_match = None  # the predicate the last type-matched read passed (read_preset, version)
         self.listeners = []
         self._ids = itertools.count(1)
 
@@ -4392,3 +4392,49 @@ def test_the_bypass_switch_delay_takes_milliseconds():
     qc = client.QuadCortex(FakeTransport())
     with pytest.raises(TypeError, match="no 0..1 device scale"):
         qc.set_expression_bypass(Block(0, 2), delay_ms=Encoded(0.5))
+
+
+# -- version() and the unit's own Version READ ----------------------------------
+
+
+def test_version_insists_on_the_full_reply_and_ignores_the_units_own_read():
+    """Measured 2026-09-03 on CorOS 4.0.1 / d14e: a host ``Version{READ}`` is
+    answered by the full UPDATE and, 1 ms later, by the device's OWN
+    ``Version{READ}`` carrying ``action`` alone. Neither has a request_id, so a
+    type-correlated wait hands the second one to whichever waiter is next in
+    line - five back-to-back ``version()`` calls returned full, empty, full,
+    empty, full. The read therefore accepts only a ``Version`` carrying an
+    identity field, serial or firmware. A PARTIAL reply with one of them is
+    still accepted: the cache keeps what the unit sent and re-reads the rest,
+    and refusing it here would turn that rule into a timeout. See protocol.md,
+    "A ``Version`` READ is answered twice"."""
+    full = pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                             app_fw_version="d14e",
+                             device_serial_number="QA00EE910",
+                             custom_name="Neural DSP Quad Cortex")
+    fake = FakeTransport()
+    fake.broadcast = full
+    qc = client.QuadCortex(fake)
+
+    got = qc.version()
+
+    assert got is full
+    sent = fake.sent[-1]
+    assert isinstance(sent, pa.VersionMessage)
+    assert sent.action == pa.MessageAction.READ
+    assert not sent.HasField("request_id"), "a READ reply carries no id to echo"
+    match = fake.last_match
+    assert match is not None, "version() waited by type alone"
+    assert match(full) is True
+    # The device's own question to the host, which arrives right behind the answer.
+    assert match(pa.VersionMessage(action=pa.MessageAction.READ)) is False
+    # The connect burst's answer to our announce: an UPDATE, but not the identity.
+    assert match(pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                                   cortex_control_version_valid=True)) is False
+    # A partial identity is still an answer; the cache's per-field rule owns it,
+    # and EITHER field is identity - a predicate on one alone would pass this test
+    # with the other, so both halves are held.
+    assert match(pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                                   app_fw_version="d14e")) is True
+    assert match(pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                                   device_serial_number="QA00EE910")) is True

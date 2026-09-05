@@ -28,6 +28,12 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset_pb
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
+#: Reads whose reply is a same-type message with no request id, so the client
+#: waits by type and predicate while the reply is still the one a `request`
+#: would have returned. `version()` is the only one (client.py, 2026-09-03).
+SAME_TYPE_READS = {"VersionMessage"}
+
+
 class LoopbackTransport:
     """Canned replies, listeners notified first, every read counted.
 
@@ -81,14 +87,25 @@ class LoopbackTransport:
         name = message_class.__name__
         self.reads[name] += 1
         trigger()
-        try:
+        if name in self.broadcasts:
             reply = self.broadcasts[name]
-        except KeyError:                          # pragma: no cover - a test bug
+            if callable(reply):
+                reply = reply(self.sent[-1] if self.sent else None)
+        elif name in SAME_TYPE_READS and name in self.replies:
+            # A READ whose answer is a same-type message with no id to echo -
+            # `version()` since 2026-09-03 - waits by type and predicate, but
+            # the unit's answer is the same canned reply either way. Scoped to
+            # the reads that really work that way, so a test that files any
+            # other type in the wrong dict still hits the loud error below. A
+            # callable here takes no arguments, as `request` callables do; a
+            # `broadcasts` callable takes the triggering message.
+            reply = self.replies[name]
+            if callable(reply):
+                reply = reply()
+        else:                                     # pragma: no cover - a test bug
             raise AssertionError(
                 f"the test asked the unit for a {name} broadcast and set no "
                 f"reply for it")
-        if callable(reply):
-            reply = reply(self.sent[-1] if self.sent else None)
         if match is not None and not match(reply):
             raise AssertionError(
                 f"the canned {name} does not satisfy the match the real read "
