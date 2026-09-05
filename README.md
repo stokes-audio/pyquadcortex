@@ -149,6 +149,12 @@ with protocol.connect() as qc:
 device requires, so what you get back is ready to use. As a context manager it
 also releases the device when the block ends; otherwise call `qc.close()`.
 
+The default handshake also asks for the unit's full folder tree, which can keep
+several hundred `FileMessage` pushes arriving after `connect()` returns. An app
+that does not need an eager listing can use
+`protocol.connect(initial_file_listing=False)`; `list_presets()` and the other
+file APIs still fetch their data normally when called.
+
 Closing tells the device the client is leaving, which is what Cortex Control does on
 quit. If you supplied your own transport and so own teardown yourself, send it with
 `qc.disconnect()` before you tear down.

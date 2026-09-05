@@ -389,7 +389,8 @@ class QuadCortex:
     # this is the version captured on the wire.
     CC_VERSION = "4.0.1"
 
-    def _hello(self, timeout: float = 5.0, settle: float = 2.0):
+    def _hello(self, timeout: float = 5.0, settle: float = 2.0,
+               initial_file_listing: bool = True):
         """Perform the full connect handshake Cortex Control performs.
 
         Internal: :func:`pyquadcortex.protocol.connect` calls this for you, so a caller
@@ -409,7 +410,9 @@ class QuadCortex:
              valid CC version).
           3. ``Connection{connected: true}``.
           4. A READ for each state type in ``_SUBSCRIBE_TYPES`` - this is the
-             subscription that makes the device start pushing that state.
+             subscription that makes the device start pushing that state. The
+             ``File`` READ is optional because it immediately enumerates the
+             entire folder tree rather than opening the push gate.
 
         Returns the echoed ResetCommsBuffers reply. After this, ``read_preset``
         and the device's live-sync pushes work.
@@ -438,6 +441,8 @@ class QuadCortex:
         self._t.send(pa.ModelRepoMessage(action=pa.MessageAction.READ))
         self._t.send(pa.ConnectionMessage(connected=True))
         for name in self._SUBSCRIBE_TYPES:
+            if name == "File" and not initial_file_listing:
+                continue
             self._t.send(registry.class_for(pa.CortexMessageType.Enum.Value(name))(
                 action=pa.MessageAction.READ
             ))

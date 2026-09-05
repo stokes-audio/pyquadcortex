@@ -81,6 +81,7 @@ def open_device():
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
             handshake_patience: float = 30.0,
+            initial_file_listing: bool = True,
             before_handshake=None) -> QuadCortex:
     """Open a Quad Cortex and return a connected, ready-to-use client.
 
@@ -108,6 +109,12 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
             failing, which is why the default is 30. Each attempt restarts the
             full handshake (safe: it begins with a fresh session id). Set to 0
             for the old single-attempt behaviour.
+        initial_file_listing: whether the handshake should immediately ask the
+            unit to enumerate its full folder tree. Keep the default for the
+            usual eager state burst; set this false when startup traffic matters
+            more than preloading listings. Explicit calls such as
+            :meth:`~pyquadcortex.protocol.client.QuadCortex.list_folders` still
+            work and fetch the listing on demand.
         before_handshake: optional ``callable(transport)``, called once with the
             started :class:`~pyquadcortex.protocol.transport.Transport` after it
             starts and before the handshake runs. This is the only way to
@@ -141,7 +148,11 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         while True:
             attempt += 1
             try:
-                qc._hello(timeout=timeout, settle=settle)
+                qc._hello(
+                    timeout=timeout,
+                    settle=settle,
+                    initial_file_listing=initial_file_listing,
+                )
                 break
             except TimeoutError:
                 if time.monotonic() >= deadline:
