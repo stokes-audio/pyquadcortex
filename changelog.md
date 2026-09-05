@@ -42,6 +42,54 @@ A partial reply carrying one of the two is still returned; the state cache
 keeps what the unit sent and re-reads for the rest. Measured on Quad Cortex,
 CorOS 4.0.1 / d14e.
 
+### Draft: contribute the CorOS 4.1.0 catalog snapshot
+
+This draft supplies the 4.1.0 snapshot and migration evidence needed by the
+device-profile seam decided in ADR-0020. It must remain a draft until that seam
+gives the generated constants a per-profile namespace; the unversioned
+`protocol.models`, `params`, and `options` names remain the 4.0.1 baseline.
+
+The contributed snapshot covers 420 factory models and 148 fixed option enums,
+including the delay, pitch, morph, reverb, compressor, and EQ models exposed by
+the CorOS 4.1.0 catalog.
+
+Catalog labels changed public generated names. The migration map is:
+
+| Before | After |
+|---|---|
+| `BassOverdrive.MICROTUBES_B3K` | `BassOverdrive.DOUGLAS_MT_3K` |
+| `BassOverdrive.MICROTUBES_VMT` | `BassOverdrive.DOUGLAS_VINTAGE_MT` |
+| `CabsimBassM.N210C_DARKGLASS_M` | `CabsimBassM.N210_DOUGLAS_CERAMIC_M` |
+| `CabsimBassM.N212_DARKGLASS_NEO_M` | `CabsimBassM.N212_DOUGLAS_NEODYMIUM_M` |
+| `CabsimBassST.N210C_DARKGLASS_ST` | `CabsimBassST.N210_DOUGLAS_CERAMIC_ST` |
+| `CabsimBassST.N212_DARKGLASS_NEO_ST` | `CabsimBassST.N212_DOUGLAS_NEODYMIUM_ST` |
+| `Synth.MONO_SYNTH` | `Synth.OVERLORD_SYNTH` |
+| `MicrotubesB3k.*` parameters | `DouglasMt3k.*` (same member names) |
+| `MicrotubesVmt.*` parameters | `DouglasVintageMt.*` (same member names) |
+| `MonoSynth.*` parameters | `OverlordSynth.*` (same member names) |
+| `Minivoicer.V1_INTER`, `V2_INTER` | `Minivoicer.V1_INTERVAL`, `V2_INTERVAL` |
+| `MinivoicerMode.MAJOR`, `MINOR`, `CHROM` | `MAJOR`, `HARMONIC_MINOR`, `NATURAL_MINOR`, `MELODIC_MINOR`, `CHROMATIC`; stored value 2 changes from chromatic to natural minor |
+| `CoryWongDelayYYMode` | `Mode2` |
+| `Input` | `MishaRhythmInput` |
+| `Legendary87MRatio` | `Ratio5` |
+| `MinivoicerRoot` | `Key` |
+| `MonoSynthMidiCh` | `MultivoicerMidiCh` |
+| `MonoSynthRoot` | `Root` |
+| `Multiplier` | `PhaseLockedLoopMultiplier` |
+| `OnOff` | `Freeze` |
+| `Scale` | `OverlordSynthScale` |
+| `Speed` | `RotaryAttack` |
+| `V1Inter` | `MinivoicerV1Interval` |
+
+Ten of the eleven renamed option-enum classes retain their old members and
+values; `Scale` is the exception.
+`OverlordSynthScale` expands the former `Scale`: `MAJOR` remains 0, while the
+old `MINOR = 1` is replaced by `HARMONIC_MINOR = 1`, `MELODIC_MINOR = 2`, and
+`NATURAL_MINOR = 3`.
+
+The Overlord Synth `SCALE` parameter also changes widget type from `switch` to
+`comboBox`; callers must select the 4.1 enum rather than pass a boolean.
+
 ### You can read back which expression pedals are assigned
 
 `set_expression` could always write an assignment. Nothing could read one back:

@@ -520,12 +520,16 @@ same thing with one deliberate difference: it does **not** issue a host
 version request - READ replies carry no `request_id` to disambiguate them, so
 the transport hands a `Version` with no id to whichever waiter is first in line.
 
-Skipping it also means the device asks nothing back. Measured 2026-08-27 on
-`d14e`: a connect through `_hello()` and its whole burst produce exactly one
-inbound `Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer
-to the announce, and eight seconds of idling after it produce none. So step 3
-above is a consequence of step 2 rather than something the device does on
-connecting.
+Skipping it also means the device asks nothing back, but whether the announce is
+acknowledged is firmware-specific. Measured 2026-08-27 on CorOS 4.0.1 / `d14e`:
+a connect through `_hello()` and its whole burst produce exactly one inbound
+`Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer to the
+announce, and eight seconds of idling after it produce none. Measured 2026-09-04
+on CorOS 4.1.0: four consecutive fresh connections produced zero inbound
+`Version` messages during the connect burst, while the subscribed state burst
+still arrived. On 4.0.1, step 3 above is therefore a consequence of step 2 rather
+than something the device does on connecting; 4.1.0 does not expose that
+acknowledgement on the wire.
 
 ### 4.3 Keepalive and disconnect
 
@@ -1987,7 +1991,8 @@ and the asymmetry is load-bearing for anyone maintaining a cached preset:
 The `Grid` echo above arrives for every edit. `PresetDirty` does not, and the
 difference matters to anything watching one to learn about the other.
 
-Measured 2026-08-14 on d14e, as a controlled pair inside one connection. The same
+Measured 2026-08-14 on CorOS 4.0.1 / d14e, as a controlled pair inside one
+connection. The same
 `set_param` write was made twice on the same block, with the RX path tapped for
 everything the unit sent in the two seconds after each:
 
@@ -2002,11 +2007,18 @@ across a save). Writing an edited parameter back to the value it had did NOT cle
 it within the same connection, which is worth knowing before treating a restore as
 an undo.
 
+One uncontrolled CorOS 4.1.0 suite run on 2026-09-03 appeared to restate
+`PresetDirty{is_dirty:true}` after a write whose immediately preceding state read
+had returned true. The capture did not establish whether that message carried a
+`request_id` or was a late answer to an earlier timed-out READ, so it is recorded
+as an observation, not a changed protocol rule. A controlled 4.1.0 capture is
+still needed.
+
 This corrects "also pushed unsolicited ... on edits", which was true of the edit
 that first dirties a preset and read as though it were true of every edit. Anything
 waiting for a `PresetDirty` to confirm an edit landed will wait out its timeout on
-an already-dirty preset - correctly, since the unit really did not say anything.
-The `Grid` echo is the per-edit signal.
+an already-dirty preset under the controlled 4.0.1 result. The `Grid` echo is the
+per-edit signal on both versions.
 
 ## Connect burst, measured
 
@@ -2828,7 +2840,7 @@ visually on the device's own screen.
 | `global_eq` / `set_global_eq_bypassed` | `GlobalEQ{READ}` / `{UPDATE, bypassed}` | read-back | five bands reported as 28 parameters |
 | `mode` / `set_mode` | `Mode{READ}` / `{UPDATE, mode}` | read-back | a slot index; `available_modes` lists the configured slots |
 | host undo / redo (no client method yet; PR #42 adds `undo()` / `redo()`) | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | preset read-back | measured 2026-09-03 on Quad Cortex, CorOS 4.0.1 / d14e: `08 01 28 01` reversed a bypass edit on a scratch preset and `08 01 30 01` reapplied it, the edit restored and the preset saved clean afterwards. Reported by a contributor on 4.1.0. Whether the recall that follows carries `reason: UNDO` was not captured |
-| `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as UPDATE in 2-11 ms (two hardware sessions); `is_dirty` has no presence, absent IS false; flips false across a save; also pushed unsolicited, but only when the flag CHANGES - see below |
+| `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as UPDATE in 2-11 ms (two hardware sessions); `is_dirty` has no presence, absent IS false; flips false across a save. Controlled 4.0.1 tests show pushes only when the flag changes; one uncontrolled 4.1.0 run may have seen a restatement or late READ reply - see below |
 | `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
 | `set_param(LaneInput(row), ...)` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |
 | `free_rows` | reads `models[]` + `Chain.split_control_points` | read-back | rows available for an independent chain: excludes the lane row of a branch, which is spoken for even when empty |

@@ -1,15 +1,20 @@
 """Tests for the generated factory-model constants (pyquadcortex.protocol.models).
 
 The constants are generated from a device's ModelRepo by
-``scripts/generate_models.py`` and cover only FACTORY models - the ones every
-Quad Cortex is guaranteed to have. Purchased plugin models and the player's own
-Neural Captures are deliberately absent: their ids are not portable, so they
-must be looked up at runtime through ``qc.catalog``.
+``scripts/generate_models.py`` and cover the FACTORY models in the CorOS 4.1.0
+snapshot. CorOS 4.0.1 has 412 rather than 420. Purchased plugin models and the
+player's own Neural Captures are deliberately absent: their ids are not
+portable, so they must be looked up at runtime through ``qc.catalog``.
 """
+
+import pathlib
 
 import pytest
 
 from pyquadcortex.protocol import models
+
+
+PUBLISHED_NAMES = pathlib.Path(__file__).parent / "fixtures/generated/model_names.txt"
 
 
 def test_anchors_match_ids_confirmed_on_hardware():
@@ -57,10 +62,15 @@ def test_constants_are_usable_where_a_model_is_expected():
 
 
 def test_count_is_the_full_factory_set():
-    # 412 factory models on CorOS as captured; a drift here means the generator
+    # 420 factory models on CorOS 4.1.0; a drift here means the generator
     # was re-run against a device with different content - re-check before
     # updating this number.
-    assert len(models.ALL) == 412
+    assert len(models.ALL) == 420
+
+
+def test_the_published_model_names_have_not_changed():
+    expected = PUBLISHED_NAMES.read_text(encoding="utf-8").splitlines()
+    assert sorted(models.ALL) == expected
 
 
 def test_unknown_attribute_raises():

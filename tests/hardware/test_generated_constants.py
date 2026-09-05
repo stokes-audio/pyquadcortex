@@ -1,9 +1,9 @@
 """The generated constants still match the unit's own catalog.
 
 `models.py` and `params.py` are generated from a device's ModelRepo and then
-COMMITTED, so they are a snapshot. A firmware or content update can renumber a
-parameter or add a model, and nothing offline can notice - the generated file is
-its own yardstick. This regenerates from the connected unit and compares.
+COMMITTED, so they are a firmware-specific snapshot. This branch carries the
+CorOS 4.1.0 snapshot; a 4.0.1 unit has 412 rather than 420 factory models and is
+skipped until the versioned-client design gives both snapshots distinct homes.
 
 A failure here is not necessarily a bug. It means the snapshot is stale, and the
 fix is to regenerate and read the diff before committing it:
@@ -41,8 +41,19 @@ def live_catalog(qc):
 @pytest.mark.parametrize("name", ["models", "params", "options"])
 def test_the_committed_file_matches_this_unit(live_catalog, name):
     """Read-only: nothing is written to the unit, so no restore is needed."""
+    factory_count = len(live_catalog.factory_models())
+    if factory_count == 412:
+        pytest.skip(
+            "this unit has the CorOS 4.0.1 catalog; this draft snapshots 4.1.0"
+        )
+    assert factory_count == 420, (
+        f"this unit exposes {factory_count} factory models, not the 420 in the "
+        "CorOS 4.1.0 snapshot; identify its firmware before regenerating"
+    )
     generated = _generator(name).render(live_catalog)
-    committed = (REPO / "pyquadcortex" / "protocol" / f"{name}.py").read_text()
+    committed = (REPO / "pyquadcortex" / "protocol" / f"{name}.py").read_text(
+        encoding="utf-8"
+    )
     if generated == committed:
         return
 

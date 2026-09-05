@@ -10,7 +10,7 @@ import itertools
 
 import pytest
 
-from pyquadcortex.protocol import catalog, client
+from pyquadcortex.protocol import catalog, client, params
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
                                 Output, SceneBypassBehavior, Setlist, TempoMode)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
@@ -1515,6 +1515,29 @@ def test_set_block_can_skip_verification_for_fire_and_forget_placement():
     qc = client.QuadCortex(EchoingTransport(refuse={21005}))
     qc.set_block(Block(1, 4, 21005), verify=False)   # must not raise
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 21005
+
+
+def test_a_coros_4_1_model_constant_is_refused_when_the_unit_lacks_it():
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.ModelCatalog()
+
+    with pytest.raises(ValueError, match="not present.*firmware"):
+        qc.set_block(Block(1, 4, 6031), verify=False)
+    assert qc._t.sent == []
+
+
+def test_a_coros_4_1_parameter_constant_is_refused_on_the_4_0_layout():
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.ModelCatalog({
+        16011: catalog.Model(
+            id=16011, name="Doubler", category="Utility", category_id=16,
+            parameters=(),
+        ),
+    })
+
+    with pytest.raises(ValueError, match="not present.*firmware"):
+        qc.set_param(Block(0, 1, 16011), params.Doubler.INPUT, Encoded(0.5))
+    assert qc._t.sent == []
 
 
 def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():

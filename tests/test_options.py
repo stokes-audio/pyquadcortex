@@ -9,11 +9,17 @@ the device expects, and that our tidied-up member name never reaches the wire in
 place of the device's own spelling.
 """
 
+import pathlib
 import re
 
 import pytest
 
 from pyquadcortex.protocol import options
+
+
+PUBLISHED_MEMBERS = (
+    pathlib.Path(__file__).parent / "fixtures/generated/option_members.txt"
+)
 
 
 #: Every enum name this module publishes. Pinned, because these are PUBLIC API
@@ -25,36 +31,47 @@ from pyquadcortex.protocol import options
 #: So a rename is allowed - it just has to show up as a diff here rather than
 #: silently breaking someone's import.
 PUBLISHED_NAMES = [
-    'Adjust', 'AnalogDelayMSyncNote', 'ArpPattern', 'BitDepth', 'Boost',
-    'Bright', 'Center', 'ChannelNormal', 'ChiefCe2wMType', 'ChiefDc2wMMode',
-    'ChiefDc2wMType', 'Color', 'CoryWongDIFunkConsoleAttack',
-    'CoryWongDelayYYMode', 'Crunch', 'Curve', 'DCellHisbertCh2Mode',
-    'Decay', 'DigitalFlangerPolarity', 'DivSource', 'Divider',
-    'DreamChorusMMode', 'DriveType', 'DualChorusMode', 'DumbbellOdsChannel',
-    'DumbbellOdsEq', 'DuplicateMode', 'DynMode2', 'DynMode3', 'Eq3',
-    'FeedbackMode', 'Filter', 'FilterCutoff', 'FilterType',
-    'FlangerEngineWaveform', 'Focus', 'Frequency', 'GainPolarity',
-    'GojiraWowMode', 'HighsFreq', 'HpfSlope', 'Input', 'Instrument',
-    'Invert', 'Legendary87MRatio', 'LowsFreq', 'Mid', 'MidsFreq',
-    'MinivoicerMidiCh', 'MinivoicerMode', 'MinivoicerRoot', 'MixLaw',
-    'ModSource', 'MonoSynthMidiCh', 'MonoSynthRoot', 'MulSource',
-    'Multiplier', 'MxPhase95Mode', 'MxPhase95Type', 'NollyCompressorAttack',
-    'Notelength', 'Octave', 'OnOff', 'Osc1Wave', 'OutMode', 'Peak',
-    'Pickup', 'PliniChorusMode', 'PliniDriveMode', 'PreRoll', 'PunchMode',
-    'Quality', 'Quantize', 'Ratio3', 'RecLength', 'RedDriveMode',
-    'Resonance', 'Routing', 'RoutingMode', 'Scale', 'Size',
+    'Adjust', 'AnalogDelayMSyncNote', 'ArpPattern', 'AutoSpeed', 'BitDepth',
+    'Boost', 'Bright', 'Center', 'ChannelNormal', 'ChiefCe2wMType',
+    'ChiefDc2wMMode', 'ChiefDc2wMType', 'Color',
+    'CoryWongDIFunkConsoleAttack', 'Crunch', 'Curve',
+    'DCellHisbertCh2Mode', 'Decay', 'DigitalFlangerPolarity', 'DivSource',
+    'Divider', 'DoublerInput', 'DreamChorusMMode', 'DriveType',
+    'DualChorusMode', 'DumbbellOdsChannel', 'DumbbellOdsEq',
+    'DuplicateMode', 'DynMode2', 'DynMode3', 'Eq3', 'FeedbackMode',
+    'Filter', 'FilterCutoff', 'FilterType', 'FlangerEngineWaveform', 'Focus',
+    'Freeze', 'Frequency', 'GOccurrence', 'GainPolarity', 'GlitchMode',
+    'GojiraWowMode', 'GrainLength', 'HighsFreq',
+    'HorizonDevicesPrecisionDriveAttack', 'HpfSlope', 'Instrument', 'Invert',
+    'JohnMayerHeadroomHeroInput', 'JohnMayerSignature83Eq', 'Key',
+    'LoopLength', 'LowsFreq', 'M', 'Mid', 'MidsFreq', 'MinivoicerMidiCh',
+    'MinivoicerMode', 'MinivoicerV1Interval', 'MishaLaserMode',
+    'MishaModulatorMode', 'MishaRhythmInput', 'MishaStereoDelayMode',
+    'MixLaw', 'ModSource', 'Mode2', 'Model', 'MulSource',
+    'MultivoicerMidiCh', 'MultivoicerScale', 'MultivoicerV1Interval',
+    'MxPhase95Mode', 'MxPhase95Type', 'NollyCompressorAttack', 'Notelength',
+    'Octave', 'Osc1Wave', 'OutMode', 'OverlordSynthScale', 'Peak',
+    'PetrucciChorus1Mode', 'PetrucciPhaserMode',
+    'PhaseLockedLoopMultiplier', 'Pickup', 'PitchPattern', 'PliniChorusMode',
+    'PliniDriveMode', 'PreRoll', 'Preset', 'PunchMode', 'Quality',
+    'Quantize', 'RabeaColossusFuzzMode', 'Range', 'Ratio3', 'Ratio5',
+    'ReadPoint', 'RecLength', 'RedDriveMode', 'Resonance', 'Response',
+    'RingModulatorMultiplier', 'RoomLDist', 'RoomSize', 'Root',
+    'RotaryAttack', 'Routing', 'RoutingMode', 'Size',
     'SlapbackDelayMSyncNote', 'Slope', 'SoldanoSlo100Channel', 'Sound',
-    'Speed', 'SplitterMode', 'SplitterType', 'Start', 'Stereo',
-    'StereoLink', 'SyncNote11', 'SyncNote14', 'SyncNote17', 'SyncNote21',
-    'SyncOn', 'TankType', 'TapPreset', 'TempocontrolType', 'TimeSignature',
-    'TremoloWaveform', 'TrigDirection', 'TriggerMode', 'Tube',
-    'UnisonSource', 'UsDlx64VintageMode', 'V1Inter', 'VibNote',
-    'VintageChorusMode', 'VoiceMode',
+    'SplitterMode', 'SplitterType', 'Start', 'Stereo', 'StereoLink', 'Sweep',
+    'SyncNote11', 'SyncNote14', 'SyncNote17', 'SyncNote21', 'SyncOn',
+    'SyncSource', 'TankType', 'Tap1Interval', 'Tap1Semitones', 'TapPreset',
+    'TempoSource', 'TempocontrolType', 'TimHensonDelayModernMode',
+    'TimeSignature', 'TremoloWaveform', 'TrigDirection', 'Trigger',
+    'TriggerMode', 'Tube', 'UnisonSource', 'UsDlx64VintageMode', 'V1Active',
+    'VibNote', 'VintageChorusMode', 'Voice', 'VoiceMode', 'VoiceView',
+    'Voicing',
 ]
 
 
 def test_the_module_covers_the_lists_the_generator_found():
-    assert len(options.OPTION_LABELS) == 110
+    assert len(options.OPTION_LABELS) == 148
     assert set(options.__all__) == {e.__name__ for e in options.OPTION_LABELS} | {
         "OPTION_LABELS"}
 
@@ -62,6 +79,16 @@ def test_the_module_covers_the_lists_the_generator_found():
 def test_the_published_names_have_not_changed():
     """These are public API. A regeneration that renames one must say so."""
     assert sorted(e.__name__ for e in options.OPTION_LABELS) == PUBLISHED_NAMES
+
+
+def test_the_published_members_and_values_have_not_changed():
+    expected = PUBLISHED_MEMBERS.read_text(encoding="utf-8").splitlines()
+    actual = [
+        f"{enum.__name__}.{name}={member.value}"
+        for enum in sorted(options.OPTION_LABELS, key=lambda item: item.__name__)
+        for name, member in enum.__members__.items()
+    ]
+    assert actual == expected
 
 
 @pytest.mark.parametrize("enum_type", list(options.OPTION_LABELS))

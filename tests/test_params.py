@@ -1,15 +1,27 @@
 """Tests for the generated parameter constants (pyquadcortex.protocol.params).
 
-Generated from a device's ModelRepo by ``scripts/generate_params.py``, and
-FACTORY-only for the same reason ``models.py`` is: a unit may not have a
-purchased model, and capture ids are user slots.
+Generated from the CorOS 4.1.0 ModelRepo by ``scripts/generate_params.py``.
+They are firmware-specific for the same reason ``models.py`` is: a 4.0.1 unit
+does not expose every 4.1 model or parameter.
 
 The anchors below are values confirmed against hardware or against the unit's
 own editor. They are what stops a regeneration silently renumbering something.
 """
+import pathlib
+
 import pytest
 
 from pyquadcortex.protocol import params
+
+
+PUBLISHED_CLASSES = (
+    pathlib.Path(__file__).parent / "fixtures/generated/param_classes.txt"
+)
+
+
+def test_the_published_parameter_classes_have_not_changed():
+    expected = PUBLISHED_CLASSES.read_text(encoding="utf-8").splitlines()
+    assert sorted({cls.__name__ for cls in params.BY_MODEL.values()}) == expected
 
 
 def test_the_container_enums_match_what_the_targets_address():

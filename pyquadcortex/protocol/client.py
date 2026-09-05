@@ -56,6 +56,14 @@ from pyquadcortex.protocol.units import (UNITY_LEVEL, bpm_to_tempo,  # noqa: F40
                                          input_level_db, lane_level_db, tempo_bpm)
 
 
+# Present in the CorOS 4.1.0 catalog and absent from 4.0.1. These guards are a
+# compatibility bridge until firmware-specific generated namespaces exist.
+_COROS_4_1_ONLY_MODELS = frozenset({4008, 5025, 6026, 6031, 8039, 18012,
+                                    26005, 26006})
+_COROS_4_1_ONLY_PARAMETERS = frozenset({(16008, 7), (16011, 5),
+                                        (16012, 5), (16013, 7)})
+
+
 
 
 def _mode_param(message, index: int):
@@ -866,6 +874,18 @@ class QuadCortex:
         appears in all eight.
         """
         index, spec = target.index_of(param, self._get_catalog)
+        firmware_specific = (getattr(target, "model_id", None), int(index))
+        if (isinstance(param, values_module.Param)
+                and firmware_specific in _COROS_4_1_ONLY_PARAMETERS
+                and spec is None):
+            spec = target.spec_at(index, self._get_catalog)
+            if spec is None:
+                raise ValueError(
+                    f"generated parameter {getattr(param, 'name', int(param))!r} "
+                    f"at index {int(param)} is not present in the connected "
+                    f"unit's catalog for {target.describe()}; use constants "
+                    f"generated for this firmware"
+                )
 
         if value is None:
             raise TypeError(
@@ -1151,6 +1171,12 @@ class QuadCortex:
             )
         row, column, model = cell.row, cell.column, cell.model_id
         model_id = int(getattr(model, "id", model))
+        if (model_id in _COROS_4_1_ONLY_MODELS
+                and self.catalog.get(model_id) is None):
+            raise ValueError(
+                f"model {model_id} is not present in the connected unit's "
+                f"catalog; use a model available on this firmware"
+            )
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
         chain.row = row
