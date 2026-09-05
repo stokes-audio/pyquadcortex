@@ -22,7 +22,7 @@ The whole repository: the `pyquadcortex/` package (including the committed gener
 
 ### Integration points
 
-- **The device itself:** wire behavior is verified against CorOS / Cortex Control 4.0.1, device firmware d14e. The protocol carries no version number, so nothing is negotiated at runtime.
+- **The device itself:** wire behavior is verified per DEVICE PROFILE (ADR-0020), a profile being `device_type` plus `zenos_git_hash` (the CorOS version) as the unit reports them in its `Version` reply. One profile is measured by the maintainer: Quad Cortex, CorOS 4.0.1, firmware d14e. Quad Cortex 4.1.0 has contributed evidence the maintainer cannot verify; the Quad Cortex Mini (`device_type` ATMA - inferred from the schema's `atma_*` field names; no Mini has been measured) has none. The protocol carries no version number, so the profile read at connect is the only version information there is.
 - **hidapi:** the `hid` pip package is a ctypes binding to the OS-level hidapi C library, which users install themselves (see README).
 - **PyPI:** published as `pyquadcortex` with the `qcctl` console script; release process in [`releasing.md`](releasing.md).
 - **Planning notes:** the maintainer's planning material for future work (including the domain model) lives in a separate private repo; this repo carries only the library and its engineering docs.
@@ -68,7 +68,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 - **The protobuf runtime pin is coupled to the committed gencode, and so is the generator floor.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001). The generator is `grpcio-tools`, which carries its own protoc and so decides the gencode by which version is installed, hence the `grpcio-tools>=1.83.0` floor in the dev extra. Older gencode still imports, so both guards are explicit: `scripts/compile_protos.sh` refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode and the pin floor are the same number (see ADR-0008).
 - **Python >= 3.11.**
 - **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - lives in `tests/hardware/` and runs only under `pytest --hardware` (see ADR-0005). That gate is TWO hooks in `tests/hardware/conftest.py`, not one: pytest offers `pytest_ignore_collect` only the paths it reaches by walking a directory, so a path named on the command line is caught instead by `pytest_collection_modifyitems`, which stops the run with an error naming the flag. `tests/test_hardware_gate.py` holds both halves up through a subprocess. Its modules must stay import-safe offline, and two offline tests hold that: `tests/test_hardware_gate.py` collects the whole tree under `--hardware` with `hid` poisoned, which imports every module in the directory, and `tests/test_scene_echo_predicates.py` imports `tests/hardware/test_write_echo.py` to exercise its predicates with no unit attached - the only way a predicate that can never match gets caught cheaply.
-- **Wire baseline: CorOS / Cortex Control 4.0.1, firmware d14e.** The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
+- **Wire behaviour is stated per device profile, and a profile is named by CorOS version, never by `app_fw`** (ADR-0020). The measured baseline is Quad Cortex, CorOS 4.0.1, firmware d14e; a contributor reports d14e on 4.1.0 too (PR #44), so the app firmware string distinguishes nothing. Once the seam is built, an unknown profile will refuse to connect rather than borrow the nearest one. An observation from another profile is recorded beside the 4.0.1 record in `protocol.md`, dated and named. The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
 - **Exclusive device access.** Cortex Control holds the HID interface exclusively, so the library and Cortex Control cannot be connected at the same time.
 
 ## 7. Decision Records
@@ -96,7 +96,8 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0017 | Every setting takes a typed value, and says so when it has no scale to convert against |
 | ADR-0018 | A parameter constant carries its unit, and CI runs a type checker |
 | ADR-0019 | The frame trailer's flags are read and reported; an encrypted payload is labelled, not decrypted |
-| ADR-0020 | A timed device gesture is one atomic transport sequence |
+| ADR-0020 | Connect resolves a device profile, and nothing else branches on firmware or model |
+| ADR-0021 | A timed device gesture is one atomic transport sequence |
 
 ## 8. Open Questions
 
@@ -136,7 +137,7 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
-### 2026-09-04 - Physical screen capture and touchscreen input (ADR-0020)
+### 2026-09-04 - Physical screen capture and touchscreen input (ADR-0021)
 
 **What changed:** The CorOS 4.1 schema now includes `ModelPreset` and message
 type 72, `RemoteControl`, with regenerated bindings and stubs.
@@ -157,6 +158,32 @@ following framebuffer showed its parameter editor.
 bindings/stubs, protocol client and transport, offline tests, API/protocol/manual
 docs, changelog, CLAUDE.md, ADR.md, and this file. The model layer is unchanged:
 raw screen coordinates are a protocol-layer escape hatch, not a domain control.
+
+### 2026-09-03 - One baseline becomes a registry of device profiles (ADR-0020)
+
+**What changed:** the repo stops describing one firmware as "the" baseline and
+describes device profiles instead. A profile is `device_type` plus
+`zenos_git_hash` from the unit's own `Version` reply, and it owns everything
+that differs by firmware or model: the generated constants snapshot, the announce
+string, the hardware facts, and the operations measured to differ. Connect will
+resolve the profile before the handshake and refuse an unknown one. The
+`protocol.md` header, section 2 and section 6 here, and `CLAUDE.md` now say so.
+`version()` accepts only a `Version` carrying an identity field, because the unit
+answers a `Version` READ with the full reply AND its own `Version{READ}` 1 ms
+later, and a type-correlated wait returned the empty one every second call.
+
+**Why:** two contributions arrived from units the maintainer does not have - a
+Mini opened over USB (#31) and a CorOS 4.1.0 catalog (#42, then #44) - and
+neither could be verified on the unit that defines the baseline. Merging either
+would have failed the hardware suite on that unit and moved the baseline without
+a decision. The maintainer wants Quad Cortex 4.0.1, Quad Cortex 4.1 and the Mini
+supported at once, each measured on its own hardware, so the shape had to be
+decided before the seam is built.
+
+**What did NOT change, on purpose:** no code branches on a version string yet.
+`protocol.models`, `params` and `options` still mean the QC 4.0.1 snapshot, and
+`CC_VERSION` still announces 4.0.1. The seam, the registry and the per-profile
+namespaces are the next piece of work; this entry records the rules they follow.
 
 ### 2026-09-03 - The trailer's two unread bytes are named (ADR-0019)
 

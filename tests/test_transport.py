@@ -590,6 +590,29 @@ def test_a_listener_has_already_run_when_the_blocked_caller_wakes():
         t.stop()
 
 
+def test_a_listener_has_already_run_when_an_await_broadcast_caller_wakes():
+    # The same ordering as above, for the OTHER wait. `version()` moved from
+    # `request()` to `await_broadcast` on 2026-09-03, and the identity entry's
+    # arrival count rides on listeners seeing the reply before the caller does.
+    # Both paths share `_dispatch`, which notifies listeners before it touches
+    # any waiter; this holds that shared line up for the type-matched wait, so a
+    # fast path for type waiters inserted above it cannot pass unnoticed.
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+    seen = []
+    t.start()
+    try:
+        t.add_listener(seen.append)
+        got = t.await_broadcast(
+            pa.VersionMessage,
+            lambda: t.send(pa.VersionMessage(action=pa.MessageAction.READ)),
+            timeout=REQUEST_TIMEOUT)
+        assert len(seen) == 1, "the caller woke before the listener had the message"
+        assert seen[0] is got, "the listener and the waiter get the same message"
+    finally:
+        t.stop()
+
+
 def test_a_raising_listener_costs_nobody_else_the_message(caplog):
     # Wrap and log, like every other decode step in the RX path: the peers still
     # see the message, the waiter still gets its reply, and the read loop is still

@@ -20,6 +20,28 @@ correction.
 
 ## Unreleased
 
+### The repo describes device profiles, not one baseline (ADR-0020)
+
+A profile is what the unit reports in its `Version` reply: `device_type` and
+`zenos_git_hash`, the CorOS version. Everything that differs by firmware or
+model will live on the profile, connect will resolve it before the handshake,
+and an unknown profile will refuse to connect rather than borrow the nearest
+one. This entry records the rules; the seam is the next piece of work. No code
+branches on a version string yet, and `protocol.models`, `params` and `options`
+still mean the Quad Cortex 4.0.1 snapshot. See `docs/ADR.md`.
+
+### `version()` no longer answers with the unit's own question
+
+The unit answers a `Version` READ twice: the full reply, and 1 ms later its own
+`Version{READ}` carrying `action` alone. `version()` waited by message type, so
+two calls close together alternated between them - full, empty, full, empty -
+and a caller reading `custom_name` or the serial got `""` every second time
+with no error. It now accepts only a `Version` carrying an identity field, the
+serial or the firmware, so the unit's question is never returned as the answer.
+A partial reply carrying one of the two is still returned; the state cache
+keeps what the unit sent and re-reads for the rest. Measured on Quad Cortex,
+CorOS 4.0.1 / d14e.
+
 ### Control and capture the physical Quad Cortex screen
 
 `tap_screen(x, y)` taps a raw coordinate in the unit's 800 x 480 display
