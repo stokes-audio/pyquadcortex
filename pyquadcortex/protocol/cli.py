@@ -65,9 +65,12 @@ def _open_unconnected():
     """Open the device and start the transport WITHOUT the connect handshake.
 
     Only the ``version`` subcommand wants this: a plain Version READ works
-    without the connect gate, and the handshake's own version announce would
-    race that READ's reply (READ replies carry no request_id to disambiguate).
-    Everything else goes through :func:`pyquadcortex.protocol.connect`.
+    without the connect gate, so the handshake would be wasted work. It used
+    to be a correctness matter too - the handshake's announce provokes a
+    ``Version`` reply that a type-correlated wait could take for the READ's -
+    but ``version()`` now accepts only a reply carrying identity, so that race
+    no longer decides anything. Everything else goes through
+    :func:`pyquadcortex.protocol.connect`.
     """
     from pyquadcortex.protocol import session, transport
 

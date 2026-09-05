@@ -466,9 +466,29 @@ class QuadCortex:
 
         Works without the connect handshake, so it is a good first call to
         confirm the device is talking.
+
+        Confirmed on hardware 2026-09-03 (Quad Cortex, CorOS 4.0.1 / d14e): the
+        unit answers a ``Version{READ}`` TWICE - the full UPDATE, and 1 ms later
+        its own ``Version{READ}`` carrying ``action`` alone, the question it asks
+        Cortex Control. Neither carries a ``request_id``, so a type-correlated
+        ``request()`` returned the empty one on every second call: five calls in
+        a row went full, empty, full, empty, full. The wait therefore accepts
+        only a ``Version`` that carries IDENTITY - ``device_serial_number`` or
+        ``app_fw_version`` - which the unit's question does not, and neither
+        does the handshake's ``cortex_control_version_valid`` answer. A partial
+        reply carrying one of the two is still returned, because the cache keeps
+        what the unit sent and re-reads for the rest (CLAUDE.md, "never cache an
+        incomplete reply as if it were complete"). Confirmed after the change,
+        same unit and day: five back-to-back calls through this path - a READ
+        with no ``request_id`` - all returned the full reply. See
+        ``protocol.md``, "A ``Version`` READ is answered twice".
         """
-        return self._t.request(
-            pa.VersionMessage(action=pa.MessageAction.READ), timeout=timeout
+        return self._t.await_broadcast(
+            pa.VersionMessage,
+            lambda: self._t.send(pa.VersionMessage(action=pa.MessageAction.READ)),
+            timeout=timeout,
+            match=lambda m: (m.HasField("device_serial_number")
+                             or m.HasField("app_fw_version")),
         )
 
     def create_local_backup(self, timeout: float = 60.0) -> dict[str, typing.Any]:

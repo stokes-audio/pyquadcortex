@@ -101,8 +101,11 @@ If your change touches the live device path and you want to verify it on a real 
 - **Quit Cortex Control first.** It holds the USB interface exclusively, so nothing
   else can talk to the device while it is running.
 - The device protocol is **unversioned** and can change across CorOS / Cortex Control
-  updates. This library is verified against **4.0.1** (firmware `d14e`); if you are on
-  a newer version, re-verify the framing and schema before assuming a bug.
+  updates. This library is verified against **Quad Cortex, CorOS 4.0.1** (firmware
+  `d14e`); if you are on a newer version, re-verify the framing and schema before
+  assuming a bug. A different firmware or a Mini is a different DEVICE PROFILE
+  (ADR-0020): record what you measure beside the 4.0.1 record in `docs/protocol.md`,
+  dated and named by CorOS version, rather than in its place.
 
 When you confirm behavior on hardware, say so in the pull request: which operation,
 which CorOS version, and how you verified it (a read-back, or watching the unit).
