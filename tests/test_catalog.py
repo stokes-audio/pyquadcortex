@@ -125,6 +125,37 @@ def test_parameters_are_ordered_and_carry_metadata(cat):
     assert cat[5005].parameters[0].units == "dB"
 
 
+def test_parameter_carries_editor_and_conditional_metadata():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Conditional Delay">
+        <Parameter name="MODE" min="0" max="2" defaultValue="0"/>
+        <Parameter name="PAN" min="0" max="10" defaultValue="5"
+          mid_string="C" displayPos="7" toggleOn="0, 4"
+          toggleOff="2" toggleStep="1,2" linkedSceneMode="9"/>
+      </Model>
+    </Category></Models>"""
+
+    parameter = catalog.parse_model_repo(make_payload(xml))[1].parameters[1]
+
+    assert parameter.mid_label == "C"
+    assert parameter.display_position == 7
+    assert parameter.toggle_on == (0, 4)
+    assert parameter.toggle_off == (2,)
+    assert parameter.toggle_steps == (1, 2)
+    assert parameter.linked_scene_mode == 9
+
+
+def test_absent_editor_metadata_has_neutral_defaults(cat):
+    parameter = cat[1].parameters[0]
+
+    assert parameter.mid_label == ""
+    assert parameter.display_position is None
+    assert parameter.toggle_on == ()
+    assert parameter.toggle_off == ()
+    assert parameter.toggle_steps == ()
+    assert parameter.linked_scene_mode is None
+
+
 def test_lookup_parameter_by_name_is_case_insensitive(cat):
     assert cat[1].parameter("gain").index == 0
     assert cat[1].parameter("TREBLE").index == 1
