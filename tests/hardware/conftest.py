@@ -25,6 +25,16 @@ import pytest
 SUITE = pathlib.Path(__file__).resolve().parent
 ROOT = SUITE.parent.parent
 
+#: ``nodeid -> operation names`` for every collected hardware test, filled at
+#: collection. ``pytest_runtest_logreport`` is handed a report and not an item,
+#: so the markers have to be looked up by node id; building the map at
+#: collection also means the report and the ``--verifies`` selection read the
+#: same names.
+_VERIFIES = {}
+
+#: ``operation -> list of outcomes``, one entry per phase that decided a test.
+_OUTCOMES = {}
+
 
 def pytest_ignore_collect(collection_path, config):
     # Not merely skipped - not collected. A hardware test that silently "passes"
@@ -61,6 +71,14 @@ def _resolved(item):
 def pytest_collection_modifyitems(session, config, items):
     """Stop the run when a hardware test is named directly without the flag.
 
+    With ``--hardware`` it does the profile bookkeeping instead (ADR-0020):
+    every ``verifies()`` name is checked against ``QuadCortex.operations()``,
+    the names are recorded for the end-of-run report, and ``--verifies`` narrows
+    the run to the tests that name one operation. The check runs at COLLECTION
+    so a marker naming an operation that no longer exists stops the run before
+    the unit is touched, and ``tests/test_hardware_gate.py`` - which collects
+    this tree offline with ``hid`` poisoned - sees it too.
+
     pytest does not consult ``pytest_ignore_collect`` for a path given as a
     command-line argument - only for paths reached by walking a directory - so
     narrowing a run to one file used to walk straight past the gate. With a unit
@@ -88,6 +106,28 @@ def pytest_collection_modifyitems(session, config, items):
     § 6), and nothing at their module scope touches a device.
     """
     if config.getoption("--hardware"):
+        from pyquadcortex.protocol.client import QuadCortex
+
+        operations = QuadCortex.operations()
+        for item in items:
+            names = {n for m in item.iter_markers("verifies") for n in m.args}
+            # Checked here rather than at run time so a renamed operation is a
+            # collection error on every run, including the offline one in
+            # tests/test_hardware_gate.py, rather than a marker that quietly
+            # stops naming anything.
+            for name in sorted(names):
+                if name not in operations:
+                    raise pytest.UsageError(
+                        f"{item.nodeid}: verifies({name!r}) is not an operation")
+            _VERIFIES[item.nodeid] = names
+        wanted = config.getoption("--verifies")
+        if wanted:
+            keep, drop = [], []
+            for item in items:
+                names = _VERIFIES.get(item.nodeid, set())
+                (keep if wanted in names else drop).append(item)
+            items[:] = keep
+            config.hook.pytest_deselected(items=drop)
         return
     gated = sorted({
         str(path.relative_to(ROOT))
@@ -193,7 +233,7 @@ class HandshakeBurst:
 
 
 @pytest.fixture(scope="session")
-def _connection():
+def _connection(request):
     """The run's single connection, with the handshake burst recorded.
 
     One connection, because the handshake is expensive - and because the unit
@@ -233,8 +273,14 @@ def _connection():
         burst.attach(transport)
         cache.listen_on(transport)
 
-    with protocol.connect(before_handshake=subscribe) as client:
+    # EXPERIMENTAL always: on a new profile this suite IS the verification, and a
+    # VERIFIED client would refuse everything before a test could look. On
+    # QuadCortex it changes nothing.
+    with protocol.connect(before_handshake=subscribe,
+                          support=protocol.Support.EXPERIMENTAL) as client:
         cache.bind(client)
+        # Read by pytest_terminal_summary, which has a config and no fixtures.
+        request.config._profile = type(client)
         burst.record_until("RecallPresetMessage", patience=30.0)
         # Taken here, before any test can read through the cache, so "the burst
         # warmed this" cannot later be confused with "some test read it".
@@ -249,6 +295,12 @@ def _connection():
 def qc(_connection):
     """The connected ``QuadCortex`` every test in this suite drives."""
     return _connection[0]
+
+
+@pytest.fixture(scope="session")
+def profile(qc):
+    """The connected profile class (ADR-0020)."""
+    return type(qc)
 
 
 @pytest.fixture(scope="session")
@@ -291,3 +343,73 @@ def restores():
         raise AssertionError(
             "COULD NOT RESTORE THE UNIT - fix these by hand:\n  "
             + "\n  ".join(failed))
+
+
+@pytest.fixture
+def scratch_preset(qc):
+    """A disposable copy of the loaded preset in a free User slot.
+
+    Yields ``(folder_key, position, name)``. Teardown recalls the original slot
+    and deletes the copy, so a test that must edit, save or undo never touches
+    one of the owner's presets. Requires the loaded preset to be clean.
+    """
+    from pyquadcortex.protocol import Setlist
+    before = qc.loaded_position()
+    assert qc.preset_dirty() is False, "the loaded preset has unsaved edits; save or reload it first"
+    listing = qc.list_presets(Setlist.USER, include_empty=True)
+    free = next(e.index for e in listing if not e.name)
+    name = "pyquadcortex scratch"
+    stored = qc.save_current_preset(Setlist.USER, free, name, confirm=True, confirm_timeout=30.0)
+    assert stored == name
+    qc.recall_preset(Setlist.USER, free)
+    time.sleep(3.0)
+    try:
+        yield Setlist.USER, free, name
+    finally:
+        qc.recall_preset(before.folder_key, before.position)
+        time.sleep(3.0)
+        qc.delete_preset(Setlist.USER, name)
+
+
+def pytest_runtest_logreport(report):
+    """Record how each operation's tests came out, for the end-of-run report.
+
+    A test decides an operation in whichever phase stops it: a ``call`` report
+    always counts, and a ``setup`` that failed or skipped counts too, because
+    then no ``call`` report follows and the operation was not exercised. A
+    passing ``setup`` or ``teardown`` says nothing on its own and is ignored.
+    """
+    names = _VERIFIES.get(report.nodeid)
+    if not names:
+        return
+    if report.when == "call" or (report.when == "setup" and report.outcome != "passed"):
+        for name in names:
+            _OUTCOMES.setdefault(name, []).append(report.outcome)
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Print which operations this run measured on the connected profile.
+
+    The suite IS the instrument (ADR-0020): what passed here is what a profile
+    may list in ``VERIFIED``, and the two differences are the two things a
+    maintainer wants - what has newly earned a place, and what has lost one.
+    """
+    if not config.getoption("--hardware"):
+        return
+    from pyquadcortex.protocol.support import EVERYTHING
+
+    cls = getattr(config, "_profile", None)
+    if cls is None:          # the session never connected, so there is nothing to report
+        return
+    passed = {op for op, outcomes in _OUTCOMES.items()
+              if outcomes and all(o == "passed" for o in outcomes)}
+    failed = {op for op, outcomes in _OUTCOMES.items()
+              if any(o != "passed" for o in outcomes)}
+    verified = set(cls.VERIFIED) if cls.VERIFIED is not EVERYTHING else cls.operations()
+    tr = terminalreporter
+    tr.section(f"operations on {cls.__name__} "
+               f"(CorOS {', '.join(cls.MEASURED_ON)}, {cls.EVIDENCE.name})")
+    tr.line(f"passed:               {sorted(passed)}")
+    tr.line(f"failed or skipped:    {sorted(failed)}")
+    tr.line(f"passed, not VERIFIED: {sorted(passed - verified)}   <- candidates to add")
+    tr.line(f"VERIFIED, not passed: {sorted(verified - passed)}   <- regressions by name")

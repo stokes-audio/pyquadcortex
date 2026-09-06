@@ -97,6 +97,11 @@ def collected_with_the_flag(_poisoned_hid):
                      "tests/hardware")
     assert result.returncode == pytest.ExitCode.OK, (
         result.stdout + result.stderr)
+    # A verifies() name that is not an operation. Matched on the refusal's own
+    # words rather than on "UsageError": pytest renders a UsageError raised from
+    # a collection hook as a bare "ERROR: <message>" on stderr and never prints
+    # the class name, so a check for that spelling could not fail.
+    assert "is not an operation" not in result.stderr, result.stderr
     ids = [line.strip() for line in result.stdout.splitlines()
            if line.startswith("tests/hardware") and "::" in line]
     assert ids, result.stdout
