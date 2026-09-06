@@ -410,6 +410,70 @@ def test_connect_gives_up_on_a_silent_identity_read_after_its_patience(monkeypat
     assert t.stopped and t.device.closed
 
 
+def test_connect_waits_for_a_version_carrying_both_fields_it_resolves_on(
+        monkeypatch, fake_stack):
+    """A partial identity reply is waited THROUGH, not refused.
+
+    The unit answers a `Version` READ twice, and `version()`'s predicate rightly
+    accepts a reply carrying only the serial or only the firmware - the cache
+    keeps what the unit sent. Resolution needs `device_type` AND
+    `zenos_git_hash`, and reading identity through that looser predicate meant a
+    partial first answer raised `UnsupportedDevice` on a unit this library has a
+    profile for. The wait is now the strict one, inside the same patience.
+    """
+    partial = pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                                device_serial_number="QCS0000001")
+    full = pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                             device_type=pa.VersionMessage.QC,
+                             zenos_git_hash="4.0.1",
+                             device_serial_number="QCS0000001")
+    reads = {"n": 0}
+
+    def two_answers(self, expected_class, trigger, timeout=40.0, match=None):
+        reads["n"] += 1
+        trigger()
+        assert match is not None, "the identity read must carry a predicate"
+        if reads["n"] == 1:
+            # What the real transport does with a message the predicate
+            # rejects: keep waiting, and time out with nothing to hand back.
+            assert not match(partial), "a serial-only reply cannot resolve a profile"
+            raise TimeoutError("no response for request_id=1")
+        assert match(full)
+        return full
+
+    monkeypatch.setattr(FakeTransport, "await_broadcast", two_answers)
+    qc = session.connect(settle=0, handshake_patience=30.0)
+    assert reads["n"] == 2, "the partial answer was waited through, not taken"
+    assert type(qc) is client.QuadCortex
+
+
+def test_connect_says_what_went_unanswered_when_no_identity_ever_arrives(
+        monkeypatch, fake_stack):
+    """The guidance is one sentence; the clause naming the question differs."""
+    def never_resolves(self, expected_class, trigger, timeout=40.0, match=None):
+        trigger()
+        raise TimeoutError("no response for request_id=1")
+
+    monkeypatch.setattr(FakeTransport, "await_broadcast", never_resolves)
+    with pytest.raises(TimeoutError) as caught:
+        session.connect(timeout=0.05, handshake_patience=0.3)
+    text = str(caught.value)
+    assert "device_type and zenos_git_hash" in text
+    assert "openable-but-silent" in text
+
+
+def test_connect_with_a_profile_for_another_device_refuses_a_quad_cortex(fake_stack):
+    """The device-type check compares unconditionally now that the identity
+    read guarantees the field is there. A Mini profile against a QC must not
+    reach the handshake."""
+    with pytest.raises(profiles.UnsupportedDevice, match="asked for QuadCortexMini"):
+        session.connect(profile=profiles.QuadCortexMini,
+                        support=support.Support.EXPERIMENTAL)
+    t = FakeTransport.instances[0]
+    assert t.stopped and t.device.closed
+    assert not any(h.startswith("request ResetComms") for h in t.happened)
+
+
 def test_connect_resolves_the_profile_from_the_units_version_before_the_handshake(fake_stack):
     qc = session.connect()
     t = FakeTransport.instances[0]

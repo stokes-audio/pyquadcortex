@@ -81,26 +81,38 @@ def open_device():
         ) from exc
 
 
-def _patience_exhausted(attempt: int, handshake_patience: float) -> TimeoutError:
+#: What went unanswered, for each phase's ``_patience_exhausted``. The guidance
+#: is one sentence in one place (below); only the clause naming what this
+#: library asked for differs, because "no answer at all" and "no answer
+#: carrying what the registry resolves on" are different things to go and look
+#: at on the unit.
+_NO_HANDSHAKE = "the control protocol did not answer"
+_NO_IDENTITY = ("the unit answered no Version carrying device_type and "
+                "zenos_git_hash, the two fields a profile is resolved from")
+
+
+def _patience_exhausted(attempt: int, handshake_patience: float,
+                        unanswered: str = _NO_HANDSHAKE) -> TimeoutError:
     """The ``TimeoutError`` raised when ``handshake_patience`` elapses.
 
     Shared between the identity read and the handshake loop below (ADR-0020):
     both are just this library asking the control protocol something, and the
     measured 9-17s openable-but-silent window after a boot covers either one
     equally - so a caller gets the same guidance no matter which one hit it,
-    from one place rather than two copies drifting apart.
+    from one place rather than two copies drifting apart. ``unanswered`` is the
+    only part that differs, and it says which question went unanswered.
     """
     return TimeoutError(
-        f"the device is enumerated and open but the control "
-        f"protocol did not answer in {attempt} handshake "
-        f"attempt(s) over {handshake_patience:.0f}s. This "
+        f"the device is enumerated and open but {unanswered} in {attempt} "
+        f"handshake attempt(s) over {handshake_patience:.0f}s. This "
         f"openable-but-silent window has measured 9-17s after a "
         f"reboot or cold boot; if it persists far longer, see "
         f"the USB-link-death section of troubleshooting.md."
     )
 
 
-def _retry_until_patient(attempt_fn, deadline: float, handshake_patience: float):
+def _retry_until_patient(attempt_fn, deadline: float, handshake_patience: float,
+                         unanswered: str = _NO_HANDSHAKE):
     """Call ``attempt_fn()`` and retry it on ``TimeoutError`` until ``deadline``.
 
     ``deadline`` is computed once by the caller and shared across every phase
@@ -114,7 +126,31 @@ def _retry_until_patient(attempt_fn, deadline: float, handshake_patience: float)
             return attempt_fn()
         except TimeoutError:
             if time.monotonic() >= deadline:
-                raise _patience_exhausted(attempt, handshake_patience) from None
+                raise _patience_exhausted(
+                    attempt, handshake_patience, unanswered) from None
+
+
+def _resolves_a_profile(reply: pa.VersionMessage) -> bool:
+    """Whether a ``Version`` reply carries what a profile is resolved from.
+
+    ``version()`` accepts a reply carrying the serial OR the firmware, which is
+    right for a caller and right for the cache rule - the unit answers a
+    ``Version`` READ twice, and a partial answer is kept rather than thrown
+    away (protocol.md section 4.4). Resolution is a stricter question: it needs
+    ``device_type`` AND ``zenos_git_hash``, so a reply carrying only identity
+    fields is not the answer to it and the wait goes on.
+    """
+    return reply.HasField("device_type") and reply.HasField("zenos_git_hash")
+
+
+def _read_identity(transport, timeout: float) -> pa.VersionMessage:
+    """Send a ``Version`` READ and wait for a reply a profile can be resolved from."""
+    return transport.await_broadcast(
+        pa.VersionMessage,
+        lambda: transport.send(pa.VersionMessage(action=pa.MessageAction.READ)),
+        timeout=timeout,
+        match=_resolves_a_profile,
+    )
 
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
@@ -178,6 +214,10 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
 
     Raises:
         DeviceNotFoundError: if no Quad Cortex could be opened.
+        TimeoutError: if ``handshake_patience`` runs out. Either the unit
+            answered nothing at all, or - for the identity read - it answered
+            no ``Version`` carrying both ``device_type`` and
+            ``zenos_git_hash``; the message says which.
         UnsupportedDevice: if the unit reports a device type and CorOS version
             no profile has measured, or ``profile`` names a class for a
             different device type. Raised before the handshake; the device is
@@ -198,16 +238,19 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         # openable-but-silent window, so they share one deadline rather than
         # each getting handshake_patience of their own.
         deadline = time.monotonic() + handshake_patience
-        # Who are we talking to? Read before the handshake, through the base
-        # class, whose version() is in ALWAYS and works on any unit (ADR-0020).
+        # Who are we talking to? Read before the handshake. This is a stricter
+        # wait than version()'s: the unit answers a Version READ twice and a
+        # reply may carry only the serial, which version() rightly accepts and
+        # a profile cannot be resolved from. A partial answer is left unmatched
+        # and the wait goes on, inside the same budget (ADR-0020).
         identity = _retry_until_patient(
-            lambda: QuadCortex(transport).version(timeout=timeout),
-            deadline, handshake_patience)
+            lambda: _read_identity(transport, timeout),
+            deadline, handshake_patience, _NO_IDENTITY)
         if profile is None:
             cls = profiles.resolve(identity)
         else:
             cls = profile
-            if identity.HasField("device_type") and identity.device_type != cls.DEVICE_TYPE:
+            if identity.device_type != cls.DEVICE_TYPE:
                 raise profiles.UnsupportedDevice(
                     identity.device_type, identity.zenos_git_hash,
                     f"you asked for {cls.__name__}, which serves "

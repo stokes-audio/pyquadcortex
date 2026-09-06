@@ -586,6 +586,11 @@ what the unit sent and re-reads for the rest. A sparse host `Version{UPDATE, cus
 (a rename) is echoed once with the same two fields, does not re-run the
 handshake gate, and leaves reads answering - measured three times the same day.
 
+`connect()` waits on a stricter predicate than `version()` does: a profile is
+resolved from `device_type` and `zenos_git_hash`, so the identity read waits for
+a reply carrying both and treats a partial one as not yet the answer, inside the
+same `handshake_patience` budget (ADR-0020).
+
 After the burst the device needs a moment before it treats the client as
 connected; a command sent too soon gets no push (observed as flaky preset-read
 timeouts). `connect(settle=...)` waits 2 seconds by default.
