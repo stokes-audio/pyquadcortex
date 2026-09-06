@@ -1266,6 +1266,10 @@ class QuadCortex:
         arrives within ``timeout``, this raises :class:`BlockRefused`. Pass
         ``verify=False`` to send and return immediately, in which case a save and
         read-back is the only way to learn whether the block is there.
+
+        Refused, before sending, for a model id the unit's own catalog does not
+        list - a constant from another firmware's snapshot, for instance
+        (ADR-0020).
         """
         if cell.model_id in units_module.UNPLACEABLE_MODELS:
             raise ValueError(
@@ -1273,8 +1277,15 @@ class QuadCortex:
                 f"{units_module.UNPLACEABLE_MODELS[cell.model_id]} Recovering "
                 f"needs a power cycle, so this is refused rather than tried."
             )
-        row, column, model = cell.row, cell.column, cell.model_id
-        model_id = int(getattr(model, "id", model))
+        model_id = int(getattr(cell.model_id, "id", cell.model_id))
+        if self.catalog.get(model_id) is None:
+            raise ControlNotDrivable(
+                f"model {model_id}",
+                f"not in this unit's catalog (CorOS {', '.join(type(self).MEASURED_ON)}); "
+                f"the catalog is read from the unit, so this id does not exist on it",
+                "use a constant from this connection's own snapshot (qc.models), or "
+                "look the model up in qc.catalog by name")
+        row, column = cell.row, cell.column
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
         chain.row = row
