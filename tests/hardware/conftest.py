@@ -321,6 +321,18 @@ def burst_warmed(_connection):
     return _connection[3]
 
 
+def _unrestored(failed):
+    """The failure a restore that did not finish is reported as (ADR-0005).
+
+    Written once, and called by both restore paths, because it is an
+    instruction to the owner about their own unit: two spellings of it is two
+    of them to keep right. ``tests/test_hardware_report.py`` holds the count.
+    """
+    return AssertionError(
+        "COULD NOT RESTORE THE UNIT - fix these by hand:\n  "
+        + "\n  ".join(failed))
+
+
 @pytest.fixture
 def restores():
     """Register undo callables; they run in reverse, failure or not.
@@ -340,9 +352,65 @@ def restores():
         except Exception as exc:                     # noqa: BLE001 - reported, not swallowed
             failed.append(f"{description}: {exc!r}")
     if failed:
-        raise AssertionError(
-            "COULD NOT RESTORE THE UNIT - fix these by hand:\n  "
-            + "\n  ".join(failed))
+        raise _unrestored(failed)
+
+
+#: The name every scratch copy is saved under. Fixed rather than unique per run
+#: (spec section 4), so a leftover copy is recognisable on the unit's screen -
+#: and so :func:`_scratch_slot` has one name to refuse.
+SCRATCH_NAME = "pyquadcortex scratch"
+
+
+def _scratch_slot(listing, name):
+    """The free User slot to save the scratch copy into.
+
+    Refuses a listing that already holds ``name``: ``delete_preset`` deletes BY
+    NAME, so a leftover copy from an interrupted run plus a new one under the
+    same name is ambiguous, and the fixture would be choosing which of the
+    owner's presets to delete. The owner deletes the leftover instead - that
+    they can see which is which is the point of the fixed name.
+    """
+    for entry in listing:
+        if entry.name == name:
+            pytest.fail(
+                f"a preset called {name!r} is already in the User setlist - a "
+                f"leak from an interrupted run. Delete it on the unit by hand "
+                f"and re-run; this fixture deletes by name and will not guess "
+                f"which copy is which.")
+    for entry in listing:
+        if not entry.name:
+            return entry.index
+    pytest.fail("the User setlist has no free slot for the scratch copy; "
+                "free one on the unit and re-run")
+
+
+def _release_scratch(qc, before, setlist, name, settle=3.0):
+    """Put the unit back after :func:`scratch_preset`, whatever went wrong.
+
+    The recall and the delete are INDEPENDENT: a recall that raises must not
+    take the delete with it, or the copy stays behind under a name the next run
+    refuses. Both failures are collected and reported in the same words
+    ``restores`` uses, so a teardown that could not finish reads the same
+    whichever fixture owned it.
+
+    ``settle`` is the pause after the recall, and only the offline test in
+    ``tests/test_hardware_report.py`` passes anything but the real 3 s.
+    """
+    failed = []
+    try:
+        qc.recall_preset(before.folder_key, before.position)
+        time.sleep(settle)
+    except Exception as exc:                         # noqa: BLE001 - reported, not swallowed
+        failed.append(
+            f"recall the preset that was loaded "
+            f"({before.folder_key}, {before.position}): {exc!r}")
+    try:
+        qc.delete_preset(setlist, name)
+    except Exception as exc:                         # noqa: BLE001 - reported, not swallowed
+        failed.append(
+            f"delete the scratch preset {name!r} from the User setlist: {exc!r}")
+    if failed:
+        raise _unrestored(failed)
 
 
 @pytest.fixture
@@ -356,35 +424,71 @@ def scratch_preset(qc):
     from pyquadcortex.protocol import Setlist
     before = qc.loaded_position()
     assert qc.preset_dirty() is False, "the loaded preset has unsaved edits; save or reload it first"
-    listing = qc.list_presets(Setlist.USER, include_empty=True)
-    free = next(e.index for e in listing if not e.name)
-    name = "pyquadcortex scratch"
-    stored = qc.save_current_preset(Setlist.USER, free, name, confirm=True, confirm_timeout=30.0)
-    assert stored == name
+    free = _scratch_slot(qc.list_presets(Setlist.USER, include_empty=True),
+                         SCRATCH_NAME)
+    stored = qc.save_current_preset(Setlist.USER, free, SCRATCH_NAME,
+                                    confirm=True, confirm_timeout=30.0)
+    assert stored == SCRATCH_NAME
     qc.recall_preset(Setlist.USER, free)
     time.sleep(3.0)
     try:
-        yield Setlist.USER, free, name
+        yield Setlist.USER, free, SCRATCH_NAME
     finally:
-        qc.recall_preset(before.folder_key, before.position)
-        time.sleep(3.0)
-        qc.delete_preset(Setlist.USER, name)
+        _release_scratch(qc, before, Setlist.USER, SCRATCH_NAME)
+
+
+def _decides(when, outcome):
+    """Whether one phase report decides the operations its test names.
+
+    A ``call`` report always counts - that is the test running. A ``setup`` or
+    ``teardown`` counts only when it did NOT pass, because a passing one says
+    nothing the ``call`` report has not already said.
+
+    Teardown is the half that was missing and it is the important half: both
+    ``restores`` and ``scratch_preset`` report a restore they could not finish
+    there and nowhere else (see :func:`_unrestored`), so ignoring it printed the
+    operation under ``passed:`` - and offered it as a ``VERIFIED`` candidate -
+    on a run that left the owner's unit changed.
+    """
+    return when == "call" or outcome != "passed"
 
 
 def pytest_runtest_logreport(report):
-    """Record how each operation's tests came out, for the end-of-run report.
-
-    A test decides an operation in whichever phase stops it: a ``call`` report
-    always counts, and a ``setup`` that failed or skipped counts too, because
-    then no ``call`` report follows and the operation was not exercised. A
-    passing ``setup`` or ``teardown`` says nothing on its own and is ignored.
-    """
+    """Record how each operation's tests came out, for the end-of-run report."""
     names = _VERIFIES.get(report.nodeid)
     if not names:
         return
-    if report.when == "call" or (report.when == "setup" and report.outcome != "passed"):
+    if _decides(report.when, report.outcome):
         for name in names:
             _OUTCOMES.setdefault(name, []).append(report.outcome)
+
+
+def _report_lines(cls, outcomes, claimed):
+    """The end-of-run report, as ``(label, names, note)`` rows.
+
+    Pure, so ``tests/test_hardware_report.py`` holds the arithmetic with no unit
+    attached. ``claimed`` is every operation some COLLECTED test says it
+    verifies, and it is what keeps the last line readable: ``QuadCortex``
+    verifies EVERYTHING, so the plain difference against ``VERIFIED`` names all
+    ~89 operations no test has ever driven, each tagged as a regression. Only
+    something a test claims can regress - nothing else was measured.
+    """
+    from pyquadcortex.protocol.support import EVERYTHING
+
+    passed = {op for op, seen in outcomes.items()
+              if seen and all(o == "passed" for o in seen)}
+    failed = {op for op, seen in outcomes.items()
+              if any(o != "passed" for o in seen)}
+    verified = (set(cls.operations()) if cls.VERIFIED is EVERYTHING
+                else set(cls.VERIFIED))
+    return [
+        ("passed", sorted(passed), ""),
+        ("failed or skipped", sorted(failed), ""),
+        ("passed, not VERIFIED", sorted(passed - verified),
+         "<- candidates to add"),
+        ("VERIFIED and claimed by a test, not passed",
+         sorted((verified & claimed) - passed), "<- regressions by name"),
+    ]
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
@@ -396,20 +500,14 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """
     if not config.getoption("--hardware"):
         return
-    from pyquadcortex.protocol.support import EVERYTHING
-
     cls = getattr(config, "_profile", None)
     if cls is None:          # the session never connected, so there is nothing to report
         return
-    passed = {op for op, outcomes in _OUTCOMES.items()
-              if outcomes and all(o == "passed" for o in outcomes)}
-    failed = {op for op, outcomes in _OUTCOMES.items()
-              if any(o != "passed" for o in outcomes)}
-    verified = set(cls.VERIFIED) if cls.VERIFIED is not EVERYTHING else cls.operations()
+    claimed = set().union(*_VERIFIES.values()) if _VERIFIES else set()
+    lines = _report_lines(cls, _OUTCOMES, claimed)
+    width = max(len(label) for label, _names, _note in lines)
     tr = terminalreporter
     tr.section(f"operations on {cls.__name__} "
                f"(CorOS {', '.join(cls.MEASURED_ON)}, {cls.EVIDENCE.name})")
-    tr.line(f"passed:               {sorted(passed)}")
-    tr.line(f"failed or skipped:    {sorted(failed)}")
-    tr.line(f"passed, not VERIFIED: {sorted(passed - verified)}   <- candidates to add")
-    tr.line(f"VERIFIED, not passed: {sorted(verified - passed)}   <- regressions by name")
+    for label, names, note in lines:
+        tr.line(f"{label + ':':<{width + 1}} {names}   {note}".rstrip())

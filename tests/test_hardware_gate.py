@@ -289,6 +289,50 @@ def test_the_whole_tree_collects_with_the_flag(_poisoned_hid):
         "the offline suite is not in a --hardware run of the whole tree")
 
 
+def test_a_marker_naming_no_operation_stops_the_run(_poisoned_hid):
+    """The refusal above, made to fire (ADR-0020).
+
+    ``collected_with_the_flag`` asserts the message is ABSENT, which a check
+    that can never fire satisfies as happily as a working one. This is the
+    other direction: a test marked ``verifies("no_such_operation")`` is
+    collected with the flag, and the run stops before anything reaches a unit.
+
+    The probe module is written into the real ``tests/hardware/`` and deleted
+    again, because the hook only sees items its own conftest was loaded for: a
+    module outside the tree, named on the same command line, is collected
+    without the hook running at all (measured on pytest 9.1.1 - 100 collected,
+    exit 0, and ``--verifies`` silently stopped deselecting too). So the probe
+    has to live where the real markers live. Its name is one no offline module
+    owns, and the ``finally`` removes it; a run killed between the two leaves a
+    file that fails ``tests/test_hardware_markers.py`` loudly rather than
+    quietly. This is also why the offline suite is run serially - a parallel
+    runner could collect the tree while the probe exists.
+
+    Collection only, and ``hid`` is poisoned like every subprocess here, so
+    nothing can reach a unit even though the gate is deliberately open.
+    """
+    probe = SUITE / "test_zz_marker_probe_tmp.py"
+    probe.write_text(
+        "import pytest\n\n\n"
+        '@pytest.mark.verifies("no_such_operation")\n'
+        "def test_probe():\n"
+        "    pass\n")
+    try:
+        result = _pytest(_poisoned_hid, "--hardware", "--collect-only", "-q",
+                         str(probe.relative_to(ROOT)))
+    finally:
+        probe.unlink(missing_ok=True)
+
+    # The same exit code the offline refusal uses: pytest reports a UsageError
+    # raised from a collection hook as a usage error whoever raised it.
+    assert result.returncode == pytest.ExitCode.USAGE_ERROR, (
+        "a verifies() name that is not an operation did not stop the run:\n"
+        + result.stdout + result.stderr)
+    assert "is not an operation" in result.stderr, result.stderr
+    assert "no_such_operation" in result.stderr, result.stderr
+    assert "test_zz_marker_probe_tmp.py::test_probe" in result.stderr, result.stderr
+
+
 def test_the_flag_opens_the_gate_for_every_module(collected_with_the_flag):
     """With ``--hardware``, every module in the directory is collected again."""
     for module in MODULES:
