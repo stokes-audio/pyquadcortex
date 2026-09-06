@@ -20,8 +20,10 @@ see :class:`pyquadcortex.protocol.transport.Transport` and
 
 import time
 
-from pyquadcortex.protocol import hid_ids
+from pyquadcortex.protocol import hid_ids, profiles
 from pyquadcortex.protocol.client import QuadCortex
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
+from pyquadcortex.protocol.support import Support
 from pyquadcortex.protocol.transport import Transport
 
 
@@ -81,7 +83,9 @@ def open_device():
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
             handshake_patience: float = 30.0,
-            before_handshake=None) -> QuadCortex:
+            before_handshake=None,
+            profile=None,
+            support: Support = Support.VERIFIED) -> QuadCortex:
     """Open a Quad Cortex and return a connected, ready-to-use client.
 
     Finds and opens the device, starts the transport, and performs the connect
@@ -118,12 +122,26 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
             cheapest way to learn what the unit is currently doing. Called once,
             not once per handshake attempt. An exception from it aborts the
             connect and releases the device, like any other bring-up failure.
+        profile: a profile class to use instead of the one the unit's identity
+            resolves to (ADR-0020). For measuring a unit this library has no
+            profile for: the class's ``DEVICE_TYPE`` must still match what the
+            unit reports, and ``MEASURED_ON`` is not checked. Combine with
+            ``support=Support.EXPERIMENTAL`` to run operations the profile has
+            not verified.
+        support: how the connection treats an operation its profile has not
+            verified. ``Support.VERIFIED`` (default) refuses it;
+            ``Support.EXPERIMENTAL`` runs it with a warning. On ``QuadCortex``
+            every operation is verified, so this changes nothing there.
 
     Returns:
         A connected :class:`~pyquadcortex.protocol.client.QuadCortex`.
 
     Raises:
         DeviceNotFoundError: if no Quad Cortex could be opened.
+        UnsupportedDevice: if the unit reports a device type and CorOS version
+            no profile has measured, or ``profile`` names a class for a
+            different device type. Raised before the handshake; the device is
+            released.
     """
     device = open_device()
     transport = Transport(device)
@@ -135,7 +153,20 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         # burst the handshake provokes rather than joining after it.
         if before_handshake is not None:
             before_handshake(transport)
-        qc = QuadCortex(transport, _owned_resources=owned)
+        # Who are we talking to? Read before the handshake, through the base
+        # class, whose version() is in ALWAYS and works on any unit (ADR-0020).
+        identity = QuadCortex(transport).version(timeout=timeout)
+        if profile is None:
+            cls = profiles.resolve(identity)
+        else:
+            cls = profile
+            if identity.HasField("device_type") and identity.device_type != cls.DEVICE_TYPE:
+                raise profiles.UnsupportedDevice(
+                    identity.device_type, identity.zenos_git_hash,
+                    f"you asked for {cls.__name__}, which serves "
+                    f"{pa.VersionMessage.DeviceType.Name(cls.DEVICE_TYPE)}, and the unit "
+                    f"says {pa.VersionMessage.DeviceType.Name(identity.device_type)}")
+        qc = cls(transport, _owned_resources=owned, support=support)
         deadline = time.monotonic() + handshake_patience
         attempt = 0
         while True:
