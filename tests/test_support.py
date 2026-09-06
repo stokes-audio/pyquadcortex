@@ -37,13 +37,18 @@ def test_no_snapshot_refuses_every_attribute_and_names_the_generator():
     assert repr(missing) == "NoSnapshot('coros_4_1_0')"
 
 
-class _Fake:
-    __name__ = "QuadCortex41"
+class QuadCortex41:
+    """A stand-in profile class; only its name and MEASURED_ON are read.
+
+    A real class, not an object carrying `__name__` as an attribute, because
+    that is what `unverified_text` is handed at every call site.
+    """
+
     MEASURED_ON = ("4.1.0",)
 
 
 def test_unverified_text_names_the_profile_the_firmware_and_both_ways_out():
-    evidence, workaround = support.unverified_text(_Fake, "set_scene_label")
+    evidence, workaround = support.unverified_text(QuadCortex41, "set_scene_label")
     assert evidence == "not yet verified on QuadCortex41 (CorOS 4.1.0)"
     assert "connect(support=Support.EXPERIMENTAL)" in workaround
     assert "pytest tests/hardware --hardware --verifies set_scene_label" in workaround

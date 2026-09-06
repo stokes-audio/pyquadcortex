@@ -103,7 +103,7 @@ def unverified_text(cls: type[_ProfileClass], name: str) -> tuple[str, str]:
     connect-time hint, so they cannot say three different things.
     """
     firmware = ", ".join(cls.MEASURED_ON) or "no firmware measured"
-    class_name = cls.__dict__.get('__name__', cls.__name__)
+    class_name = cls.__name__
     evidence = f"not yet verified on {class_name} (CorOS {firmware})"
     workaround = (
         f"connect(support=Support.EXPERIMENTAL) to try it, or run "

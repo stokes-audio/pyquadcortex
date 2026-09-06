@@ -1,6 +1,7 @@
 """The device profile seam (ADR-0020, spec 2026-09-03)."""
 import importlib
 import logging
+import types
 
 import pytest
 
@@ -47,13 +48,29 @@ def test_always_holds_only_the_lifecycle_and_each_entry_has_a_reason():
         assert isinstance(reason, str) and len(reason) > 20, name
 
 
-def test_operations_are_every_public_method_not_in_always():
+def test_operations_are_every_public_plain_function_not_in_always():
     ops = client.QuadCortex.operations()
     public = {n for n, v in vars(client.QuadCortex).items()
-              if not n.startswith("_") and (callable(v) or isinstance(v, property))}
+              if not n.startswith("_") and isinstance(v, types.FunctionType)}
     assert ops == frozenset(public - set(client.QuadCortex.ALWAYS))
     assert "set_scene_label" in ops and "version" not in ops
     assert len(ops) > 100
+
+
+def test_every_public_property_is_in_always():
+    """A property is never an operation, so the guard must never see one.
+
+    `operations()` counts plain functions, which means a property is neither
+    guarded nor refused - and a property outside `ALWAYS` would therefore be a
+    device read a stub profile answers as if it had measured it. There is one
+    place that cannot happen: `ALWAYS`, where each entry carries its reason.
+    """
+    properties = {n for n, v in vars(client.QuadCortex).items()
+                  if not n.startswith("_") and isinstance(v, property)}
+    assert properties, "the introspection found no properties at all"
+    assert not properties - set(client.QuadCortex.ALWAYS), (
+        f"public properties outside ALWAYS: {sorted(properties - set(client.QuadCortex.ALWAYS))}. "
+        f"A property cannot be guarded, so it must be an ALWAYS entry with a reason.")
 
 
 def _profile(verified=frozenset(), name="Probe"):
@@ -145,6 +162,40 @@ def test_a_rejected_subclass_is_never_registered():
             "VERIFIED": frozenset(),
             "set_scene_label": lambda self, scene, label: None})
     assert client.QuadCortex._PROFILES == before
+
+
+def test_a_profile_must_subclass_quadcortex_directly(forget_probes):
+    """A sub-subclass would be guarded against the BASE implementation.
+
+    `__init_subclass__` installs `_guarded(name, getattr(QuadCortex, name))`,
+    so a class two levels down that does not list a name in its own VERIFIED
+    gets the base's method wrapped - silently discarding the measured override
+    its parent profile made. ADR-0020 is one class per measured unit, so the
+    case is refused rather than made to work.
+    """
+    Parent = _profile(verified=frozenset({"switch_scene"}))
+    before = list(client.QuadCortex._PROFILES)
+    with pytest.raises(TypeError, match="subclass QuadCortex directly"):
+        type("DeeperProbe", (Parent,), {
+            "MEASURED_ON": ("9.9.9",), "EVIDENCE": support.Evidence.STUB,
+            "VERIFIED": frozenset()})
+    assert client.QuadCortex._PROFILES == before
+
+
+def test_a_public_staticmethod_is_never_guarded(forget_probes, monkeypatch):
+    """`operations()` counts plain functions, so a static helper is not one.
+
+    A `staticmethod` object is callable, so the older predicate made a public
+    one an operation - and the guard would then wrap it and pass `self` as its
+    first argument, breaking a method that touches no device at all.
+    """
+    monkeypatch.setattr(client.QuadCortex, "describe_wire_format",
+                        staticmethod(lambda: "a helper, not an operation"),
+                        raising=False)
+    assert "describe_wire_format" not in client.QuadCortex.operations()
+    Probe = _profile()
+    assert not getattr(Probe.describe_wire_format, "_unverified", False)
+    assert Probe.describe_wire_format() == "a helper, not an operation"
 
 
 def test_unverified_operations_is_empty_on_the_base_and_full_on_a_stub(forget_probes):

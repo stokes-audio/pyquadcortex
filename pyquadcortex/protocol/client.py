@@ -31,6 +31,7 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 import functools
 import logging
 import time
+import types
 import typing
 import uuid
 import warnings
@@ -332,15 +333,35 @@ class QuadCortex:
 
     @classmethod
     def operations(cls) -> frozenset:
-        """Every public method of `QuadCortex` that is an operation on the unit."""
+        """Every public method of `QuadCortex` that is an operation on the unit.
+
+        A PLAIN FUNCTION and nothing else. `callable()` would fail open: a
+        `staticmethod` object is callable, and the guard would wrap it and pass
+        `self` as its first argument; a `property` is not callable but would
+        have been swept in by the `isinstance` half and replaced with a plain
+        function, so reading it would return the guard rather than refuse.
+        A property is never an operation - it belongs in `ALWAYS`, which
+        `tests/test_profiles.py` holds for every public one.
+        """
         return frozenset(
             name for name, value in vars(QuadCortex).items()
             if not name.startswith("_")
-            and (callable(value) or isinstance(value, property))
+            and isinstance(value, types.FunctionType)
             and name not in QuadCortex.ALWAYS)
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        # ADR-0020 is one class per measured unit, so a profile subclasses
+        # QuadCortex DIRECTLY. Checked before anything else, because the guard
+        # below takes its implementation from QuadCortex: a class two levels
+        # down would be guarded against the base and would silently discard
+        # its parent profile's measured override.
+        if cls.__bases__ != (QuadCortex,):
+            raise TypeError(
+                f"{cls.__name__} must subclass QuadCortex directly; ADR-0020 is "
+                f"one class per measured unit. A deeper class is guarded against "
+                f"QuadCortex's implementation, which would silently discard the "
+                f"measured override on {cls.__bases__[0].__name__}")
         if cls.VERIFIED is EVERYTHING:
             QuadCortex._PROFILES.append(cls)
             return
@@ -357,6 +378,9 @@ class QuadCortex:
         for name in QuadCortex.operations():
             if name in cls.__dict__ or name in cls.VERIFIED:
                 continue
+            # The base's implementation is the right source because a profile
+            # subclasses QuadCortex directly (checked above), so QuadCortex is
+            # the only class this name could be inherited from.
             setattr(cls, name, _guarded(name, getattr(QuadCortex, name)))
         QuadCortex._PROFILES.append(cls)
 
