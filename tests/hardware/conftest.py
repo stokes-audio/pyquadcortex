@@ -110,7 +110,8 @@ def _claims(items, operations, wanted, deselect):
                 f"--verifies {wanted!r} is an operation, and no collected test "
                 f"names it - this run would measure nothing. It should be in "
                 f"UNMARKED_OPERATIONS in tests/test_hardware_markers.py, with "
-                f"the reason no test drives it")
+                f"the reason no test drives it, or you named a path that "
+                f"excludes the test carrying it")
         items[:] = keep
         deselect(drop)
     return {item.nodeid: marks[item.nodeid] for item in items}
@@ -156,6 +157,17 @@ def pytest_collection_modifyitems(session, config, items):
     """
     if config.getoption("--hardware"):
         from pyquadcortex.protocol.client import QuadCortex
+
+        wanted_profile = config.getoption("--profile")
+        if wanted_profile:
+            # Same reasoning as the --verifies checks above: fail at
+            # collection, once, rather than in the `_connection` fixture where
+            # every single test in the run would hit the same UsageError in
+            # turn. The fixture still calls `_profile_named` itself - it is
+            # cheap, and it is the one that must hand back the actual class -
+            # this call exists only to fail the whole run before anything else
+            # happens.
+            _profile_named(wanted_profile)
 
         _VERIFIES.update(_claims(
             items, QuadCortex.operations(), config.getoption("--verifies"),
@@ -459,11 +471,15 @@ def _release_scratch(qc, before, setlist, name, settle=3.0):
 
     The copy may not be there at all: the fixture's ``try`` opens BEFORE the
     save, so a save that failed outright runs this teardown with nothing to
-    delete - and a ``delete_preset`` of a name the unit does not have would
-    report a restore that could not finish when the unit is already as it was.
-    So the setlist is listed first and the delete happens only for a copy that
-    exists. A listing that fails is itself reported, since it is the reason the
-    delete was not even attempted.
+    delete. That is fine to call anyway - ``delete_preset`` goes through
+    ``_file_operation``, which tolerates the device not replying and returns
+    ``None`` rather than raising, so deleting a name the unit does not have is
+    a no-op, not an error. A listing was tried here first as a guard, but
+    ``list_presets`` is itself documented as unreliable on a single READ
+    (:meth:`~pyquadcortex.protocol.client.QuadCortex.list_presets`), so a flaky
+    listing could skip a delete that would have worked and leave the copy
+    behind under the fixed scratch name. Call it unconditionally instead and
+    let device state be the arbiter, same as everywhere else in this module.
 
     ``settle`` is the pause after the recall, and only the offline test in
     ``tests/test_hardware_report.py`` passes anything but the real 3 s.
@@ -477,18 +493,10 @@ def _release_scratch(qc, before, setlist, name, settle=3.0):
             f"recall the preset that was loaded "
             f"({before.folder_key}, {before.position}): {exc!r}")
     try:
-        present = any(entry.name == name for entry in qc.list_presets(setlist))
+        qc.delete_preset(setlist, name)
     except Exception as exc:                         # noqa: BLE001 - reported, not swallowed
         failed.append(
-            f"list the User setlist to see whether the scratch preset {name!r} "
-            f"is there: {exc!r} - delete it by hand if it is")
-    else:
-        if present:
-            try:
-                qc.delete_preset(setlist, name)
-            except Exception as exc:                 # noqa: BLE001 - reported, not swallowed
-                failed.append(
-                    f"delete the scratch preset {name!r} from the User setlist: {exc!r}")
+            f"delete the scratch preset {name!r} from the User setlist: {exc!r}")
     if failed:
         raise _unrestored(failed)
 

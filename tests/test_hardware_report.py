@@ -186,8 +186,8 @@ class _Item:
 class _Config:
     """A `--hardware` config that records what the hook deselects."""
 
-    def __init__(self, verifies=None):
-        self._options = {"--hardware": True, "--verifies": verifies}
+    def __init__(self, verifies=None, profile=None):
+        self._options = {"--hardware": True, "--verifies": verifies, "--profile": profile}
         self.deselected = []
         self.hook = self
 
@@ -277,6 +277,21 @@ def test_a_marker_naming_no_operation_stops_the_collection(conftest, collection)
         conftest.pytest_collection_modifyitems(None, _Config(), items)
 
 
+def test_an_unknown_profile_stops_collection_before_the_run_starts(conftest, collection):
+    """`--profile` is validated here too, not only in the `_connection` fixture.
+
+    The fixture's check would fire once per test, one UsageError per item in
+    the run; checked at collection, a typo is one clean error before anything
+    touches a unit - the same reasoning the `--verifies` checks above are
+    built on.
+    """
+    items = [_Item("t.py::a", "set_param")]
+
+    with pytest.raises(pytest.UsageError, match="is not a profile class"):
+        conftest.pytest_collection_modifyitems(
+            None, _Config(profile="QuadCortexMinni"), items)
+
+
 # --- which profile the run connects as ---------------------------------------
 
 def test_profile_names_resolve_to_their_class(conftest):
@@ -307,26 +322,17 @@ class _Position:
 
 
 class _FakeQc:
-    """The three methods the teardown calls, each able to fail on demand."""
+    """The two methods the teardown calls, each able to fail on demand."""
 
-    def __init__(self, recall_raises=None, delete_raises=None,
-                 list_raises=None, listing=("pyquadcortex scratch",)):
+    def __init__(self, recall_raises=None, delete_raises=None):
         self.calls = []
         self._recall_raises = recall_raises
         self._delete_raises = delete_raises
-        self._list_raises = list_raises
-        self._listing = listing
 
     def recall_preset(self, folder_key, position):
         self.calls.append(("recall", folder_key, position))
         if self._recall_raises is not None:
             raise self._recall_raises
-
-    def list_presets(self, setlist):
-        self.calls.append(("list", setlist))
-        if self._list_raises is not None:
-            raise self._list_raises
-        return [_Entry(i, name) for i, name in enumerate(self._listing)]
 
     def delete_preset(self, setlist, name):
         self.calls.append(("delete", setlist, name))
@@ -372,33 +378,22 @@ def test_a_clean_teardown_recalls_then_deletes_and_says_nothing(conftest):
                               settle=0.0)
 
     assert qc.calls == [("recall", "user", 3),
-                        ("list", "USER"),
                         ("delete", "USER", "pyquadcortex scratch")]
 
 
 def test_a_copy_that_was_never_saved_is_not_reported_as_unrestored(conftest):
     """The fixture's `try` opens before the save, so the teardown runs on a
-    failed save with nothing to delete. Deleting a name the unit does not have
-    would report a restore that could not finish when the unit is as it was."""
-    qc = _FakeQc(listing=("Gig", "Rehearsal"))
+    failed save with nothing to delete. ``delete_preset`` goes through
+    ``_file_operation``, which tolerates the device not replying and returns
+    ``None`` instead of raising, so deleting a name the unit does not have is a
+    no-op - there is no listing guard left to skip it, and none is needed."""
+    qc = _FakeQc()
 
     conftest._release_scratch(qc, _Position, "USER", "pyquadcortex scratch",
                               settle=0.0)
 
-    assert qc.calls == [("recall", "user", 3), ("list", "USER")]
-
-
-def test_a_listing_that_fails_is_reported_because_the_delete_never_ran(conftest):
-    qc = _FakeQc(list_raises=TimeoutError("no listing"))
-
-    with pytest.raises(AssertionError) as caught:
-        conftest._release_scratch(qc, _Position, "USER", "pyquadcortex scratch",
-                                  settle=0.0)
-
-    message = str(caught.value)
-    assert "COULD NOT RESTORE THE UNIT" in message
-    assert "delete it by hand" in message
-    assert "TimeoutError" in message
+    assert qc.calls == [("recall", "user", 3),
+                        ("delete", "USER", "pyquadcortex scratch")]
 
 
 def test_nothing_that_can_leave_the_copy_behind_sits_outside_the_try(conftest):
