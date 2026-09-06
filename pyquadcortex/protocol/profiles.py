@@ -19,19 +19,24 @@ _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
 class QuadCortex41(QuadCortex):
     """Quad Cortex on CorOS 4.1 - connects, and verifies nothing yet.
 
-    A contributor ran the whole hardware suite against a 4.1.0 unit with this
-    handshake and announce string, so the connection is known to work. Which
-    operations behave as on 4.0.1 is not known per name, so every inherited
-    operation refuses under ``Support.VERIFIED`` and runs with a warning under
-    ``Support.EXPERIMENTAL``. The snapshot is deliberately absent: binding the
-    4.0.1 constants would hand a 4.1 user names their unit does not use.
+    PR #42's description (2026-09-03) reports ``pytest --hardware``: 2742
+    passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
+    d14e, by tony-xmelon. That is a contributor's report and the maintainer has
+    not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
+    connection is therefore known to work with this handshake and announce
+    string. Which operations behave as on 4.0.1 is not known per name, so every
+    inherited operation refuses under ``Support.VERIFIED`` and runs with a
+    warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
+    binding the 4.0.1 constants would hand a 4.1 user names their unit does not
+    use.
 
     To finish this profile, on a 4.1 unit:
 
     1. ``scripts/generate_models.py --snapshot coros_4_1_0`` and the params and
        options generators; bind the three modules below.
-    2. ``pytest tests/hardware --hardware``; the report at the end lists the
-       operations whose tests passed. Put those names in ``VERIFIED``.
+    2. ``pytest tests/hardware --hardware --profile QuadCortex41``; the report
+       at the end lists the operations whose tests passed. Put those names in
+       ``VERIFIED``.
     3. Record any operation that behaved differently in ``docs/protocol.md``
        beside the 4.0.1 record, dated and named, and override it here.
     """
@@ -53,9 +58,11 @@ class QuadCortexMini(QuadCortex):
     is from the product page. Because ``MEASURED_ON`` is empty this class is
     never resolved; a Mini refuses to connect with a message naming this class.
 
-    To start, on a Mini: ``connect(profile=QuadCortexMini,
-    support=Support.EXPERIMENTAL)``. If the handshake works, run the hardware
-    suite and send the report. Expect the eight-footswitch assumptions in
+    To start, on a Mini: ``pytest tests/hardware --hardware --profile
+    QuadCortexMini``. That connects as this class rather than the one the unit
+    resolves to - which is nothing, so a plain run refuses - and the suite
+    connects ``Support.EXPERIMENTAL`` itself. If the handshake works, send the
+    report at the end of the run. Expect the eight-footswitch assumptions in
     ``QuadCortex`` to need overrides here, and expect this class to want a
     different base than ``QuadCortex`` once its shape is known.
     """

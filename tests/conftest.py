@@ -3,8 +3,8 @@
 It lives here rather than in ``tests/hardware/`` because pytest only reads
 command-line options from the rootdir's conftest, and the flag has to be
 recognised even on a run that never descends into the hardware directory.
-``--verifies`` and the ``verifies`` marker are registered here for the same
-reason, although only the hardware suite acts on them (ADR-0020).
+``--verifies``, ``--profile`` and the ``verifies`` marker are registered here
+for the same reason, although only the hardware suite acts on them (ADR-0020).
 
 See ADR-0005. The offline suite (ADR-0002) must stay runnable, and stay
 meaningful, with no unit attached - so the hardware tests are never merely
@@ -29,6 +29,15 @@ def pytest_addoption(parser):
         metavar="OPERATION",
         help="with --hardware: run only the tests marked verifies(OPERATION) "
              "(ADR-0020). pytest's -m cannot match a marker's arguments.",
+    )
+    parser.addoption(
+        "--profile",
+        action="store",
+        default=None,
+        metavar="CLASSNAME",
+        help="names a profile class from pyquadcortex.protocol.profiles or "
+             "QuadCortex; used with --hardware to measure a unit the registry "
+             "would refuse (ADR-0020).",
     )
 
 

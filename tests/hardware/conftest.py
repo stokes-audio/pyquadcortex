@@ -249,6 +249,32 @@ class HandshakeBurst:
             return list(self._names)
 
 
+def _profile_named(name):
+    """The profile class ``--profile NAME`` asks for (ADR-0020).
+
+    This suite IS the instrument that measures a profile, so it has to be able
+    to run against a unit the registry would refuse - a firmware in nobody's
+    ``MEASURED_ON``, or a Mini. ``connect(profile=...)`` is the deliberate way
+    to do that, and without an option for it the one suite that could produce
+    the measurement was the one thing that could not be pointed at the unit.
+
+    Resolved by class name over ``QuadCortex`` and everything registered under
+    it, which is every profile there is: a subclass registers itself, and
+    importing :mod:`pyquadcortex.protocol.profiles` is what puts the shipped
+    ones in that list. An unknown name stops the run naming the valid ones,
+    rather than connecting to somebody's unit as the wrong profile.
+    """
+    from pyquadcortex.protocol import profiles
+
+    candidates = profiles._all_profiles()
+    for cls in candidates:
+        if cls.__name__ == name:
+            return cls
+    raise pytest.UsageError(
+        f"--profile {name!r} is not a profile class; the profiles are: "
+        + ", ".join(sorted(c.__name__ for c in candidates)))
+
+
 @pytest.fixture(scope="session")
 def _connection(request):
     """The run's single connection, with the handshake burst recorded.
@@ -290,10 +316,16 @@ def _connection(request):
         burst.attach(transport)
         cache.listen_on(transport)
 
+    # `--profile CLASSNAME` connects as that class instead of the one the unit's
+    # identity resolves to, which is how a unit the registry would refuse - an
+    # unmeasured firmware, or a Mini - gets measured by the suite that would
+    # measure it. Without it, connect() refuses before a test can look.
+    wanted = request.config.getoption("--profile")
     # EXPERIMENTAL always: on a new profile this suite IS the verification, and a
     # VERIFIED client would refuse everything before a test could look. On
     # QuadCortex it changes nothing.
     with protocol.connect(before_handshake=subscribe,
+                          profile=_profile_named(wanted) if wanted else None,
                           support=protocol.Support.EXPERIMENTAL) as client:
         cache.bind(client)
         # Read by pytest_terminal_summary, which has a config and no fixtures.

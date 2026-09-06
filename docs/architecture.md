@@ -703,9 +703,12 @@ in `pyquadcortex/protocol/profiles.py`:
 1. **Generate the snapshot.** `scripts/generate_models.py --snapshot coros_x_y_z`
    and the params and options generators, against the new unit; bind the three
    modules on the new class.
-2. **Run the suite.** `pytest tests/hardware --hardware` against that unit,
-   connected `Support.EXPERIMENTAL` so nothing refuses before it can be
-   measured - on a new profile the suite IS the verification.
+2. **Run the suite.** `pytest tests/hardware --hardware --profile QuadCortexMini`
+   against that unit, naming your new class. `--profile` connects as that class
+   rather than the one the unit's identity resolves to, so the suite runs on a
+   unit the registry would otherwise refuse; it always connects
+   `Support.EXPERIMENTAL`, so nothing refuses before it can be measured - on a
+   new profile the suite IS the verification.
 3. **Fill `VERIFIED`.** The report at the end of the run names which operations
    passed on this profile; put those names in the class's `VERIFIED` set.
 4. **Record differences beside the 4.0.1 record.** Anything that behaved

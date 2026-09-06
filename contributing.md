@@ -118,8 +118,11 @@ not a change to the existing baseline. On the unit it covers:
 
 1. **Generate the snapshot.** `scripts/generate_models.py --snapshot coros_x_y_z`
    and the params and options generators; bind the three modules on the new class.
-2. **Run the suite.** `pytest tests/hardware --hardware` against the unit,
-   connected `Support.EXPERIMENTAL` so nothing refuses before it can be measured.
+2. **Run the suite.** `pytest tests/hardware --hardware --profile QuadCortexMini`
+   against the unit, naming your new class. `--profile` connects as that class
+   instead of the one the unit's identity resolves to, which is what lets the
+   suite run at all on a unit the registry would refuse; the suite always
+   connects `Support.EXPERIMENTAL`, so nothing refuses before it is measured.
 3. **Fill `VERIFIED`.** The report at the end of the run names which operations
    passed; put those names in the class's `VERIFIED` set.
 4. **Record differences beside the 4.0.1 record.** Anything that behaved

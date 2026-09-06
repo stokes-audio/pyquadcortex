@@ -245,6 +245,26 @@ def test_a_marker_naming_no_operation_stops_the_collection(conftest, collection)
         conftest.pytest_collection_modifyitems(None, _Config(), items)
 
 
+# --- which profile the run connects as ---------------------------------------
+
+def test_profile_names_resolve_to_their_class(conftest):
+    """`--profile` is how the suite measures a unit the registry would refuse."""
+    from pyquadcortex.protocol import client, profiles
+
+    assert conftest._profile_named("QuadCortex") is client.QuadCortex
+    assert conftest._profile_named("QuadCortexMini") is profiles.QuadCortexMini
+    assert conftest._profile_named("QuadCortex41") is profiles.QuadCortex41
+
+
+def test_an_unknown_profile_name_stops_the_run_naming_the_real_ones(conftest):
+    """Naming a class that does not exist must not connect to somebody's unit."""
+    with pytest.raises(pytest.UsageError) as caught:
+        conftest._profile_named("QuadCortexMinni")
+    text = str(caught.value)
+    assert "QuadCortexMinni" in text
+    assert "QuadCortex" in text and "QuadCortexMini" in text
+
+
 # --- putting the unit back after scratch_preset ------------------------------
 
 class _Position:
