@@ -298,7 +298,14 @@ class QuadCortex:
     MEASURED_ON: tuple[str, ...] = ("4.0.1",)
     #: How well this profile is known. This one is the maintainer's own unit.
     EVIDENCE = Evidence.MAINTAINER
-    #: Facts the model layer needs. Eight footswitches, two expression ports.
+    #: What this unit physically has: eight footswitches, two expression ports.
+    #: Declared ahead of its first reader, and named here so a profile has one
+    #: place to put the count. The intended consumer is the model layer's
+    #: footswitch and expression translation
+    #: (`pyquadcortex/device/translate/letters.py`), which today hard-codes the
+    #: eight letters A to H through `enums.Footswitch`; it reads this when a
+    #: profile with a different count has actually been measured, which is not
+    #: yet - the Mini's four is off a product page, not off a unit.
     HARDWARE = Hardware(footswitches=8, expression_ports=2)
     #: Operation names verified on this profile. Every method this class has
     #: carries 4.0.1 evidence, so the base verifies everything; a subclass

@@ -109,10 +109,23 @@ def stubs() -> list[type[QuadCortex]]:
     return [cls for cls in _all_profiles() if not cls.MEASURED_ON]
 
 
+def _version_key(version: str) -> tuple:
+    """"4.10.0" sorts above "4.9.0", which it does not as a string.
+
+    Compared per part, as integers where the part is one: a CorOS version is
+    dotted numbers today, and the string comparison this replaces called 4.9.0
+    the newest of the two - so the hint below offered the older profile as the
+    nearest. A part that is not a number is left as itself rather than being
+    parsed into something it might not be.
+    """
+    return tuple(int(part) if part.isdigit() else part
+                 for part in version.split("."))
+
+
 def _describe(cls: type[QuadCortex]) -> str:
     level = {Evidence.MAINTAINER: "verified on the maintainer's unit",
              Evidence.CONTRIBUTED: "contributed, not verified by the maintainer",
-             Evidence.STUB: "stub"}[cls.EVIDENCE]
+             Evidence.STUB: "stub"}.get(cls.EVIDENCE, cls.EVIDENCE.name.lower())
     return f"{_DEVICE_NAMES.get(cls.DEVICE_TYPE, cls.DEVICE_TYPE)} {', '.join(cls.MEASURED_ON)} ({level})"
 
 
@@ -136,7 +149,11 @@ def resolve(reply: pa.VersionMessage) -> type[QuadCortex]:
                 f"support=Support.EXPERIMENTAL), then `pytest tests/hardware --hardware` "
                 f"and send the report. See its docstring.")
     elif same_device:
-        nearest = max(same_device, key=lambda c: c.MEASURED_ON)
+        # `default=()` for a stub among them: it has measured nothing, and an
+        # empty tuple sorts below every version, which is where it belongs.
+        nearest = max(same_device,
+                      key=lambda c: max((_version_key(v) for v in c.MEASURED_ON),
+                                        default=()))
         hint = (f"Pass profile={nearest.__name__} to treat it as "
                 f"{', '.join(nearest.MEASURED_ON)} while you measure it, with "
                 f"support=Support.EXPERIMENTAL; then add {reply.zenos_git_hash!r} to "

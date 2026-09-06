@@ -127,6 +127,24 @@ def test_a_guarded_operation_runs_and_warns_once_under_experimental(forget_probe
     assert "not yet verified on Probe" in warnings[0].getMessage()
 
 
+def test_the_warning_is_once_per_connection_not_once_per_process(forget_probes, caplog):
+    """`_warned` is per instance, so a second connection warns again.
+
+    The warning says an operation is unverified and is running anyway, which is
+    something the person at THIS connection needs told. A set on the class
+    would say it once for the life of the process and leave every later
+    connection running unverified operations silently.
+    """
+    Probe = _profile()
+    first = Probe(FakeTransport(), support=support.Support.EXPERIMENTAL)
+    second = Probe(FakeTransport(), support=support.Support.EXPERIMENTAL)
+    with caplog.at_level(logging.WARNING, logger="pyquadcortex.protocol.client"):
+        first.switch_scene(1)
+        second.switch_scene(1)
+    warnings = [r for r in caplog.records if "switch_scene" in r.getMessage()]
+    assert len(warnings) == 2, "each connection is told once"
+
+
 def test_a_verified_operation_is_not_guarded_and_an_override_is_left_alone(forget_probes):
     class Probe(client.QuadCortex):
         MEASURED_ON = ("9.9.9",)
@@ -293,3 +311,43 @@ def test_resolve_refuses_a_mini_naming_the_stub_and_how_to_start():
 def test_resolve_refuses_a_reply_with_no_identity():
     with pytest.raises(profiles.UnsupportedDevice, match="did not report"):
         profiles.resolve(pa.VersionMessage(action=pa.MessageAction.UPDATE))
+
+
+def test_resolve_refuses_a_reply_carrying_only_the_device_type():
+    """Half an identity is not an identity. The registry is keyed on the pair,
+    and protobuf answers `""` for a `zenos_git_hash` the unit never sent - so
+    without the presence check this would look up (QC, "") and refuse with a
+    message naming a firmware the unit never claimed."""
+    with pytest.raises(profiles.UnsupportedDevice, match="did not report"):
+        profiles.resolve(pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                                           device_type=pa.VersionMessage.QC))
+
+
+def test_resolve_refuses_a_reply_carrying_only_the_coros_version():
+    """The other half, which protobuf answers as device_type 0 - a real enum
+    member, so the lookup would silently mean a device the unit never named."""
+    with pytest.raises(profiles.UnsupportedDevice, match="did not report"):
+        profiles.resolve(pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                                           zenos_git_hash="4.0.1"))
+
+
+def test_the_nearest_profile_offered_is_the_newest_by_version_not_by_string():
+    """"4.10.0" is newer than "4.9.0" and sorts below it as a string.
+
+    The hint tells somebody which profile to measure their unit as, so the
+    string comparison this replaces offered them the older one - and did it on
+    exactly the version numbers a project reaches after nine patch releases.
+    """
+    older = type("OlderProbe", (client.QuadCortex,), {
+        "MEASURED_ON": ("4.9.0",), "EVIDENCE": support.Evidence.STUB,
+        "VERIFIED": frozenset()})
+    newer = type("NewerProbe", (client.QuadCortex,), {
+        "MEASURED_ON": ("4.10.0",), "EVIDENCE": support.Evidence.STUB,
+        "VERIFIED": frozenset()})
+    try:
+        with pytest.raises(profiles.UnsupportedDevice) as caught:
+            profiles.resolve(_reply(pa.VersionMessage.QC, "4.11.0"))
+        assert "profile=NewerProbe" in str(caught.value)
+    finally:
+        client.QuadCortex._PROFILES[:] = [
+            c for c in client.QuadCortex._PROFILES if c not in (older, newer)]

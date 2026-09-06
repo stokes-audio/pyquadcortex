@@ -59,6 +59,12 @@ EVERYTHING = _Everything()
 class Hardware:
     """Facts about the unit's hardware that the model layer needs.
 
+    Declared ahead of its first reader: nothing reads it yet, and the intended
+    consumer is the model layer's footswitch and expression translation
+    (``pyquadcortex/device/translate/letters.py``), which hard-codes eight
+    letters through ``enums.Footswitch`` and will read this instead once a
+    profile with a different count has been measured on a unit.
+
     Extended only when a measurement needs a new field; a fact nobody reads
     is a guess with a name.
     """
