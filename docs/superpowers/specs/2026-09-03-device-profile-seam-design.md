@@ -179,9 +179,11 @@ pyquadcortex/protocol/options.py    (shim)
 ```
 
 - The three generators take `--snapshot NAME` and write into
-  `catalogs/NAME/`. The generated header records the snapshot name and the
-  `zenos_git_hash` of the unit it was read from. `--out` is removed; one way to
-  place a file.
+  `catalogs/NAME/`. The generated header records the snapshot name; the name
+  carries the CorOS version by construction, and a `--payload` run has no
+  `zenos_git_hash` to record (embedding one would also break the byte
+  comparison with the committed file). `--out` is removed; one way to place a
+  file.
 - Each shim is hand-written, three lines: a docstring saying it is the
   maintainer's baseline per ADR-0020, `from .catalogs.coros_4_0_1.models import
   *`, and `from .catalogs.coros_4_0_1.models import ALL, __all__` (the names

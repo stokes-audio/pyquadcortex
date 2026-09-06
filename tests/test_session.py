@@ -8,7 +8,7 @@ handshaken, the device is released on exit, and nothing leaks if bring-up fails.
 
 import pytest
 
-from pyquadcortex.protocol import client, session
+from pyquadcortex.protocol import client, errors, profiles, session, support
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
@@ -375,8 +375,6 @@ def test_connect_gives_up_after_its_patience_with_the_silent_window_explained(mo
 
 
 # -- ADR-0020: connect() resolves the profile before the handshake -----------
-
-from pyquadcortex.protocol import errors, profiles, support
 
 
 def test_connect_retries_the_identity_read_within_the_same_patience(monkeypatch, fake_stack):

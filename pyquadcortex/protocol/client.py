@@ -1293,7 +1293,10 @@ class QuadCortex:
 
         Refused, before sending, for a model id the unit's own catalog does not
         list - a constant from another firmware's snapshot, for instance
-        (ADR-0020).
+        (ADR-0020). Inferred from the catalog's contract rather than measured:
+        the catalog is READ FROM THE UNIT and describes what that unit has, so
+        an id it does not list does not exist there. No unit has been asked to
+        place a model it does not have.
         """
         if cell.model_id in units_module.UNPLACEABLE_MODELS:
             raise ValueError(

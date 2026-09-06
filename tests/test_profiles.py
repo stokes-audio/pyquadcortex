@@ -8,7 +8,7 @@ import pytest
 from pyquadcortex.protocol import client, errors, models, options, params, profiles, support
 from pyquadcortex.protocol.catalogs import coros_4_0_1
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
-from tests.test_client import FakeTransport  # the offline transport double
+from test_client import FakeTransport  # the offline transport double
 
 
 def test_the_baseline_shims_re_export_the_4_0_1_snapshot():
