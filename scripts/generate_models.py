@@ -30,7 +30,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from pyquadcortex.protocol import catalog  # noqa: E402
 
-CATALOGS = pathlib.Path("pyquadcortex/protocol/catalogs")
+# Anchored on this script's own location, never on the working directory:
+# the docs give this command with no cwd, and a relative path silently built
+# a whole new catalogs tree wherever the run started while reporting success.
+CATALOGS = (pathlib.Path(__file__).resolve().parents[1]
+            / "pyquadcortex" / "protocol" / "catalogs")
 
 
 def _snapshot_version(snapshot: str) -> str:

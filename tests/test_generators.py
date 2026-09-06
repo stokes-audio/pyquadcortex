@@ -72,9 +72,16 @@ def test_the_params_docstring_example_uses_the_lowest_id_cab_in_the_catalog(cat)
 
 @pytest.mark.parametrize("name", ["generate_models", "generate_params", "generate_options"])
 def test_snapshot_is_required_and_decides_the_output_path(name, tmp_path, monkeypatch, cat):
+    """`CATALOGS` decides the directory and `--snapshot` decides the leaf.
+
+    The redirection is `CATALOGS` rather than the working directory, because
+    the working directory is what the generators used to write relative to -
+    a run from anywhere but the repo root built a whole new tree there.
+    """
     mod = _load(name)
     monkeypatch.setattr(mod, "load_payload", lambda path: XML)
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        mod, "CATALOGS", tmp_path / "pyquadcortex" / "protocol" / "catalogs")
     monkeypatch.setattr(sys, "argv", [name, "--payload", "x"])
     with pytest.raises(SystemExit):        # argparse: --snapshot is required
         mod.main()
@@ -82,3 +89,17 @@ def test_snapshot_is_required_and_decides_the_output_path(name, tmp_path, monkey
     mod.main()
     written = tmp_path / "pyquadcortex" / "protocol" / "catalogs" / "coros_9_9_9"
     assert (written / f"{name.split('_')[1]}.py").exists()
+
+
+@pytest.mark.parametrize("name", ["generate_models", "generate_params", "generate_options"])
+def test_the_output_tree_is_the_repos_catalogs_package_wherever_the_run_starts(name):
+    """An absolute path anchored on the script's own location.
+
+    `contributing.md` and `architecture.md` give the command with no working
+    directory, so a cwd-relative `CATALOGS` wrote a `pyquadcortex/protocol/
+    catalogs/` tree wherever the maintainer happened to be standing, and the
+    real snapshot was left untouched with the run reporting success.
+    """
+    mod = _load(name)
+    assert mod.CATALOGS.is_absolute()
+    assert mod.CATALOGS == ROOT / "pyquadcortex" / "protocol" / "catalogs"

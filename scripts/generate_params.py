@@ -44,7 +44,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from pyquadcortex.protocol import catalog  # noqa: E402
 import generate_models  # noqa: E402  (for class_name/const_name - the docstring example)
 
-CATALOGS = pathlib.Path("pyquadcortex/protocol/catalogs")
+# Anchored on this script's own location, never on the working directory:
+# the docs give this command with no cwd, and a relative path silently built
+# a whole new catalogs tree wherever the run started while reporting success.
+CATALOGS = (pathlib.Path(__file__).resolve().parents[1]
+            / "pyquadcortex" / "protocol" / "catalogs")
 
 
 def _ensure_snapshot_package(snapshot: str) -> pathlib.Path:
