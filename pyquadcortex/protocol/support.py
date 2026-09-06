@@ -96,15 +96,27 @@ class _ProfileClass(Protocol):
     MEASURED_ON: tuple[str, ...]
 
 
+def measured_firmware(cls: type[_ProfileClass]) -> str:
+    """``"CorOS 4.0.1"``, or ``"no firmware measured"`` when there is none.
+
+    The word "CorOS" belongs to the version, not to the sentence around it, so
+    it is written here and nowhere else: a stub profile has an empty
+    ``MEASURED_ON``, and a caller told their model is "not in this unit's
+    catalog (CorOS )" learns nothing from the empty parenthesis. Every message
+    that names a profile's firmware goes through this.
+    """
+    firmware = ", ".join(cls.MEASURED_ON)
+    return f"CorOS {firmware}" if firmware else "no firmware measured"
+
+
 def unverified_text(cls: type[_ProfileClass], name: str) -> tuple[str, str]:
     """The evidence and the workaround for an operation ``cls`` has not verified.
 
     One function, used by the refusal, the experimental-mode warning and the
     connect-time hint, so they cannot say three different things.
     """
-    firmware = ", ".join(cls.MEASURED_ON) or "no firmware measured"
     class_name = cls.__name__
-    evidence = f"not yet verified on {class_name} (CorOS {firmware})"
+    evidence = f"not yet verified on {class_name} ({measured_firmware(cls)})"
     workaround = (
         f"connect(support=Support.EXPERIMENTAL) to try it, or run "
         f"`pytest tests/hardware --hardware --verifies {name}` on your unit "

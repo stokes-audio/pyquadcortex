@@ -53,7 +53,8 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset
 from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
                                           ControlNotDrivable)
 from pyquadcortex.protocol.support import (EVERYTHING, Evidence, Hardware,
-                                           Support, unverified_text)
+                                           Support, measured_firmware,
+                                           unverified_text)
 from pyquadcortex.protocol.targets import (  # noqa: F401
     LANE_OUTPUT_UNASSIGNABLE, Block, LaneInput, LaneOutput, Mixer, ParamTarget,
     Splitter, Tempo, _require_even_row)
@@ -1297,6 +1298,12 @@ class QuadCortex:
         the catalog is READ FROM THE UNIT and describes what that unit has, so
         an id it does not list does not exist there. No unit has been asked to
         place a model it does not have.
+
+        **That check reads :attr:`catalog`**, so the first ``set_block`` of a
+        connection fetches the unit's ModelRepo - a ~47 KB transfer, cached for
+        the session afterwards - even with ``verify=False``. A fetch that does
+        not answer in time raises the transport's ``TimeoutError``, which is a
+        failure to read the catalog and not a refused placement.
         """
         if cell.model_id in units_module.UNPLACEABLE_MODELS:
             raise ValueError(
@@ -1308,7 +1315,7 @@ class QuadCortex:
         if self.catalog.get(model_id) is None:
             raise ControlNotDrivable(
                 f"model {model_id}",
-                f"not in this unit's catalog (CorOS {', '.join(type(self).MEASURED_ON)}); "
+                f"not in this unit's catalog ({measured_firmware(type(self))}); "
                 f"the catalog is read from the unit, so this id does not exist on it",
                 "use a constant from this connection's own snapshot (qc.models), or "
                 "look the model up in qc.catalog by name")

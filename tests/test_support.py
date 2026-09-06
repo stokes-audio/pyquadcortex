@@ -47,6 +47,28 @@ class QuadCortex41:
     MEASURED_ON = ("4.1.0",)
 
 
+class NothingMeasured:
+    """A stub profile: it exists to show where the measurements go."""
+
+    MEASURED_ON = ()
+
+
+def test_measured_firmware_says_so_when_there_is_no_firmware():
+    """`(CorOS )` is an empty parenthesis, not a firmware.
+
+    The word "CorOS" belongs to the version rather than to the sentence around
+    it, so it is written in one place and a profile with nothing measured
+    renders as words instead of a hole.
+    """
+    assert support.measured_firmware(QuadCortex41) == "CorOS 4.1.0"
+    assert support.measured_firmware(NothingMeasured) == "no firmware measured"
+
+
+def test_unverified_text_says_so_too_for_a_profile_with_nothing_measured():
+    evidence, _workaround = support.unverified_text(NothingMeasured, "set_block")
+    assert evidence == "not yet verified on NothingMeasured (no firmware measured)"
+
+
 def test_unverified_text_names_the_profile_the_firmware_and_both_ways_out():
     evidence, workaround = support.unverified_text(QuadCortex41, "set_scene_label")
     assert evidence == "not yet verified on QuadCortex41 (CorOS 4.1.0)"

@@ -198,6 +198,25 @@ def test_a_public_staticmethod_is_never_guarded(forget_probes, monkeypatch):
     assert Probe.describe_wire_format() == "a helper, not an operation"
 
 
+def test_set_blocks_refusal_says_so_when_the_profile_measured_no_firmware(forget_probes):
+    """A stub profile has an empty `MEASURED_ON`, and the refusal used to build
+    its own text: `not in this unit's catalog (CorOS )`. One renderer, so the
+    parenthesis is never empty."""
+    from pyquadcortex.protocol import catalog
+
+    Probe = type("Probe", (client.QuadCortex,), {
+        "MEASURED_ON": (), "EVIDENCE": support.Evidence.STUB,
+        "VERIFIED": frozenset({"set_block"})})
+    qc = Probe(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(b'<?xml version="1.0"?><ModelRepo/>')
+
+    with pytest.raises(errors.ControlNotDrivable) as caught:
+        qc.set_block(client.Block(0, 3, 6026), verify=False)
+
+    assert "(no firmware measured)" in caught.value.evidence
+    assert "CorOS )" not in caught.value.evidence
+
+
 def test_unverified_operations_is_empty_on_the_base_and_full_on_a_stub(forget_probes):
     assert client.QuadCortex(FakeTransport()).unverified_operations == frozenset()
     Probe = _profile(verified=frozenset({"switch_scene"}))
