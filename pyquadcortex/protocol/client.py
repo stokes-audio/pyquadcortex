@@ -1322,7 +1322,7 @@ class QuadCortex:
         if self.catalog.get(model_id) is None:
             raise ControlNotDrivable(
                 f"model {model_id}",
-                f"not in this unit's catalog ({measured_firmware(type(self))}); "
+                f"not in this unit's catalog ({measured_firmware(type(self).MEASURED_ON)}); "
                 f"the catalog is read from the unit, so this id does not exist on it",
                 "use a constant from this connection's own snapshot (qc.models), or "
                 "look the model up in qc.catalog by name")

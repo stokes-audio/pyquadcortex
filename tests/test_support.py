@@ -60,8 +60,8 @@ def test_measured_firmware_says_so_when_there_is_no_firmware():
     it, so it is written in one place and a profile with nothing measured
     renders as words instead of a hole.
     """
-    assert support.measured_firmware(QuadCortex41) == "CorOS 4.1.0"
-    assert support.measured_firmware(NothingMeasured) == "no firmware measured"
+    assert support.measured_firmware(QuadCortex41.MEASURED_ON) == "CorOS 4.1.0"
+    assert support.measured_firmware(NothingMeasured.MEASURED_ON) == "no firmware measured"
 
 
 def test_unverified_text_says_so_too_for_a_profile_with_nothing_measured():

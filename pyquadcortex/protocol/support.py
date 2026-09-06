@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Protocol, Sequence
 
 
 class Support(Enum):
@@ -102,7 +102,7 @@ class _ProfileClass(Protocol):
     MEASURED_ON: tuple[str, ...]
 
 
-def measured_firmware(cls: type[_ProfileClass]) -> str:
+def measured_firmware(measured_on: Sequence[str]) -> str:
     """``"CorOS 4.0.1"``, or ``"no firmware measured"`` when there is none.
 
     The word "CorOS" belongs to the version, not to the sentence around it, so
@@ -110,8 +110,13 @@ def measured_firmware(cls: type[_ProfileClass]) -> str:
     ``MEASURED_ON``, and a caller told their model is "not in this unit's
     catalog (CorOS )" learns nothing from the empty parenthesis. Every message
     that names a profile's firmware goes through this.
+
+    Takes the versions rather than the profile class: a class OBJECT cannot be
+    matched against a protocol carrying ``__name__``, so a signature naming the
+    class would have cost a type-checker suppression at the one call site that
+    has a real class rather than an ``Any``.
     """
-    firmware = ", ".join(cls.MEASURED_ON)
+    firmware = ", ".join(measured_on)
     return f"CorOS {firmware}" if firmware else "no firmware measured"
 
 
@@ -122,7 +127,7 @@ def unverified_text(cls: type[_ProfileClass], name: str) -> tuple[str, str]:
     connect-time hint, so they cannot say three different things.
     """
     class_name = cls.__name__
-    evidence = f"not yet verified on {class_name} ({measured_firmware(cls)})"
+    evidence = f"not yet verified on {class_name} ({measured_firmware(cls.MEASURED_ON)})"
     workaround = (
         f"connect(support=Support.EXPERIMENTAL) to try it, or run "
         f"`pytest tests/hardware --hardware --verifies {name}` on your unit "
