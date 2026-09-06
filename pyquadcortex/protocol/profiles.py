@@ -115,10 +115,15 @@ def _version_key(version: str) -> tuple:
     Compared per part, as integers where the part is one: a CorOS version is
     dotted numbers today, and the string comparison this replaces called 4.9.0
     the newest of the two - so the hint below offered the older profile as the
-    nearest. A part that is not a number is left as itself rather than being
-    parsed into something it might not be.
+    nearest. A part that is not a number (a pre-release suffix such as
+    "0-rc1") is kept as a string, tagged behind every numeric part so a
+    numeric part never compares against a string part - Python raises
+    `TypeError` on that, and a profile carrying one release candidate would
+    crash the refusal path that is supposed to explain the version mismatch,
+    not add its own. Tagging a numeric part ahead of a string one also keeps
+    the plain release sorting above its own pre-release at the same position.
     """
-    return tuple(int(part) if part.isdigit() else part
+    return tuple((1, int(part)) if part.isdigit() else (0, part)
                  for part in version.split("."))
 
 
@@ -145,18 +150,20 @@ def resolve(reply: pa.VersionMessage) -> type[QuadCortex]:
     if same_device and all(c.EVIDENCE is Evidence.STUB for c in same_device):
         stub = same_device[0]
         hint = (f"The {device} is recognised and not yet supported; {stub.__name__} is the "
-                f"stub to finish. To start: connect(profile={stub.__name__}, "
-                f"support=Support.EXPERIMENTAL), then `pytest tests/hardware --hardware` "
-                f"and send the report. See its docstring.")
+                f"stub to finish. To start: `pytest tests/hardware --hardware "
+                f"--profile {stub.__name__}` and send the report (a Python caller can "
+                f"also connect(profile={stub.__name__}, support=Support.EXPERIMENTAL)). "
+                f"See its docstring.")
     elif same_device:
         # `default=()` for a stub among them: it has measured nothing, and an
         # empty tuple sorts below every version, which is where it belongs.
         nearest = max(same_device,
                       key=lambda c: max((_version_key(v) for v in c.MEASURED_ON),
                                         default=()))
-        hint = (f"Pass profile={nearest.__name__} to treat it as "
-                f"{', '.join(nearest.MEASURED_ON)} while you measure it, with "
-                f"support=Support.EXPERIMENTAL; then add {reply.zenos_git_hash!r} to "
+        hint = (f"Pass `--profile {nearest.__name__}` to `pytest tests/hardware "
+                f"--hardware` to treat it as {', '.join(nearest.MEASURED_ON)} while you "
+                f"measure it (a Python caller can also connect(profile={nearest.__name__}, "
+                f"support=Support.EXPERIMENTAL)); then add {reply.zenos_git_hash!r} to "
                 f"{nearest.__name__}.MEASURED_ON.")
     else:
         hint = "No profile exists for this device type."

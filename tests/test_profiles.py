@@ -296,7 +296,8 @@ def test_resolve_refuses_an_unknown_firmware_naming_what_exists_without_taking_i
     text = str(err)
     assert "QC, CorOS 4.2.0" in text
     assert "4.0.1" in text and "4.1.0" in text
-    assert "profile=QuadCortex41" in text and "Support.EXPERIMENTAL" in text
+    assert "--profile QuadCortex41" in text and "pytest tests/hardware --hardware" in text
+    assert "connect(profile=QuadCortex41" in text and "Support.EXPERIMENTAL" in text
 
 
 def test_resolve_refuses_a_mini_naming_the_stub_and_how_to_start():
@@ -305,7 +306,8 @@ def test_resolve_refuses_a_mini_naming_the_stub_and_how_to_start():
     text = str(caught.value)
     assert "Quad Cortex Mini" in text and "QuadCortexMini" in text
     assert "not yet supported" in text
-    assert "profile=QuadCortexMini" in text and "pytest tests/hardware --hardware" in text
+    assert "--profile QuadCortexMini" in text and "pytest tests/hardware --hardware" in text
+    assert "connect(profile=QuadCortexMini" in text and "Support.EXPERIMENTAL" in text
 
 
 def test_resolve_refuses_a_reply_with_no_identity():
@@ -351,3 +353,17 @@ def test_the_nearest_profile_offered_is_the_newest_by_version_not_by_string():
     finally:
         client.QuadCortex._PROFILES[:] = [
             c for c in client.QuadCortex._PROFILES if c not in (older, newer)]
+
+
+def test_version_key_never_compares_a_number_against_a_string():
+    """A pre-release suffix ("4.1.0-rc1") keeps its last segment a string.
+
+    Comparing that key against a plain numeric one ("4.1.0") used to raise
+    TypeError - int() vs str() - inside the refusal path that is supposed to
+    explain a version mismatch, not add its own. The numeric release must
+    still sort above the pre-release.
+    """
+    numeric = profiles._version_key("4.1.0")
+    prerelease = profiles._version_key("4.1.0-rc1")
+    assert prerelease < numeric
+    assert numeric > prerelease
