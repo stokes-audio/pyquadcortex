@@ -379,6 +379,39 @@ def test_connect_gives_up_after_its_patience_with_the_silent_window_explained(mo
 from pyquadcortex.protocol import errors, profiles, support
 
 
+def test_connect_retries_the_identity_read_within_the_same_patience(monkeypatch, fake_stack):
+    """The identity read is the first thing connect() asks of the unit, and it
+    lands in the same 9-17s openable-but-silent window the handshake retry
+    loop exists for - so it must share handshake_patience rather than fail
+    outright at a bare `timeout`."""
+    real_await = FakeTransport.await_broadcast
+    calls = {"n": 0}
+
+    def flaky_await(self, expected_class, trigger, timeout=40.0, match=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            trigger()
+            raise TimeoutError("no response for request_id=1")
+        return real_await(self, expected_class, trigger, timeout=timeout, match=match)
+
+    monkeypatch.setattr(FakeTransport, "await_broadcast", flaky_await)
+    qc = session.connect(handshake_patience=30.0)
+    assert calls["n"] == 3, "the identity read was retried, not failed outright"
+    assert type(qc) is client.QuadCortex
+
+
+def test_connect_gives_up_on_a_silent_identity_read_after_its_patience(monkeypatch, fake_stack):
+    def never_answers(self, expected_class, trigger, timeout=40.0, match=None):
+        trigger()
+        raise TimeoutError("no response for request_id=1")
+
+    monkeypatch.setattr(FakeTransport, "await_broadcast", never_answers)
+    with pytest.raises(TimeoutError, match="openable-but-silent"):
+        session.connect(timeout=0.05, handshake_patience=0.3)
+    t = FakeTransport.instances[0]
+    assert t.stopped and t.device.closed
+
+
 def test_connect_resolves_the_profile_from_the_units_version_before_the_handshake(fake_stack):
     qc = session.connect()
     t = FakeTransport.instances[0]
@@ -423,9 +456,16 @@ def test_connect_with_profile_skips_the_registry_but_checks_the_device_type(fake
 
 
 def test_the_announce_string_is_the_resolved_profiles(fake_stack):
+    """The handshake announces cortex_control_version for the RESOLVED class,
+    not always the base QuadCortex - "send VersionMessage" is in `happened`
+    for the identity read's own trigger too, so that alone can't fail here."""
     FakeTransport.version_reply = pa.VersionMessage(
         action=pa.MessageAction.UPDATE, device_type=pa.VersionMessage.QC,
         zenos_git_hash="4.1.0", device_serial_number="QCS0000001")
-    session.connect()
+    qc = session.connect()
+    assert type(qc) is profiles.QuadCortex41
     t = FakeTransport.instances[0]
-    assert "send VersionMessage" in t.happened, "the announce went out on the resolved class"
+    announces = [m for m in t.sent
+                if isinstance(m, pa.VersionMessage) and m.HasField("cortex_control_version")]
+    assert announces, "the handshake sent a Version announce"
+    assert announces[0].cortex_control_version == profiles.QuadCortex41.CC_VERSION

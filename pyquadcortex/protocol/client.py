@@ -544,12 +544,16 @@ class QuadCortex:
         # disambiguate and _dispatch gives an id-less reply to whichever waiter
         # is first in line.
         #
-        # Skipping it costs nothing and quietens the link: the device's own
-        # Version READ is the tail of its answer to a host Version READ, so with
-        # none sent here it asks nothing back. Measured 2026-08-27 on d14e - one
-        # inbound Version through connect and the whole burst, an UPDATE
-        # carrying cortex_control_version_valid in answer to this announce, and
-        # none in the eight seconds of idling after it.
+        # _hello itself still sends no Version READ - that part of the
+        # measurement below is about THIS announce and holds unchanged: an
+        # UPDATE carrying cortex_control_version_valid in answer to it, and
+        # none in the eight seconds of idling after it. But connect() (ADR-0020)
+        # now reads identity once, through its OWN Version READ, before ever
+        # calling _hello - and the unit answers that: the full reply, then its
+        # own Version{READ} tail ~1 ms later (protocol.md section 4.4, "A
+        # Version READ is answered twice"). So a connect() no longer sees just
+        # the one inbound Version this was measured against on 2026-08-27 (d14e)
+        # - it sees that identity exchange's two, plus this announce's one.
         self._t.send(
             pa.VersionMessage(
                 action=pa.MessageAction.UPDATE, cortex_control_version=self.CC_VERSION

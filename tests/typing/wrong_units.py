@@ -74,3 +74,4 @@ from pyquadcortex import protocol
 verified: protocol.QuadCortex = protocol.connect(support=protocol.Support.EXPERIMENTAL)
 protocol.connect(support="experimental")  # want: error
 protocol.connect(profile=protocol.QuadCortex41)
+protocol.connect(profile="garbage")  # want: error

@@ -233,7 +233,8 @@ class Device:
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
             handshake_patience: float = 30.0,
-            profile=None, support=protocol.Support.VERIFIED) -> Device:
+            profile: type[protocol.QuadCortex] | None = None,
+            support: protocol.Support = protocol.Support.VERIFIED) -> Device:
     """Open a Quad Cortex over USB and return it as a :class:`Device`.
 
     Finds and opens the device, starts the transport, and performs the connect

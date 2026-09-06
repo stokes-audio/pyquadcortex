@@ -81,10 +81,46 @@ def open_device():
         ) from exc
 
 
+def _patience_exhausted(attempt: int, handshake_patience: float) -> TimeoutError:
+    """The ``TimeoutError`` raised when ``handshake_patience`` elapses.
+
+    Shared between the identity read and the handshake loop below (ADR-0020):
+    both are just this library asking the control protocol something, and the
+    measured 9-17s openable-but-silent window after a boot covers either one
+    equally - so a caller gets the same guidance no matter which one hit it,
+    from one place rather than two copies drifting apart.
+    """
+    return TimeoutError(
+        f"the device is enumerated and open but the control "
+        f"protocol did not answer in {attempt} handshake "
+        f"attempt(s) over {handshake_patience:.0f}s. This "
+        f"openable-but-silent window has measured 9-17s after a "
+        f"reboot or cold boot; if it persists far longer, see "
+        f"the USB-link-death section of troubleshooting.md."
+    )
+
+
+def _retry_until_patient(attempt_fn, deadline: float, handshake_patience: float):
+    """Call ``attempt_fn()`` and retry it on ``TimeoutError`` until ``deadline``.
+
+    ``deadline`` is computed once by the caller and shared across every phase
+    retried this way: ``handshake_patience`` is a total budget for getting the
+    unit to answer at all, not a per-phase allowance (ADR-0020).
+    """
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return attempt_fn()
+        except TimeoutError:
+            if time.monotonic() >= deadline:
+                raise _patience_exhausted(attempt, handshake_patience) from None
+
+
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
             handshake_patience: float = 30.0,
             before_handshake=None,
-            profile=None,
+            profile: type[QuadCortex] | None = None,
             support: Support = Support.VERIFIED) -> QuadCortex:
     """Open a Quad Cortex and return a connected, ready-to-use client.
 
@@ -104,14 +140,18 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         settle: seconds to wait after the handshake before returning. The device
             needs a moment before it treats the client as connected; lowering
             this makes the first command less reliable.
-        handshake_patience: total seconds to keep re-attempting the handshake
-            when the device is OPENABLE BUT SILENT. That window is real and
-            varies: ~9-12 s post-enumeration in one session's measurements, and
-            ~17 s in a live host-triggered reboot here - a successful open
-            proves nothing about readiness, and a 15 s budget was measured
-            failing, which is why the default is 30. Each attempt restarts the
-            full handshake (safe: it begins with a fresh session id). Set to 0
-            for the old single-attempt behaviour.
+        handshake_patience: total seconds to keep re-attempting the identity
+            read and the handshake when the device is OPENABLE BUT SILENT. That
+            window is real and varies: ~9-12 s post-enumeration in one
+            session's measurements, and ~17 s in a live host-triggered reboot
+            here - a successful open proves nothing about readiness, and a
+            15 s budget was measured failing, which is why the default is 30.
+            This is ONE budget for both phases, not one each: the identity read
+            below is the first thing this library asks of the unit, and it
+            lands in the same silent window as the handshake that follows it.
+            Each attempt restarts fully (safe: the identity read is a bare READ,
+            and the handshake begins with a fresh session id). Set to 0 for the
+            old single-attempt behaviour.
         before_handshake: optional ``callable(transport)``, called once with the
             started :class:`~pyquadcortex.protocol.transport.Transport` after it
             starts and before the handshake runs. This is the only way to
@@ -153,9 +193,16 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         # burst the handshake provokes rather than joining after it.
         if before_handshake is not None:
             before_handshake(transport)
+        # One budget for the whole bring-up (ADR-0020): the identity read below
+        # and the handshake that follows it both land in the same
+        # openable-but-silent window, so they share one deadline rather than
+        # each getting handshake_patience of their own.
+        deadline = time.monotonic() + handshake_patience
         # Who are we talking to? Read before the handshake, through the base
         # class, whose version() is in ALWAYS and works on any unit (ADR-0020).
-        identity = QuadCortex(transport).version(timeout=timeout)
+        identity = _retry_until_patient(
+            lambda: QuadCortex(transport).version(timeout=timeout),
+            deadline, handshake_patience)
         if profile is None:
             cls = profiles.resolve(identity)
         else:
@@ -167,23 +214,8 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
                     f"{pa.VersionMessage.DeviceType.Name(cls.DEVICE_TYPE)}, and the unit "
                     f"says {pa.VersionMessage.DeviceType.Name(identity.device_type)}")
         qc = cls(transport, _owned_resources=owned, support=support)
-        deadline = time.monotonic() + handshake_patience
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                qc._hello(timeout=timeout, settle=settle)
-                break
-            except TimeoutError:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(
-                        f"the device is enumerated and open but the control "
-                        f"protocol did not answer in {attempt} handshake "
-                        f"attempt(s) over {handshake_patience:.0f}s. This "
-                        f"openable-but-silent window has measured 9-17s after a "
-                        f"reboot or cold boot; if it persists far longer, see "
-                        f"the USB-link-death section of troubleshooting.md."
-                    ) from None
+        _retry_until_patient(lambda: qc._hello(timeout=timeout, settle=settle),
+                             deadline, handshake_patience)
         # Say goodbye BEFORE the transport and handle go away, since the send needs
         # a live transport. close() pops this list, so appending last runs it first.
         owned.append(qc.disconnect)
