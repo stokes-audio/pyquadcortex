@@ -238,6 +238,38 @@ def test_a_deselected_test_claims_nothing(conftest, collection):
         "set_bypass was deselected, so this run measured nothing about it")
 
 
+def test_a_verifies_naming_no_operation_stops_the_run(conftest, collection):
+    """A typo deselected every test, and pytest reports that as a green run.
+
+    Nothing ran, nothing was measured, and the summary line says so only in a
+    deselected count nobody reads. The name is checked against the operations
+    instead.
+    """
+    items = [_Item("t.py::a", "set_param")]
+
+    with pytest.raises(pytest.UsageError) as caught:
+        conftest.pytest_collection_modifyitems(
+            None, _Config(verifies="set_paramm"), items)
+
+    text = str(caught.value)
+    assert "set_paramm" in text and "QuadCortex.operations()" in text
+
+
+def test_a_verifies_no_test_names_says_where_that_is_recorded(conftest, collection):
+    """A real operation with no test is not a typo, so it gets its own answer:
+    the excuse list, which is where an operation no test drives has to appear."""
+    items = [_Item("t.py::a", "set_param")]
+
+    with pytest.raises(pytest.UsageError) as caught:
+        conftest.pytest_collection_modifyitems(
+            None, _Config(verifies="set_bypass"), items)
+
+    text = str(caught.value)
+    assert "set_bypass" in text
+    assert "UNMARKED_OPERATIONS" in text
+    assert "tests/test_hardware_markers.py" in text
+
+
 def test_a_marker_naming_no_operation_stops_the_collection(conftest, collection):
     items = [_Item("t.py::a", "set_paramm")]
 
@@ -275,17 +307,26 @@ class _Position:
 
 
 class _FakeQc:
-    """The two methods the teardown calls, each able to fail on demand."""
+    """The three methods the teardown calls, each able to fail on demand."""
 
-    def __init__(self, recall_raises=None, delete_raises=None):
+    def __init__(self, recall_raises=None, delete_raises=None,
+                 list_raises=None, listing=("pyquadcortex scratch",)):
         self.calls = []
         self._recall_raises = recall_raises
         self._delete_raises = delete_raises
+        self._list_raises = list_raises
+        self._listing = listing
 
     def recall_preset(self, folder_key, position):
         self.calls.append(("recall", folder_key, position))
         if self._recall_raises is not None:
             raise self._recall_raises
+
+    def list_presets(self, setlist):
+        self.calls.append(("list", setlist))
+        if self._list_raises is not None:
+            raise self._list_raises
+        return [_Entry(i, name) for i, name in enumerate(self._listing)]
 
     def delete_preset(self, setlist, name):
         self.calls.append(("delete", setlist, name))
@@ -331,23 +372,51 @@ def test_a_clean_teardown_recalls_then_deletes_and_says_nothing(conftest):
                               settle=0.0)
 
     assert qc.calls == [("recall", "user", 3),
+                        ("list", "USER"),
                         ("delete", "USER", "pyquadcortex scratch")]
 
 
-def test_nothing_after_the_copy_exists_sits_outside_the_try(conftest):
-    """The `try:` opens the moment the copy is on the unit, not later.
+def test_a_copy_that_was_never_saved_is_not_reported_as_unrestored(conftest):
+    """The fixture's `try` opens before the save, so the teardown runs on a
+    failed save with nothing to delete. Deleting a name the unit does not have
+    would report a restore that could not finish when the unit is as it was."""
+    qc = _FakeQc(listing=("Gig", "Rehearsal"))
 
-    `save_current_preset` returning IS the copy existing, so the check on its
-    name and the recall that follows must be inside the block whose `finally`
-    deletes it. They were outside, and either failing left the copy in the
-    owner's User setlist under the fixed name. Read from the source because
-    the fixture needs a unit; the ORDER of the lines is the whole fix.
+    conftest._release_scratch(qc, _Position, "USER", "pyquadcortex scratch",
+                              settle=0.0)
+
+    assert qc.calls == [("recall", "user", 3), ("list", "USER")]
+
+
+def test_a_listing_that_fails_is_reported_because_the_delete_never_ran(conftest):
+    qc = _FakeQc(list_raises=TimeoutError("no listing"))
+
+    with pytest.raises(AssertionError) as caught:
+        conftest._release_scratch(qc, _Position, "USER", "pyquadcortex scratch",
+                                  settle=0.0)
+
+    message = str(caught.value)
+    assert "COULD NOT RESTORE THE UNIT" in message
+    assert "delete it by hand" in message
+    assert "TimeoutError" in message
+
+
+def test_nothing_that_can_leave_the_copy_behind_sits_outside_the_try(conftest):
+    """The `try:` opens BEFORE the save, not after it.
+
+    The save is itself a way to leave a copy behind: it writes and then waits
+    for the unit to confirm, so a confirm that times out raises with the copy
+    already in the owner's User setlist under the fixed name. The save, the
+    check on its name and the recall that follows must all be inside the block
+    whose `finally` deletes it. Read from the source because the fixture needs
+    a unit; the ORDER of the lines is the whole fix.
     """
     body = _HARDWARE_CONFTEST.read_text(encoding="utf-8").split(
         "def scratch_preset(")[1]
     lines = [line.strip() for line in body.splitlines()]
     opened = lines.index("try:")
-    for guarded in ("assert stored == SCRATCH_NAME",
+    for guarded in ("stored = qc.save_current_preset(Setlist.USER, free, SCRATCH_NAME,",
+                    "assert stored == SCRATCH_NAME",
                     "qc.recall_preset(Setlist.USER, free)"):
         assert lines.index(guarded) > opened, (
             f"{guarded!r} runs before the try: that deletes the copy")

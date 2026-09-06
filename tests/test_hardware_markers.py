@@ -22,7 +22,7 @@ UNMARKED_OPERATIONS = {
     "io_settings": "the input gain tests read it back as their instrument; nothing asserts the port listing against what the unit shows",
     "preset_dirty": "test_model_state.py calls it only to decide which branch to expect; nothing asserts the flag across a known-clean and known-dirty preset",
     "settings": "the global-settings echo test reads it only to find the value to flip; nothing asserts a settings() field against the unit's screen",
-    "list_presets": "the scratch_preset fixture reads it to find a free slot; nothing asserts the listing against the unit's own Directory",
+    "list_presets": "read by the scratch_preset fixture, which no test uses yet; no test asserts on the listing itself",
 
     # -- the preset library: writes that would touch the owner's own presets ---
     # The scratch_preset fixture is what these would be built on - it saves a

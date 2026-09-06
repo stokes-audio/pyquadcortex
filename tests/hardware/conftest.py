@@ -94,8 +94,23 @@ def _claims(items, operations, wanted, deselect):
                     f"{item.nodeid}: verifies({name!r}) is not an operation")
         marks[item.nodeid] = names
     if wanted:
+        # Both refusals are loud for the same reason the gate above is: a
+        # `--verifies` nobody matches deselects EVERY test, and pytest reports
+        # that as a green run of nothing. A typo and an untested operation look
+        # identical from there, so each says which of the two it is and where
+        # the answer is written down.
+        if wanted not in operations:
+            raise pytest.UsageError(
+                f"--verifies {wanted!r} is not an operation; the names are the "
+                f"ones in QuadCortex.operations()")
         keep = [item for item in items if wanted in marks[item.nodeid]]
         drop = [item for item in items if wanted not in marks[item.nodeid]]
+        if not keep:
+            raise pytest.UsageError(
+                f"--verifies {wanted!r} is an operation, and no collected test "
+                f"names it - this run would measure nothing. It should be in "
+                f"UNMARKED_OPERATIONS in tests/test_hardware_markers.py, with "
+                f"the reason no test drives it")
         items[:] = keep
         deselect(drop)
     return {item.nodeid: marks[item.nodeid] for item in items}
@@ -442,6 +457,14 @@ def _release_scratch(qc, before, setlist, name, settle=3.0):
     ``restores`` uses, so a teardown that could not finish reads the same
     whichever fixture owned it.
 
+    The copy may not be there at all: the fixture's ``try`` opens BEFORE the
+    save, so a save that failed outright runs this teardown with nothing to
+    delete - and a ``delete_preset`` of a name the unit does not have would
+    report a restore that could not finish when the unit is already as it was.
+    So the setlist is listed first and the delete happens only for a copy that
+    exists. A listing that fails is itself reported, since it is the reason the
+    delete was not even attempted.
+
     ``settle`` is the pause after the recall, and only the offline test in
     ``tests/test_hardware_report.py`` passes anything but the real 3 s.
     """
@@ -454,10 +477,18 @@ def _release_scratch(qc, before, setlist, name, settle=3.0):
             f"recall the preset that was loaded "
             f"({before.folder_key}, {before.position}): {exc!r}")
     try:
-        qc.delete_preset(setlist, name)
+        present = any(entry.name == name for entry in qc.list_presets(setlist))
     except Exception as exc:                         # noqa: BLE001 - reported, not swallowed
         failed.append(
-            f"delete the scratch preset {name!r} from the User setlist: {exc!r}")
+            f"list the User setlist to see whether the scratch preset {name!r} "
+            f"is there: {exc!r} - delete it by hand if it is")
+    else:
+        if present:
+            try:
+                qc.delete_preset(setlist, name)
+            except Exception as exc:                 # noqa: BLE001 - reported, not swallowed
+                failed.append(
+                    f"delete the scratch preset {name!r} from the User setlist: {exc!r}")
     if failed:
         raise _unrestored(failed)
 
@@ -475,13 +506,16 @@ def scratch_preset(qc):
     assert qc.preset_dirty() is False, "the loaded preset has unsaved edits; save or reload it first"
     free = _scratch_slot(qc.list_presets(Setlist.USER, include_empty=True),
                          SCRATCH_NAME)
-    stored = qc.save_current_preset(Setlist.USER, free, SCRATCH_NAME,
-                                    confirm=True, confirm_timeout=30.0)
-    # The copy EXISTS from here on, so everything after this line is inside the
-    # try: a failed assert or a failed recall used to leave it in the owner's
-    # User setlist under the fixed name, which makes the next run's
-    # delete-by-name ambiguous - the leak _release_scratch exists to prevent.
+    # The try opens BEFORE the save, because the save is itself a way to leave
+    # a copy behind: it writes and then waits for the unit to confirm, so a
+    # confirm that times out raises with the copy already in the owner's User
+    # setlist under the fixed name - which makes the next run's delete-by-name
+    # ambiguous, the leak _release_scratch exists to prevent. Everything that
+    # can leave the copy there is therefore inside the block whose finally
+    # deletes it, and _release_scratch tolerates there being nothing to delete.
     try:
+        stored = qc.save_current_preset(Setlist.USER, free, SCRATCH_NAME,
+                                        confirm=True, confirm_timeout=30.0)
         assert stored == SCRATCH_NAME
         qc.recall_preset(Setlist.USER, free)
         time.sleep(3.0)
