@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from pyquadcortex.protocol import client, errors, models, options, params, support
+from pyquadcortex.protocol import client, errors, models, options, params, profiles, support
 from pyquadcortex.protocol.catalogs import coros_4_0_1
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from tests.test_client import FakeTransport  # the offline transport double
@@ -158,3 +158,68 @@ def test_support_defaults_to_verified_and_is_readable():
     assert client.QuadCortex(FakeTransport()).support is support.Support.VERIFIED
     qc = client.QuadCortex(FakeTransport(), support=support.Support.EXPERIMENTAL)
     assert qc.support is support.Support.EXPERIMENTAL
+
+
+def test_the_4_1_stub_connects_but_verifies_nothing_and_has_no_snapshot():
+    cls = profiles.QuadCortex41
+    assert issubclass(cls, client.QuadCortex)
+    assert cls.MEASURED_ON == ("4.1.0",)
+    assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
+    assert cls.VERIFIED == frozenset()
+    assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
+    assert isinstance(cls.models, support.NoSnapshot)
+    with pytest.raises(AttributeError, match="coros_4_1_0"):
+        cls.models.Delay
+    assert len(cls(FakeTransport()).unverified_operations) == len(client.QuadCortex.operations())
+
+
+def test_the_mini_stub_is_recognised_but_cannot_connect():
+    cls = profiles.QuadCortexMini
+    assert cls.DEVICE_TYPE == pa.VersionMessage.ATMA
+    assert cls.MEASURED_ON == ()
+    assert cls.EVIDENCE is support.Evidence.STUB
+    assert cls.HARDWARE == support.Hardware(footswitches=4, expression_ports=2)
+    assert cls in profiles.stubs()
+    assert cls not in profiles.registry().values()
+
+
+def test_the_registry_has_one_entry_per_measured_version():
+    reg = profiles.registry()
+    assert reg[(pa.VersionMessage.QC, "4.0.1")] is client.QuadCortex
+    assert reg[(pa.VersionMessage.QC, "4.1.0")] is profiles.QuadCortex41
+    assert all(len(k) == 2 for k in reg)
+
+
+def _reply(device_type, coros):
+    return pa.VersionMessage(action=pa.MessageAction.UPDATE, device_type=device_type,
+                             zenos_git_hash=coros, device_serial_number="QA00EE910")
+
+
+def test_resolve_maps_known_pairs_to_their_class():
+    assert profiles.resolve(_reply(pa.VersionMessage.QC, "4.0.1")) is client.QuadCortex
+    assert profiles.resolve(_reply(pa.VersionMessage.QC, "4.1.0")) is profiles.QuadCortex41
+
+
+def test_resolve_refuses_an_unknown_firmware_naming_what_exists_without_taking_it():
+    with pytest.raises(profiles.UnsupportedDevice) as caught:
+        profiles.resolve(_reply(pa.VersionMessage.QC, "4.2.0"))
+    err = caught.value
+    assert (err.device_type, err.coros_version) == (pa.VersionMessage.QC, "4.2.0")
+    text = str(err)
+    assert "QC, CorOS 4.2.0" in text
+    assert "4.0.1" in text and "4.1.0" in text
+    assert "profile=QuadCortex41" in text and "Support.EXPERIMENTAL" in text
+
+
+def test_resolve_refuses_a_mini_naming_the_stub_and_how_to_start():
+    with pytest.raises(profiles.UnsupportedDevice) as caught:
+        profiles.resolve(_reply(pa.VersionMessage.ATMA, "1.0.0"))
+    text = str(caught.value)
+    assert "Quad Cortex Mini" in text and "QuadCortexMini" in text
+    assert "not yet supported" in text
+    assert "profile=QuadCortexMini" in text and "pytest tests/hardware --hardware" in text
+
+
+def test_resolve_refuses_a_reply_with_no_identity():
+    with pytest.raises(profiles.UnsupportedDevice, match="did not report"):
+        profiles.resolve(pa.VersionMessage(action=pa.MessageAction.UPDATE))

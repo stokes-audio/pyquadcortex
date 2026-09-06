@@ -291,7 +291,9 @@ class QuadCortex:
     #: Exact `zenos_git_hash` strings a hardware-suite run has been done against.
     #: A patch release not listed here refuses to connect until someone adds it
     #: after a run - "probably only bug fixes" is the guess the rule stops.
-    MEASURED_ON = ("4.0.1",)
+    #: Annotated `tuple[str, ...]`, not the narrower literal mypy would infer
+    #: from this initializer, because a stub profile declares it empty.
+    MEASURED_ON: tuple[str, ...] = ("4.0.1",)
     #: How well this profile is known. This one is the maintainer's own unit.
     EVIDENCE = Evidence.MAINTAINER
     #: Facts the model layer needs. Eight footswitches, two expression ports.
@@ -299,14 +301,18 @@ class QuadCortex:
     #: Operation names verified on this profile. Every method this class has
     #: carries 4.0.1 evidence, so the base verifies everything; a subclass
     #: starts from an empty set and grows it from the hardware suite's report.
-    VERIFIED = EVERYTHING
+    #: Annotated `Any`: this holds either the `EVERYTHING` sentinel or a
+    #: `frozenset[str]`, and both only need to answer `in`.
+    VERIFIED: typing.Any = EVERYTHING
     #: The constants snapshot read from this firmware. A subclass rebinds these.
     #: Dynamic on purpose: `qc.models` follows the connection, at the price of
     #: mypy seeing `Any` through it - import a snapshot module directly for
-    #: static unit checking (ADR-0018).
-    models = coros_4_0_1.models
-    params = coros_4_0_1.params
-    options = coros_4_0_1.options
+    #: static unit checking (ADR-0018). Annotated `Any` explicitly, so a profile
+    #: that has not measured this firmware can rebind it to `NoSnapshot` instead
+    #: of a real snapshot module.
+    models: typing.Any = coros_4_0_1.models
+    params: typing.Any = coros_4_0_1.params
+    options: typing.Any = coros_4_0_1.options
     #: Public methods that must work on ANY profile, because connecting and
     #: cleaning up depend on them. Everything public and not here is an
     #: OPERATION and is guarded on a subclass that has not verified it. Each
