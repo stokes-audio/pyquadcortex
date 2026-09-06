@@ -28,6 +28,8 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 ``docs/protocol.md`` for the per-operation coverage table.
 """
 
+import functools
+import logging
 import time
 import typing
 import uuid
@@ -38,6 +40,7 @@ from pyquadcortex.protocol import catalog, enums, registry, targets
 from pyquadcortex.protocol import options as options_module
 from pyquadcortex.protocol import values as values_module
 from pyquadcortex.protocol import units as units_module
+from pyquadcortex.protocol.catalogs import coros_4_0_1
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
                                 MetronomeSound, MidiOutType,
@@ -48,12 +51,16 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
 from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
                                           ControlNotDrivable)
+from pyquadcortex.protocol.support import (EVERYTHING, Evidence, Hardware,
+                                           Support, unverified_text)
 from pyquadcortex.protocol.targets import (  # noqa: F401
     LANE_OUTPUT_UNASSIGNABLE, Block, LaneInput, LaneOutput, Mixer, ParamTarget,
     Splitter, Tempo, _require_even_row)
 from pyquadcortex.protocol.units import (UNITY_LEVEL, bpm_to_tempo,  # noqa: F401
                                          db_to_input_level, db_to_lane_level,
                                          input_level_db, lane_level_db, tempo_bpm)
+
+log = logging.getLogger(__name__)
 
 
 
@@ -254,10 +261,97 @@ def _sweep_wire(value, target, index, spec, get_catalog, what):
     raise _bare_number(value, what, unit_example=f"Real({value!r})")
 
 
+def _guarded(name, inherited):
+    """Wrap an inherited operation a profile has not verified (ADR-0020).
+
+    Under ``Support.VERIFIED`` it refuses before any bytes are sent; under
+    ``Support.EXPERIMENTAL`` it warns once per operation per connection and
+    runs the inherited behaviour. The decision is the caller's, made at
+    connect, and the wording comes from one place.
+    """
+    @functools.wraps(inherited)
+    def guard(self, *args, **kwargs):
+        evidence, workaround = unverified_text(type(self), name)
+        if self._support is Support.VERIFIED:
+            raise ControlNotDrivable(name, evidence, workaround)
+        if name not in self._warned:
+            self._warned.add(name)
+            log.warning("%s is %s; running it anyway", name, evidence)
+        return inherited(self, *args, **kwargs)
+    guard._unverified = True
+    return guard
+
+
 class QuadCortex:
     """Ergonomic control surface over a request/response transport."""
 
-    def __init__(self, transport, _owned_resources=None):
+    # -- the profile this class IS (ADR-0020) -----------------------------------
+    #: The `Version.device_type` this class serves.
+    DEVICE_TYPE = pa.VersionMessage.QC
+    #: Exact `zenos_git_hash` strings a hardware-suite run has been done against.
+    #: A patch release not listed here refuses to connect until someone adds it
+    #: after a run - "probably only bug fixes" is the guess the rule stops.
+    MEASURED_ON = ("4.0.1",)
+    #: How well this profile is known. This one is the maintainer's own unit.
+    EVIDENCE = Evidence.MAINTAINER
+    #: Facts the model layer needs. Eight footswitches, two expression ports.
+    HARDWARE = Hardware(footswitches=8, expression_ports=2)
+    #: Operation names verified on this profile. Every method this class has
+    #: carries 4.0.1 evidence, so the base verifies everything; a subclass
+    #: starts from an empty set and grows it from the hardware suite's report.
+    VERIFIED = EVERYTHING
+    #: The constants snapshot read from this firmware. A subclass rebinds these.
+    #: Dynamic on purpose: `qc.models` follows the connection, at the price of
+    #: mypy seeing `Any` through it - import a snapshot module directly for
+    #: static unit checking (ADR-0018).
+    models = coros_4_0_1.models
+    params = coros_4_0_1.params
+    options = coros_4_0_1.options
+    #: Public methods that must work on ANY profile, because connecting and
+    #: cleaning up depend on them. Everything public and not here is an
+    #: OPERATION and is guarded on a subclass that has not verified it. Each
+    #: entry says why, because this list is the one place a guess could hide.
+    ALWAYS = {
+        "version": "resolving the profile reads it before any class is chosen",
+        "catalog": "the live catalog is how set_block checks an id on any firmware",
+        "close": "releasing the device must never depend on what was measured",
+        "disconnect": "saying goodbye must never depend on what was measured",
+        "add_listener": "subscribing to pushes is transport plumbing, not a unit operation",
+        "remove_listener": "unsubscribing is transport plumbing, not a unit operation",
+        "support": "reports the connection's own setting; no bytes",
+        "unverified_operations": "reports the guard's own state; no bytes",
+    }
+    #: Every subclass, in definition order; `profiles.registry()` reads it.
+    _PROFILES: list = []
+
+    @classmethod
+    def operations(cls) -> frozenset:
+        """Every public method of `QuadCortex` that is an operation on the unit."""
+        return frozenset(
+            name for name, value in vars(QuadCortex).items()
+            if not name.startswith("_")
+            and (callable(value) or isinstance(value, property))
+            and name not in QuadCortex.ALWAYS)
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        QuadCortex._PROFILES.append(cls)
+        if cls.VERIFIED is EVERYTHING:
+            return
+        for name in QuadCortex.operations():
+            if name in cls.__dict__:
+                if name not in cls.VERIFIED:
+                    raise TypeError(
+                        f"{cls.__name__} overrides {name} but does not list it in "
+                        f"VERIFIED; an override is the profile's own measured "
+                        f"behaviour, so say so in the one place that lists them")
+                continue
+            if name in cls.VERIFIED:
+                continue
+            setattr(cls, name, _guarded(name, getattr(QuadCortex, name)))
+
+    def __init__(self, transport, _owned_resources=None,
+                 support: Support = Support.VERIFIED):
         self._t = transport
         # Set by pyquadcortex.protocol.connect() so close() can tear down the transport
         # and HID device it opened on the caller's behalf. When a caller wires
@@ -265,6 +359,22 @@ class QuadCortex:
         self._owned = _owned_resources or []
         # Populated on first use of .catalog (a ~47 KB fetch from the device).
         self._catalog = None
+        # How this connection treats an operation its profile has not verified
+        # (ADR-0020). Read by the guard `__init_subclass__` installs.
+        self._support = support
+        self._warned: set = set()
+
+    @property
+    def support(self) -> Support:
+        """How this connection treats operations its profile has not verified."""
+        return self._support
+
+    @property
+    def unverified_operations(self) -> frozenset:
+        """Operation names this profile has not verified - empty on `QuadCortex`."""
+        return frozenset(
+            name for name in QuadCortex.operations()
+            if getattr(getattr(type(self), name), "_unverified", False))
 
     # -- catalog -------------------------------------------------------------
 
