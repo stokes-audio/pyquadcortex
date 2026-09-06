@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Generate ``pyquadcortex/protocol/params.py`` - parameter constants per model.
+"""Generate a snapshot's ``params.py`` - parameter constants per model.
+
+Writes ``pyquadcortex/protocol/catalogs/<snapshot>/params.py``; ``--snapshot``
+names the snapshot after the CorOS version it was read from (ADR-0020).
 
 A parameter is written by its wire INDEX. Indices are positional and several are
 not visible knobs, so writing one by number is how you change stored data and
@@ -8,10 +11,11 @@ move nothing on screen. These constants make the index a name.
 Source: a device's ModelRepo payload, either live or previously saved.
 
     # from a connected Quad Cortex (Cortex Control must be quit)
-    python scripts/generate_params.py
+    python scripts/generate_params.py --snapshot coros_4_1_0
 
     # from a saved payload, for reproducible regeneration
-    python scripts/generate_params.py --payload model_repo_payload.bin
+    python scripts/generate_params.py --snapshot coros_4_1_0 \
+        --payload model_repo_payload.bin
 
 Three things this generator knows that the catalog does not:
 
@@ -43,30 +47,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from pyquadcortex.protocol import catalog  # noqa: E402
 import generate_models  # noqa: E402  (for class_name/const_name - the docstring example)
+import _snapshots  # noqa: E402  (the snapshot package, written once for all three)
 
 # Anchored on this script's own location, never on the working directory:
 # the docs give this command with no cwd, and a relative path silently built
 # a whole new catalogs tree wherever the run started while reporting success.
 CATALOGS = (pathlib.Path(__file__).resolve().parents[1]
             / "pyquadcortex" / "protocol" / "catalogs")
-
-
-def _ensure_snapshot_package(snapshot: str) -> pathlib.Path:
-    """Create ``catalogs/<snapshot>/`` and its ``__init__.py`` if absent."""
-    directory = CATALOGS / snapshot
-    directory.mkdir(parents=True, exist_ok=True)
-    init = directory / "__init__.py"
-    if not init.exists():
-        version = snapshot.removeprefix("coros_").replace("_", ".")
-        init.write_text(
-            f'"""The Quad Cortex catalog on CorOS {version}, '
-            'read from the maintainer\'s unit."""\n'
-            f"from pyquadcortex.protocol.catalogs.{snapshot} import models, options, params  # noqa: F401\n"
-            "\n"
-            '__all__ = ["models", "params", "options"]\n',
-            encoding="utf-8",
-        )
-    return directory
 
 
 #: The cab layout every cab model actually uses on the wire. Its repeated
@@ -334,9 +321,13 @@ def main() -> int:
 
     cat = catalog.parse_model_repo(load_payload(args.payload))
     text = render(cat, snapshot=args.snapshot)
-    directory = _ensure_snapshot_package(args.snapshot)
+    directory = _snapshots.ensure_snapshot_package(CATALOGS, args.snapshot)
     out = directory / "params.py"
     out.write_text(text, encoding="utf-8")
+    # Again, now the module is on disk: the package's __init__ imports
+    # exactly what is there, so a snapshot generated one module at a
+    # time imports at every step instead of only at the last.
+    _snapshots.ensure_snapshot_package(CATALOGS, args.snapshot)
     print(f"wrote {out} ({len(text.splitlines())} lines)")
     return 0
 

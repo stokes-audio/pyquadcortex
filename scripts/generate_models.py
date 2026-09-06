@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Generate ``pyquadcortex/protocol/models.py`` - constants for the FACTORY blocks.
+"""Generate a snapshot's ``models.py`` - constants for the FACTORY blocks.
+
+Writes ``pyquadcortex/protocol/catalogs/<snapshot>/models.py``; ``--snapshot``
+names the snapshot after the CorOS version it was read from (ADR-0020).
 
 A block is stored on the wire as an integer model id. Ids for factory content
 are the same on every Quad Cortex, so they can be constants a caller writes
@@ -11,10 +14,11 @@ generator emits only ``Model.is_factory`` entries.
 Source: a device's ModelRepo payload, either live or previously saved.
 
     # from a connected Quad Cortex (Cortex Control must be quit)
-    python scripts/generate_models.py
+    python scripts/generate_models.py --snapshot coros_4_1_0
 
     # from a saved payload, for reproducible regeneration
-    python scripts/generate_models.py --payload model_repo_payload.bin
+    python scripts/generate_models.py --snapshot coros_4_1_0 \
+        --payload model_repo_payload.bin
 
 Only identifiers and integers are emitted - no descriptions and no "Based on"
 attribution text.
@@ -27,36 +31,16 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from pyquadcortex.protocol import catalog  # noqa: E402
+import _snapshots  # noqa: E402  (the snapshot package, written once for all three)
 
 # Anchored on this script's own location, never on the working directory:
 # the docs give this command with no cwd, and a relative path silently built
 # a whole new catalogs tree wherever the run started while reporting success.
 CATALOGS = (pathlib.Path(__file__).resolve().parents[1]
             / "pyquadcortex" / "protocol" / "catalogs")
-
-
-def _snapshot_version(snapshot: str) -> str:
-    """'coros_4_0_1' -> '4.0.1', for the snapshot package's __init__ docstring."""
-    return snapshot.removeprefix("coros_").replace("_", ".")
-
-
-def _ensure_snapshot_package(snapshot: str) -> pathlib.Path:
-    """Create ``catalogs/<snapshot>/`` and its ``__init__.py`` if absent."""
-    directory = CATALOGS / snapshot
-    directory.mkdir(parents=True, exist_ok=True)
-    init = directory / "__init__.py"
-    if not init.exists():
-        init.write_text(
-            f'"""The Quad Cortex catalog on CorOS {_snapshot_version(snapshot)}, '
-            'read from the maintainer\'s unit."""\n'
-            f"from pyquadcortex.protocol.catalogs.{snapshot} import models, options, params  # noqa: F401\n"
-            "\n"
-            '__all__ = ["models", "params", "options"]\n',
-            encoding="utf-8",
-        )
-    return directory
 
 
 def class_name(category: str) -> str:
@@ -156,9 +140,13 @@ def main() -> int:
     cat = catalog.parse_model_repo(load_payload(args.payload))
     factory = cat.factory_models()
     source = render(cat, snapshot=args.snapshot)
-    directory = _ensure_snapshot_package(args.snapshot)
+    directory = _snapshots.ensure_snapshot_package(CATALOGS, args.snapshot)
     out = directory / "models.py"
     out.write_text(source, encoding="utf-8")
+    # Again, now the module is on disk: the package's __init__ imports
+    # exactly what is there, so a snapshot generated one module at a
+    # time imports at every step instead of only at the last.
+    _snapshots.ensure_snapshot_package(CATALOGS, args.snapshot)
     print(f"wrote {out}: {len(factory)} factory models "
           f"of {len(cat)} total, {len({m.category for m in factory})} categories")
     return 0

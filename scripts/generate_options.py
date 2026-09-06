@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Generate ``pyquadcortex/protocol/options.py`` - the choices a list offers.
+"""Generate a snapshot's ``options.py`` - the choices a list offers.
+
+Writes ``pyquadcortex/protocol/catalogs/<snapshot>/options.py``; ``--snapshot``
+names the snapshot after the CorOS version it was read from (ADR-0020).
 
 A list-valued parameter stores ``index / (count - 1)`` on the wire, so choosing
 "Lo Pass" means knowing it is the fourth entry. The names are in the device's
@@ -9,8 +12,9 @@ and made every caller pass a preset to read them from.
 
 Source: a device's ModelRepo payload, either live or previously saved.
 
-    python scripts/generate_options.py
-    python scripts/generate_options.py --payload model_repo_payload.bin
+    python scripts/generate_options.py --snapshot coros_4_1_0
+    python scripts/generate_options.py --snapshot coros_4_1_0 \
+        --payload model_repo_payload.bin
 
 Three decisions this generator makes:
 
@@ -35,36 +39,16 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from pyquadcortex.protocol import catalog  # noqa: E402
+import _snapshots  # noqa: E402  (the snapshot package, written once for all three)
 
 # Anchored on this script's own location, never on the working directory:
 # the docs give this command with no cwd, and a relative path silently built
 # a whole new catalogs tree wherever the run started while reporting success.
 CATALOGS = (pathlib.Path(__file__).resolve().parents[1]
             / "pyquadcortex" / "protocol" / "catalogs")
-
-
-def _snapshot_version(snapshot: str) -> str:
-    """'coros_4_0_1' -> '4.0.1', for the snapshot package's __init__ docstring."""
-    return snapshot.removeprefix("coros_").replace("_", ".")
-
-
-def _ensure_snapshot_package(snapshot: str) -> pathlib.Path:
-    """Create ``catalogs/<snapshot>/`` and its ``__init__.py`` if absent."""
-    directory = CATALOGS / snapshot
-    directory.mkdir(parents=True, exist_ok=True)
-    init = directory / "__init__.py"
-    if not init.exists():
-        init.write_text(
-            f'"""The Quad Cortex catalog on CorOS {_snapshot_version(snapshot)}, '
-            'read from the maintainer\'s unit."""\n'
-            f"from pyquadcortex.protocol.catalogs.{snapshot} import models, options, params  # noqa: F401\n"
-            "\n"
-            '__all__ = ["models", "params", "options"]\n',
-            encoding="utf-8",
-        )
-    return directory
 
 
 #: Lists that are a boolean wearing a costume. Their parameters take ``True`` and
@@ -311,9 +295,13 @@ def main():
 
     cat = catalog.parse_model_repo(load_payload(args.payload))
     text = render(cat, snapshot=args.snapshot)
-    directory = _ensure_snapshot_package(args.snapshot)
+    directory = _snapshots.ensure_snapshot_package(CATALOGS, args.snapshot)
     out = directory / "options.py"
     out.write_text(text, encoding="utf-8")
+    # Again, now the module is on disk: the package's __init__ imports
+    # exactly what is there, so a snapshot generated one module at a
+    # time imports at every step instead of only at the last.
+    _snapshots.ensure_snapshot_package(CATALOGS, args.snapshot)
     print(f"wrote {out} ({text.count('class ')} enums)")
 
 
