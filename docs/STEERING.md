@@ -138,7 +138,7 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
-### 2026-09-04 - The profile seam is built (ADR-0020)
+### 2026-09-06 - The profile seam is built (ADR-0020)
 
 **What changed:** `connect()` reads the unit's `Version` before the handshake,
 resolves `(device_type, zenos_git_hash)` in a registry of profile classes, and

@@ -6,8 +6,9 @@ established by observing real Cortex Control sessions on the wire and then
 confirming each finding live against hardware.
 
 > **Applies to a device profile, and says which.** A profile is what the unit
-> reports in its `Version` reply and is a client class: `QuadCortex` (4.0.1),
-> `QuadCortex41`, `QuadCortexMini` in `pyquadcortex/protocol/profiles.py`. It is
+> reports in its `Version` reply and is a client class: `QuadCortex` (4.0.1) in
+> `pyquadcortex/protocol/client.py`; `QuadCortex41` and `QuadCortexMini` in
+> `pyquadcortex/protocol/profiles.py`. It is
 > identified by `device_type` and `zenos_git_hash`, the CorOS
 > version (ADR-0020). Every statement below was measured on **Quad Cortex, CorOS
 > 4.0.1** (`zenos` 4.0.1, `app_fw` d14e), the maintainer's unit, unless it says
