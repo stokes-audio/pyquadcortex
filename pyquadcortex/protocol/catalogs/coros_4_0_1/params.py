@@ -20,7 +20,7 @@ caller - a string, a bare index, or anyone not running a checker.
 its two mic selectors - while the wire carries 22. So a cab is CHOSEN by
 its `models.*` id and DRIVEN through :class:`Cabsim`::
 
-    cab = Block(0, 5, models.CabsimBassM.N210C_DARKGLASS_M)
+    cab = Block(0, 5, models.CabsimGuitarM.N412_CA_STAND_OS_S_V30_90S_M)
     qc.set_block(cab)
     qc.set_param(cab, params.Cabsim.MIC_1_DISTANCE, Real(3.0))
 

@@ -18,17 +18,24 @@ def _load(name):
     return module
 
 
-# The two Cabsim models give generate_params.example_cab a real "lowest id
-# starts-with-Cabsim" choice. The Delay model exercises an ordinary factory
-# model. The Internal category supplies the ids generate_params.render()
-# indexes directly - CABSIM_LAYOUT and the CONTAINERS table - which are not
-# in cat.factory_models() (internal="true") but must still exist in the
-# catalog for cat[id] to resolve.
+# Two Cabsim-prefixed categories, not one: generate_params.example_cab must
+# find the lowest id ACROSS categories whose name starts with "Cabsim", not
+# just the lowest id within the first such category it meets. Cabsim Guitar
+# (M) is placed AFTER Cabsim Bass (M) in this document and carries the lower
+# id (12001 < 21001), so document order cannot be what the test measures -
+# only a genuine cross-category minimum passes. The Delay model exercises an
+# ordinary factory model. The Internal category supplies the ids
+# generate_params.render() indexes directly - CABSIM_LAYOUT and the
+# CONTAINERS table - which are not in cat.factory_models() (internal="true")
+# but must still exist in the catalog for cat[id] to resolve.
 XML = b"""<?xml version="1.0"?>
 <ModelRepo>
   <Category id="21" name="Cabsim Bass (M)">
     <Model id="21005" name="N212 Darkglass Neo (M)"><Parameter name="MIC 1" type="comboBox"/></Model>
     <Model id="21001" name="N210C Darkglass (M)"><Parameter name="MIC 1" type="comboBox"/></Model>
+  </Category>
+  <Category id="12" name="Cabsim Guitar (M)">
+    <Model id="12001" name="N412 Stand (M)"><Parameter name="MIC 1" type="comboBox"/></Model>
   </Category>
   <Category id="6" name="Delay">
     <Model id="6001" name="Analog Delay (M)"><Parameter name="MIX" type="float" units="%" min="0" max="100"/></Model>
@@ -59,8 +66,8 @@ def test_the_header_names_the_snapshot_it_was_written_for(name, cat):
 
 def test_the_params_docstring_example_uses_the_lowest_id_cab_in_the_catalog(cat):
     mod = _load("generate_params")
-    assert mod.example_cab(cat) == "models.CabsimBassM.N210C_DARKGLASS_M"
-    assert "Block(0, 5, models.CabsimBassM.N210C_DARKGLASS_M)" in mod.render(cat, snapshot="coros_9_9_9")
+    assert mod.example_cab(cat) == "models.CabsimGuitarM.N412_STAND_M"
+    assert "Block(0, 5, models.CabsimGuitarM.N412_STAND_M)" in mod.render(cat, snapshot="coros_9_9_9")
 
 
 @pytest.mark.parametrize("name", ["generate_models", "generate_params", "generate_options"])
