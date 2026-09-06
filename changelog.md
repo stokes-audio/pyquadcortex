@@ -44,11 +44,12 @@ The Quad Cortex Mini is recognised and refused with instructions.
 
 A profile is what the unit reports in its `Version` reply: `device_type` and
 `zenos_git_hash`, the CorOS version. Everything that differs by firmware or
-model will live on the profile, connect will resolve it before the handshake,
-and an unknown profile will refuse to connect rather than borrow the nearest
-one. This entry records the rules; the seam is the next piece of work. No code
-branches on a version string yet, and `protocol.models`, `params` and `options`
-still mean the Quad Cortex 4.0.1 snapshot. See `docs/ADR.md`.
+model lives on the profile, connect resolves it before the handshake, and an
+unknown profile refuses to connect rather than borrowing the nearest one. This
+entry records the rules; the entry above is the seam that implements them. No
+module tests a version string on its own, and `protocol.models`, `params` and
+`options` still mean the Quad Cortex 4.0.1 snapshot, as shims over it. See
+`docs/ADR.md`.
 
 ### `version()` no longer answers with the unit's own question
 
