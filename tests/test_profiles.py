@@ -133,6 +133,20 @@ def test_an_override_must_also_be_listed_in_verified(forget_probes):
             "set_scene_label": lambda self, scene, label: None})
 
 
+def test_a_rejected_subclass_is_never_registered():
+    """__init_subclass__ raises before touching _PROFILES; the rejected class
+    must not appear in it at all - not under its own name, not partially
+    guarded. Compares the list before/after rather than filtering by name,
+    so this does not rely on the `forget_probes` fixture's name filter."""
+    before = list(client.QuadCortex._PROFILES)
+    with pytest.raises(TypeError, match="overrides set_scene_label but does not list it"):
+        type("RejectedProbe", (client.QuadCortex,), {
+            "MEASURED_ON": ("9.9.9",), "EVIDENCE": support.Evidence.STUB,
+            "VERIFIED": frozenset(),
+            "set_scene_label": lambda self, scene, label: None})
+    assert client.QuadCortex._PROFILES == before
+
+
 def test_unverified_operations_is_empty_on_the_base_and_full_on_a_stub(forget_probes):
     assert client.QuadCortex(FakeTransport()).unverified_operations == frozenset()
     Probe = _profile(verified=frozenset({"switch_scene"}))

@@ -335,20 +335,24 @@ class QuadCortex:
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        QuadCortex._PROFILES.append(cls)
         if cls.VERIFIED is EVERYTHING:
+            QuadCortex._PROFILES.append(cls)
             return
+        # Validate every override before touching anything else: a class
+        # Python is about to refuse must never be partially guarded, and
+        # must never reach _PROFILES (ADR-0020's registry contract for
+        # profiles.registry()).
         for name in QuadCortex.operations():
-            if name in cls.__dict__:
-                if name not in cls.VERIFIED:
-                    raise TypeError(
-                        f"{cls.__name__} overrides {name} but does not list it in "
-                        f"VERIFIED; an override is the profile's own measured "
-                        f"behaviour, so say so in the one place that lists them")
-                continue
-            if name in cls.VERIFIED:
+            if name in cls.__dict__ and name not in cls.VERIFIED:
+                raise TypeError(
+                    f"{cls.__name__} overrides {name} but does not list it in "
+                    f"VERIFIED; an override is the profile's own measured "
+                    f"behaviour, so say so in the one place that lists them")
+        for name in QuadCortex.operations():
+            if name in cls.__dict__ or name in cls.VERIFIED:
                 continue
             setattr(cls, name, _guarded(name, getattr(QuadCortex, name)))
+        QuadCortex._PROFILES.append(cls)
 
     def __init__(self, transport, _owned_resources=None,
                  support: Support = Support.VERIFIED):
