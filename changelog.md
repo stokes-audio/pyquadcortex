@@ -20,6 +20,26 @@ correction.
 
 ## Unreleased
 
+### BREAKING: the generators take `--snapshot`, and constants moved
+
+`scripts/generate_models.py`, `generate_params.py` and `generate_options.py`
+require `--snapshot coros_x_y_z` and write `pyquadcortex/protocol/catalogs/<snapshot>/`;
+`--out` is gone. The generated modules moved there; `pyquadcortex.protocol.models`,
+`params` and `options` still import and still mean CorOS 4.0.1, as shims.
+
+### The connection knows which unit it is talking to (ADR-0020)
+
+`connect()` reads the unit's `Version` first and picks the profile class for
+`(device_type, zenos_git_hash)`: `QuadCortex` for a Quad Cortex on 4.0.1,
+`QuadCortex41` for 4.1.0, and `UnsupportedDevice` for anything else, before
+the handshake. `connect(profile=...)` names a class deliberately for a unit
+nobody has measured. `connect(support=Support.EXPERIMENTAL)` runs operations
+a profile has not verified, with one warning each; the default
+`Support.VERIFIED` refuses them. `qc.models`, `qc.params`, `qc.options` are the
+connection's own constants; `qc.unverified_operations` says what its profile
+has not verified. `set_block` refuses a model id the unit's catalog lacks.
+The Quad Cortex Mini is recognised and refused with instructions.
+
 ### The repo describes device profiles, not one baseline (ADR-0020)
 
 A profile is what the unit reports in its `Version` reply: `device_type` and
