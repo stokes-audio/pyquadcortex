@@ -165,6 +165,86 @@ def test_a_profile_with_nothing_claimed_reports_nothing_as_a_regression(conftest
     assert all(names == [] for names in lines.values())
 
 
+# --- what a run CLAIMS to verify ---------------------------------------------
+
+class _Mark:
+    def __init__(self, *args):
+        self.args = args
+
+
+class _Item:
+    """A collected test, as far as the collection hook reads one."""
+
+    def __init__(self, nodeid, *names):
+        self.nodeid = nodeid
+        self._marks = [_Mark(*names)] if names else []
+
+    def iter_markers(self, name):
+        return list(self._marks) if name == "verifies" else []
+
+
+class _Config:
+    """A `--hardware` config that records what the hook deselects."""
+
+    def __init__(self, verifies=None):
+        self._options = {"--hardware": True, "--verifies": verifies}
+        self.deselected = []
+        self.hook = self
+
+    def getoption(self, name):
+        return self._options[name]
+
+    def pytest_deselected(self, items):
+        self.deselected.extend(items)
+
+
+@pytest.fixture
+def collection(conftest):
+    """The hook's recording, emptied around each test that drives it."""
+    conftest._VERIFIES.clear()
+    yield conftest._VERIFIES
+    conftest._VERIFIES.clear()
+
+
+def test_every_collected_test_claims_its_operations(conftest, collection):
+    items = [_Item("t.py::a", "set_param"), _Item("t.py::b", "set_bypass")]
+
+    conftest.pytest_collection_modifyitems(None, _Config(), items)
+
+    assert collection == {"t.py::a": {"set_param"}, "t.py::b": {"set_bypass"}}
+
+
+def test_a_deselected_test_claims_nothing(conftest, collection):
+    """`--verifies NAME` narrows the run, so it must narrow the report too.
+
+    The recording used to happen before the deselection, so `claimed` was
+    built from every COLLECTED test - and an operation whose test never ran
+    was printed under `VERIFIED and claimed by a test, not passed`, which the
+    report labels a regression. A run of one test reported ~104 of them.
+    """
+    items = [_Item("t.py::a", "set_param"), _Item("t.py::b", "set_bypass")]
+    config = _Config(verifies="set_param")
+
+    conftest.pytest_collection_modifyitems(None, config, items)
+
+    assert [i.nodeid for i in items] == ["t.py::a"]
+    assert [i.nodeid for i in config.deselected] == ["t.py::b"]
+    assert collection == {"t.py::a": {"set_param"}}
+
+    claimed = set().union(*collection.values())
+    lines = dict(_named(conftest._report_lines(
+        _Everything, {"set_param": ["passed"]}, claimed)))
+    assert lines["VERIFIED and claimed by a test, not passed"] == [], (
+        "set_bypass was deselected, so this run measured nothing about it")
+
+
+def test_a_marker_naming_no_operation_stops_the_collection(conftest, collection):
+    items = [_Item("t.py::a", "set_paramm")]
+
+    with pytest.raises(pytest.UsageError, match="is not an operation"):
+        conftest.pytest_collection_modifyitems(None, _Config(), items)
+
+
 # --- putting the unit back after scratch_preset ------------------------------
 
 class _Position:
@@ -232,6 +312,25 @@ def test_a_clean_teardown_recalls_then_deletes_and_says_nothing(conftest):
 
     assert qc.calls == [("recall", "user", 3),
                         ("delete", "USER", "pyquadcortex scratch")]
+
+
+def test_nothing_after_the_copy_exists_sits_outside_the_try(conftest):
+    """The `try:` opens the moment the copy is on the unit, not later.
+
+    `save_current_preset` returning IS the copy existing, so the check on its
+    name and the recall that follows must be inside the block whose `finally`
+    deletes it. They were outside, and either failing left the copy in the
+    owner's User setlist under the fixed name. Read from the source because
+    the fixture needs a unit; the ORDER of the lines is the whole fix.
+    """
+    body = _HARDWARE_CONFTEST.read_text(encoding="utf-8").split(
+        "def scratch_preset(")[1]
+    lines = [line.strip() for line in body.splitlines()]
+    opened = lines.index("try:")
+    for guarded in ("assert stored == SCRATCH_NAME",
+                    "qc.recall_preset(Setlist.USER, free)"):
+        assert lines.index(guarded) > opened, (
+            f"{guarded!r} runs before the try: that deletes the copy")
 
 
 def test_the_restore_wording_is_written_once(conftest):

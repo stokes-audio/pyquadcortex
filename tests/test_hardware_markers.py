@@ -157,5 +157,10 @@ def test_every_operation_is_marked_or_excused_with_a_reason():
         f"to UNMARKED_OPERATIONS with the reason.")
     stale = set(UNMARKED_OPERATIONS) & marked_operations()
     assert not stale, f"excused AND marked; drop the excuse: {sorted(stale)}"
+    gone = set(UNMARKED_OPERATIONS) - client.QuadCortex.operations()
+    assert not gone, (
+        f"excuses naming no operation: {sorted(gone)}. A renamed or deleted "
+        f"operation leaves its excuse behind, and an excuse for nothing is a "
+        f"reason nobody will ever re-read; drop it.")
     for name, reason in UNMARKED_OPERATIONS.items():
         assert len(reason) > 20, name

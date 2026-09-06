@@ -68,13 +68,47 @@ def _resolved(item):
     return None if path is None else path.resolve()
 
 
+def _claims(items, operations, wanted, deselect):
+    """What the tests that will RUN say they verify, keyed by node id.
+
+    Narrows ``items`` in place to the tests naming ``wanted`` (when there is
+    one), hands the rest to ``deselect``, and returns the claims of what is
+    left. The order matters and is the whole point: ``claimed`` in the
+    end-of-run report is the union of this, and a deselected test measured
+    nothing - recording it printed every operation the run never touched under
+    ``VERIFIED and claimed by a test, not passed``, which reads as a
+    regression. Held offline by ``tests/test_hardware_report.py``.
+    """
+    marks = {}
+    for item in items:
+        names = {n for m in item.iter_markers("verifies") for n in m.args}
+        # Checked here rather than at run time so a renamed operation is a
+        # collection error on every run, including the offline one in
+        # tests/test_hardware_gate.py, rather than a marker that quietly
+        # stops naming anything. Checked over EVERY collected test, not just
+        # the surviving ones: a stale marker is a mistake in the suite, and
+        # --verifies must not hide it.
+        for name in sorted(names):
+            if name not in operations:
+                raise pytest.UsageError(
+                    f"{item.nodeid}: verifies({name!r}) is not an operation")
+        marks[item.nodeid] = names
+    if wanted:
+        keep = [item for item in items if wanted in marks[item.nodeid]]
+        drop = [item for item in items if wanted not in marks[item.nodeid]]
+        items[:] = keep
+        deselect(drop)
+    return {item.nodeid: marks[item.nodeid] for item in items}
+
+
 def pytest_collection_modifyitems(session, config, items):
     """Stop the run when a hardware test is named directly without the flag.
 
     With ``--hardware`` it does the profile bookkeeping instead (ADR-0020):
     every ``verifies()`` name is checked against ``QuadCortex.operations()``,
-    the names are recorded for the end-of-run report, and ``--verifies`` narrows
-    the run to the tests that name one operation. The check runs at COLLECTION
+    ``--verifies`` narrows the run to the tests that name one operation, and the
+    names of what SURVIVES that are recorded for the end-of-run report (see
+    :func:`_claims`). The check runs at COLLECTION
     so a marker naming an operation that no longer exists stops the run before
     the unit is touched, and ``tests/test_hardware_gate.py`` - which collects
     this tree offline with ``hid`` poisoned - sees it too.
@@ -108,26 +142,9 @@ def pytest_collection_modifyitems(session, config, items):
     if config.getoption("--hardware"):
         from pyquadcortex.protocol.client import QuadCortex
 
-        operations = QuadCortex.operations()
-        for item in items:
-            names = {n for m in item.iter_markers("verifies") for n in m.args}
-            # Checked here rather than at run time so a renamed operation is a
-            # collection error on every run, including the offline one in
-            # tests/test_hardware_gate.py, rather than a marker that quietly
-            # stops naming anything.
-            for name in sorted(names):
-                if name not in operations:
-                    raise pytest.UsageError(
-                        f"{item.nodeid}: verifies({name!r}) is not an operation")
-            _VERIFIES[item.nodeid] = names
-        wanted = config.getoption("--verifies")
-        if wanted:
-            keep, drop = [], []
-            for item in items:
-                names = _VERIFIES.get(item.nodeid, set())
-                (keep if wanted in names else drop).append(item)
-            items[:] = keep
-            config.hook.pytest_deselected(items=drop)
+        _VERIFIES.update(_claims(
+            items, QuadCortex.operations(), config.getoption("--verifies"),
+            lambda dropped: config.hook.pytest_deselected(items=dropped)))
         return
     gated = sorted({
         str(path.relative_to(ROOT))
@@ -428,10 +445,14 @@ def scratch_preset(qc):
                          SCRATCH_NAME)
     stored = qc.save_current_preset(Setlist.USER, free, SCRATCH_NAME,
                                     confirm=True, confirm_timeout=30.0)
-    assert stored == SCRATCH_NAME
-    qc.recall_preset(Setlist.USER, free)
-    time.sleep(3.0)
+    # The copy EXISTS from here on, so everything after this line is inside the
+    # try: a failed assert or a failed recall used to leave it in the owner's
+    # User setlist under the fixed name, which makes the next run's
+    # delete-by-name ambiguous - the leak _release_scratch exists to prevent.
     try:
+        assert stored == SCRATCH_NAME
+        qc.recall_preset(Setlist.USER, free)
+        time.sleep(3.0)
         yield Setlist.USER, free, SCRATCH_NAME
     finally:
         _release_scratch(qc, before, Setlist.USER, SCRATCH_NAME)
