@@ -29,9 +29,12 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 """
 
 import base64
+import functools
 import json
+import logging
 import re
 import time
+import types
 import typing
 import uuid
 import warnings
@@ -41,6 +44,7 @@ from pyquadcortex.protocol import catalog, enums, registry, targets
 from pyquadcortex.protocol import options as options_module
 from pyquadcortex.protocol import values as values_module
 from pyquadcortex.protocol import units as units_module
+from pyquadcortex.protocol.catalogs import coros_4_0_1
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, Scene,  # noqa: F401
                                 MetronomeBeat, MetronomeRouting,
                                 MetronomeSound, MidiOutType,
@@ -51,12 +55,17 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
 from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
                                           ControlNotDrivable)
+from pyquadcortex.protocol.support import (EVERYTHING, Evidence, Hardware,
+                                           Support, measured_firmware,
+                                           unverified_text)
 from pyquadcortex.protocol.targets import (  # noqa: F401
     LANE_OUTPUT_UNASSIGNABLE, Block, LaneInput, LaneOutput, Mixer, ParamTarget,
     Splitter, Tempo, _require_even_row)
 from pyquadcortex.protocol.units import (UNITY_LEVEL, bpm_to_tempo,  # noqa: F401
                                          db_to_input_level, db_to_lane_level,
                                          input_level_db, lane_level_db, tempo_bpm)
+
+log = logging.getLogger(__name__)
 
 
 
@@ -261,10 +270,137 @@ def _sweep_wire(value, target, index, spec, get_catalog, what):
     raise _bare_number(value, what, unit_example=f"Real({value!r})")
 
 
+def _guarded(name, inherited):
+    """Wrap an inherited operation a profile has not verified (ADR-0020).
+
+    Under ``Support.VERIFIED`` it refuses before any bytes are sent; under
+    ``Support.EXPERIMENTAL`` it warns once per operation per connection and
+    runs the inherited behaviour. The decision is the caller's, made at
+    connect, and the wording comes from one place.
+    """
+    @functools.wraps(inherited)
+    def guard(self, *args, **kwargs):
+        evidence, workaround = unverified_text(type(self), name)
+        if self._support is Support.VERIFIED:
+            raise ControlNotDrivable(name, evidence, workaround)
+        if name not in self._warned:
+            self._warned.add(name)
+            log.warning("%s is %s; running it anyway", name, evidence)
+        return inherited(self, *args, **kwargs)
+    guard._unverified = True
+    return guard
+
+
 class QuadCortex:
     """Ergonomic control surface over a request/response transport."""
 
-    def __init__(self, transport, _owned_resources=None):
+    # -- the profile this class IS (ADR-0020) -----------------------------------
+    #: The `Version.device_type` this class serves.
+    DEVICE_TYPE = pa.VersionMessage.QC
+    #: Exact `zenos_git_hash` strings a hardware-suite run has been done against.
+    #: A patch release not listed here refuses to connect until someone adds it
+    #: after a run - "probably only bug fixes" is the guess the rule stops.
+    #: Annotated `tuple[str, ...]`, not the narrower literal mypy would infer
+    #: from this initializer, because a stub profile declares it empty.
+    MEASURED_ON: tuple[str, ...] = ("4.0.1",)
+    #: How well this profile is known. This one is the maintainer's own unit.
+    EVIDENCE = Evidence.MAINTAINER
+    #: What this unit physically has: eight footswitches, two expression ports.
+    #: Declared ahead of its first reader, and named here so a profile has one
+    #: place to put the count. The intended consumer is the model layer's
+    #: footswitch and expression translation
+    #: (`pyquadcortex/device/translate/letters.py`), which today hard-codes the
+    #: eight letters A to H through `enums.Footswitch`; it reads this when a
+    #: profile with a different count has actually been measured, which is not
+    #: yet - the Mini's four is off a product page, not off a unit.
+    HARDWARE = Hardware(footswitches=8, expression_ports=2)
+    #: Operation names verified on this profile. Every method this class has
+    #: carries 4.0.1 evidence, so the base verifies everything; a subclass
+    #: starts from an empty set and grows it from the hardware suite's report.
+    #: Annotated `Any`: this holds either the `EVERYTHING` sentinel or a
+    #: `frozenset[str]`, and both only need to answer `in`.
+    VERIFIED: typing.Any = EVERYTHING
+    #: The constants snapshot read from this firmware. A subclass rebinds these.
+    #: Dynamic on purpose: `qc.models` follows the connection, at the price of
+    #: mypy seeing `Any` through it - import a snapshot module directly for
+    #: static unit checking (ADR-0018). Annotated `Any` explicitly, so a profile
+    #: that has not measured this firmware can rebind it to `NoSnapshot` instead
+    #: of a real snapshot module.
+    models: typing.Any = coros_4_0_1.models
+    params: typing.Any = coros_4_0_1.params
+    options: typing.Any = coros_4_0_1.options
+    #: Public methods that must work on ANY profile, because connecting and
+    #: cleaning up depend on them. Everything public and not here is an
+    #: OPERATION and is guarded on a subclass that has not verified it. Each
+    #: entry says why, because this list is the one place a guess could hide.
+    ALWAYS = {
+        "version": "resolving the profile reads it before any class is chosen",
+        "catalog": "the live catalog is how set_block checks an id on any firmware",
+        "close": "releasing the device must never depend on what was measured",
+        "disconnect": "saying goodbye must never depend on what was measured",
+        "add_listener": "subscribing to pushes is transport plumbing, not a unit operation",
+        "remove_listener": "unsubscribing is transport plumbing, not a unit operation",
+        "support": "reports the connection's own setting; no bytes",
+        "unverified_operations": "reports the guard's own state; no bytes",
+    }
+    #: Every subclass, in definition order; `profiles.registry()` reads it.
+    _PROFILES: list = []
+
+    @classmethod
+    def operations(cls) -> frozenset:
+        """Every public method of `QuadCortex` that is an operation on the unit.
+
+        A PLAIN FUNCTION and nothing else. `callable()` would fail open: a
+        `staticmethod` object is callable, and the guard would wrap it and pass
+        `self` as its first argument; a `property` is not callable but would
+        have been swept in by the `isinstance` half and replaced with a plain
+        function, so reading it would return the guard rather than refuse.
+        A property is never an operation - it belongs in `ALWAYS`, which
+        `tests/test_profiles.py` holds for every public one.
+        """
+        return frozenset(
+            name for name, value in vars(QuadCortex).items()
+            if not name.startswith("_")
+            and isinstance(value, types.FunctionType)
+            and name not in QuadCortex.ALWAYS)
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # ADR-0020 is one class per measured unit, so a profile subclasses
+        # QuadCortex DIRECTLY. Checked before anything else, because the guard
+        # below takes its implementation from QuadCortex: a class two levels
+        # down would be guarded against the base and would silently discard
+        # its parent profile's measured override.
+        if cls.__bases__ != (QuadCortex,):
+            raise TypeError(
+                f"{cls.__name__} must subclass QuadCortex directly; ADR-0020 is "
+                f"one class per measured unit. A deeper class is guarded against "
+                f"QuadCortex's implementation, which would silently discard the "
+                f"measured override on {cls.__bases__[0].__name__}")
+        if cls.VERIFIED is EVERYTHING:
+            QuadCortex._PROFILES.append(cls)
+            return
+        # Validate every override before touching anything else: a class
+        # Python is about to refuse must never be partially guarded, and
+        # must never reach _PROFILES (ADR-0020's registry contract for
+        # profiles.registry()).
+        for name in QuadCortex.operations():
+            if name in cls.__dict__ and name not in cls.VERIFIED:
+                raise TypeError(
+                    f"{cls.__name__} overrides {name} but does not list it in "
+                    f"VERIFIED; an override is the profile's own measured "
+                    f"behaviour, so say so in the one place that lists them")
+        for name in QuadCortex.operations():
+            if name in cls.__dict__ or name in cls.VERIFIED:
+                continue
+            # The base's implementation is the right source because a profile
+            # subclasses QuadCortex directly (checked above), so QuadCortex is
+            # the only class this name could be inherited from.
+            setattr(cls, name, _guarded(name, getattr(QuadCortex, name)))
+        QuadCortex._PROFILES.append(cls)
+
+    def __init__(self, transport, _owned_resources=None,
+                 support: Support = Support.VERIFIED):
         self._t = transport
         # Set by pyquadcortex.protocol.connect() so close() can tear down the transport
         # and HID device it opened on the caller's behalf. When a caller wires
@@ -272,6 +408,22 @@ class QuadCortex:
         self._owned = _owned_resources or []
         # Populated on first use of .catalog (a ~47 KB fetch from the device).
         self._catalog = None
+        # How this connection treats an operation its profile has not verified
+        # (ADR-0020). Read by the guard `__init_subclass__` installs.
+        self._support = support
+        self._warned: set = set()
+
+    @property
+    def support(self) -> Support:
+        """How this connection treats operations its profile has not verified."""
+        return self._support
+
+    @property
+    def unverified_operations(self) -> frozenset:
+        """Operation names this profile has not verified - empty on `QuadCortex`."""
+        return frozenset(
+            name for name in QuadCortex.operations()
+            if getattr(getattr(type(self), name), "_unverified", False))
 
     # -- catalog -------------------------------------------------------------
 
@@ -431,12 +583,16 @@ class QuadCortex:
         # disambiguate and _dispatch gives an id-less reply to whichever waiter
         # is first in line.
         #
-        # Skipping it costs nothing and quietens the link: the device's own
-        # Version READ is the tail of its answer to a host Version READ, so with
-        # none sent here it asks nothing back. Measured 2026-08-27 on d14e - one
-        # inbound Version through connect and the whole burst, an UPDATE
-        # carrying cortex_control_version_valid in answer to this announce, and
-        # none in the eight seconds of idling after it.
+        # _hello itself still sends no Version READ - that part of the
+        # measurement below is about THIS announce and holds unchanged: an
+        # UPDATE carrying cortex_control_version_valid in answer to it, and
+        # none in the eight seconds of idling after it. But connect() (ADR-0020)
+        # now reads identity once, through its OWN Version READ, before ever
+        # calling _hello - and the unit answers that: the full reply, then its
+        # own Version{READ} tail ~1 ms later (protocol.md section 4.4, "A
+        # Version READ is answered twice"). So a connect() no longer sees just
+        # the one inbound Version this was measured against on 2026-08-27 (d14e)
+        # - it sees that identity exchange's two, plus this announce's one.
         self._t.send(
             pa.VersionMessage(
                 action=pa.MessageAction.UPDATE, cortex_control_version=self.CC_VERSION
@@ -1251,6 +1407,19 @@ class QuadCortex:
         arrives within ``timeout``, this raises :class:`BlockRefused`. Pass
         ``verify=False`` to send and return immediately, in which case a save and
         read-back is the only way to learn whether the block is there.
+
+        Refused, before sending, for a model id the unit's own catalog does not
+        list - a constant from another firmware's snapshot, for instance
+        (ADR-0020). Inferred from the catalog's contract rather than measured:
+        the catalog is READ FROM THE UNIT and describes what that unit has, so
+        an id it does not list does not exist there. No unit has been asked to
+        place a model it does not have.
+
+        **That check reads :attr:`catalog`**, so the first ``set_block`` of a
+        connection fetches the unit's ModelRepo - a ~47 KB transfer, cached for
+        the session afterwards - even with ``verify=False``. A fetch that does
+        not answer in time raises the transport's ``TimeoutError``, which is a
+        failure to read the catalog and not a refused placement.
         """
         if cell.model_id in units_module.UNPLACEABLE_MODELS:
             raise ValueError(
@@ -1258,8 +1427,15 @@ class QuadCortex:
                 f"{units_module.UNPLACEABLE_MODELS[cell.model_id]} Recovering "
                 f"needs a power cycle, so this is refused rather than tried."
             )
-        row, column, model = cell.row, cell.column, cell.model_id
-        model_id = int(getattr(model, "id", model))
+        model_id = int(getattr(cell.model_id, "id", cell.model_id))
+        if self.catalog.get(model_id) is None:
+            raise ControlNotDrivable(
+                f"model {model_id}",
+                f"not in this unit's catalog ({measured_firmware(type(self).MEASURED_ON)}); "
+                f"the catalog is read from the unit, so this id does not exist on it",
+                "use a constant from this connection's own snapshot (qc.models), or "
+                "look the model up in qc.catalog by name")
+        row, column = cell.row, cell.column
         msg = pa.GridMessage(action=pa.MessageAction.UPDATE)
         chain = msg.preset.chains.add()
         chain.row = row

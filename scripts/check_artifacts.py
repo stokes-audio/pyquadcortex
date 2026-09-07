@@ -31,6 +31,13 @@ REQUIRED = (
     "pyquadcortex/py.typed",
     "pyquadcortex/protocol/proto/Preset_pb2.pyi",
     "pyquadcortex/protocol/proto/ProductionAutomation_pb2.pyi",
+    # The constants snapshots are packages the profile classes bind (ADR-0020).
+    # A wheel that dropped one would import and then fail on first attribute.
+    "pyquadcortex/protocol/catalogs/__init__.py",
+    "pyquadcortex/protocol/catalogs/coros_4_0_1/__init__.py",
+    "pyquadcortex/protocol/catalogs/coros_4_0_1/models.py",
+    "pyquadcortex/protocol/catalogs/coros_4_0_1/params.py",
+    "pyquadcortex/protocol/catalogs/coros_4_0_1/options.py",
     "pyquadcortex/protocol/cli.py",
     "pyquadcortex/protocol/client.py",
     "pyquadcortex/device/device.py",
