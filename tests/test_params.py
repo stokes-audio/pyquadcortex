@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from pyquadcortex.protocol import params
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import params
 
 
 PUBLISHED_CLASSES = (

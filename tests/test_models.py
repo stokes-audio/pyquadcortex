@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from pyquadcortex.protocol import models
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import models
 
 
 PUBLISHED_NAMES = pathlib.Path(__file__).parent / "fixtures/generated/model_names.txt"

@@ -6,7 +6,10 @@ established by observing real Cortex Control sessions on the wire and then
 confirming each finding live against hardware.
 
 > **Applies to a device profile, and says which.** A profile is what the unit
-> reports in its `Version` reply: `device_type` and `zenos_git_hash`, the CorOS
+> reports in its `Version` reply and is a client class: `QuadCortex` (4.0.1) in
+> `pyquadcortex/protocol/client.py`; `QuadCortex41` and `QuadCortexMini` in
+> `pyquadcortex/protocol/profiles.py`. It is
+> identified by `device_type` and `zenos_git_hash`, the CorOS
 > version (ADR-0020). Every statement below was measured on **Quad Cortex, CorOS
 > 4.0.1** (`zenos` 4.0.1, `app_fw` d14e), the maintainer's unit, unless it says
 > otherwise. An observation from another profile is written beside the 4.0.1
@@ -17,7 +20,7 @@ confirming each finding live against hardware.
 > protocol version, so none of this is guaranteed across a CorOS update. The
 > profile is read from the unit's own `Version` reply at connect, which is the
 > only version information the wire offers. Re-verify after a firmware change (see
-> [architecture.md](architecture.md#adapting-to-a-new-coros-version)).
+> [architecture.md](architecture.md#adding-a-device-profile-a-new-coros-version-or-a-new-model)).
 >
 > Unofficial: this project is not affiliated with, endorsed by, or supported by
 > Neural DSP.
@@ -586,6 +589,11 @@ partial reply carrying one of the two is still returned, because the cache keeps
 what the unit sent and re-reads for the rest. A sparse host `Version{UPDATE, custom_name}`
 (a rename) is echoed once with the same two fields, does not re-run the
 handshake gate, and leaves reads answering - measured three times the same day.
+
+`connect()` waits on a stricter predicate than `version()` does: a profile is
+resolved from `device_type` and `zenos_git_hash`, so the identity read waits for
+a reply carrying both and treats a partial one as not yet the answer, inside the
+same `handshake_patience` budget (ADR-0020).
 
 After the burst the device needs a moment before it treats the client as
 connected; a command sent too soon gets no push (observed as flaky preset-read

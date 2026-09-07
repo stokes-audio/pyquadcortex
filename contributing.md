@@ -111,6 +111,31 @@ When you confirm behavior on hardware, say so in the pull request: which operati
 which CorOS version, and how you verified it (a read-back, or watching the unit).
 That evidence is what keeps [docs/protocol.md](docs/protocol.md) trustworthy.
 
+## Adding a device profile
+
+A new CorOS release, or a new model, is a new `QuadCortex` subclass (ADR-0020),
+not a change to the existing baseline. On the unit it covers:
+
+1. **Generate the snapshot.** `scripts/generate_models.py --snapshot coros_x_y_z`
+   and the params and options generators; bind the three modules on the new class.
+2. **Run the suite.** `pytest tests/hardware --hardware --profile QuadCortexMini`
+   against the unit, naming your new class. `--profile` connects as that class
+   instead of the one the unit's identity resolves to, which is what lets the
+   suite run at all on a unit the registry would refuse; the suite always
+   connects `Support.EXPERIMENTAL`, so nothing refuses before it is measured.
+3. **Fill `VERIFIED`.** The report at the end of the run names which operations
+   passed; put those names in the class's `VERIFIED` set.
+4. **Record differences beside the 4.0.1 record.** Anything that behaved
+   differently goes in [docs/protocol.md](docs/protocol.md), dated and named
+   next to the existing entry, never in its place, and overridden on the new
+   class.
+
+Profiles are named by CorOS version, never by `app_fw` - a contributor reports
+firmware `d14e` on both CorOS 4.0.1 and 4.1.0 (PR #44), so the app firmware
+string distinguishes nothing. `MEASURED_ON` lists the exact `zenos_git_hash`
+strings a suite run has covered; a patch release is added to it after a suite
+run confirms it, not assumed to behave like the version already there.
+
 ## Style
 
 Match the style of the surrounding code. Keep changes focused - unrelated cleanups are

@@ -153,6 +153,7 @@ HOLD_SECONDS = 8.0
 SETTLE_SECONDS = 10.0
 
 
+@pytest.mark.verifies("tempo_mode", "set_tempo_mode")
 def test_tempo_mode_is_writable(qc, restores):
     """Drive MODE from the host, and prove which scope the write landed in.
 

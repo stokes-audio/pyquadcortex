@@ -195,6 +195,7 @@ def _landed(ms, what, probe):
         f"mean the documented latencies need remeasuring.")
 
 
+@pytest.mark.verifies("set_param")
 def test_parameter_echo_latency_is_the_control(qc, probe, restores, record_property):
     """A known quantity, measured with the same harness as everything else.
 
@@ -235,6 +236,7 @@ def test_parameter_echo_latency_is_the_control(qc, probe, restores, record_prope
         f"message, so every other latency in this file is suspect.")
 
 
+@pytest.mark.verifies("set_bypass")
 def test_bypass_echo_latency(qc, probe, restores, record_property):
     preset = qc.read_current_preset()
     row, column = 0, next(c for c, m in enumerate(preset.chains[0].models) if m.hash)
@@ -269,6 +271,7 @@ def test_bypass_echo_latency(qc, probe, restores, record_property):
     _landed(ms, "bypass", probe)
 
 
+@pytest.mark.verifies("set_chain_input")
 def test_routing_echo_latency(qc, probe, restores, record_property):
     preset = qc.read_current_preset()
     original = preset.chains[0].in_portid
@@ -284,6 +287,7 @@ def test_routing_echo_latency(qc, probe, restores, record_property):
     _landed(ms, "routing", probe)
 
 
+@pytest.mark.verifies("set_scene_label")
 def test_scene_label_echo_latency(qc, probe, restores, record_property):
     preset = qc.read_current_preset()
     original = (preset.scene_labels[SCENE_INDEX]
@@ -312,6 +316,7 @@ def test_scene_label_echo_latency(qc, probe, restores, record_property):
     _landed(ms, "scene label", probe)
 
 
+@pytest.mark.verifies("set_scene_color")
 def test_scene_color_echo_latency(qc, probe, restores, record_property):
     preset = qc.read_current_preset()
     original = (preset.scene_colors[SCENE_INDEX]
@@ -329,6 +334,7 @@ def test_scene_color_echo_latency(qc, probe, restores, record_property):
     _landed(ms, "scene colour", probe)
 
 
+@pytest.mark.verifies("update_settings")
 def test_global_settings_echo_latency(qc, probe, restores, record_property):
     original = qc.settings().stomp_mode_auto_assign
     restores("stomp_mode_auto_assign",

@@ -14,7 +14,7 @@ import re
 
 import pytest
 
-from pyquadcortex.protocol import options
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import options
 
 
 PUBLISHED_MEMBERS = (

@@ -48,7 +48,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 - `tests/` - the fully offline suite and its fixtures
 - `examples/` - runnable scripts, also used as hardware-verification shapes
 - `docs/` - protocol record, architecture, coverage, this file
-- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`, `generate_params.py`, `generate_options.py`, `extract_scale_fixture.py`
+- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`, `generate_params.py`, `generate_options.py`, `_snapshots.py` (the snapshot package all three generators write, in one copy), `extract_scale_fixture.py`
 - `.github/workflows/` - CI
 
 ## 5. Patterns in Use
@@ -61,6 +61,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
 | One translation boundary | Screen values become wire values in exactly one PACKAGE, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/`. The exemption covers a directory, so a test names the package's modules and a new one has to come through that list | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate/` | The protocol layer, which keeps its zero-based COORDINATES. Its scales come from the catalog, and quoting the device's own units is not translating - see ADR-0016 |
 | Model state goes through the cache | A model property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py`, not an attribute the property fills in itself | One account of what the model believes and how it learned it. A property with its own cached attribute answers from a copy nothing invalidates, and a closed connection cannot take it away (see ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry rather than read from the unit, which compute from `value()` rather than caching alongside it |
+| Profile is the class | A connection resolves `(device_type, zenos_git_hash)` to a client class before the handshake; `QuadCortex` is 4.0.1 and the base, a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is the smell polymorphism removes; the decision is made once, by which class is instantiated (see ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
 
 ## 6. Constraints
 
@@ -68,7 +69,8 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 - **The protobuf runtime pin is coupled to the committed gencode, and so is the generator floor.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001). The generator is `grpcio-tools`, which carries its own protoc and so decides the gencode by which version is installed, hence the `grpcio-tools>=1.83.0` floor in the dev extra. Older gencode still imports, so both guards are explicit: `scripts/compile_protos.sh` refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode and the pin floor are the same number (see ADR-0008).
 - **Python >= 3.11.**
 - **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - lives in `tests/hardware/` and runs only under `pytest --hardware` (see ADR-0005). That gate is TWO hooks in `tests/hardware/conftest.py`, not one: pytest offers `pytest_ignore_collect` only the paths it reaches by walking a directory, so a path named on the command line is caught instead by `pytest_collection_modifyitems`, which stops the run with an error naming the flag. `tests/test_hardware_gate.py` holds both halves up through a subprocess. Its modules must stay import-safe offline, and two offline tests hold that: `tests/test_hardware_gate.py` collects the whole tree under `--hardware` with `hid` poisoned, which imports every module in the directory, and `tests/test_scene_echo_predicates.py` imports `tests/hardware/test_write_echo.py` to exercise its predicates with no unit attached - the only way a predicate that can never match gets caught cheaply.
-- **Wire behaviour is stated per device profile, and a profile is named by CorOS version, never by `app_fw`** (ADR-0020). The measured baseline is Quad Cortex, CorOS 4.0.1, firmware d14e; a contributor reports d14e on 4.1.0 too (PR #44), so the app firmware string distinguishes nothing. Once the seam is built, an unknown profile will refuse to connect rather than borrow the nearest one. An observation from another profile is recorded beside the 4.0.1 record in `protocol.md`, dated and named. The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
+- **Wire behaviour is stated per device profile, and a profile is named by CorOS version, never by `app_fw`** (ADR-0020). The measured baseline is Quad Cortex, CorOS 4.0.1, firmware d14e; a contributor reports d14e on 4.1.0 too (PR #44), so the app firmware string distinguishes nothing. An unknown profile refuses to connect rather than borrow the nearest one. An observation from another profile is recorded beside the 4.0.1 record in `protocol.md`, dated and named. The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
+- **A hardware test names what it verifies, and it must actually verify it.** `@pytest.mark.verifies(*operations)` names the `QuadCortex` operations a test both exercises and asserts on - checked against `QuadCortex.operations()` at collection, so a renamed operation is a collection error rather than a marker that quietly stops naming anything. `pytest tests/hardware --hardware --verifies NAME` narrows a run to the tests that name it, and refuses a name that is not an operation or that no collected test names. `--profile CLASSNAME` connects as that profile class instead of the one the unit resolves to, which is how a unit the registry would refuse gets measured by the suite that measures it. `scratch_preset` is the fixture a test uses to get a disposable copy of the loaded preset to edit, rather than touching the owner's own library. An operation no hardware test names has to appear in `tests/test_hardware_markers.py`'s `UNMARKED_OPERATIONS`, with the reason beside it - there is no third way.
 - **Exclusive device access.** Cortex Control holds the HID interface exclusively, so the library and Cortex Control cannot be connected at the same time.
 
 ## 7. Decision Records
@@ -135,6 +137,26 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-09-06 - The profile seam is built (ADR-0020)
+
+**What changed:** `connect()` reads the unit's `Version` before the handshake,
+resolves `(device_type, zenos_git_hash)` in a registry of profile classes, and
+refuses an unknown pair with `UnsupportedDevice`. `QuadCortex` declares itself
+as the 4.0.1 profile; `QuadCortex41` connects and verifies nothing until a 4.1
+unit's suite run fills its `VERIFIED` set; `QuadCortexMini` is recognised and
+refused. An operation a profile has not verified refuses under the default
+`Support.VERIFIED` and runs with one warning under `Support.EXPERIMENTAL`.
+Generated constants live in `pyquadcortex/protocol/catalogs/coros_4_0_1/`;
+`protocol.models` and friends are shims over it. `set_block` checks the live
+catalog before sending. The hardware suite marks the operations each test
+verifies and prints, per profile, which passed.
+
+**Why:** the ADR-0020 entry below records the decision; this is the code.
+
+**What did NOT change, on purpose:** `protocol.models` still means 4.0.1 and
+`CC_VERSION` still announces 4.0.1 on every profile. The later CorOS 4.1 catalog
+contribution adds its snapshot under that profile without changing either rule.
 
 ### 2026-09-03 - One baseline becomes a registry of device profiles (ADR-0020)
 
