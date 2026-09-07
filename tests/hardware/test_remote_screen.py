@@ -5,6 +5,7 @@ import struct
 import pytest
 
 
+@pytest.mark.verifies("capture_screen")
 def test_capture_screen_returns_the_observed_complete_framebuffer(qc):
     """Capture does not tap or otherwise mutate the device UI."""
     factory_count = len(qc.catalog.factory_models())

@@ -43,6 +43,7 @@ already read and need no connection; calling them as methods raises
 
 | | |
 |---|---|
+| **Connect** | `protocol.connect(profile=, support=)` resolves the unit's own device profile before the handshake (ADR-0020) and returns it, already connected; an unrecognised `(device_type, zenos_git_hash)` raises `UnsupportedDevice`. `Support.VERIFIED` (default) refuses an operation its profile has not verified; `Support.EXPERIMENTAL` runs it with one warning. `qc.models`, `qc.params`, `qc.options` are that connection's own constants snapshot |
 | **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Synchronise the unit's screen (CorOS 4.1.0)** | `tap_screen(x, y)` taps one raw pixel coordinate; `capture_screen()` returns a PNG of the QC's current display (observed at 800 x 480) |

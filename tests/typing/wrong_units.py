@@ -67,3 +67,11 @@ qc.set_param(block, params.SimpleDelayM.DELAY_TIME, Milliseconds(250))
 # -- rejected: a bare number, which the runtime refuses too -------------------
 qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, -3.1)  # want: error
 qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, level_wrong := Hertz(1))  # want: error
+
+# -- ADR-0020: the support mode is an enum, and connect() returns the base type
+from pyquadcortex import protocol
+
+verified: protocol.QuadCortex = protocol.connect(support=protocol.Support.EXPERIMENTAL)
+protocol.connect(support="experimental")  # want: error
+protocol.connect(profile=protocol.QuadCortex41)
+protocol.connect(profile="garbage")  # want: error
