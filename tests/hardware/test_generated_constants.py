@@ -5,12 +5,17 @@ COMMITTED, so they are a snapshot. A firmware or content update can renumber a
 parameter or add a model, and nothing offline can notice - the generated file is
 its own yardstick. This regenerates from the connected unit and compares.
 
-A failure here is not necessarily a bug. It means the snapshot is stale, and the
-fix is to regenerate and read the diff before committing it:
+Which snapshot it compares against comes from the CONNECTED PROFILE (ADR-0020)
+rather than from a fixed path, so a unit on some other firmware is held against
+its own snapshot, or told it has none yet.
 
-    python scripts/generate_models.py
-    python scripts/generate_params.py
-    python scripts/generate_options.py
+A failure here is not necessarily a bug. It means the snapshot is stale, and the
+fix is to regenerate that profile's snapshot and read the diff before committing
+it:
+
+    python scripts/generate_models.py --snapshot coros_4_0_1
+    python scripts/generate_params.py --snapshot coros_4_0_1
+    python scripts/generate_options.py --snapshot coros_4_0_1
 
 Read the diff. A renumbered parameter is a real protocol change and belongs in
 `docs/protocol.md`; a new model is routine.
@@ -21,6 +26,7 @@ import pathlib
 import pytest
 
 from pyquadcortex.protocol import catalog
+from pyquadcortex.protocol.support import NoSnapshot
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
@@ -39,10 +45,16 @@ def live_catalog(qc):
 
 
 @pytest.mark.parametrize("name", ["models", "params", "options"])
-def test_the_committed_file_matches_this_unit(live_catalog, name):
-    """Read-only: nothing is written to the unit, so no restore is needed."""
-    generated = _generator(name).render(live_catalog)
-    committed = (REPO / "pyquadcortex" / "protocol" / f"{name}.py").read_text()
+def test_the_committed_snapshot_matches_this_unit(live_catalog, profile, name):
+    """Read-only. Compares against the CONNECTED profile's snapshot (ADR-0020),
+    so a snapshot for another firmware never turns this unit's run red."""
+    snapshot = getattr(profile, name)
+    if isinstance(snapshot, NoSnapshot):
+        pytest.fail(f"{profile.__name__} has no {name} snapshot yet; run "
+                    f"scripts/generate_{name}.py --snapshot <coros_x_y_z> against this unit")
+    generated = _generator(name).render(live_catalog,
+                                        snapshot=snapshot.__name__.rsplit(".", 2)[-2])
+    committed = pathlib.Path(snapshot.__file__).read_text(encoding="utf-8")
     if generated == committed:
         return
 
@@ -51,11 +63,12 @@ def test_the_committed_file_matches_this_unit(live_catalog, name):
     first = next((i for i, (a, b) in enumerate(zip(gen_lines, com_lines)) if a != b),
                  min(len(gen_lines), len(com_lines)))
     pytest.fail(
-        f"pyquadcortex/protocol/{name}.py no longer matches this unit's catalog. "
+        f"{snapshot.__name__} no longer matches this unit's catalog. "
         f"First difference at line {first + 1}:\n"
         f"  committed: {com_lines[first] if first < len(com_lines) else '<end of file>'}\n"
         f"  this unit: {gen_lines[first] if first < len(gen_lines) else '<end of file>'}\n"
-        f"Regenerate with `python scripts/generate_{name}.py` and READ the diff - "
+        f"Regenerate with `python scripts/generate_{name}.py --snapshot "
+        f"{snapshot.__name__.rsplit('.', 2)[-2]}` and READ the diff - "
         f"a renumbered parameter is a protocol change, not a routine update."
     )
 

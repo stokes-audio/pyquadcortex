@@ -194,7 +194,8 @@ def test_a_floor_is_typed_whether_it_was_measured_or_derived():
 # `params.py` is generated FROM the device's catalog and committed, so it is
 # real spellings available offline. Its trailing comments carry them.
 
-PARAMS_PY = pathlib.Path(__file__).parent.parent / "pyquadcortex" / "protocol" / "params.py"
+PARAMS_PY = (pathlib.Path(__file__).parent.parent / "pyquadcortex" / "protocol"
+             / "catalogs" / "coros_4_0_1" / "params.py")
 
 #: Spellings the catalog uses that no type claims, with the reason. Two
 #: parameters each does not earn a public name, and `Real` is not a worse

@@ -5,6 +5,7 @@ import struct
 import pytest
 
 
+@pytest.mark.verifies("preset_screenshot")
 def test_current_preset_screenshot_has_the_observed_png_dimensions(qc):
     """The request is addressed from live state and does not change that state."""
     factory_count = len(qc.catalog.factory_models())
