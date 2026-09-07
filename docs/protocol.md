@@ -524,11 +524,20 @@ version request - READ replies carry no `request_id` to disambiguate them, so
 the transport hands a `Version` with no id to whichever waiter is first in line.
 
 Skipping it also means the device asks nothing back. Measured 2026-08-27 on
-`d14e`: a connect through `_hello()` and its whole burst produce exactly one
-inbound `Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer
-to the announce, and eight seconds of idling after it produce none. So step 3
-above is a consequence of step 2 rather than something the device does on
-connecting.
+`d14e`: `_hello()` and its whole burst produce exactly one inbound `Version`, an
+`UPDATE` carrying `cortex_control_version_valid` in answer to the announce, and
+eight seconds of idling after it produce none. So step 3 above is a consequence
+of step 2 rather than something the device does on connecting.
+
+Since ADR-0020, `connect()` itself makes one `Version` READ BEFORE calling
+`_hello()`, to resolve the profile. Measured 2026-09-06 on CorOS 4.0.1 / d14e: a
+`connect()` and its burst now carry exactly THREE inbound `Version` messages -
+the full reply to that READ (15 fields, at +0.71 s), the unit's own
+`Version{READ}` 1 ms behind it (section 4.4), and the announce answer above (at
++0.73 s). The state layer listens from before the handshake, so the identity
+entry holds `device_serial_number` and `app_fw_version` from that reply; the
+reply also carries fields the entry does not keep, so the entry stays marked and
+the first `device.firmware` read still asks the unit once.
 
 ### 4.3 Keepalive and disconnect
 
@@ -2029,7 +2038,9 @@ transport listener registered before the handshake: `connect()` handed back its 
 in, having seen only the `ResetCommsBuffers` echo and one `Version`. (That session read the
 `Version` as the unit's own READ. Re-measured 2026-08-27 on d14e it is the unit's `UPDATE`
 answering our version announce, carrying `cortex_control_version_valid`; `_hello()` sends no
-host `Version` READ, and with none sent the unit asks nothing back. See section 4.) The
+host `Version` READ, and with none sent the unit asks nothing back. Since ADR-0020 `connect()`
+reads `Version` once before `_hello()`, so a listener registered before the handshake now sees
+three `Version` messages - see section 4.) The
 ModelRepo landed at 4.9 s, the 399 `File` listings and most settings at 5.1 s, and the seed
 `RecallPreset` at 10.1 s - 474 messages of 24 distinct types by 15 s. So a listener attached
 to the client `connect()` returns is about 3 s too late for the ModelRepo and 8 s too late

@@ -196,15 +196,17 @@ def test_an_inactive_scene_refuses_writes_and_reads_fine(device):
 
 def test_the_burst_delivered_every_entry_the_preset_surface_reads(burst_warmed):
     """Measured 2026-08-15: the burst carries RecallPreset, SetlistPosition,
-    PresetDirty and Scene at about 10 s, inside ten milliseconds. Identity is
-    NOT in it - the unit never announces its own firmware - so that one is
-    expected to be empty and is asserted, to keep this from passing on a run
-    where the burst delivered nothing at all."""
+    PresetDirty and Scene at about 10 s, inside ten milliseconds. The unit never
+    announces its own firmware; identity is in the cache anyway since ADR-0020,
+    because ``connect()`` reads ``Version`` before the handshake and the state
+    layer is listening by then (measured 2026-09-06 on 4.0.1 / d14e). Asserted
+    with its two kept fields, to keep this from passing on a run where the burst
+    delivered nothing at all."""
     for name in ("preset", "scene", "dirty", "loaded"):
         assert burst_warmed[name], f"the burst delivered nothing for {name}"
-    assert not burst_warmed["identity"], (
-        "identity arrived in the burst, which contradicts what the entry's "
-        "docstring says the unit does")
+    assert set(burst_warmed["identity"]) == {"device_serial_number", "app_fw_version"}, (
+        f"connect's own Version read should have warmed identity with its two "
+        f"kept fields; the cache held {burst_warmed['identity']}")
 
 
 def test_reading_the_preset_surface_costs_no_round_trip(device, model_cache):

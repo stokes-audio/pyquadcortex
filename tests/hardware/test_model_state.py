@@ -174,30 +174,36 @@ def test_nothing_the_burst_delivered_is_read_again_on_first_access(
         "again, which is the round trip the cache exists to avoid")
 
 
-def test_the_burst_does_not_warm_what_the_unit_never_announces(burst_warmed,
-                                                              handshake_burst):
-    """The other half, and the reason the read path exists.
+def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
+                                                                handshake_burst):
+    """Identity reaches the cache through the ONE Version READ connect() makes.
 
-    The unit does send a ``Version`` during the handshake, but it is the answer
-    to our version announce - it sets ``cortex_control_version_valid`` and none
-    of the unit's own fields. So identity is exactly the case section 9's third
-    column is for: where the unit does not tell us, we ask.
+    The unit never volunteers its identity, so the model reads it (section 9's
+    third column). Since ADR-0020, ``connect()`` issues that read itself, before
+    the handshake, to resolve the profile - and the state layer listens from
+    before the handshake, so it sees the reply. Measured 2026-09-06 on CorOS
+    4.0.1 / d14e: exactly THREE inbound ``Version`` messages through connect and
+    its burst - the full reply to connect's READ (15 fields, +0.71 s), the
+    unit's own ``Version{READ}`` 1 ms behind it (the question it asks Cortex
+    Control, section 4.4), and the ``UPDATE`` carrying
+    ``cortex_control_version_valid`` that answers our announce (+0.73 s).
+    ``_hello`` itself still sends no READ; the 2026-08-27 measurement of one
+    inbound ``Version`` stands for ``_hello`` alone.
 
-    The count is asserted because the empty cache below is not evidence for that
-    story: it was equally true of the story this replaced, which had the unit
-    volunteering a ``Version`` READ of its own during connect. ``_hello`` sends
-    no host ``Version`` READ, and the unit only asks when asked, so one is the
-    number - and a second would mean the handshake has changed under us.
+    The count is asserted so a fourth (the handshake changed under us) or a
+    second (connect stopped reading identity) is loud. The cache holds the two
+    fields the entry keeps; the reply also carries fields it does not, so the
+    entry stays marked and the first read of ``device.firmware`` still goes to
+    the unit (see ``identity`` in device/entries.py).
     """
     versions = handshake_burst.names().count("VersionMessage")
-    assert versions == 1, (
-        f"the connect burst carried {versions} Version message(s), not the one "
-        f"answering our version announce. Section 4 of docs/protocol.md says "
-        f"the unit asks for our version only when we ask for its.")
-    assert burst_warmed["identity"] == {}, (
-        f"the burst carried the unit's own identity after all, which is worth "
-        f"knowing - it held {burst_warmed['identity']}. If that is now true, "
-        f"the entry's docstring in device/entries.py is wrong.")
+    assert versions == 3, (
+        f"the connect burst carried {versions} Version message(s); 3 is measured "
+        f"(connect's READ reply, the unit's own READ, the announce answer). See "
+        f"docs/protocol.md section 4.")
+    assert set(burst_warmed["identity"]) == {"device_serial_number", "app_fw_version"}, (
+        f"connect's Version read should have left exactly the two kept identity "
+        f"fields in the cache; it held {burst_warmed['identity']}")
 
 
 def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
