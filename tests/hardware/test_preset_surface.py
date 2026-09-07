@@ -199,7 +199,7 @@ def test_the_burst_delivered_every_entry_the_preset_surface_reads(burst_warmed):
     PresetDirty and Scene at about 10 s, inside ten milliseconds. The unit never
     announces its own firmware; identity is in the cache anyway since ADR-0020,
     because ``connect()`` reads ``Version`` before the handshake and the state
-    layer is listening by then (measured 2026-09-06 on 4.0.1 / d14e). Asserted
+    layer is listening by then (measured 2026-09-07 on 4.0.1 / d14e). Asserted
     with its two kept fields, to keep this from passing on a run where the burst
     delivered nothing at all."""
     for name in ("preset", "scene", "dirty", "loaded"):

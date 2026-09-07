@@ -151,7 +151,7 @@ def test_a_regression_is_only_an_operation_some_test_claims(conftest):
 
 
 def test_a_skipped_test_is_not_a_regression(conftest):
-    """Measured on the first post-merge run, 2026-09-06: the bypass echo test
+    """Measured on the first post-merge run, 2026-09-07: the bypass echo test
     skipped ("no stored bypass entry") and the report called set_bypass a
     regression. A skip measured nothing; it belongs on the failed-or-skipped
     line and nowhere else."""

@@ -530,7 +530,7 @@ eight seconds of idling after it produce none. So step 3 above is a consequence
 of step 2 rather than something the device does on connecting.
 
 Since ADR-0020, `connect()` itself makes one `Version` READ BEFORE calling
-`_hello()`, to resolve the profile. Measured 2026-09-06 on CorOS 4.0.1 / d14e: a
+`_hello()`, to resolve the profile. Measured 2026-09-07 on CorOS 4.0.1 / d14e: a
 `connect()` and its burst now carry exactly THREE inbound `Version` messages -
 the full reply to that READ (15 fields, at +0.71 s), the unit's own
 `Version{READ}` 1 ms behind it (section 4.4), and the announce answer above (at
@@ -2040,8 +2040,8 @@ in, having seen only the `ResetCommsBuffers` echo and one `Version`. (That sessi
 answering our version announce, carrying `cortex_control_version_valid`; `_hello()` sends no
 host `Version` READ, and with none sent the unit asks nothing back. Since ADR-0020 `connect()`
 reads `Version` once before `_hello()`, so a listener registered before the handshake now sees
-three `Version` messages - see section 4.) The
-ModelRepo landed at 4.9 s, the 399 `File` listings and most settings at 5.1 s, and the seed
+three `Version` messages - see section 4.) The ModelRepo landed at 4.9 s, the 399 `File`
+listings and most settings at 5.1 s, and the seed
 `RecallPreset` at 10.1 s - 474 messages of 24 distinct types by 15 s. So a listener attached
 to the client `connect()` returns is about 3 s too late for the ModelRepo and 8 s too late
 for the current preset, which is why `connect(before_handshake=...)` exists.

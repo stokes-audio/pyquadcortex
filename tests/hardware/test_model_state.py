@@ -181,7 +181,7 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
     The unit never volunteers its identity, so the model reads it (section 9's
     third column). Since ADR-0020, ``connect()`` issues that read itself, before
     the handshake, to resolve the profile - and the state layer listens from
-    before the handshake, so it sees the reply. Measured 2026-09-06 on CorOS
+    before the handshake, so it sees the reply. Measured 2026-09-07 on CorOS
     4.0.1 / d14e: exactly THREE inbound ``Version`` messages through connect and
     its burst - the full reply to connect's READ (15 fields, +0.71 s), the
     unit's own ``Version{READ}`` 1 ms behind it (the question it asks Cortex
@@ -191,7 +191,9 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
     inbound ``Version`` stands for ``_hello`` alone.
 
     The count is asserted so a fourth (the handshake changed under us) or a
-    second (connect stopped reading identity) is loud. The cache holds the two
+    fall to one (connect stopped reading identity, and with no READ the unit
+    asks nothing back) is loud. A retried identity read on a slow-to-boot unit
+    would also add to it; the message says so. The cache holds the two
     fields the entry keeps; the reply also carries fields it does not, so the
     entry stays marked and the first read of ``device.firmware`` still goes to
     the unit (see ``identity`` in device/entries.py).
@@ -199,8 +201,10 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
     versions = handshake_burst.names().count("VersionMessage")
     assert versions == 3, (
         f"the connect burst carried {versions} Version message(s); 3 is measured "
-        f"(connect's READ reply, the unit's own READ, the announce answer). See "
-        f"docs/protocol.md section 4.")
+        f"(connect's READ reply, the unit's own READ, the announce answer). More "
+        f"means the handshake changed under us, or connect's identity read "
+        f"retried on a unit that was still booting. See docs/protocol.md "
+        f"section 4.")
     assert set(burst_warmed["identity"]) == {"device_serial_number", "app_fw_version"}, (
         f"connect's Version read should have left exactly the two kept identity "
         f"fields in the cache; it held {burst_warmed['identity']}")

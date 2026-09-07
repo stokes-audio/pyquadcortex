@@ -22,7 +22,7 @@ correction.
 
 ### The first hardware run of the profile seam, and what it corrected
 
-Run 2026-09-06 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam
+Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam
 merged: 93 passed, 4 skipped, and two tests failed on records the seam itself
 made stale. `connect()` now reads `Version` before the handshake, so a listener
 registered through `before_handshake` sees three inbound `Version` messages, not

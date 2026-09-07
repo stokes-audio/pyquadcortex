@@ -578,8 +578,10 @@ def _report_lines(cls, outcomes, claimed):
     # A SKIP is a test that declined to measure - a precondition the loaded
     # preset did not meet, an operator-only capture - and says nothing about
     # the unit. Only a FAILURE is a regression. Measured on the first post-merge
-    # run (2026-09-06): the bypass echo test skipped for want of a stored bypass
+    # run (2026-09-07): the bypass echo test skipped for want of a stored bypass
     # entry and the old line called set_bypass a regression.
+    # pytest reports a setup or teardown ERROR with outcome "failed" too, so an
+    # errored test lands here as well (checked against pytest 9.1.1).
     failed = {op for op, seen in outcomes.items() if "failed" in seen}
     verified = (set(cls.operations()) if cls.VERIFIED is EVERYTHING
                 else set(cls.VERIFIED))
