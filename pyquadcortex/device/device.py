@@ -233,7 +233,9 @@ class Device:
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
             handshake_patience: float = 30.0,
-            initial_file_listing: bool = True) -> Device:
+            initial_file_listing: bool = True,
+            profile: type[protocol.QuadCortex] | None = None,
+            support: protocol.Support = protocol.Support.VERIFIED) -> Device:
     """Open a Quad Cortex over USB and return it as a :class:`Device`.
 
     Finds and opens the device, starts the transport, and performs the connect
@@ -255,6 +257,10 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         initial_file_listing: whether to enumerate the full folder tree during
             the handshake. Set false to defer that traffic until a listing is
             requested explicitly.
+        profile: a profile class to use instead of the one the unit's identity
+            resolves to. See :func:`pyquadcortex.protocol.connect` (ADR-0020).
+        support: how the connection treats an operation its profile has not
+            verified. See :func:`pyquadcortex.protocol.connect` (ADR-0020).
 
     The model subscribes to the unit's pushes BEFORE the handshake runs, which
     is the only moment early enough to hear the handshake's own burst of state -
@@ -279,5 +285,6 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
     client = protocol.connect(timeout=timeout, settle=settle,
                               handshake_patience=handshake_patience,
                               initial_file_listing=initial_file_listing,
-                              before_handshake=state.listen_on)
+                              before_handshake=state.listen_on,
+                              profile=profile, support=support)
     return Device(client, _owns_client=True, _state=state)
