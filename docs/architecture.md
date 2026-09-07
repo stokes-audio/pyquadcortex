@@ -25,7 +25,7 @@ shapes), see [`protocol.md`](protocol.md). This document covers the code.
 - [Capturing the device's traffic](#capturing-the-devices-traffic)
 - [Testing philosophy](#testing-philosophy)
 - [What is not implemented yet](#what-is-not-implemented-yet)
-- [Adapting to a new CorOS version](#adapting-to-a-new-coros-version)
+- [Adding a device profile (a new CorOS version or a new model)](#adding-a-device-profile-a-new-coros-version-or-a-new-model)
 
 ## Layer map
 
@@ -684,19 +684,36 @@ next, roughly in order of how well the ground is prepared:
   reports both and acts on neither, because compression is still detected by the
   gzip magic bytes and an encrypted payload is labelled rather than decrypted.
 
-## Adapting to a new CorOS version
+## Adding a device profile (a new CorOS version or a new model)
 
 **The protocol carries no version number.** There is no capability negotiation
 and no schema version on the wire, so nothing tells you at runtime that a
 firmware update changed a message. Assume nothing survives a major update until
 you re-check it.
 
-A new CorOS release is a new DEVICE PROFILE, not a replacement of the baseline
-(ADR-0020). Its constants, announce string and measured behaviours arrive as a
-entry in the profile registry ADR-0020 calls for (not built yet), beside the
-existing profile, and its observations are recorded in `protocol.md` beside the
-4.0.1 record, dated and named. Name it by `zenos_git_hash`, the CorOS version,
-never by `app_fw`: a contributor reports d14e on 4.1.0 as well as 4.0.1 (PR #44).
+A new CorOS release, or a new model, is a new DEVICE PROFILE - a `QuadCortex`
+subclass, not a replacement of the baseline (ADR-0020). `connect()` resolves
+`(device_type, zenos_git_hash)` in the registry of profile classes before the
+handshake and refuses an unknown pair rather than borrowing the nearest one.
+Name the profile by `zenos_git_hash`, the CorOS version, never by `app_fw`: a
+contributor reports d14e on CorOS 4.1.0 as well as 4.0.1 (PR #44). Building one,
+on the unit it covers - the four steps `QuadCortex41` is written mid-way through,
+in `pyquadcortex/protocol/profiles.py`:
+
+1. **Generate the snapshot.** `scripts/generate_models.py --snapshot coros_x_y_z`
+   and the params and options generators, against the new unit; bind the three
+   modules on the new class.
+2. **Run the suite.** `pytest tests/hardware --hardware --profile QuadCortexMini`
+   against that unit, naming your new class. `--profile` connects as that class
+   rather than the one the unit's identity resolves to, so the suite runs on a
+   unit the registry would otherwise refuse; it always connects
+   `Support.EXPERIMENTAL`, so nothing refuses before it can be measured - on a
+   new profile the suite IS the verification.
+3. **Fill `VERIFIED`.** The report at the end of the run names which operations
+   passed on this profile; put those names in the class's `VERIFIED` set.
+4. **Record differences beside the 4.0.1 record.** Anything that behaved
+   differently is written into `protocol.md` next to the existing entry, dated
+   and named, never in its place, and overridden on the new class.
 
 When measuring a new CorOS / Cortex Control release:
 

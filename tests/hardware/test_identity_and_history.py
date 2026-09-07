@@ -11,6 +11,7 @@ from pyquadcortex.protocol.enums import Setlist
 SETTLE = 1.0
 
 
+@pytest.mark.verifies("set_device_name")
 def test_device_name_round_trips_and_is_restored(qc):
     identity = qc.version()
     if not identity.HasField("custom_name"):
@@ -31,6 +32,7 @@ def test_device_name_round_trips_and_is_restored(qc):
     assert qc.version().custom_name == before
 
 
+@pytest.mark.verifies("undo", "redo")
 def test_undo_and_redo_reverse_and_reapply_a_scratch_edit(qc, restores):
     """Create, edit, and remove a test-owned copy of the loaded preset."""
     original = qc.loaded_position()

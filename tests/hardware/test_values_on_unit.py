@@ -41,6 +41,7 @@ def _stored(qc, target, index):
     return entry.params[index].param_values[0].float_value
 
 
+@pytest.mark.verifies("set_param")
 @pytest.mark.parametrize("label,target,param,written", WRITES,
                          ids=[w[0] for w in WRITES])
 def test_the_unit_agrees_with_the_value_we_wrote(qc, restores, label, target,
@@ -66,6 +67,7 @@ def test_the_unit_agrees_with_the_value_we_wrote(qc, restores, label, target,
     assert float(back) == pytest.approx(float(written), abs=0.05)
 
 
+@pytest.mark.verifies("set_param")
 def test_encoded_and_real_zero_land_in_different_places_on_the_unit(qc, restores):
     """The pair the whole design rests on, against the device rather than a fake.
 

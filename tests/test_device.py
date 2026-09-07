@@ -8,7 +8,7 @@ import pytest
 
 import pyquadcortex
 from pyquadcortex import Device, protocol
-from pyquadcortex.protocol import client, session
+from pyquadcortex.protocol import client, profiles, session, support
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 
@@ -138,6 +138,9 @@ class FakeTransport:
 
     instances = []
 
+    #: What the unit says it is. Tests set this before connect() runs.
+    version_reply = None
+
     def __init__(self, device, keepalive_interval=5.0):
         self.device = device
         self.started = False
@@ -160,6 +163,18 @@ class FakeTransport:
         self.happened.append(f"request {type(message).__name__}")
         return message  # the handshake only needs *a* reply
 
+    def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+        self.happened.append(f"await {expected_class.__name__}")
+        trigger()
+        reply = type(self).version_reply
+        if reply is None:
+            reply = pa.VersionMessage(action=pa.MessageAction.UPDATE,
+                                      device_type=pa.VersionMessage.QC,
+                                      zenos_git_hash="4.0.1",
+                                      device_serial_number="QCS0000001")
+        assert match is None or match(reply), "the canned reply must satisfy version()'s predicate"
+        return reply
+
     def add_listener(self, listener):
         self.listeners.append(listener)
         self.happened.append("add_listener")
@@ -181,6 +196,7 @@ class FakeTransport:
 def fake_stack(monkeypatch):
     """Patch the protocol session's device+transport so connect() runs dry."""
     FakeTransport.instances = []
+    FakeTransport.version_reply = None
     device = FakeDevice()
     monkeypatch.setattr(session, "open_device", lambda: device)
     monkeypatch.setattr(session, "Transport", FakeTransport)
@@ -229,6 +245,20 @@ def test_from_client_exposes_the_client_it_was_given():
     """Both layers in one script: the caller keeps their protocol handle."""
     qc = FakeClient()
     assert Device.from_client(qc).client is qc
+
+
+def test_connect_passes_profile_and_support_through(monkeypatch):
+    seen = {}
+
+    def fake_connect(**kw):
+        seen.update(kw)
+        return FakeClient()
+
+    monkeypatch.setattr(protocol, "connect", fake_connect)
+    pyquadcortex.connect(profile=profiles.QuadCortex41, support=support.Support.EXPERIMENTAL)
+    assert seen["profile"] is profiles.QuadCortex41
+    assert seen["support"] is support.Support.EXPERIMENTAL
+    assert "before_handshake" in seen
 
 
 def test_from_client_does_not_close_a_connection_it_did_not_open():
@@ -377,14 +407,16 @@ def test_connect_hands_every_argument_to_the_protocol_layer(monkeypatch):
     seen = _spy_on_protocol_connect(monkeypatch)
     pyquadcortex.connect(timeout=1.5, settle=0.25, handshake_patience=45.0)
     assert _without_the_hook(seen) == {
-        "timeout": 1.5, "settle": 0.25, "handshake_patience": 45.0}
+        "timeout": 1.5, "settle": 0.25, "handshake_patience": 45.0,
+        "profile": None, "support": support.Support.VERIFIED}
 
 
 def test_connect_passes_its_defaults_through_unchanged(monkeypatch):
     seen = _spy_on_protocol_connect(monkeypatch)
     pyquadcortex.connect()
     assert _without_the_hook(seen) == {
-        "timeout": 5.0, "settle": 2.0, "handshake_patience": 30.0}
+        "timeout": 5.0, "settle": 2.0, "handshake_patience": 30.0,
+        "profile": None, "support": support.Support.VERIFIED}
 
 
 def _spy_on_protocol_connect(monkeypatch):

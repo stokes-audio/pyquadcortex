@@ -16,6 +16,23 @@ exist only on the disposable preset.
 below, and it runs BOTH suites - the offline one and this one, against your unit.
 Name the directory unless you want that.
 
+Two more options go with the flag, both from ADR-0020:
+
+- `--verifies OPERATION` narrows the run to the tests marked
+  `verifies(OPERATION)`. pytest's own `-m` cannot match a marker's arguments.
+- `--profile CLASSNAME` connects as that profile class instead of the one the
+  unit's identity resolves to:
+
+  ```bash
+  pytest tests/hardware --hardware --profile QuadCortexMini
+  ```
+
+  That is how a unit the registry would refuse - an unmeasured firmware, or a
+  Mini - gets measured by the suite that would measure it. The name is a class
+  in `pyquadcortex.protocol.profiles`, or `QuadCortex` itself; an unknown one
+  stops the run naming the real ones. Without `--hardware` it is ignored, since
+  nothing here runs at all.
+
 Without `--hardware` nothing here runs. A hardware test that reports itself as a
 skip in an offline run is a test nobody notices has stopped running, so it is
 never a skip - which of the two stronger things happens depends on how the path

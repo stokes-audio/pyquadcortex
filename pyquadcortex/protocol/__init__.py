@@ -51,6 +51,9 @@ from pyquadcortex.protocol.enums import (BROKEN_MODE_VALUE, Footswitch, Footswit
                                          TempoSubdivision,
                                          TimeSignature)
 from pyquadcortex.protocol.session import DeviceNotFoundError, connect, open_device
+from pyquadcortex.protocol.support import Support, Evidence, Hardware  # noqa: F401
+from pyquadcortex.protocol.profiles import (UnsupportedDevice, QuadCortex41,  # noqa: F401
+                                            QuadCortexMini)
 from pyquadcortex.protocol import models  # generated factory-block constants
 from pyquadcortex.protocol import params  # generated parameter constants
 from pyquadcortex.protocol import options  # generated option constants
@@ -152,4 +155,10 @@ __all__ = [
     "Model",
     "ModelCatalog",
     "Parameter",
+    "Support",
+    "Evidence",
+    "Hardware",
+    "UnsupportedDevice",
+    "QuadCortex41",
+    "QuadCortexMini",
 ]

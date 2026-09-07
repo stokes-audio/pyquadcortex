@@ -31,6 +31,7 @@ SETTLE = 2.0
 PORT = Input.INPUT_1
 
 
+@pytest.mark.verifies("inhibited_modules")
 def test_inhibited_modules_is_a_complete_read_only_snapshot(qc):
     """Both false fields were explicitly present on CorOS 4.1.0 / d14e.
 
@@ -53,6 +54,7 @@ def _input_level(qc, port_id):
     raise AssertionError(f"no in_port entry for {port_id}")
 
 
+@pytest.mark.verifies("set_input_port")
 def test_an_input_gain_written_in_db_reads_back_as_that_db(qc, restores):
     """The one setting with a measured span, driven both ways.
 
@@ -73,6 +75,7 @@ def test_an_input_gain_written_in_db_reads_back_as_that_db(qc, restores):
     assert units.input_level_db(wire) == pytest.approx(24.0, abs=0.05)
 
 
+@pytest.mark.verifies("set_input_port")
 def test_zero_db_is_exactly_one_sixth_on_the_unit(qc, restores):
     """The point that fixes the span's zero, checked on the device rather than
     in a fixture: 0 dB over -12..+60 is 12/72, and nothing else lands there."""
@@ -85,6 +88,7 @@ def test_zero_db_is_exactly_one_sixth_on_the_unit(qc, restores):
     assert _input_level(qc, PORT) == pytest.approx(1 / 6, abs=1e-4)
 
 
+@pytest.mark.verifies("set_global_eq")
 def test_a_global_eq_gain_in_db_lands_where_the_manuals_span_says(qc, restores):
     """The span here is the MANUAL's on two points, so this is the weakest
     claim in the file and is labelled as such rather than presented beside the
@@ -109,6 +113,7 @@ def test_a_global_eq_gain_in_db_lands_where_the_manuals_span_says(qc, restores):
         client._GLOBAL_EQ_GAIN.to_normalized(-3.0), abs=1e-4)
 
 
+@pytest.mark.verifies("set_hold_timing")
 def test_the_hold_threshold_takes_milliseconds_and_stores_an_index(qc, restores):
     """No 0..1 line at all: the wire carries the index, the caller says ms."""
     before = qc.hold_timing_ms()

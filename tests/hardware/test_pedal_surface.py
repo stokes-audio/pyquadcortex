@@ -77,6 +77,7 @@ def _assignment(qc):
     return found[0] if found else None
 
 
+@pytest.mark.verifies("set_expression")
 def test_an_assignment_written_reads_back_the_same(qc, restores):
     was = _snapshot(qc)
     restores(f"row {ROW} lane {PARAM} expression", lambda: _restore(qc, was))
@@ -93,6 +94,7 @@ def test_an_assignment_written_reads_back_the_same(qc, restores):
     assert not now.reversed
 
 
+@pytest.mark.verifies("set_expression")
 def test_a_reversed_sweep_survives_the_round_trip(qc, restores):
     """The pair is not ordered - min above max inverts the pedal, and the unit
     stores it that way round. A reader that sorted would lose the setting."""
@@ -108,6 +110,7 @@ def test_a_reversed_sweep_survives_the_round_trip(qc, restores):
     assert now.reversed, "the unit stored the sweep and the reader sorted it"
 
 
+@pytest.mark.verifies("set_expression", "clear_expression")
 def test_clearing_makes_the_assignment_absent_rather_than_pedal_zero(qc, restores):
     """`expression: 0` is what a clear writes, and the device SENDS it - so the
     reader has to read a present zero as "no assignment" rather than as a pedal
@@ -124,6 +127,7 @@ def test_clearing_makes_the_assignment_absent_rather_than_pedal_zero(qc, restore
     assert _assignment(qc) is None
 
 
+@pytest.mark.verifies("set_expression")
 def test_the_off_detent_reads_as_off_rather_than_minus_forty(qc, restores):
     """The bug the offline suite could not see until its catalog grew knobs.
 
