@@ -79,6 +79,7 @@ def _restore(qc, was, row=ROW):
     qc.set_param(LaneOutput(row), "VOLUME", Encoded(was["value"]))
 
 
+@pytest.mark.verifies("set_param", "read_current_preset")
 def test_reads_and_writes_agree_on_which_row(qc, restores):
     """The chain INDEX a read returns is the row number a write is keyed to.
 
@@ -105,6 +106,7 @@ def test_reads_and_writes_agree_on_which_row(qc, restores):
         f"writes disagree about which lane is which")
 
 
+@pytest.mark.verifies("set_expression", "clear_expression")
 def test_a_pedal_assigns_to_the_lane_volume_and_clears_again(qc, restores):
     """The whole round trip: assign, read back, clear, read back."""
     was = _snapshot(qc)
@@ -125,6 +127,7 @@ def test_a_pedal_assigns_to_the_lane_volume_and_clears_again(qc, restores):
     assert p.expression_max == pytest.approx(1.0, abs=1e-4)
 
 
+@pytest.mark.verifies("set_expression")
 def test_the_assignment_leaves_scene_mode_alone(qc, restores):
     """The unit does not promote a parameter to scene-following when IT assigns.
 
@@ -155,6 +158,7 @@ def test_the_two_unassignable_parameters_refuse_rather_than_failing_silently(qc,
         qc.clear_expression(LaneOutput(ROW), param=param)
 
 
+@pytest.mark.verifies("set_param")
 def test_the_lane_volume_speaks_dB_through_real(qc, restores):
     """`real=` converts through the MEASURED -40..+12 dB span.
 
@@ -204,6 +208,7 @@ def _params(qc, target):
     return getattr(chain, target.collection)[0].params
 
 
+@pytest.mark.verifies("set_expression", "clear_expression")
 @pytest.mark.parametrize("label,target,name", ASSIGNABLE,
                          ids=[c[0] for c in ASSIGNABLE])
 def test_every_target_takes_an_expression_pedal(qc, restores, label, target, name):
@@ -234,6 +239,7 @@ def test_every_target_takes_an_expression_pedal(qc, restores, label, target, nam
         f"{label}: {name} did not clear")
 
 
+@pytest.mark.verifies("set_expression")
 def test_a_block_switch_parameter_takes_one_too(qc, restores):
     """The case that disproved "switch parameters are refused".
 
@@ -272,6 +278,7 @@ def test_a_block_switch_parameter_takes_one_too(qc, restores):
 # -- expAssignable is the unit's OWN rule, not one the host is held to ---------
 
 
+@pytest.mark.verifies("set_expression")
 def test_a_parameter_the_catalog_calls_unassignable_still_takes_a_host_pedal(
         qc, restores):
     """The catalog marks 14 parameters ``expAssignable="false"``. It is advice.

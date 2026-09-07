@@ -278,6 +278,7 @@ def test_state_the_unit_never_announces_costs_one_read_and_then_none(
 # -- a change the model did not make -------------------------------------------
 
 
+@pytest.mark.verifies("set_param")
 def test_an_edit_the_model_did_not_make_reaches_its_cache(qc, model_cache,
                                                           counted, restores,
                                                           record_property):
@@ -326,6 +327,7 @@ def test_an_edit_the_model_did_not_make_reaches_its_cache(qc, model_cache,
     assert counted.reads["preset_dirty"] == 0, "the model asked instead of listening"
 
 
+@pytest.mark.verifies("set_param")
 def test_a_write_through_the_cache_is_settled_by_what_the_unit_says(
         qc, model_cache, restores, record_property):
     """Section 10's outcomes, against the unit that produces them.
