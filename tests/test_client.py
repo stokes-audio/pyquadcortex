@@ -578,6 +578,7 @@ def test_set_block_sends_row_column_keyed_grid_update():
     # UPDATE as set_param, carrying `hash` instead of params. The device's own
     # broadcast when a block is added on the unit has this exact shape.
     qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     qc.set_block(Block(0, 2, 5005))
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.GridMessage)
@@ -592,6 +593,7 @@ def test_set_block_accepts_a_catalog_model():
     model = catalog.Model(id=4005, name="Graphic-9", category="Equalizer",
                           category_id=4)
     qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.ModelCatalog(models={4005: model})
     qc.set_block(Block(1, 3, model))
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 4005
 
@@ -1372,6 +1374,7 @@ class _Capture:
 def test_set_capture_applies_params_after_the_file_name():
     """Loading a capture resets the block's knobs, so order is data integrity."""
     qc = client.QuadCortex(EchoingTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     # model_id on the cell is what to place, so this both places and points.
     qc.set_capture(Block(0, 2, 14000), capture=_Capture(),
                    params={4: Encoded(0.56)})
@@ -1400,6 +1403,7 @@ def test_set_capture_does_not_rewrite_a_values_scale():
     reported as success.
     """
     qc = client.QuadCortex(EchoingTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     with pytest.raises(TypeError, match="which model is there"):
         qc.set_capture(Block(0, 2, 14000), capture=_Capture(),
                        params={4: Real(0.5)})
@@ -1417,6 +1421,7 @@ def test_set_capture_does_not_rewrite_a_values_scale():
 def test_set_capture_refuses_a_bare_number_like_set_param_does():
     """The docstring taught `params={4: 0.56}` while `set_param` refused it."""
     qc = client.QuadCortex(EchoingTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     with pytest.raises(TypeError, match="two number lines"):
         qc.set_capture(Block(0, 2, 14000), capture=_Capture(), params={4: 0.56})
 
@@ -1498,6 +1503,7 @@ class EchoingTransport(FakeTransport):
 
 def test_set_block_verifies_the_device_accepted_the_cell():
     qc = client.QuadCortex(EchoingTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     qc.set_block(Block(1, 0, 5005))
     chain = qc._t.sent[-1].preset.chains[0]
     assert chain.row == 1
@@ -1506,19 +1512,22 @@ def test_set_block_verifies_the_device_accepted_the_cell():
 
 
 def test_set_block_raises_when_the_device_never_echoes_the_cell():
-    qc = client.QuadCortex(EchoingTransport(refuse={21005}))
+    qc = client.QuadCortex(EchoingTransport(refuse={19000}))
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     with pytest.raises(client.BlockRefused, match="no DSP capacity"):
-        qc.set_block(Block(1, 4, 21005))
+        qc.set_block(Block(1, 4, 19000))
 
 
 def test_set_block_can_skip_verification_for_fire_and_forget_placement():
-    qc = client.QuadCortex(EchoingTransport(refuse={21005}))
-    qc.set_block(Block(1, 4, 21005), verify=False)   # must not raise
-    assert qc._t.sent[-1].preset.chains[0].models[0].hash == 21005
+    qc = client.QuadCortex(EchoingTransport(refuse={19000}))
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    qc.set_block(Block(1, 4, 19000), verify=False)   # must not raise
+    assert qc._t.sent[-1].preset.chains[0].models[0].hash == 19000
 
 
 def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():
     qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     captured = {}
 
     def await_broadcast(expected_class, trigger, timeout=40.0, match=None):
@@ -3568,6 +3577,7 @@ class _Entry:
 
 def test_set_capture_writes_the_hash_and_name_as_one_string():
     qc = client.QuadCortex(EchoingTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     entry = _Entry("0200eff9df18229325d1816aeb8445eca03604f2a9f95fd3732ceaed167c25c1",
                    "Kyle Pb 1")
     qc.set_capture(Block(1, 0, 14000), capture=entry)
@@ -3949,20 +3959,22 @@ def test_a_missing_echo_is_not_a_refusal_if_the_block_actually_landed(monkeypatc
     echo is not evidence of a refusal, and the unit has to be asked.
     """
     qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
 
     def no_echo(*args, **kwargs):
         raise TimeoutError("no echo")
 
     monkeypatch.setattr(qc._t, "await_broadcast", no_echo, raising=False)
     monkeypatch.setattr(qc, "read_current_preset",
-                        lambda *a, **k: _preset_holding(1, 1, 7040))
-    assert qc.set_block(Block(1, 1, 7040)) is None
+                        lambda *a, **k: _preset_holding(1, 1, 19000))
+    assert qc.set_block(Block(1, 1, 19000)) is None
 
 
 def test_a_missing_echo_AND_an_empty_cell_names_both_known_causes(monkeypatch):
     """DSP capacity was called "the known cause" for a long time. It is one of
     two: a port conflict puts a modal on the unit that the host never sees."""
     qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
 
     def no_echo(*args, **kwargs):
         raise TimeoutError("no echo")
@@ -3971,7 +3983,7 @@ def test_a_missing_echo_AND_an_empty_cell_names_both_known_causes(monkeypatch):
     monkeypatch.setattr(qc, "read_current_preset",
                         lambda *a, **k: _preset_holding(3, 7, 9999))
     with pytest.raises(client.BlockRefused) as excinfo:
-        qc.set_block(Block(1, 1, 7040))
+        qc.set_block(Block(1, 1, 19000))
     message = str(excinfo.value)
     assert "DSP capacity" in message
     assert "PORT CONFLICT" in message
@@ -3981,6 +3993,7 @@ def test_a_read_that_fails_does_not_swallow_the_refusal(monkeypatch):
     """If the unit cannot be asked, the refusal stands - it does not become a
     silent success."""
     qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
 
     def no_echo(*args, **kwargs):
         raise TimeoutError("no echo")
@@ -3991,7 +4004,7 @@ def test_a_read_that_fails_does_not_swallow_the_refusal(monkeypatch):
     monkeypatch.setattr(qc._t, "await_broadcast", no_echo, raising=False)
     monkeypatch.setattr(qc, "read_current_preset", broken)
     with pytest.raises(client.BlockRefused):
-        qc.set_block(Block(1, 1, 7040))
+        qc.set_block(Block(1, 1, 19000))
 
 
 # -- the two number lines, through the public entry point ----------------------
@@ -4367,3 +4380,19 @@ def test_version_insists_on_the_full_reply_and_ignores_the_units_own_read():
                                    app_fw_version="d14e")) is True
     assert match(pa.VersionMessage(action=pa.MessageAction.UPDATE,
                                    device_serial_number="QA00EE910")) is True
+
+
+def test_set_block_refuses_a_model_the_unit_does_not_have_before_sending():
+    """A 4.1 constant on a 4.0.1 unit (ADR-0020): the unit would accept the
+    hash silently and the block would simply not be there, reported as a DSP
+    or port problem. Checking the live catalog first names the real cause."""
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
+    missing = 6026  # Crystal Delay, CorOS 4.1.0 only; not in the sample payload either
+    assert qc.catalog.get(missing) is None
+    with pytest.raises(ControlNotDrivable) as caught:
+        qc.set_block(Block(0, 3, missing), verify=False)
+    assert caught.value.control == "model 6026"
+    assert "not in this unit's catalog" in caught.value.evidence
+    assert fake.sent == []

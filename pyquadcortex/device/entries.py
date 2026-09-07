@@ -248,13 +248,19 @@ def _carries_unknown_fields(message) -> bool:
 #: ``CLAUDE.md``). That is an inference from scope rather than a measurement,
 #: which is why the read is still the fallback rather than a one-time fill.
 #:
-#: The unit does not announce this. The one ``Version`` the connect burst carries
-#: is the unit's answer to our version announce: it sets
-#: ``cortex_control_version_valid`` and none of the unit's own fields. So the
-#: burst does not warm this entry - and, because that field is one the entry does
-#: not keep, it MARKS it untrusted on every connect and never answers it. Either
-#: way first access reads, which is the case section 9's third column exists for:
-#: where the unit does not tell us, we ask.
+#: Since ADR-0020, ``connect()`` reads identity itself - a ``Version`` READ -
+#: before the handshake runs, and a listener registered through
+#: ``before_handshake`` is already live by then, so that reply DOES reach this
+#: entry's cache ahead of the burst. It still does not WARM the entry, though:
+#: the reply carries fields this entry does not keep (``device_type``,
+#: ``zenos_git_hash`` and the rest, alongside the ``app_fw_version`` /
+#: ``device_serial_number`` it does), and a message carrying an unkept field
+#: marks the copy untrusted rather than answered, whatever else it also said
+#: (``_apply_one`` in ``device/state.py``: the `arrived`/`why` bookkeeping at
+#: state.py:233-240, and the "answered" check at state.py:280-281, which
+#: requires no unkept field). So ``needs_read`` stays set and first access still
+#: reads, which is the case section 9's third column exists for: where the
+#: unit's own push cannot be trusted whole, we ask.
 #:
 #: **The read costs two messages, and only one of them says anything.** The
 #: protocol is symmetric, so the unit answers a ``Version`` READ and then asks

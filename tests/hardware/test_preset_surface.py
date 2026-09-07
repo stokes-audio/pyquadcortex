@@ -41,6 +41,7 @@ def wire(qc):
 # -- the model and the protocol layer agree about one real preset -------------
 
 
+@pytest.mark.verifies("read_current_preset")
 def test_the_model_reads_the_preset_the_unit_has_loaded(device, qc):
     assert device.preset is not None
     assert device.preset.name == qc.read_current_preset().name
@@ -149,6 +150,7 @@ def test_every_scene_label_matches(device, wire):
         assert scene.name == expected, f"scene {scene.letter}"
 
 
+@pytest.mark.verifies("active_scene")
 def test_the_active_scene_matches_what_the_unit_reports(device, qc):
     assert device.preset.scenes.active.letter == \
         translate.scene_from_wire(qc.active_scene())
@@ -292,6 +294,7 @@ class counting:
 # -- the one write, and it puts the unit back ---------------------------------
 
 
+@pytest.mark.verifies("switch_scene", "active_scene")
 def test_activating_a_scene_lands_and_is_confirmed(device, qc, restores):
     """The model's first write. Audible: the unit changes scene and changes
     back."""
