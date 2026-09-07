@@ -566,23 +566,30 @@ def _report_lines(cls, outcomes, claimed):
     verifies, and it is what keeps the last line readable: ``QuadCortex``
     verifies EVERYTHING, so the plain difference against ``VERIFIED`` names all
     ~89 operations no test has ever driven, each tagged as a regression. Only
-    something a test claims can regress - nothing else was measured.
+    something a test claims can regress - nothing else was measured - and only
+    a FAILED test regresses it; a skipped one measured nothing.
     """
     from pyquadcortex.protocol.support import EVERYTHING
 
     passed = {op for op, seen in outcomes.items()
               if seen and all(o == "passed" for o in seen)}
-    failed = {op for op, seen in outcomes.items()
-              if any(o != "passed" for o in seen)}
+    not_passed = {op for op, seen in outcomes.items()
+                  if any(o != "passed" for o in seen)}
+    # A SKIP is a test that declined to measure - a precondition the loaded
+    # preset did not meet, an operator-only capture - and says nothing about
+    # the unit. Only a FAILURE is a regression. Measured on the first post-merge
+    # run (2026-09-06): the bypass echo test skipped for want of a stored bypass
+    # entry and the old line called set_bypass a regression.
+    failed = {op for op, seen in outcomes.items() if "failed" in seen}
     verified = (set(cls.operations()) if cls.VERIFIED is EVERYTHING
                 else set(cls.VERIFIED))
     return [
         ("passed", sorted(passed), ""),
-        ("failed or skipped", sorted(failed), ""),
+        ("failed or skipped", sorted(not_passed), ""),
         ("passed, not VERIFIED", sorted(passed - verified),
          "<- candidates to add"),
-        ("VERIFIED and claimed by a test, not passed",
-         sorted((verified & claimed) - passed), "<- regressions by name"),
+        ("VERIFIED and claimed by a test, failed",
+         sorted(verified & claimed & failed), "<- regressions by name"),
     ]
 
 

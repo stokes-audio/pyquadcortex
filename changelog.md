@@ -20,6 +20,23 @@ correction.
 
 ## Unreleased
 
+### The first hardware run of the profile seam, and what it corrected
+
+Run 2026-09-06 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam
+merged: 93 passed, 4 skipped, and two tests failed on records the seam itself
+made stale. `connect()` now reads `Version` before the handshake, so a listener
+registered through `before_handshake` sees three inbound `Version` messages, not
+one: the full reply to that read, the unit's own `Version{READ}` a millisecond
+behind it, and the answer to our announce. The same reply leaves the identity
+entry holding serial and firmware ahead of the burst. Both tests and
+`docs/protocol.md` section 4 now say so, with the measurement.
+
+The run also showed the report calling a SKIPPED test a regression: the bypass
+echo test declined to run (no stored bypass entry on the loaded preset) and
+`set_bypass` landed on the "regressions by name" line. A skip measured nothing.
+That line now counts failures only and is labelled "VERIFIED and claimed by a
+test, failed"; skipped operations stay on the "failed or skipped" line.
+
 ### BREAKING: the generators take `--snapshot`, and constants moved
 
 `scripts/generate_models.py`, `generate_params.py` and `generate_options.py`
