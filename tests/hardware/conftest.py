@@ -79,11 +79,11 @@ def _claims(items, operations, wanted, deselect):
 
     Narrows ``items`` in place to the tests naming ``wanted`` (when there is
     one), hands the rest to ``deselect``, and returns the claims of what is
-    left. The order matters and is the whole point: ``claimed`` in the
-    end-of-run report is the union of this, and a deselected test measured
-    nothing - recording it printed every operation the run never touched under
-    ``VERIFIED and claimed by a test, failed``, which reads as a
-    regression. Held offline by ``tests/test_hardware_report.py``.
+    left. Narrowing here is what stops the other tests RUNNING under
+    ``--verifies``; the report's ``claimed`` set is then built at the end from
+    the tests that produced a report (:func:`_claimed`), because pytest's own
+    ``-k`` deselects after this hook and a deselected test measured nothing.
+    Held offline by ``tests/test_hardware_report.py``.
     """
     marks = {}
     for item in items:
@@ -582,8 +582,8 @@ def _report_lines(cls, outcomes, claimed):
     """The end-of-run report, as ``(label, names, note)`` rows.
 
     Pure, so ``tests/test_hardware_report.py`` holds the arithmetic with no unit
-    attached. ``claimed`` is every operation some COLLECTED test says it
-    verifies, and it is what keeps the last line readable: ``QuadCortex``
+    attached. ``claimed`` is every operation some test that RAN says it
+    verifies (:func:`_claimed`), and it is what keeps the last line readable: ``QuadCortex``
     verifies EVERYTHING, so the plain difference against ``VERIFIED`` names all
     ~89 operations no test has ever driven, each tagged as a regression. Only
     something a test claims can regress - nothing else was measured - and only
