@@ -5,7 +5,9 @@ import pytest
 
 
 @pytest.mark.verifies("create_local_backup")
-def test_local_backup_is_a_complete_portable_document(qc, record_property):
+def test_local_backup_is_a_complete_portable_document(qc, profile, record_property):
+    if "create_local_backup" not in profile.VERIFIED:
+        pytest.skip(f"create_local_backup is not VERIFIED on {profile.__name__}")
     document = qc.create_local_backup()
 
     assert document["type"] == "backup"

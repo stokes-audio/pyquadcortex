@@ -399,8 +399,8 @@ class BackupTransport(FakeTransport):
             if match is not None and not match(message):
                 continue
             got.append(message)
-            if until is not None and until(message):
-                break
+        # A real Transport may receive a whole batch between polling passes.
+        # Return that batch intact so final-marker ordering remains testable.
         return got
 
 
@@ -463,7 +463,32 @@ def test_create_local_backup_reports_an_explicit_device_refusal():
     )
     qc = client.QuadCortex(BackupTransport([refusal]))
 
-    with pytest.raises(RuntimeError, match="can_apply_backup is false"):
+    with pytest.raises(ControlNotDrivable) as caught:
+        qc.create_local_backup()
+    assert caught.value.control == "create_local_backup"
+    assert "can_apply_backup=false" in caught.value.evidence
+    assert caught.value.workaround
+
+
+def test_create_local_backup_distinguishes_duplicate_final_markers():
+    text = json.dumps(_backup_document())
+    chunks = _backup_chunks(text)
+    chunks.append(pa.LocalBackupMessage(
+        action=pa.MessageAction.UPDATE, is_last_chunk=True))
+    qc = client.QuadCortex(BackupTransport(chunks))
+
+    with pytest.raises(client.MalformedLocalBackup, match="marked 2.*final"):
+        qc.create_local_backup()
+
+
+def test_create_local_backup_distinguishes_messages_after_final():
+    text = json.dumps(_backup_document())
+    chunks = _backup_chunks(text)
+    chunks.append(pa.LocalBackupMessage(
+        action=pa.MessageAction.UPDATE, can_apply_backup=True))
+    qc = client.QuadCortex(BackupTransport(chunks))
+
+    with pytest.raises(client.MalformedLocalBackup, match="after the final"):
         qc.create_local_backup()
 
 
@@ -473,9 +498,12 @@ def test_create_local_backup_reports_an_explicit_device_refusal():
         ({}, "unsupported"),
         (_backup_document(type="preset"), "unsupported"),
         (_backup_document(creator="control"), "unsupported"),
+        (_backup_document(name=""), "unsupported"),
         (_backup_document(payload_hash="short"), "integrity identifier"),
+        (_backup_document(payload_hash="a" * 40), "integrity identifier"),
         (_backup_document(payload=123), "integrity identifier"),
-        (_backup_document(payload="not base64"), "not valid Base64"),
+        (_backup_document(payload="AAAA!!!!"), "not valid Base64"),
+        (_backup_document(payload=""), "decodes to no data"),
     ],
 )
 def test_create_local_backup_rejects_invalid_wrappers(document, message):
@@ -483,14 +511,14 @@ def test_create_local_backup_rejects_invalid_wrappers(document, message):
         BackupTransport(_backup_chunks(json.dumps(document)))
     )
 
-    with pytest.raises(RuntimeError, match=message):
+    with pytest.raises(client.MalformedLocalBackup, match=message):
         qc.create_local_backup()
 
 
 def test_create_local_backup_rejects_malformed_json():
     qc = client.QuadCortex(BackupTransport(_backup_chunks("{not json")))
 
-    with pytest.raises(RuntimeError, match="malformed local-backup JSON"):
+    with pytest.raises(client.MalformedLocalBackup, match="malformed local-backup JSON"):
         qc.create_local_backup()
 
 
@@ -500,7 +528,7 @@ def test_create_local_backup_limits_the_wrapper_size(monkeypatch):
         BackupTransport(_backup_chunks(json.dumps(_backup_document())))
     )
 
-    with pytest.raises(RuntimeError, match="oversized"):
+    with pytest.raises(client.MalformedLocalBackup, match="oversized"):
         qc.create_local_backup()
 
 

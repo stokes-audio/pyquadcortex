@@ -470,6 +470,31 @@ def test_collect_can_stop_when_a_stream_marks_its_final_message():
     assert t._collectors == [], "the collector is removed when done"
 
 
+def test_collect_checks_every_message_in_a_single_poll_batch():
+    t = transport.Transport(FakeHid(), keepalive_interval=QUIET_KEEPALIVE)
+
+    def trigger():
+        def push_batch():
+            time.sleep(0.02)
+            for final in (False, True, False):
+                t._dispatch(pa.LocalBackupMessage(
+                    action=pa.MessageAction.UPDATE,
+                    backup_json="chunk",
+                    is_last_chunk=final,
+                ))
+
+        threading.Thread(target=push_batch, daemon=True).start()
+
+    started = time.monotonic()
+    got = t.collect(
+        pa.LocalBackupMessage, trigger, seconds=2.0,
+        until=lambda message: message.is_last_chunk,
+    )
+
+    assert [message.is_last_chunk for message in got] == [False, True, False]
+    assert time.monotonic() - started < 0.5
+
+
 # -- persistent listeners ------------------------------------------------------
 # add_listener is the only inbound hook that is not scoped to one trigger or one
 # reply, so what these tests protect is mostly what it must NOT do: consume a

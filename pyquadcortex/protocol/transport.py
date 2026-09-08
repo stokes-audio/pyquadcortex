@@ -345,7 +345,7 @@ class Transport:
         the observed unit, arriving over ten to twenty seconds.
 
         ``until``, if supplied, is a predicate that ends collection as soon as
-        it accepts the newest matching message. This serves finite chunk streams
+        it accepts any newly arrived matching message. This serves finite chunk streams
         whose final message marks itself; without it the collector keeps the
         original fixed-window behavior and gathers every matching message until
         ``seconds`` expires.
@@ -366,9 +366,13 @@ class Transport:
         try:
             trigger()
             deadline = time.monotonic() + seconds
+            checked = 0
             while time.monotonic() < deadline:
-                if got and until is not None and until(got[-1]):
-                    break
+                if until is not None:
+                    newest = got[checked:]
+                    checked = len(got)
+                    if any(until(message) for message in newest):
+                        break
                 if self._device_lost is not None:
                     break        # nothing more is coming; return what arrived
                 time.sleep(0.1)

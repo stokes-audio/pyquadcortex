@@ -54,7 +54,8 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
 from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
-                                          ControlNotDrivable)
+                                          ControlNotDrivable,
+                                          MalformedLocalBackup)
 from pyquadcortex.protocol.support import (EVERYTHING, Evidence, Hardware,
                                            Support, measured_firmware,
                                            unverified_text)
@@ -120,8 +121,8 @@ USER_SETLIST_ROOT = "/media/p4/Presets"
 #: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
 SCENE_UNLABELLED = " "
 
-# Observed backups are around 1.7 MB; reject a joined document above 32 MiB so a
-# corrupt or unrelated stream is never accepted as a backup.
+# Observed backups are around 1.7 MB. 32 MiB is a deliberately chosen safety
+# ceiling, not a measured device limit, so an unrelated stream is not accepted.
 _MAX_LOCAL_BACKUP_BYTES = 32 * 1024 * 1024
 
 
@@ -663,7 +664,9 @@ class QuadCortex:
         Confirmed on CorOS 4.1.0: the unit emits 150,000-character chunks and a
         marked final chunk. Those replies carry no ``request_id``, even when the
         CREATE does, so only one backup operation should be in flight on a
-        connection.
+        connection. A contributed 4.1.0 capture also showed
+        ``can_apply_backup=false`` refusing CREATE; whether the field is shared
+        with restore remains to be checked on the baseline profile.
         """
         def is_chunk(message):
             return (
@@ -691,16 +694,25 @@ class QuadCortex:
             match=is_chunk,
             until=lambda message: is_final(message) or is_refusal(message),
         )
-        if chunks and is_refusal(chunks[-1]):
-            raise RuntimeError(
-                "the Quad Cortex refused to create a local backup "
-                "(can_apply_backup is false)"
+        if any(is_refusal(message) for message in chunks):
+            raise ControlNotDrivable(
+                "create_local_backup",
+                "the CorOS 4.1.0 unit replied can_apply_backup=false to CREATE.",
+                "Create the backup in Cortex Control and retain the stream for comparison."
             )
         finals = [message for message in chunks if is_final(message)]
-        if not chunks or len(finals) != 1 or chunks[-1] is not finals[0]:
+        if not chunks or not finals:
             raise TimeoutError(
                 f"the Quad Cortex did not finish a local backup within "
                 f"{timeout:g} seconds"
+            )
+        if len(finals) != 1:
+            raise MalformedLocalBackup(
+                f"the Quad Cortex marked {len(finals)} local-backup chunks final"
+            )
+        if chunks[-1] is not finals[0]:
+            raise MalformedLocalBackup(
+                "the Quad Cortex sent local-backup messages after the final chunk"
             )
 
         backup_json = "".join(
@@ -710,14 +722,14 @@ class QuadCortex:
         )
         size = len(backup_json.encode("utf-8"))
         if not backup_json or size > _MAX_LOCAL_BACKUP_BYTES:
-            raise RuntimeError(
+            raise MalformedLocalBackup(
                 f"the Quad Cortex returned an empty or oversized local backup "
                 f"({size} bytes)"
             )
         try:
             document = json.loads(backup_json)
         except json.JSONDecodeError as error:
-            raise RuntimeError(
+            raise MalformedLocalBackup(
                 f"the Quad Cortex returned malformed local-backup JSON: "
                 f"{error.msg}"
             ) from error
@@ -725,8 +737,10 @@ class QuadCortex:
             not isinstance(document, dict)
             or document.get("type") != "backup"
             or document.get("creator") != "quad"
+            or not isinstance(document.get("name"), str)
+            or not document["name"]
         ):
-            raise RuntimeError(
+            raise MalformedLocalBackup(
                 "the Quad Cortex returned an unsupported local-backup document"
             )
 
@@ -737,16 +751,20 @@ class QuadCortex:
             or not isinstance(payload_hash, str)
             or re.fullmatch(r"[0-9a-fA-F]{64}", payload_hash) is None
         ):
-            raise RuntimeError(
+            raise MalformedLocalBackup(
                 "the Quad Cortex backup is missing its native payload or "
                 "integrity identifier"
             )
         try:
-            base64.b64decode(payload, validate=True)
+            decoded = base64.b64decode(payload, validate=True)
         except (ValueError, TypeError) as error:
-            raise RuntimeError(
+            raise MalformedLocalBackup(
                 "the Quad Cortex backup payload is not valid Base64"
             ) from error
+        if not decoded:
+            raise MalformedLocalBackup(
+                "the Quad Cortex backup payload decodes to no data"
+            )
         return document
 
     def find_preset(self, name: str, setlist: str = Setlist.USER,
