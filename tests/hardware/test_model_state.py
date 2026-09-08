@@ -175,7 +175,8 @@ def test_nothing_the_burst_delivered_is_read_again_on_first_access(
 
 
 def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
-                                                                handshake_burst):
+                                                                handshake_burst,
+                                                                record_property):
     """Identity reaches the cache through the ONE Version READ connect() makes.
 
     The unit never volunteers its identity, so the model reads it (section 9's
@@ -184,30 +185,48 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
     before the handshake, so it sees the reply. Measured 2026-09-07 on CorOS
     4.0.1 / d14e: exactly THREE inbound ``Version`` messages through connect and
     its burst - the full reply to connect's READ (15 fields, +0.71 s), the
-    unit's own ``Version{READ}`` 1 ms behind it (the question it asks Cortex
+    unit's own ``Version{READ}`` about 1 ms behind it (the question it asks Cortex
     Control, section 4.4), and the ``UPDATE`` carrying
     ``cortex_control_version_valid`` that answers our announce (+0.73 s).
     ``_hello`` itself still sends no READ; the 2026-08-27 measurement of one
     inbound ``Version`` stands for ``_hello`` alone.
 
-    The count is asserted so a fourth (the handshake changed under us) or a
-    fall to one (connect stopped reading identity, and with no READ the unit
-    asks nothing back) is loud. A retried identity read on a slow-to-boot unit
-    would also add to it; the message says so. The cache holds the two
+    Asserted by SHAPE rather than by count, because a unit that was still
+    booting makes ``connect()`` retry its identity READ, and each retry adds a
+    full reply plus the unit's own READ - a healthy run that a bare ``== 3``
+    would call a regression. So: exactly one announce answer, at least one full
+    reply, and one unit READ per full reply, and nothing else. A message of any
+    other shape (the handshake changed under us) or no full reply at all
+    (connect stopped reading identity, and with no READ the unit asks nothing
+    back) is loud. The number of identity reads is recorded, not asserted. The cache holds the two
     fields the entry keeps; the reply also carries fields it does not, so the
     entry stays marked and the first read of ``device.firmware`` still goes to
     the unit (see ``identity`` in device/entries.py).
     """
-    versions = handshake_burst.names().count("VersionMessage")
-    assert versions == 3, (
-        f"the connect burst carried {versions} Version message(s); 3 is measured "
-        f"(connect's READ reply, the unit's own READ, the announce answer). More "
-        f"means the handshake changed under us, or connect's identity read "
-        f"retried on a unit that was still booting. See docs/protocol.md "
-        f"section 4.")
+    shapes = handshake_burst.versions()
+    full = [s for s in shapes if "device_serial_number" in s[1]]
+    own_reads = [s for s in shapes
+                 if s[0] == pa.MessageAction.READ and s[1] == {"action"}]
+    announce = [s for s in shapes if "cortex_control_version_valid" in s[1]]
+    record_property("identity_reads", len(full))
+    assert len(announce) == 1, (
+        f"{len(announce)} answers to our version announce; one is measured. "
+        f"Shapes seen: {shapes}")
+    assert full, (
+        f"no full Version reply reached the listener: connect() stopped reading "
+        f"identity before the handshake, or the unit stopped answering. Shapes "
+        f"seen: {shapes}")
+    assert len(own_reads) == len(full), (
+        f"{len(full)} full replies but {len(own_reads)} unit READs; the unit asks "
+        f"its own question once per answer (protocol.md 4.4). Shapes: {shapes}")
+    assert len(shapes) == len(full) + len(own_reads) + 1, (
+        f"a Version of a shape this test does not know arrived - the handshake "
+        f"changed under us. Shapes: {shapes}")
     assert set(burst_warmed["identity"]) == {"device_serial_number", "app_fw_version"}, (
         f"connect's Version read should have left exactly the two kept identity "
-        f"fields in the cache; it held {burst_warmed['identity']}")
+        f"fields in the cache; it held {burst_warmed['identity']}. The unit's "
+        f"full reply carries both (protocol.md, version read row); if it stopped, "
+        f"that is a finding for protocol.md, not a reason to loosen this.")
 
 
 def test_a_version_read_is_answered_and_then_questioned(qc, record_property):

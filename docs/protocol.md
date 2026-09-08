@@ -533,7 +533,7 @@ Since ADR-0020, `connect()` itself makes one `Version` READ BEFORE calling
 `_hello()`, to resolve the profile. Measured 2026-09-07 on CorOS 4.0.1 / d14e: a
 `connect()` and its burst now carry exactly THREE inbound `Version` messages -
 the full reply to that READ (15 fields, at +0.71 s), the unit's own
-`Version{READ}` 1 ms behind it (section 4.4), and the announce answer above (at
+`Version{READ}` about 1 ms behind it (section 4.4), and the announce answer above (at
 +0.73 s). The state layer listens from before the handshake, so the identity
 entry holds `device_serial_number` and `app_fw_version` from that reply; the
 reply also carries fields the entry does not keep, so the entry stays marked and

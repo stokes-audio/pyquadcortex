@@ -21,6 +21,8 @@ import time
 
 import pytest
 
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
+
 #: This directory. Everything under it drives the unit and is gated on the flag.
 SUITE = pathlib.Path(__file__).resolve().parent
 ROOT = SUITE.parent.parent
@@ -76,7 +78,7 @@ def _claims(items, operations, wanted, deselect):
     left. The order matters and is the whole point: ``claimed`` in the
     end-of-run report is the union of this, and a deselected test measured
     nothing - recording it printed every operation the run never touched under
-    ``VERIFIED and claimed by a test, not passed``, which reads as a
+    ``VERIFIED and claimed by a test, failed``, which reads as a
     regression. Held offline by ``tests/test_hardware_report.py``.
     """
     marks = {}
@@ -209,6 +211,11 @@ class HandshakeBurst:
     def __init__(self):
         self._lock = threading.Lock()
         self._names = []
+        #: ``(action, frozenset of field names)`` for every ``Version`` seen,
+        #: because since ADR-0020 a connect carries three of them and a test
+        #: that only counts cannot tell a retried identity read from a changed
+        #: handshake. Shapes only - the values are not this recorder's business.
+        self._versions = []
         self._detach = None
         self.closed = False
         self.settled_in = None  # seconds the burst took, or None if it timed out
@@ -224,6 +231,14 @@ class HandshakeBurst:
                 # arrive after removal. It must not reopen the recording.
                 return
             self._names.append(type(message).__name__)
+            if isinstance(message, pa.VersionMessage):
+                self._versions.append(
+                    (message.action, frozenset(f.name for f, _ in message.ListFields())))
+
+    def versions(self):
+        """The shape of every ``Version`` recorded: ``(action, field names)``."""
+        with self._lock:
+            return list(self._versions)
 
     def record_until(self, sentinel, patience):
         """Record until a ``sentinel``-typed message arrives, then stop.
@@ -595,6 +610,18 @@ def _report_lines(cls, outcomes, claimed):
     ]
 
 
+def _measured_nothing(outcomes, claimed):
+    """True when tests claimed operations and not one of them passed.
+
+    The regression line is empty on a healthy run AND on a run where every
+    test skipped its precondition, so an empty line alone cannot be read as
+    clean. Pure, held offline like :func:`_report_lines`.
+    """
+    passed = {op for op, seen in outcomes.items()
+              if seen and all(o == "passed" for o in seen)}
+    return bool(claimed) and not passed
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Print which operations this run measured on the connected profile.
 
@@ -604,14 +631,27 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """
     if not config.getoption("--hardware"):
         return
+    tr = terminalreporter
     cls = getattr(config, "_profile", None)
-    if cls is None:          # the session never connected, so there is nothing to report
+    if cls is None:
+        # The session never connected. pytest's own summary carries the setup
+        # errors; this line exists so the ABSENCE of the operations report is
+        # never mistaken for "nothing to report".
+        tr.section("operations: no report")
+        tr.line("the hardware session never connected, so no operation was measured; "
+                "see the setup errors above")
         return
     claimed = set().union(*_VERIFIES.values()) if _VERIFIES else set()
     lines = _report_lines(cls, _OUTCOMES, claimed)
     width = max(len(label) for label, _names, _note in lines)
-    tr = terminalreporter
+    counts = {k: len(tr.stats.get(k, ())) for k in ("passed", "failed", "skipped")}
     tr.section(f"operations on {cls.__name__} "
                f"(CorOS {', '.join(cls.MEASURED_ON)}, {cls.EVIDENCE.name})")
+    tr.line(f"tests: {counts['passed']} passed, {counts['failed']} failed, "
+            f"{counts['skipped']} skipped; operations measured: "
+            f"{len(_OUTCOMES)} of {len(claimed)} claimed")
     for label, names, note in lines:
-        tr.line(f"{label + ':':<{width + 1}} {names}   {note}".rstrip())
+        tr.line(f"{label + ':':<{width + 1}} {names} ({len(names)})   {note}".rstrip())
+    if _measured_nothing(_OUTCOMES, claimed):
+        tr.line("NOTHING PASSED: every claimed operation failed or skipped, so the "
+                "empty regression line above says nothing about the unit")

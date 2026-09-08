@@ -163,6 +163,32 @@ def test_a_skipped_test_is_not_a_regression(conftest):
     assert lines["VERIFIED and claimed by a test, failed"] == ["set_param"]
 
 
+def test_a_pass_and_a_skip_on_one_operation_is_neither_passed_nor_a_regression(conftest):
+    """Two tests name an operation; one skipped its precondition, one passed.
+    Not all of it passed, so it is not offered as VERIFIED; nothing failed, so
+    it is not a regression. It sits on the middle line, where a reader sees the
+    skip."""
+    lines = dict(_named(conftest._report_lines(
+        _Everything, {"set_param": ["passed", "skipped"]}, claimed={"set_param"})))
+
+    assert lines["passed"] == []
+    assert lines["failed or skipped"] == ["set_param"]
+    assert lines["VERIFIED and claimed by a test, failed"] == []
+
+
+def test_a_run_where_nothing_passed_is_flagged_not_read_as_clean(conftest):
+    """An all-skip run has an empty regression line, same as a healthy run.
+    The flag is what tells them apart."""
+    assert conftest._measured_nothing(
+        {"set_param": ["skipped"], "set_bypass": ["skipped"]},
+        claimed={"set_param", "set_bypass"}) is True
+    assert conftest._measured_nothing(
+        {"set_param": ["passed"], "set_bypass": ["skipped"]},
+        claimed={"set_param", "set_bypass"}) is False
+    assert conftest._measured_nothing({}, claimed=set()) is False, (
+        "nothing claimed is a deselected run, not a run that measured nothing")
+
+
 def test_an_operation_no_test_claims_is_never_a_regression(conftest):
     """The 89. Nothing names them, so the run says nothing about them."""
     lines = dict(_named(conftest._report_lines(
@@ -232,8 +258,8 @@ def test_a_deselected_test_claims_nothing(conftest, collection):
 
     The recording used to happen before the deselection, so `claimed` was
     built from every COLLECTED test - and an operation whose test never ran
-    was printed under `VERIFIED and claimed by a test, not passed`, which the
-    report labels a regression. A run of one test reported ~104 of them.
+    was printed under the line the report labels a regression (then
+    `not passed`, now `failed`). A run of one test reported ~104 of them.
     """
     items = [_Item("t.py::a", "set_param"), _Item("t.py::b", "set_bypass")]
     config = _Config(verifies="set_param")

@@ -206,7 +206,8 @@ def test_the_burst_delivered_every_entry_the_preset_surface_reads(burst_warmed):
         assert burst_warmed[name], f"the burst delivered nothing for {name}"
     assert set(burst_warmed["identity"]) == {"device_serial_number", "app_fw_version"}, (
         f"connect's own Version read should have warmed identity with its two "
-        f"kept fields; the cache held {burst_warmed['identity']}")
+        f"kept fields; the cache held {burst_warmed['identity']}. If the unit's "
+        f"reply stopped carrying one, that is a finding for protocol.md.")
 
 
 def test_reading_the_preset_surface_costs_no_round_trip(device, model_cache):
