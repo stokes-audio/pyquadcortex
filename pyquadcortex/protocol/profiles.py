@@ -17,16 +17,16 @@ _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
 
 
 class QuadCortex41(QuadCortex):
-    """Quad Cortex on CorOS 4.1 - connects, and verifies nothing yet.
+    """Quad Cortex on CorOS 4.1, with contributed per-operation evidence.
 
     PR #42's description (2026-09-03) reports ``pytest --hardware``: 2742
     passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
     d14e, by tony-xmelon. That is a contributor's report and the maintainer has
     not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
     connection is therefore known to work with this handshake and announce
-    string. Which operations behave as on 4.0.1 is not known per name, so every
-    inherited operation refuses under ``Support.VERIFIED`` and runs with a
-    warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
+    string. ``preset_screenshot`` has its own dated 4.1.0 capture and is
+    VERIFIED; other inherited operations refuse under ``Support.VERIFIED`` and
+    run with a warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
     binding the 4.0.1 constants would hand a 4.1 user names their unit does not
     use.
 
@@ -43,10 +43,17 @@ class QuadCortex41(QuadCortex):
 
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
-    VERIFIED = frozenset()
+    VERIFIED = frozenset({"preset_screenshot"})
     models = NoSnapshot("coros_4_1_0")
     params = NoSnapshot("coros_4_1_0")
     options = NoSnapshot("coros_4_1_0")
+
+    def preset_screenshot(self, folder_name: str, position,
+                          is_factory: bool = False,
+                          timeout: float = 10.0) -> bytes:
+        """Return the CorOS 4.1 device-rendered preset PNG."""
+        return self._preset_screenshot(
+            folder_name, position, is_factory=is_factory, timeout=timeout)
 
 
 class QuadCortexMini(QuadCortex):

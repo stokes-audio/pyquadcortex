@@ -32,6 +32,10 @@ class BlockRefused(RuntimeError):
     """
 
 
+class ScreenshotError(RuntimeError):
+    """The device replied to a screenshot request with unusable data."""
+
+
 class ControlNotDrivable(ValueError):
     """A request the library will not answer, because answering means guessing.
 

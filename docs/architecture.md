@@ -638,7 +638,7 @@ next, roughly in order of how well the ground is prepared:
   `tempoProgramData` instead - see the `Tempo` target.)
 - **Types not in the registry at all.** The schema declares 71 message types.
   Whole feature areas are untouched: `Tuner` / `ShowTuner`, `Looper`,
-  `MIDISettings`, `NeuralCapture` / `NeuralCapture2`, `Screenshot`,
+  `MIDISettings`, `NeuralCapture` / `NeuralCapture2`,
   `Diagnostics`, `LocalBackup` / `CloudBackup`, `Confirmation`,
   `GigViewButton`, `SuspendConnection`, `GenericError`, the `*Forward` transport
   wrappers, and the production/test-farm messages. Nothing about these has been

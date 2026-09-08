@@ -82,7 +82,7 @@ CorOS 4.0.1 / d14e.
 
 ### Preset screenshots can be read as PNGs
 
-`protocol.connect()` now exposes
+The `QuadCortex41` profile now exposes
 `preset_screenshot(folder_name, position, is_factory=False)`. On CorOS 4.1.0 it
 returns the 800 x 384 PNG rendered by the device for that preset address without
 recalling the preset or changing the unit's screen. The folder argument is its display
@@ -92,6 +92,8 @@ the name and factory flag for discovered folders.
 The address is not optional on the wire: a bare `Screenshot{READ}` is ignored.
 The method checks the PNG signature and verifies that the reply echoes the
 requested folder, factory flag, and slot before returning the bytes.
+The CorOS 4.0.1 base profile exposes the operation name but refuses it until a
+baseline measurement exists.
 
 ### You can read back which expression pedals are assigned
 

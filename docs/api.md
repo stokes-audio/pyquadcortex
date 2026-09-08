@@ -44,7 +44,7 @@ already read and need no connection; calling them as methods raises
 | | |
 |---|---|
 | **Connect** | `protocol.connect(profile=, support=)` resolves the unit's own device profile before the handshake (ADR-0020) and returns it, already connected; an unrecognised `(device_type, zenos_git_hash)` raises `UnsupportedDevice`. `Support.VERIFIED` (default) refuses an operation its profile has not verified; `Support.EXPERIMENTAL` runs it with one warning. `qc.models`, `qc.params`, `qc.options` are that connection's own constants snapshot |
-| **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)`, `preset_screenshot(folder_name, slot)` |
+| **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)`; on `QuadCortex41`, `preset_screenshot(folder_display_name, slot)` (CorOS 4.1.0 only) |
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(target, param, value)`, `set_bypass(Block(row, column), bypassed)` |
 | **Add and remove blocks** | `set_block(Block(row, column, model_id))`, `remove_block(cell)`, `move_block(source, destination)`, `catalog` |
