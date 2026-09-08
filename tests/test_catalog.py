@@ -7,6 +7,8 @@ synthetic XML fixture, so they run offline and ship no vendor data.
 
 import gzip
 import io
+import json
+import pathlib
 import tarfile
 
 import pytest
@@ -186,17 +188,19 @@ def test_missing_clone_target_falls_back_to_local_parameters():
     assert [(p.index, p.name) for p in model.parameters] == [(0, "LOCAL")]
 
 
-def test_clone_cycles_are_rejected():
+def test_clone_cycle_falls_back_locally_without_discarding_the_catalog():
     xml = """<Models><Category id="1" name="Test">
       <Model id="1" name="One" clones="2"/>
       <Model id="2" name="Two" clones="1"/>
     </Category></Models>"""
 
-    with pytest.raises(ValueError, match=r"clone cycle: 1 -> 2 -> 1"):
-        catalog.parse_model_repo(make_payload(xml))
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    assert cat[1].parameters == ()
+    assert cat[2].parameters == ()
 
 
-def test_non_contiguous_clone_indexes_are_rejected():
+def test_non_contiguous_clone_indexes_fall_back_to_local_parameters():
     xml = """<Models><Category id="1" name="Test">
       <Model id="1" name="Base">
         <Parameter name="A" min="0" max="1" defaultValue="0"/>
@@ -206,8 +210,81 @@ def test_non_contiguous_clone_indexes_are_rejected():
       </Model>
     </Category></Models>"""
 
-    with pytest.raises(ValueError, match="non-contiguous parameter indexes"):
-        catalog.parse_model_repo(make_payload(xml))
+    model = catalog.parse_model_repo(make_payload(xml))[2]
+
+    assert [(p.index, p.name) for p in model.parameters] == [(0, "C")]
+
+
+def test_clone_replacements_are_applied_before_extensions():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+        <Parameter name="B" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="Child" clones="1">
+        <Parameter name="C" min="0" max="1" defaultValue="0"/>
+        <Parameter name="CHILD B" replaces="1" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    model = catalog.parse_model_repo(make_payload(xml))[2]
+
+    assert [(p.index, p.name) for p in model.parameters] == [
+        (0, "A"), (1, "CHILD B"), (2, "C")
+    ]
+
+
+def test_non_numeric_clone_replacement_is_isolated_to_that_model():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="MX Vibe" clones="1">
+        <Parameter name="Intensity" replaces="INTENSITY" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="3" name="Good">
+        <Parameter name="GAIN" min="0" max="10" defaultValue="5"/>
+      </Model>
+    </Category></Models>"""
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    assert [(p.index, p.name) for p in cat[2].parameters] == [(0, "Intensity")]
+    assert [(p.index, p.name) for p in cat[3].parameters] == [(0, "GAIN")]
+
+
+def test_distilled_real_catalog_clone_families_resolve_at_wire_indexes():
+    """Pin the clone shapes observed on the contributed CorOS 4.1 catalog."""
+    path = pathlib.Path(__file__).parent / "fixtures" / "catalog_clones.json"
+    facts = json.loads(path.read_text(encoding="utf-8"))
+    models = []
+    for family in facts["families"]:
+        params = "".join(
+            f'<Parameter name="P{i}" min="0" max="1" defaultValue="0"/>'
+            for i in range(family["parent_parameters"])
+        )
+        models.append(
+            f'<Model id="{family["parent"]}" name="{family["parent_name"]}">'
+            f"{params}</Model>"
+        )
+        replacement = family["replacement"]
+        models.append(
+            f'<Model id="{family["child"]}" name="{family["child_name"]}" '
+            f'clones="{family["parent"]}"><Parameter name="{replacement["name"]}" '
+            f'replaces="{replacement["index"]}" min="0" max="1" '
+            f'defaultValue="{replacement["default"]}"/></Model>'
+        )
+    xml = '<Models><Category id="1" name="Fixture">' + "".join(models) + \
+        "</Category></Models>"
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    for family in facts["families"]:
+        child = cat[family["child"]]
+        replacement = family["replacement"]
+        assert len(child.parameters) == family["parent_parameters"]
+        assert child.parameters[replacement["index"]].name == replacement["name"]
+        assert child.parameters[replacement["index"]].default == replacement["default"]
 
 
 def test_lookup_parameter_by_name_is_case_insensitive(cat):

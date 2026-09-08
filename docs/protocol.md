@@ -3095,11 +3095,19 @@ Two things make it valuable:
   per-category counters: category 4 (Equalizer) holds 4000-4007, category 21
   (Cabsim Bass) holds 21001-21009. So hash 21003 resolves directly to "810
   Amped VT Aln 70s (M)".
-- **`<Parameter>` children are in wire-index order**, each with `min`, `max`,
-  `defaultValue` and `units`. This is what gives a parameter index meaning, and
-  it explains a puzzle from earlier work: writing index 0 of a cab moved no
-  visible knob because a cab's only parameters are internal `ir selector`
-  entries.
+- **Resolved `<Parameter>` children are in wire-index order**, each with `min`,
+  `max`, `defaultValue` and `units`. A model may declare `clones`; numeric
+  parameter `replaces` values place the child's metadata at inherited indexes,
+  and child-only parameters extend the layout.
+
+Clone evidence is profile-specific. On 2026-09-08, a contributed CorOS 4.1.0
+catalog showed four cab parents: 12000 and 32000 have 21 catalog parameters,
+while PCOM parents 12100 and 32100 have 31. Their corresponding wire records
+carry 22 and 32 values. The same catalog has reverb children cloning model 8015;
+`Gojira REV` resolves to 29 catalog parameters and 30 wire values. Read-only live
+checks on that 4.1.0 unit confirmed the inherited indexes. The maintainer
+independently confirmed the same layout shapes on CorOS 4.0.1, including child
+replacement spans and `Gojira REV` parameter ordering.
 
 Parameter values on the wire are **normalized 0..1**, confirmed on hardware:
 sending `1.0` to a `THRESHOLD` whose catalog range is -60..+12 dB made the unit
@@ -3315,6 +3323,7 @@ Attributes that classify a model:
 | `sku`, `plugin_id` | purchasable plugin content (the Archetype models); a given unit may not have it |
 | `hidden`, `internal` | not user-facing; `hidden` also appears on whole categories |
 | `replaces` | this model supersedes the listed id(s). Both stay in the catalog and they can share a display name - there are two "Graphic-9" equalizers, 4005 replacing 4002 |
+| `clones` | this model inherits another model's parameter layout; numeric parameter-level `replaces` values override inherited wire indexes |
 
 Because the catalog comes FROM the device it also covers Neural Captures
 (categories 14 and 20), which are user content. That is why the library ships

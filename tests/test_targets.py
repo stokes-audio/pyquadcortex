@@ -246,8 +246,8 @@ def _scale_catalog():
     <Parameter defaultValue="0" max="999" min="0" name="IR PATH SLOT 1" type="string"/>
     <Parameter defaultValue="0.5" max="MAX_CABSIM_DB" min="MIN_CABSIM_DB" name="MIC 1 LEVEL" type="float" units="dB" skew="4.9594844" min_string="OFF"/>
   </Model>
-  <Model blob="dgn" id="21005" name="212 Darkglass Neo (M)">
-    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
+  <Model blob="dgn" id="21005" name="212 Darkglass Neo (M)" clones="12000">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" replaces="1" type="string"/>
   </Model>
 </Category>
 """ + "</Models>")
@@ -346,17 +346,10 @@ def test_real_on_a_bare_block_names_the_missing_model_not_the_catalog():
         Block(0, 1).normalize(0, 6.0, _Exploding())
 
 
-def test_a_cab_converts_through_the_shared_cabsim_layout():
-    """A cab's own entry is a LOCAL list, so the layout is what numbers the wire.
-
-    The taper it borrows is confirmed on three blocks in three different
-    categories, and the catalog agrees: every one of those LEVEL entries carries
-    the same skew and the same MIN_CABSIM_DB bound.
-    """
+def test_a_cloned_cab_converts_through_its_resolved_wire_layout():
+    """Clone resolution retains inherited scale metadata at wire indexes."""
     get = _scale_catalog()
-    # 21005 describes ONE parameter against the layout's several, so its own
-    # list cannot be numbering the wire and `spec_at` reads the layout's.
-    assert Block(0, 5, 21005).wire_model(get).id == 12000
+    assert Block(0, 5, 21005).wire_model(get).id == 21005
     assert Block(0, 5, 21005).spec_at(2, get).name == "MIC 1 LEVEL"
     assert Block(0, 5, 21005).normalize(2, -3.0, get) == pytest.approx(0.3400,
                                                                       abs=5e-4)
@@ -372,22 +365,7 @@ def test_a_non_cab_does_not_borrow_the_cabsim_layout():
 
 
 def _diverging_cab_catalog():
-    """The three shapes a cab comes in, at the proportions the device ships.
-
-    Not hypothetical, and not "the catalog under-describes them". A cab's own
-    entry is a LOCAL list, numbered from zero over the parameters that model
-    contributes, and those numbers do not address the wire:
-
-    * 157 of the 174 list two mic selectors and nothing else;
-    * 11 more add their mics' POSITION and DISTANCE, so their own index 2 names
-      a knob the wire carries at 5;
-    * 6 describe the whole layout starting at ``0:bypass``, and those DO number
-      the wire - three of them carry parameters past the layout's end, where
-      borrowing would be a fresh version of the same bug.
-
-    The layout here is deliberately longer than the short models, because that
-    length difference is what `wire_model` reads.
-    """
+    """A distilled catalog with declared short and full cab clone shapes."""
     from tests.test_catalog import SAMPLE_XML, make_payload
     xml = SAMPLE_XML.replace("</Models>", """
 <Category id="12" name="Cabsim Guitar (M)">
@@ -398,15 +376,19 @@ def _diverging_cab_catalog():
     <Parameter defaultValue="0.5" max="1" min="0" name="PAN" type="float"/>
     <Parameter defaultValue="0.5" max="1" min="0" name="DISTANCE" type="float"/>
     <Parameter defaultValue="0.5" max="1" min="0" name="POSITION" type="float"/>
+    <Parameter defaultValue="0" max="1" min="0" name="PHI" type="switch"/>
+    <Parameter defaultValue="0" max="1" min="0" name="GRID MODE" type="switch"/>
+    <Parameter defaultValue="0" max="1" min="0" name="BYPASS 2" type="switch"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir 2" type="string"/>
   </Model>
-  <Model blob="bare" id="12001" name="Bare Cab">
-    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
-    <Parameter defaultValue="0" max="999" min="0" name="ir selector 2" type="string"/>
+  <Model blob="bare" id="12001" name="Bare Cab" clones="12000">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" replaces="1" type="string"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector 2" replaces="9" type="string"/>
   </Model>
-  <Model blob="pos" id="12053" name="Named Cab">
-    <Parameter defaultValue="0" max="999" min="0" name="ir selector" type="string"/>
-    <Parameter defaultValue="0" max="999" min="0" name="ir selector 2" type="string"/>
-    <Parameter defaultValue="0.5" max="1" min="0" name="POSITION" type="float"/>
+  <Model blob="pos" id="12053" name="Named Cab" clones="12000">
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector" replaces="1" type="string"/>
+    <Parameter defaultValue="0" max="999" min="0" name="ir selector 2" replaces="9" type="string"/>
+    <Parameter defaultValue="0.5" max="1" min="0" name="POSITION" replaces="5" type="float"/>
   </Model>
   <Model blob="full" id="12100" name="Full Cab">
     <Parameter defaultValue="0" max="1" min="0" name="bypass" type="switch"/>
@@ -423,12 +405,10 @@ def _diverging_cab_catalog():
     return lambda: cat
 
 
-def test_a_short_cabs_own_list_cannot_be_numbering_the_wire():
-    """157 describe two parameters against a layout of many, so `spec_at` reads
-    the layout - the short list is local, and index 2 is not in it at all."""
+def test_a_short_cab_resolves_its_declared_parent_layout():
     get = _diverging_cab_catalog()
     bare = Block(0, 5, 12001)
-    assert bare.wire_model(get).id == 12000
+    assert bare.wire_model(get).id == 12001
     assert bare.spec_at(2, get).name == "LEVEL"
 
 
@@ -446,19 +426,11 @@ def test_a_cab_that_describes_the_whole_layout_numbers_the_wire_itself():
     assert full.spec_at(2, get).name == "LEVEL"         # and agreeing before it
 
 
-def test_the_layout_wins_over_the_cabs_own_disagreeing_entry():
-    """12 cabs call index 2 POSITION while the wire carries LEVEL in dB.
-
-    Confirmed on hardware 2026-08-27, because guessing this backwards would
-    have been worse than the bug it fixes. A `Plini Cab (M)` took a wire value
-    the two specs read differently and the screen showed `LEVEL -3.0 dB` - the
-    layout's answer - with its own `POSITION` untouched at 0.50. The reading is
-    in `tests/test_scales.py`.
-    """
+def test_a_replacement_keeps_its_declared_wire_index():
     get = _diverging_cab_catalog()
     named = Block(0, 5, 12053)
-    assert named.model(get).parameters[2].name == "POSITION"   # its own list
-    assert named.spec_at(2, get).name == "LEVEL"               # the wire's
+    assert named.spec_at(2, get).name == "LEVEL"
+    assert named.spec_at(5, get).name == "POSITION"
 
 
 def test_a_name_on_a_cab_resolves_to_the_wire_index_not_the_models_own():
@@ -475,7 +447,6 @@ def test_a_name_on_a_cab_resolves_to_the_wire_index_not_the_models_own():
     """
     get = _diverging_cab_catalog()
     named = Block(0, 5, 12053)
-    assert named.model(get).parameters[2].name == "POSITION"    # its own list
     index, spec = named.index_of("POSITION", get)
     assert index == 5 and spec.name == "POSITION"
 

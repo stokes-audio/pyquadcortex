@@ -642,18 +642,19 @@ def _effective_parameter_elements(
     """Return a model's parameters at their effective wire indexes.
 
     ModelRepo models may ``clone`` another model and publish only the
-    parameters they replace.  Each child parameter's ``replaces`` attribute is
-    the inherited wire index; child parameters without one extend the inherited
-    list.  This is used heavily by cabs, whose visible entries otherwise appear
-    to contain only two local parameters instead of the 21 controls on the
-    wire.
+    parameters they replace. Each child's numeric ``replaces`` attribute is the
+    inherited wire index; child parameters without one extend the resolved
+    list. On a contributed CorOS 4.1.0 catalog (2026-09-08), cabs clone four
+    different 21- or 31-parameter layouts and a reverb family clones model
+    8015. The maintainer confirmed the same shapes on CorOS 4.0.1.
 
-    A missing clone target is treated like an ordinary model.  That preserves
-    the parser's tolerance of partial repositories while cycles are rejected:
-    there is no safe parameter layout to infer from a cycle.
+    A missing clone target is treated like an ordinary model. A malformed
+    clone (including a cycle) raises here so :func:`parse_model_repo` can fall
+    that model back to its local parameters without discarding the catalog.
     """
     model_id = _as_int(model.get("id"))
-    if model_id is not None and model_id in resolving:
+    assert model_id is not None
+    if model_id in resolving:
         chain = " -> ".join(str(ident) for ident in (*resolving, model_id))
         raise ValueError(f"ModelRepo clone cycle: {chain}")
 
@@ -662,18 +663,36 @@ def _effective_parameter_elements(
     if base is None:
         effective = list(enumerate(model.findall("Parameter")))
     else:
-        inherited = _effective_parameter_elements(
-            base,
-            models,
-            (*resolving, model_id) if model_id is not None else resolving,
-        )
+        inherited = _effective_parameter_elements(base, models, (*resolving, model_id))
         by_index = dict(inherited)
-        next_index = max(by_index, default=-1) + 1
+        replacements = []
+        extensions = []
         for parameter in model.findall("Parameter"):
-            replaced = _as_int(parameter.get("replaces"))
-            index = next_index if replaced is None else replaced
+            raw = parameter.get("replaces")
+            if raw is None:
+                extensions.append(parameter)
+                continue
+            replaced = _as_int(raw)
+            if replaced is None:
+                raise ValueError(
+                    f"ModelRepo model {model_id} has non-numeric parameter "
+                    f"replaces={raw!r}"
+                )
+            replacements.append((replaced, parameter))
+
+        seen = set()
+        for index, parameter in replacements:
+            if index in seen:
+                raise ValueError(
+                    f"ModelRepo model {model_id} replaces parameter index "
+                    f"{index} more than once"
+                )
+            seen.add(index)
             by_index[index] = parameter
-            next_index = max(next_index, index + 1)
+        next_index = max(by_index, default=-1) + 1
+        for parameter in extensions:
+            by_index[next_index] = parameter
+            next_index += 1
         effective = sorted(by_index.items())
 
     indexes = [index for index, _ in effective]
@@ -702,11 +721,17 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
             model_id = _as_int(element.get("id"))
             if model_id is None:
                 continue
+            try:
+                effective = _effective_parameter_elements(element, elements)
+            except ValueError:
+                # A catalog can include purchased content and player-created
+                # models this build has never seen. One malformed clone must
+                # not discard every other model; preserve its local parameters
+                # in published order, as the parser did before clone support.
+                effective = tuple(enumerate(element.findall("Parameter")))
             parameters = tuple(
                 _parameter(index, parameter, element.get("name", ""))
-                for index, parameter in _effective_parameter_elements(
-                    element, elements
-                )
+                for index, parameter in effective
             )
             catalog.models[model_id] = Model(
                 id=model_id,

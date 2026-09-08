@@ -16,9 +16,10 @@ rejects `set_param(LaneOutputParam.VOLUME, Hertz(217))` before it runs
 (ADR-0018). The runtime check is unchanged and still covers every other
 caller - a string, a bare index, or anyone not running a checker.
 
-**Cabs share one layout.** The catalog lists two parameters for a cab -
-its two mic selectors - while the wire carries 22. So a cab is CHOSEN by
-its `models.*` id and DRIVEN through :class:`Cabsim`::
+**Cabs use multiple layouts.** :class:`Cabsim` names the ordinary
+21-parameter layout; PCOM cabs have 31 catalog parameters and should be
+resolved through the connected device's catalog. A cab is chosen by its
+`models.*` id::
 
     cab = Block(0, 5, models.CabsimGuitarM.N412_CA_STAND_OS_S_V30_90S_M)
     qc.set_block(cab)
@@ -157,27 +158,30 @@ class TempoParam(ParamSet):
     STEPSTATE12: Param[NoUnit] = Param(22, 'STEPSTATE12')    # empty
 
 
-# -- cabs: one layout, shared by every cab model ------------------------------
+# -- ordinary 21-parameter cab layout ---------------------------------------
 
 
 class Cabsim(ParamSet):
-    """Every cab model's parameters. The catalog under-describes these.
+    """The ordinary 12000-family cab layout (21 catalog parameters).
 
-    Measured on four cabs across all four categories: the wire carries
-    22 parameters in the `Default Cabsim` layout regardless of which cab
-    is loaded, or whether it is mono or stereo. `MIC_1_PAN` is labelled
-    BALANCE on a stereo cab and PAN on a mono one - one wire index, two
-    screen names.
+    The wire carries one additional undocumented value at index 21. PCOM
+    cabs instead clone a 31-parameter layout (and carry 32 wire values),
+    so resolve their extra controls through the live catalog.
+
+    Catalog evidence: index 3 is PAN over 0..10 on mono layouts but
+    BALANCE over -1..1 on stereo layouts. Therefore `Real(0.0)` means
+    hard left on mono and centre on stereo. Stereo screen behaviour has
+    not yet been verified.
 
     The mic-to-index mapping was confirmed against the unit's own
-    editor. Index 21 exists on the wire, is absent from the catalog and
+    editor on mono cabs. Index 21 exists on the wire, is absent from the catalog and
     reads 0.0 everywhere, so it is omitted rather than guessed at.
     """
 
     MIC_1_BYPASS: Param[NoUnit] = Param(0, 'MIC_1_BYPASS')    # switch
     MIC_1_IR_SELECTOR: Param[NoUnit] = Param(1, 'MIC_1_IR_SELECTOR')    # string
     MIC_1_LEVEL: Param[DbUnit] = Param(2, 'MIC_1_LEVEL')    # float dB
-    MIC_1_PAN: Param[NoUnit] = Param(3, 'MIC_1_PAN')    # float
+    MIC_1_PAN: Param[NoUnit] = Param(3, 'MIC_1_PAN')    # mono PAN 0..10; stereo BALANCE -1..1
     MIC_1_DISTANCE: Param[NoUnit] = Param(4, 'MIC_1_DISTANCE')    # float
     MIC_1_POSITION: Param[NoUnit] = Param(5, 'MIC_1_POSITION')    # float
     MIC_1_PHI: Param[NoUnit] = Param(6, 'MIC_1_PHI')    # switch

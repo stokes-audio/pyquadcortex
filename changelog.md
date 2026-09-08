@@ -20,6 +20,13 @@ correction.
 
 ## Unreleased
 
+### ModelRepo clone layouts are resolved
+
+Models that declare `clones` now expose the inherited wire layout with numeric
+parameter replacements applied before child-only extensions. This fixes both
+ordinary and PCOM cab addressing and the cloned reverb families. A malformed
+model falls back locally without discarding the rest of the device catalog.
+
 ### The first hardware run of the profile seam, and what it corrected
 
 Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam

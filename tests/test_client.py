@@ -4077,7 +4077,7 @@ def test_a_number_on_a_string_parameter_is_refused():
     """
     from tests.test_targets import _diverging_cab_catalog
 
-    for param in (1, "ir"):                       # by index and by name
+    for param in (1, "ir selector"):              # by index and by name
         qc = client.QuadCortex(FakeTransport())
         qc._catalog = _diverging_cab_catalog()()
         with pytest.raises(TypeError, match="is a string parameter"):
@@ -4102,7 +4102,7 @@ def test_an_indexed_encoded_write_still_costs_no_catalog():
     qc = client.QuadCortex(FakeTransport())
     qc._catalog = _diverging_cab_catalog()()
     with pytest.raises(TypeError, match="is a string parameter"):
-        qc.set_param(Block(0, 5, 12001), "ir", Encoded(0.5))
+        qc.set_param(Block(0, 5, 12001), "ir selector", Encoded(0.5))
 
 
 def test_a_unit_check_reads_the_spec_the_conversion_uses_on_a_cab(monkeypatch):

@@ -1397,23 +1397,31 @@ the n/a rows below where they intersect the API at all.
 
 ## Catalog attributes we can see and cannot yet explain
 
-The device puts **24** distinct attributes on its `<Parameter>` elements. Fourteen
-are parsed. These are the other ten, recorded so the next person does not have to
+The CorOS 4.0.1 catalog puts **24** distinct attributes on its 3,809
+`<Parameter>` elements. Fourteen are published on `Parameter`, and numeric
+`replaces` is consumed while clone layouts are resolved. These are the other nine,
+recorded so the next person does not have to
 rediscover that they exist. None is guessed at, per the rule that a control we do
 not understand is omitted with the reason written down.
 
-The counts are from the shipped catalog, 3,809 parameters.
+The counts below are from that CorOS 4.0.1 catalog.
 
 | attribute | on | what it looks like, and what is unknown |
 |---|---|---|
 | `displayPos` | 1446 | The order the unit lays knobs out on screen, which is not wire order. Nothing here needs it; a UI would. |
 | `hidden` | 650 | Present on a parameter, distinct from the `hidden` we already read on a `<Model>`. Whether it means "not shown on screen" or "not writable" is untested, and the two have very different consequences for a host. |
-| `replaces` | 462 | Also distinct from the `<Model>` attribute of the same name, which we do parse. On a parameter it presumably names a superseded index, which would matter for reading an old preset - untested. |
 | `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, **212 parameters between them** | `toggleOn` carries a number (`4`, `5`, `6`) on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`). The obvious reading is the two values a footswitch toggle alternates between - obvious, and untested. Driving one and watching the screen would settle it. |
 | `tooltip` | 126 | The help text the unit shows. Real prose, occasionally load-bearing: a Vibrato's `MODE` warns that changing it causes a brief mute. Note the values contain HTML (`<div align="left">`), which is where an `align` "attribute" appears - it is markup inside the tooltip, not an attribute of the parameter. |
 | `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`). |
 | `mid_string` | 36 | The sibling of `min_string` and `max_string`, which we do read. Presumably a label at some middle position, but WHICH position is not stated anywhere, so it cannot be used. |
 | `isplayPos` | 1 | `displayPos` with the `d` missing. The device's own typo. Recorded rather than silently accepted as an alias, because a parser that took both would hide that the catalog has a defect. |
+
+Numeric parameter `replaces` values are inherited wire indexes on a model that
+declares `clones`; the parser now resolves those before publishing the model.
+`Model/@clones` names the parent layout. A separate nonnumeric shape remains:
+model 7029, `MX Vibe`, has `replaces="INTENSITY"` on a parameter while the model
+itself supersedes another model. That name is not treated as an index; the model
+falls back to its local parameter order until its meaning is understood.
 
 On `<Model>`, `blob` is also unexplained: a same-length string of letters that
 **changes between fetches**. Two dumps of one unit taken minutes apart differed

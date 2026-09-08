@@ -17,13 +17,12 @@ Source: a device's ModelRepo payload, either live or previously saved.
     python scripts/generate_params.py --snapshot coros_4_1_0 \
         --payload model_repo_payload.bin
 
-Three things this generator knows that the catalog does not:
+Three things this generator knows beyond the raw catalog rows:
 
-1. **The catalog UNDER-DESCRIBES cabs.** It lists two parameters for a cab
-   model - the two mic selectors - while the wire carries 22. Measured on four
-   cabs across all four categories (Bass/Guitar, M/ST): every one is the
-   ``Default Cabsim`` layout. So the 140 cab models share ONE layout and get one
-   enum, rather than 140 two-member enums that would each hide 20 parameters.
+1. **Cab layouts are families, not one universal layout.** Clone resolution
+   exposes 21-parameter ordinary and 31-parameter PCOM layouts. The legacy
+   ``Cabsim`` constants intentionally describe the ordinary 12000 family;
+   PCOM-only controls must be resolved from the connected device's catalog.
 2. **A cab's repeated block is a MICROPHONE**, not an IR slot or a channel.
    Confirmed against the unit's own editor: mic 1 read POSITION 2.9 / DIST 3.0
    and mic 2 read POSITION 5.6 / DIST 3.3, matching wire indices 5 and 13 at
@@ -56,8 +55,8 @@ CATALOGS = (pathlib.Path(__file__).resolve().parents[1]
             / "pyquadcortex" / "protocol" / "catalogs")
 
 
-#: The cab layout every cab model actually uses on the wire. Its repeated
-#: eight-parameter block is a microphone.
+#: The ordinary 21-parameter cab layout used for the backward-compatible
+#: ``Cabsim`` constants. PCOM cabs clone a different 31-parameter layout.
 CABSIM_LAYOUT = 12000
 CABSIM_CATEGORIES = ("Cabsim Guitar (M)", "Cabsim Guitar (ST)",
                      "Cabsim Bass (M)", "Cabsim Bass (ST)")
@@ -139,7 +138,10 @@ def members(model, group: str = None) -> list[tuple[str, int, str]]:
         else:
             name = base
         units = f" {p.units}" if p.units else ""
-        out.append((name, p.index, f"{p.type}{units}"))
+        comment = f"{p.type}{units}"
+        if model.id == CABSIM_LAYOUT and name == "MIC_1_PAN":
+            comment += "; mono PAN 0..10, stereo BALANCE -1..1"
+        out.append((name, p.index, comment))
     return out
 
 
@@ -205,9 +207,10 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
         "(ADR-0018). The runtime check is unchanged and still covers every other",
         "caller - a string, a bare index, or anyone not running a checker.",
         "",
-        "**Cabs share one layout.** The catalog lists two parameters for a cab -",
-        "its two mic selectors - while the wire carries 22. So a cab is CHOSEN by",
-        "its `models.*` id and DRIVEN through :class:`Cabsim`::",
+        "**Cabs use multiple layouts.** :class:`Cabsim` names the ordinary",
+        "21-parameter layout; PCOM cabs have 31 catalog parameters and should be",
+        "resolved through the connected device's catalog. A cab is chosen by its",
+        "`models.*` id::",
         "",
         f"    cab = Block(0, 5, {example_cab(cat)})",
         "    qc.set_block(cab)",
@@ -269,17 +272,19 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     for cls, model_id, doc in CONTAINERS:
         lines += render_enum(cls, doc, cat[model_id])
 
-    lines += ["", "", "# -- cabs: one layout, shared by every cab model " + "-" * 30]
+    lines += ["", "", "# -- ordinary 21-parameter cab layout " + "-" * 39]
     lines += render_enum(
         "Cabsim",
-        "Every cab model's parameters. The catalog under-describes these.\n\n"
-        "    Measured on four cabs across all four categories: the wire carries\n"
-        "    22 parameters in the `Default Cabsim` layout regardless of which cab\n"
-        "    is loaded, or whether it is mono or stereo. `MIC_1_PAN` is labelled\n"
-        "    BALANCE on a stereo cab and PAN on a mono one - one wire index, two\n"
-        "    screen names.\n\n"
+        "The ordinary 12000-family cab layout (21 catalog parameters).\n\n"
+        "    The wire carries one additional undocumented value at index 21. PCOM\n"
+        "    cabs instead clone a 31-parameter layout (and carry 32 wire values),\n"
+        "    so resolve their extra controls through the live catalog.\n\n"
+        "    Catalog evidence: index 3 is PAN over 0..10 on mono layouts but\n"
+        "    BALANCE over -1..1 on stereo layouts. Therefore `Real(0.0)` means\n"
+        "    hard left on mono and centre on stereo. Stereo screen behaviour has\n"
+        "    not yet been verified.\n\n"
         "    The mic-to-index mapping was confirmed against the unit's own\n"
-        "    editor. Index 21 exists on the wire, is absent from the catalog and\n"
+        "    editor on mono cabs. Index 21 exists on the wire, is absent from the catalog and\n"
         "    reads 0.0 everywhere, so it is omitted rather than guessed at.\n    ",
         cat[CABSIM_LAYOUT], group="MIC")
 
