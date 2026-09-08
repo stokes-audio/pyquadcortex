@@ -11,7 +11,7 @@ import itertools
 
 import pytest
 
-from pyquadcortex.protocol import catalog, client
+from pyquadcortex.protocol import catalog, client, profiles
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
                                 Output, SceneBypassBehavior, Setlist, TempoMode)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
@@ -19,6 +19,7 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset
 from pyquadcortex.protocol.targets import (Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo)
 from pyquadcortex.protocol import units as units_module
 from pyquadcortex.protocol.errors import ControlNotDrivable
+from pyquadcortex.protocol.support import Support
 from pyquadcortex.protocol.values import Db, Encoded, Hertz, Milliseconds, Real
 
 
@@ -2386,7 +2387,7 @@ def test_capture_screen_waits_for_the_uncorrelated_png_update():
         screenshot=pa.RemoteControlScreenshot(payload=png),
     )
     transport = StateTransport(push)
-    qc = client.QuadCortex(transport)
+    qc = profiles.QuadCortex41(transport, support=Support.EXPERIMENTAL)
 
     assert qc.capture_screen(timeout=3.5) == png
     assert qc._remote_control_ready is True
@@ -2416,7 +2417,7 @@ def test_tap_screen_primes_then_sends_the_verified_inverted_pair():
         screenshot=pa.RemoteControlScreenshot(
             payload=b"\x89PNG\r\n\x1a\nprime"),
     ))
-    qc = client.QuadCortex(transport)
+    qc = profiles.QuadCortex41(transport, support=Support.EXPERIMENTAL)
 
     qc.tap_screen(184, 147)
 
@@ -2445,10 +2446,23 @@ def test_tap_screen_primes_then_sends_the_verified_inverted_pair():
     ("184", 147, TypeError),
 ])
 def test_tap_screen_rejects_invalid_coordinates(x, y, exception):
-    qc = client.QuadCortex(FakeTransport())
+    qc = profiles.QuadCortex41(FakeTransport(), support=Support.EXPERIMENTAL)
     with pytest.raises(exception):
         qc.tap_screen(x, y)
     assert qc._t.sent == []
+
+
+@pytest.mark.parametrize("operation,args", [
+    ("capture_screen", ()),
+    ("tap_screen", (184, 147)),
+])
+def test_remote_screen_operations_refuse_on_the_unmeasured_base(operation, args):
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ControlNotDrivable) as caught:
+        getattr(qc, operation)(*args)
+    assert caught.value.control == operation
+    assert "4.0.1" in caught.value.evidence
+    assert "QuadCortex41" in caught.value.workaround
 
 
 def test_mode_reader_waits_for_a_push_carrying_mode():

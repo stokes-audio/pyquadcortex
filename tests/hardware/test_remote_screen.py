@@ -6,15 +6,10 @@ import pytest
 
 
 @pytest.mark.verifies("capture_screen")
-def test_capture_screen_returns_the_observed_complete_framebuffer(qc):
+def test_capture_screen_returns_the_observed_complete_framebuffer(qc, profile):
     """Capture does not tap or otherwise mutate the device UI."""
-    factory_count = len(qc.catalog.factory_models())
-    if factory_count == 412:
-        pytest.skip("RemoteControl is unavailable in the CorOS 4.0.1 schema")
-    assert factory_count == 420, (
-        f"unidentified catalog with {factory_count} factory models; do not infer "
-        "RemoteControl support"
-    )
+    if "capture_screen" not in profile.VERIFIED:
+        pytest.skip(f"capture_screen is not VERIFIED on {profile.__name__}")
     png = qc.capture_screen()
 
     assert png[:8] == b"\x89PNG\r\n\x1a\n"

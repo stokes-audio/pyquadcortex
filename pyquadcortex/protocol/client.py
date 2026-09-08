@@ -2832,6 +2832,14 @@ class QuadCortex:
                                                   show=shown))
 
     def capture_screen(self, timeout: float = 10.0) -> bytes:
+        """Refuse physical-screen capture on the CorOS 4.0.1 base profile."""
+        raise ControlNotDrivable(
+            "capture_screen",
+            "not measured on QuadCortex (CorOS 4.0.1).",
+            "Use QuadCortex41 for a CorOS 4.1.0 unit.",
+        )
+
+    def _capture_screen(self, timeout: float = 10.0) -> bytes:
         """Return a PNG of the unit's current physical display.
 
         Confirmed at 800 x 480 on QC CorOS 4.1.0. CorOS answers
@@ -2857,6 +2865,14 @@ class QuadCortex:
         return bytes(reply.screenshot.payload)
 
     def tap_screen(self, x: float, y: float) -> None:
+        """Refuse physical-screen input on the CorOS 4.0.1 base profile."""
+        raise ControlNotDrivable(
+            "tap_screen",
+            "not measured on QuadCortex (CorOS 4.0.1).",
+            "Use QuadCortex41 for a CorOS 4.1.0 unit.",
+        )
+
+    def _tap_screen(self, x: float, y: float) -> None:
         """Tap a raw pixel coordinate on the unit's 800 x 480 touchscreen.
 
         The coordinate space and two-message gesture were confirmed on QC
@@ -2877,7 +2893,7 @@ class QuadCortex:
 
         prime_delay = 0.0
         if not self._remote_control_ready:
-            self.capture_screen()
+            self._capture_screen()
             prime_delay = 0.3
         self._t.send_sequence(
             (
