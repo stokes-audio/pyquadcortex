@@ -21,6 +21,8 @@ import time
 
 import pytest
 
+from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
+
 #: This directory. Everything under it drives the unit and is gated on the flag.
 SUITE = pathlib.Path(__file__).resolve().parent
 ROOT = SUITE.parent.parent
@@ -34,6 +36,10 @@ _VERIFIES = {}
 
 #: ``operation -> list of outcomes``, one entry per phase that decided a test.
 _OUTCOMES = {}
+#: Node ids that produced at least one report - the tests that actually RAN,
+#: whatever deselected the rest (our --verifies, or pytest's own -k, which runs
+#: after this conftest's hook). Claims are read from these at report time.
+_RAN = set()
 
 
 def pytest_ignore_collect(collection_path, config):
@@ -73,11 +79,11 @@ def _claims(items, operations, wanted, deselect):
 
     Narrows ``items`` in place to the tests naming ``wanted`` (when there is
     one), hands the rest to ``deselect``, and returns the claims of what is
-    left. The order matters and is the whole point: ``claimed`` in the
-    end-of-run report is the union of this, and a deselected test measured
-    nothing - recording it printed every operation the run never touched under
-    ``VERIFIED and claimed by a test, not passed``, which reads as a
-    regression. Held offline by ``tests/test_hardware_report.py``.
+    left. Narrowing here is what stops the other tests RUNNING under
+    ``--verifies``; the report's ``claimed`` set is then built at the end from
+    the tests that produced a report (:func:`_claimed`), because pytest's own
+    ``-k`` deselects after this hook and a deselected test measured nothing.
+    Held offline by ``tests/test_hardware_report.py``.
     """
     marks = {}
     for item in items:
@@ -209,6 +215,11 @@ class HandshakeBurst:
     def __init__(self):
         self._lock = threading.Lock()
         self._names = []
+        #: ``(action, frozenset of field names)`` for every ``Version`` seen,
+        #: because since ADR-0020 a connect carries three of them and a test
+        #: that only counts cannot tell a retried identity read from a changed
+        #: handshake. Shapes only - the values are not this recorder's business.
+        self._versions = []
         self._detach = None
         self.closed = False
         self.settled_in = None  # seconds the burst took, or None if it timed out
@@ -224,6 +235,14 @@ class HandshakeBurst:
                 # arrive after removal. It must not reopen the recording.
                 return
             self._names.append(type(message).__name__)
+            if isinstance(message, pa.VersionMessage):
+                self._versions.append(
+                    (message.action, frozenset(f.name for f, _ in message.ListFields())))
+
+    def versions(self):
+        """The shape of every ``Version`` recorded: ``(action, field names)``."""
+        with self._lock:
+            return list(self._versions)
 
     def record_until(self, sentinel, patience):
         """Record until a ``sentinel``-typed message arrives, then stop.
@@ -550,6 +569,7 @@ def _decides(when, outcome):
 
 def pytest_runtest_logreport(report):
     """Record how each operation's tests came out, for the end-of-run report."""
+    _RAN.add(report.nodeid)
     names = _VERIFIES.get(report.nodeid)
     if not names:
         return
@@ -562,28 +582,64 @@ def _report_lines(cls, outcomes, claimed):
     """The end-of-run report, as ``(label, names, note)`` rows.
 
     Pure, so ``tests/test_hardware_report.py`` holds the arithmetic with no unit
-    attached. ``claimed`` is every operation some COLLECTED test says it
-    verifies, and it is what keeps the last line readable: ``QuadCortex``
+    attached. ``claimed`` is every operation some test that RAN says it
+    verifies (:func:`_claimed`), and it is what keeps the last line readable: ``QuadCortex``
     verifies EVERYTHING, so the plain difference against ``VERIFIED`` names all
     ~89 operations no test has ever driven, each tagged as a regression. Only
-    something a test claims can regress - nothing else was measured.
+    something a test claims can regress - nothing else was measured - and only
+    a FAILED test regresses it; a skipped one measured nothing.
     """
     from pyquadcortex.protocol.support import EVERYTHING
 
     passed = {op for op, seen in outcomes.items()
               if seen and all(o == "passed" for o in seen)}
-    failed = {op for op, seen in outcomes.items()
-              if any(o != "passed" for o in seen)}
+    not_passed = {op for op, seen in outcomes.items()
+                  if any(o != "passed" for o in seen)}
+    # A SKIP is a test that declined to measure - a precondition the loaded
+    # preset did not meet, an operator-only capture - and says nothing about
+    # the unit. Only a FAILURE is a regression. Measured on the first post-merge
+    # run (2026-09-07): the bypass echo test skipped for want of a stored bypass
+    # entry and the old line called set_bypass a regression.
+    # pytest reports a setup or teardown ERROR with outcome "failed" too, so an
+    # errored test lands here as well (checked against pytest 9.1.1).
+    failed = {op for op, seen in outcomes.items() if "failed" in seen}
     verified = (set(cls.operations()) if cls.VERIFIED is EVERYTHING
                 else set(cls.VERIFIED))
     return [
         ("passed", sorted(passed), ""),
-        ("failed or skipped", sorted(failed), ""),
+        ("failed or skipped", sorted(not_passed), ""),
         ("passed, not VERIFIED", sorted(passed - verified),
          "<- candidates to add"),
-        ("VERIFIED and claimed by a test, not passed",
-         sorted((verified & claimed) - passed), "<- regressions by name"),
+        ("VERIFIED and claimed by a test, failed",
+         sorted(verified & claimed & failed), "<- regressions by name"),
     ]
+
+
+def _claimed(verifies, ran):
+    """The operations claimed by tests that actually ran.
+
+    ``verifies`` maps node id to the names its marker carries; ``ran`` is the
+    node ids that produced a report. Built at report time rather than at
+    collection because pytest's own ``-k`` deselection runs AFTER this
+    conftest's hook, so a `-k` run that kept only unmarked tests still had
+    every marked operation counted as claimed - and the report then said
+    "NOTHING PASSED" about a run that measured nothing on purpose (seen on the
+    unit, 2026-09-07). Pure, held offline.
+    """
+    return set().union(*(names for nodeid, names in verifies.items()
+                         if nodeid in ran)) if verifies else set()
+
+
+def _measured_nothing(outcomes, claimed):
+    """True when tests claimed operations and not one of them passed.
+
+    The regression line is empty on a healthy run AND on a run where every
+    test skipped its precondition, so an empty line alone cannot be read as
+    clean. Pure, held offline like :func:`_report_lines`.
+    """
+    passed = {op for op, seen in outcomes.items()
+              if seen and all(o == "passed" for o in seen)}
+    return bool(claimed) and not passed
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
@@ -595,14 +651,33 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """
     if not config.getoption("--hardware"):
         return
+    tr = terminalreporter
     cls = getattr(config, "_profile", None)
-    if cls is None:          # the session never connected, so there is nothing to report
+    if cls is None:
+        # The session never connected. pytest's own summary carries the setup
+        # errors; this line exists so the ABSENCE of the operations report is
+        # never mistaken for "nothing to report".
+        tr.section("operations: no report")
+        tr.line("the hardware session never connected, so no operation was measured; "
+                "see the setup errors above")
         return
-    claimed = set().union(*_VERIFIES.values()) if _VERIFIES else set()
+    claimed = _claimed(_VERIFIES, _RAN)
     lines = _report_lines(cls, _OUTCOMES, claimed)
     width = max(len(label) for label, _names, _note in lines)
-    tr = terminalreporter
+    # pytest files a setup or teardown failure under "error", not "failed"
+    # (_pytest/runner.py pytest_report_teststatus), and a restore that could
+    # not finish is exactly that shape - so the count names errors separately
+    # rather than losing them. The operations lines are unaffected: they read
+    # report.outcome, which is "failed" for an error too.
+    counts = {k: len(tr.stats.get(k, ()))
+              for k in ("passed", "failed", "error", "skipped")}
     tr.section(f"operations on {cls.__name__} "
                f"(CorOS {', '.join(cls.MEASURED_ON)}, {cls.EVIDENCE.name})")
+    tr.line(f"tests: {counts['passed']} passed, {counts['failed']} failed, "
+            f"{counts['error']} errored, {counts['skipped']} skipped; "
+            f"operations measured: {len(_OUTCOMES)} of {len(claimed)} claimed")
     for label, names, note in lines:
-        tr.line(f"{label + ':':<{width + 1}} {names}   {note}".rstrip())
+        tr.line(f"{label + ':':<{width + 1}} {names} ({len(names)})   {note}".rstrip())
+    if _measured_nothing(_OUTCOMES, claimed):
+        tr.line("NOTHING PASSED: every claimed operation failed or skipped, so the "
+                "empty regression line above says nothing about the unit")
