@@ -174,38 +174,67 @@ def test_nothing_the_burst_delivered_is_read_again_on_first_access(
         "again, which is the round trip the cache exists to avoid")
 
 
-def test_the_burst_does_not_warm_what_the_unit_never_announces(
+def test_connects_version_read_warms_identity_with_profile_specific_announce(
         qc, burst_warmed, handshake_burst, record_property):
-    """The other half, and the reason the read path exists.
+    """Identity reaches the cache through the ONE Version READ connect() makes.
 
-    Neither measured firmware announces its identity during the handshake.
-    CorOS 4.0.1 sends only an acknowledgement of our version announce, carrying
-    ``cortex_control_version_valid`` and none of the unit's own fields; CorOS
-    4.1.0 does not send that acknowledgement. So identity is exactly the case
-    section 9's third column is for: where the unit does not tell us, we ask.
+    The unit never volunteers its identity, so the model reads it (section 9's
+    third column). Since ADR-0020, ``connect()`` issues that read itself, before
+    the handshake, to resolve the profile - and the state layer listens from
+    before the handshake, so it sees the reply. Measured 2026-09-07 on CorOS
+    4.0.1 / d14e: exactly THREE inbound ``Version`` messages through connect and
+    its burst - the full reply to connect's READ (15 fields, +0.71 s), the
+    unit's own ``Version{READ}`` about 1 ms behind it (the question it asks Cortex
+    Control, section 4.4), and the ``UPDATE`` carrying
+    ``cortex_control_version_valid`` that answers our announce (+0.73 s). Four
+    fresh CorOS 4.1.0 connections on 2026-09-04 carried the full reply and unit
+    READ but no announce answer, while the subscribed state burst still arrived.
+    ``_hello`` itself still sends no READ; the 2026-08-27 measurement of one
+    inbound ``Version`` stands for ``_hello`` alone.
 
-    The count is firmware-specific. CorOS 4.0.1 answered the host's version
-    announce exactly once. Four consecutive fresh CorOS 4.1.0 connections on
-    2026-09-04 answered it zero times while still delivering the state burst.
-    The live catalog identifies which measured behavior this connection should
-    have; an unknown catalog size fails rather than silently relaxing the check.
+    Asserted by SHAPE rather than by count, because a unit that was still
+    booting makes ``connect()`` retry its identity READ, and each retry adds a
+    full reply plus the unit's own READ - a healthy run that a bare ``== 3``
+    would call a regression. So: exactly one announce answer, at least one full
+    reply, and one unit READ per full reply, and nothing else. A message of any
+    other shape (the handshake changed under us) or no full reply at all
+    (connect stopped reading identity, and with no READ the unit asks nothing
+    back) is loud. The number of identity reads is recorded, not asserted. The cache holds the two
+    fields the entry keeps; the reply also carries fields it does not, so the
+    entry stays marked and the first read of ``device.firmware`` still goes to
+    the unit (see ``identity`` in device/entries.py).
     """
-    versions = handshake_burst.names().count("VersionMessage")
-    record_property("connect_burst_version_count", versions)
+    shapes = handshake_burst.versions()
+    full = [s for s in shapes if "device_serial_number" in s[1]]
+    own_reads = [s for s in shapes
+                 if s[0] == pa.MessageAction.READ and s[1] == {"action"}]
+    announce = [s for s in shapes if "cortex_control_version_valid" in s[1]]
+    record_property("identity_reads", len(full))
     factory_count = len(qc.catalog.factory_models())
     record_property("connect_burst_factory_model_count", factory_count)
-    expected_versions = {412: 1, 420: 0}
-    assert factory_count in expected_versions, (
+    expected_announces = {412: 1, 420: 0}
+    assert factory_count in expected_announces, (
         f"the connected unit exposes {factory_count} factory models, so its "
         f"connect-burst Version behavior has not been measured")
-    assert versions == expected_versions[factory_count], (
-        f"the {factory_count}-factory-model firmware sent {versions} Version "
-        f"message(s) during connect, not the measured "
-        f"{expected_versions[factory_count]}")
-    assert burst_warmed["identity"] == {}, (
-        f"the burst carried the unit's own identity after all, which is worth "
-        f"knowing - it held {burst_warmed['identity']}. If that is now true, "
-        f"the entry's docstring in device/entries.py is wrong.")
+    assert len(announce) == expected_announces[factory_count], (
+        f"the {factory_count}-factory-model profile sent {len(announce)} "
+        f"announce answers, not the measured {expected_announces[factory_count]}. "
+        f"Shapes seen: {shapes}")
+    assert full, (
+        f"no full Version reply reached the listener: connect() stopped reading "
+        f"identity before the handshake, or the unit stopped answering. Shapes "
+        f"seen: {shapes}")
+    assert len(own_reads) == len(full), (
+        f"{len(full)} full replies but {len(own_reads)} unit READs; the unit asks "
+        f"its own question once per answer (protocol.md 4.4). Shapes: {shapes}")
+    assert len(shapes) == len(full) + len(own_reads) + len(announce), (
+        f"a Version of a shape this test does not know arrived - the handshake "
+        f"changed under us. Shapes: {shapes}")
+    assert set(burst_warmed["identity"]) == {"device_serial_number", "app_fw_version"}, (
+        f"connect's Version read should have left exactly the two kept identity "
+        f"fields in the cache; it held {burst_warmed['identity']}. The unit's "
+        f"full reply carries both (protocol.md, version read row); if it stopped, "
+        f"that is a finding for protocol.md, not a reason to loosen this.")
 
 
 def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
