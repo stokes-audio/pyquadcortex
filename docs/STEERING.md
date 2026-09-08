@@ -56,7 +56,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 | Pattern | What | Why (or `see ADR-000N`) | Canonical example | When the pattern does not apply |
 |---------|------|-------------------------|-------------------|----------------------------------|
 | Layered message flow | New operations are a registry entry plus a thin `QuadCortex` method that builds a protobuf and picks `send`/`request`/`await_broadcast` | Wire concerns stay below `client.py`, which keeps the whole API testable with a fake transport (see ADR-0002) | `QuadCortex.switch_scene` in `pyquadcortex/protocol/client.py` | `cli.py`'s `version` subcommand deliberately bypasses the connect handshake (`_open_unconnected`) |
-| Fake-per-layer offline tests | Each layer has a purpose-built double: golden captured frames for `framing`, `FakeHid` for `transport`, `FakeTransport` for `client` | see ADR-0002 | `FakeTransport` in `tests/test_client.py` | Hardware verification happens manually via `examples/`, outside the suite |
+| Fake-per-layer offline tests | Each layer has a purpose-built double: golden captured frames for `framing`, `FakeHid` for `transport`, `FakeTransport` for `client` | see ADR-0002 | `FakeTransport` in `tests/test_client.py` | Hardware verification is `tests/hardware` behind `--hardware` (ADR-0005), run on every pull request before it is marked ready (contributing.md) |
 | Evidence-bearing docstrings | Each operation's docstring states what is confirmed on hardware vs inferred from the schema | The device gives no errors for wrong writes, so recorded evidence is the only trail | `QuadCortex.read_preset` in `pyquadcortex/protocol/client.py` | Non-protocol helpers (pure functions) carry ordinary docstrings |
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
 | One translation boundary | Screen values become wire values in exactly one PACKAGE, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/`. The exemption covers a directory, so a test names the package's modules and a new one has to come through that list | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate/` | The protocol layer, which keeps its zero-based COORDINATES. Its scales come from the catalog, and quoting the device's own units is not translating - see ADR-0016 |
@@ -119,7 +119,7 @@ None yet. Protocol unknowns (the splitter write path, the IR import payload form
 - **PyPI** for releases (process and credentials handling in [`releasing.md`](releasing.md))
 - **GitHub Actions** for the offline suite on every PR (`.github/workflows/ci.yml`)
 - **hidapi** as the OS-level native library on any machine that talks to hardware
-- **One physical Quad Cortex** (CorOS 4.0.1 / d14e) - the scarce resource; hardware verification is manual and serialized on it
+- **One physical Quad Cortex** (CorOS 4.0.1 / d14e) - the scarce resource; the hardware suite runs on it before every pull request is marked ready, so runs are serialized
 
 ### Workload characteristics
 
@@ -137,6 +137,27 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-09-07 - A pull request is a draft until the hardware suite has run on it
+
+**What changed:** `contributing.md` gains "Before you mark a pull request ready":
+a pull request opens as a draft, the hardware suite runs on its final commit, and
+the description records the commit hash, the CorOS version, pytest's summary line
+and the `operations on ...` block. A contributor with no unit says so and a
+maintainer runs the suite before merging; a maintainer may waive the run, in the
+description, for a change that cannot reach the wire. The pull request template
+gained a Hardware section with those three states, `CLAUDE.md` states the rule for
+the agent, and the section 5 pattern row that said hardware verification happens
+manually via `examples/` now names the suite.
+
+**Why:** the 2026-09-07 post-merge run (PR #53) found two stale records that a
+green offline suite had passed, and two pull requests that week were marked ready
+without the run. A rule that lives only in memory is skipped under time pressure;
+one that lives in the template and the contributor guide is not.
+
+**Scope of impact:**
+- **Updated:** contributing.md, CLAUDE.md, .github/PULL_REQUEST_TEMPLATE.md, STEERING.md sections 5 and 10
+- **Not updated (intentionally):** ADR.md - this is process, not an architectural decision; ci.yml - nothing enforces the description's contents mechanically yet
 
 ### 2026-09-06 - The profile seam is built (ADR-0020)
 
