@@ -36,6 +36,10 @@ _VERIFIES = {}
 
 #: ``operation -> list of outcomes``, one entry per phase that decided a test.
 _OUTCOMES = {}
+#: Node ids that produced at least one report - the tests that actually RAN,
+#: whatever deselected the rest (our --verifies, or pytest's own -k, which runs
+#: after this conftest's hook). Claims are read from these at report time.
+_RAN = set()
 
 
 def pytest_ignore_collect(collection_path, config):
@@ -565,6 +569,7 @@ def _decides(when, outcome):
 
 def pytest_runtest_logreport(report):
     """Record how each operation's tests came out, for the end-of-run report."""
+    _RAN.add(report.nodeid)
     names = _VERIFIES.get(report.nodeid)
     if not names:
         return
@@ -610,6 +615,21 @@ def _report_lines(cls, outcomes, claimed):
     ]
 
 
+def _claimed(verifies, ran):
+    """The operations claimed by tests that actually ran.
+
+    ``verifies`` maps node id to the names its marker carries; ``ran`` is the
+    node ids that produced a report. Built at report time rather than at
+    collection because pytest's own ``-k`` deselection runs AFTER this
+    conftest's hook, so a `-k` run that kept only unmarked tests still had
+    every marked operation counted as claimed - and the report then said
+    "NOTHING PASSED" about a run that measured nothing on purpose (seen on the
+    unit, 2026-09-07). Pure, held offline.
+    """
+    return set().union(*(names for nodeid, names in verifies.items()
+                         if nodeid in ran)) if verifies else set()
+
+
 def _measured_nothing(outcomes, claimed):
     """True when tests claimed operations and not one of them passed.
 
@@ -641,7 +661,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         tr.line("the hardware session never connected, so no operation was measured; "
                 "see the setup errors above")
         return
-    claimed = set().union(*_VERIFIES.values()) if _VERIFIES else set()
+    claimed = _claimed(_VERIFIES, _RAN)
     lines = _report_lines(cls, _OUTCOMES, claimed)
     width = max(len(label) for label, _names, _note in lines)
     # pytest files a setup or teardown failure under "error", not "failed"

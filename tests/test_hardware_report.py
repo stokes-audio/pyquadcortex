@@ -189,6 +189,17 @@ def test_a_run_where_nothing_passed_is_flagged_not_read_as_clean(conftest):
         "nothing claimed is a deselected run, not a run that measured nothing")
 
 
+def test_claims_come_from_tests_that_ran_not_tests_that_were_collected(conftest):
+    """pytest's -k deselects after our hook records claims; only tests that
+    produced a report count. Seen on the unit 2026-09-07: a -k run of three
+    unmarked tests reported 16 claimed operations and NOTHING PASSED."""
+    verifies = {"t.py::a": {"set_param"}, "t.py::b": {"set_bypass", "switch_scene"},
+                "t.py::c": set()}
+    assert conftest._claimed(verifies, ran={"t.py::b", "t.py::c"}) == {"set_bypass", "switch_scene"}
+    assert conftest._claimed(verifies, ran=set()) == set()
+    assert conftest._claimed({}, ran={"t.py::a"}) == set()
+
+
 def test_an_operation_no_test_claims_is_never_a_regression(conftest):
     """The 89. Nothing names them, so the run says nothing about them."""
     lines = dict(_named(conftest._report_lines(
