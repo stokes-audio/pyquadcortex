@@ -644,12 +644,18 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     claimed = set().union(*_VERIFIES.values()) if _VERIFIES else set()
     lines = _report_lines(cls, _OUTCOMES, claimed)
     width = max(len(label) for label, _names, _note in lines)
-    counts = {k: len(tr.stats.get(k, ())) for k in ("passed", "failed", "skipped")}
+    # pytest files a setup or teardown failure under "error", not "failed"
+    # (_pytest/runner.py pytest_report_teststatus), and a restore that could
+    # not finish is exactly that shape - so the count names errors separately
+    # rather than losing them. The operations lines are unaffected: they read
+    # report.outcome, which is "failed" for an error too.
+    counts = {k: len(tr.stats.get(k, ()))
+              for k in ("passed", "failed", "error", "skipped")}
     tr.section(f"operations on {cls.__name__} "
                f"(CorOS {', '.join(cls.MEASURED_ON)}, {cls.EVIDENCE.name})")
     tr.line(f"tests: {counts['passed']} passed, {counts['failed']} failed, "
-            f"{counts['skipped']} skipped; operations measured: "
-            f"{len(_OUTCOMES)} of {len(claimed)} claimed")
+            f"{counts['error']} errored, {counts['skipped']} skipped; "
+            f"operations measured: {len(_OUTCOMES)} of {len(claimed)} claimed")
     for label, names, note in lines:
         tr.line(f"{label + ':':<{width + 1}} {names} ({len(names)})   {note}".rstrip())
     if _measured_nothing(_OUTCOMES, claimed):
