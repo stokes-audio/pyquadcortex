@@ -34,6 +34,7 @@ Read `docs/STEERING.md` before non-trivial work (new operations, transport or fr
 - Hardware sessions: quit Cortex Control first - it holds the HID interface exclusively.
 - Describe the protocol work as documenting the device's protocol as-is (recovered schema, observed traffic). Do not call it "reverse engineering" in docs, comments, commit messages, or issues.
 - Changed code under a path listed in `docs/STEERING.md` § Owned Paths? Diff and update STEERING/CLAUDE/ADR in the same PR.
+- A pull request opens as a DRAFT (`gh pr create --draft`). It is marked ready only after `pytest tests/hardware --hardware` has run on its final commit, with the commit hash, the unit's CorOS version, the `operations on ...` block and pytest's last line in the description - or after the human has waived the run explicitly in the description, which they may do for a change that cannot reach the wire. The offline suite and mypy are not a substitute: they prove the library agrees with itself, not that it agrees with the unit. PR #53 is the evidence: the 2026-09-07 post-merge run found two stale records that a green offline suite had passed. Never waive the run yourself, and never present a pull request as ready that has not been through this. `contributing.md` § "Before you mark a pull request ready" states the rule for contributors, with one more state for a contributor who has no unit (say so, mark ready, a maintainer runs it before merging); you always work where the unit is, so that state is not yours.
 
 ## Do not
 

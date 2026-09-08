@@ -270,9 +270,9 @@ returns immediately, which is what makes the metronome's tempo stream - a pair
 per beat, on every connection, forever - cost nothing.
 
 `entries.py` is the table of what is tracked: per entry, the message types that
-carry it, the fields kept from each, and the read that fetches it. Two entries
-today, `identity` and `dirty`; the rest of section 9's table arrives with the
-surfaces that read it.
+carry it, the fields kept from each, and the read that fetches it. Five entries
+today - `identity`, `dirty`, `preset`, `scene` and `loaded`; the rest of section 9's
+table arrives with the surfaces that read it.
 
 `watch.py` is the write side. A write updates the cache immediately and the
 unit's echo confirms it in the background, against one sentence: every field we
