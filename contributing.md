@@ -123,13 +123,15 @@ hardware suite has run on its final commit:
 pytest tests/hardware --hardware
 ```
 
-The prerequisites are the ones above plus the `hid` package from "Development
-setup". On macOS prefix the command with `DYLD_LIBRARY_PATH=/opt/homebrew/lib`, and
-on a unit other than CorOS 4.0.1 add `--profile` (see "Adding a device profile").
+The prerequisites are the ones above plus the hidapi library from "Development
+setup". On macOS prefix the command with `DYLD_LIBRARY_PATH=/opt/homebrew/lib`. On
+a unit the registry refuses (a firmware no profile has measured, or a Mini) add
+`--profile` with the class to measure as (see "Adding a device profile").
 
 Put four things in the pull request description: the short commit hash the run was
-made on, the CorOS version of the unit, pytest's own summary line (`N passed, N
-failed, N skipped`) and the `operations on ...` block the suite prints after it. If
+made on, the CorOS version of the unit, the `operations on ...` block the suite
+prints, and pytest's own last line after it (the one with the pass, fail, error and
+skip counts). If
 your change adds or alters an operation, also say how you verified that operation on
 the unit (a read-back, or watching the screen), because the suite measures only the
 operations a hardware test names. This record is the evidence this project keeps:

@@ -119,7 +119,7 @@ None yet. Protocol unknowns (the splitter write path, the IR import payload form
 - **PyPI** for releases (process and credentials handling in [`releasing.md`](releasing.md))
 - **GitHub Actions** for the offline suite on every PR (`.github/workflows/ci.yml`)
 - **hidapi** as the OS-level native library on any machine that talks to hardware
-- **One physical Quad Cortex** (CorOS 4.0.1 / d14e) - the scarce resource; hardware verification is manual and serialized on it
+- **One physical Quad Cortex** (CorOS 4.0.1 / d14e) - the scarce resource; the hardware suite runs on it before every pull request is marked ready, so runs are serialized
 
 ### Workload characteristics
 
@@ -156,7 +156,7 @@ without the run. A rule that lives only in memory is skipped under time pressure
 one that lives in the template and the contributor guide is not.
 
 **Scope of impact:**
-- **Updated:** contributing.md, CLAUDE.md, .github/PULL_REQUEST_TEMPLATE.md, STEERING.md section 5
+- **Updated:** contributing.md, CLAUDE.md, .github/PULL_REQUEST_TEMPLATE.md, STEERING.md sections 5 and 10
 - **Not updated (intentionally):** ADR.md - this is process, not an architectural decision; ci.yml - nothing enforces the description's contents mechanically yet
 
 ### 2026-09-06 - The profile seam is built (ADR-0020)
