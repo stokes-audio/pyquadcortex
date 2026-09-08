@@ -153,7 +153,7 @@ The default handshake also asks for the unit's full folder tree, which can keep
 several hundred `FileMessage` pushes arriving after `connect()` returns. An app
 that does not need an eager listing can use
 `protocol.connect(initial_file_listing=False)`; `list_presets()` and the other
-file APIs still fetch their data normally when called.
+file APIs still fetch on demand on a verified profile.
 
 Closing tells the device the client is leaving, which is what Cortex Control does on
 quit. If you supplied your own transport and so own teardown yourself, send it with

@@ -487,6 +487,10 @@ def test_hello_performs_full_connect_handshake():
         if isinstance(m, pa.RecallPresetMessage) and m.action == pa.MessageAction.READ
     ]
     assert recall_reads
+    assert any(
+        isinstance(m, pa.FileMessage) and m.action == pa.MessageAction.READ
+        for m in sent
+    ), "the default retains eager File enumeration"
     # ModelRepo READ is present (empirically required to open the push gate).
     assert any(
         isinstance(m, pa.ModelRepoMessage) and m.action == pa.MessageAction.READ
@@ -501,19 +505,22 @@ def test_hello_performs_full_connect_handshake():
 
 def test_hello_can_defer_only_the_initial_file_listing():
     canned = {"ResetCommsBuffersMessage": pa.ResetCommsBuffersMessage()}
-    qc = client.QuadCortex(FakeTransport(canned))
+    eager = client.QuadCortex(FakeTransport(canned))
+    deferred = client.QuadCortex(FakeTransport(canned))
 
-    qc._hello(settle=0, initial_file_listing=False)
+    eager._hello(settle=0)
+    deferred._hello(settle=0, initial_file_listing=False)
 
-    subscription_names = {
-        type(message).__name__
-        for message in qc._t.sent
+    eager_reads = [
+        type(message).__name__ for message in eager._t.sent
         if getattr(message, "action", None) == pa.MessageAction.READ
-    }
-    assert "FileMessage" not in subscription_names
-    assert "RecallPresetMessage" in subscription_names
-    assert "GeneralSettingsMessage" in subscription_names
-    assert "ModelRepoMessage" in subscription_names
+    ]
+    deferred_reads = [
+        type(message).__name__ for message in deferred._t.sent
+        if getattr(message, "action", None) == pa.MessageAction.READ
+    ]
+    assert eager_reads.count("FileMessage") == 1
+    assert deferred_reads == [name for name in eager_reads if name != "FileMessage"]
 
 
 # -- ergonomics: no magic numbers at the call site -----------------------------

@@ -85,6 +85,7 @@ def test_connect_returns_a_handshaken_client(fake_stack):
     kinds = [type(m).__name__ for m in t.sent]
     assert "ResetCommsBuffersMessage" in kinds
     assert "ConnectionMessage" in kinds
+    assert "FileMessage" in kinds
 
 
 def test_connect_can_defer_the_initial_file_listing(fake_stack):

@@ -20,6 +20,12 @@ correction.
 
 ## Unreleased
 
+### Initial file enumeration can be deferred
+
+Both connect layers accept `initial_file_listing=False`, omitting only the
+handshake's eager `File` READ. The default remains eager, and listing operations
+still fetch explicitly when called on a profile that verifies them.
+
 ### The first hardware run of the profile seam, and what it corrected
 
 Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam

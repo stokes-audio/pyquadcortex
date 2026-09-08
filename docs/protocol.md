@@ -516,6 +516,11 @@ type to clients that asked for it. `QuadCortex._SUBSCRIBE_TYPES` lists the set
 the library subscribes to, mirroring Cortex Control's burst. `RecallPreset` is
 the one that matters most (it is how a full preset is obtained), but the device
 appears to want the whole set before it considers the client fully connected.
+The optional initial `File` READ makes this a 22-type burst by default or 21
+when deferred. A contributed CorOS 4.1.0 check on 2026-09-08 connected with the
+21-type form and later enumerated all 586 folders explicitly under
+`Support.EXPERIMENTAL`. Whether omitting `File` also opts out of later file
+change broadcasts remains unmeasured.
 
 `QuadCortex._hello()`, which `pyquadcortex.protocol.connect()` runs for you, does the
 same thing with one deliberate difference: it does **not** issue a host

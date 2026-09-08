@@ -97,8 +97,9 @@ Things worth knowing before you script against this:
 - **The default connect eagerly enumerates folders.** On a populated unit that
   means several hundred `FileMessage` pushes. Pass
   `initial_file_listing=False` to either `protocol.connect()` or
-  `pyquadcortex.connect()` to defer that traffic; listing methods still fetch on
-  demand.
+  `pyquadcortex.connect()` to defer that traffic. On a verified profile,
+  listing methods still fetch on demand; an unverified profile requires
+  `support=Support.EXPERIMENTAL` for those operations.
 - **Editing goes recall, change, save.** The device saves whatever is currently on
   the grid, so an edit means recalling the preset first. The methods above are
   built for that order; [docs/protocol.md](protocol.md) explains why.

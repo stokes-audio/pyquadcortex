@@ -264,10 +264,13 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
                     f"{pa.VersionMessage.DeviceType.Name(cls.DEVICE_TYPE)}, and the unit "
                     f"says {pa.VersionMessage.DeviceType.Name(identity.device_type)}")
         qc = cls(transport, _owned_resources=owned, support=support)
-        _retry_until_patient(lambda: qc._hello(
-            timeout=timeout, settle=settle,
-            initial_file_listing=initial_file_listing),
-                              deadline, handshake_patience)
+        def hello():
+            return qc._hello(
+                timeout=timeout, settle=settle,
+                initial_file_listing=initial_file_listing,
+            )
+
+        _retry_until_patient(hello, deadline, handshake_patience)
         # Say goodbye BEFORE the transport and handle go away, since the send needs
         # a live transport. close() pops this list, so appending last runs it first.
         owned.append(qc.disconnect)

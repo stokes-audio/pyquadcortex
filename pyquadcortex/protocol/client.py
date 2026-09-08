@@ -564,7 +564,8 @@ class QuadCortex:
           4. A READ for each state type in ``_SUBSCRIBE_TYPES`` - this is the
              subscription that makes the device start pushing that state. The
              ``File`` READ is optional because it immediately enumerates the
-             entire folder tree rather than opening the push gate.
+             entire folder tree. Whether it also subscribes later file changes
+             has not been measured.
 
         Returns the echoed ResetCommsBuffers reply. After this, ``read_preset``
         and the device's live-sync pushes work.
@@ -596,6 +597,7 @@ class QuadCortex:
         )
         self._t.send(pa.ModelRepoMessage(action=pa.MessageAction.READ))
         self._t.send(pa.ConnectionMessage(connected=True))
+        assert "File" in self._SUBSCRIBE_TYPES
         for name in self._SUBSCRIBE_TYPES:
             if name == "File" and not initial_file_listing:
                 continue
