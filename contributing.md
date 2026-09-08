@@ -16,12 +16,16 @@ You do **not** need to ask for access or to be added to the project first. The f
 
 1. **Fork** this repository to your own account.
 2. Create a **branch** for your change.
-3. Commit your work, push it to your fork, and open a **pull request** against `main`.
+3. Commit your work, push it to your fork, and open a **draft pull request** against
+   `main`. Mark it ready for review once the checks under "Before you mark a pull
+   request ready" below have run, or the description says why they could not.
 4. A maintainer reviews it. Every change is reviewed and approved before it is merged,
    so please be patient and expect a round or two of feedback.
 
-Continuous integration runs the test suite on every pull request. Please make sure it
-is green - a red build will block the merge.
+Continuous integration runs the offline suite and mypy on every pull request. Please
+make sure it is green - a red build will block the merge. Green proves the library
+agrees with itself; only a unit proves it agrees with the device, which is why the
+hardware suite below is part of every pull request too.
 
 ## Development setup
 
@@ -107,9 +111,26 @@ If your change touches the live device path and you want to verify it on a real 
   (ADR-0020): record what you measure beside the 4.0.1 record in `docs/protocol.md`,
   dated and named by CorOS version, rather than in its place.
 
-When you confirm behavior on hardware, say so in the pull request: which operation,
-which CorOS version, and how you verified it (a read-back, or watching the unit).
-That evidence is what keeps [docs/protocol.md](docs/protocol.md) trustworthy.
+### Before you mark a pull request ready
+
+A pull request opens as a draft and is marked ready for review only after the
+hardware suite has run on its final commit:
+
+```bash
+pytest tests/hardware --hardware
+```
+
+Put the report's totals line and its per-operation summary in the pull request
+description, with the CorOS version of the unit. That record is what keeps
+[docs/protocol.md](docs/protocol.md) trustworthy: a read-back on a unit is the only
+evidence that a change did what it says, and the offline suite cannot supply it.
+
+If you have no unit, say so in the description and mark the pull request ready
+anyway; a maintainer runs the suite before merging. If the change cannot reach the
+wire (documentation, packaging), a maintainer may waive the run, in the description.
+Either way the description says which it was: run, with the numbers, or not run,
+with the reason. A description that says nothing about hardware is still a draft,
+whatever the button says.
 
 ## Adding a device profile
 
