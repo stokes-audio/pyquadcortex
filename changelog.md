@@ -20,6 +20,13 @@ correction.
 
 ## Unreleased
 
+### ModelRepo editor metadata is available
+
+Parameters expose midpoint labels, editor position hints, and the three
+conditional-visibility references published by the catalog. These are raw
+metadata: positions may collide or have gaps, and three self-references remain
+unexplained. CorOS 4.1-only `linkedSceneMode` is documented but not exposed.
+
 ### The first hardware run of the profile seam, and what it corrected
 
 Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam

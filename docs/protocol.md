@@ -3391,8 +3391,11 @@ Stated explicitly so nobody builds on a guess:
   is the obvious candidate and has not been checked. Separately, whether the unit
   ACTS on an assignment stored against such a parameter needs audio, not a wire
   read.
-- **What `toggleOn` / `toggleOff` / `toggleStep` mean**, on 212 parameters. The
-  obvious reading is a footswitch toggle's two values; obvious and untested.
+- **Three self-referencing conditional metadata entries** remain unexplained:
+  Mono Synth indexes 15 and 24 point `toggleOn` to themselves, and index 48
+  points `toggleOff` to itself. Elsewhere, CorOS 4.0.1 catalog shape indicates
+  `toggleOn` / `toggleOff` name a conditional-visibility driver and
+  `toggleStep` its option: Splitter's controls partition cleanly by TYPE.
 - **Whether a capture id denotes different content on a different unit** is untested
   here, needing a second unit.
 - ~~**Whether a preset's descriptive `tags` can be set at all**~~ - ANSWERED: no. The

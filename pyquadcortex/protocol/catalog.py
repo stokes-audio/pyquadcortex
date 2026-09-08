@@ -188,22 +188,28 @@ class Parameter:
     #: Whether the screen shows this without a decimal point.
     show_as_integer: bool = False
     #: What the screen shows at the midpoint instead of a number, from
-    #: ``mid_string``. Most commonly ``"C"`` for a pan control.
+    #: ``mid_string``. On CorOS 4.0.1, 35 of 36 are ``"C"`` and the other is
+    #: ``"A/B"`` on ``A/B PITCH MIX``. Every carrier also has bottom/top
+    #: labels and linear skew, which supports (but does not encode) wire 0.5 as
+    #: the midpoint; a future skewed carrier would need separate interpretation.
     mid_label: str = ""
     #: This control's position in the model's on-device editor, from
-    #: ``displayPos``. ``None`` when the catalog does not assign one; internal
-    #: parameters such as bypass and IR paths commonly omit it.
+    #: ``displayPos``. This is a layout hint, not enough to recreate an editor:
+    #: five CorOS 4.0.1 models collide at a position and 18 have gaps. ``None``
+    #: normally means omitted; Analog Delay (ST) FEEDBACK DEPTH instead carries
+    #: the device typo ``isplayPos="18"``, which is deliberately not aliased.
     display_position: int | None = None
-    #: Parameter indexes named by the catalog's ``toggleOn`` attribute. These
-    #: describe controls whose on-state makes this parameter applicable.
+    #: Parameter indexes named by ``toggleOn``. Catalog shape implies these are
+    #: visibility drivers: Splitter controls point to TYPE and its applicable
+    #: option. Three Mono Synth parameters point to themselves, whose meaning
+    #: remains unknown.
     toggle_on: tuple[int, ...] = ()
-    #: Parameter indexes named by ``toggleOff``. Their off-state makes this
-    #: parameter applicable.
+    #: Parameter indexes named by ``toggleOff``; inferred as visibility drivers
+    #: from the same catalog evidence, with the same self-reference exception.
     toggle_off: tuple[int, ...] = ()
-    #: Option indexes named by ``toggleStep`` for conditional controls.
+    #: Option indexes named by ``toggleStep`` for the inferred visibility
+    #: driver. Every CorOS 4.0.1 carrier also has ``toggleOn`` or ``toggleOff``.
     toggle_steps: tuple[int, ...] = ()
-    #: The related parameter index named by ``linkedSceneMode``.
-    linked_scene_mode: int | None = None
 
     @property
     def floor(self) -> "values.Real | None":
@@ -651,7 +657,6 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         toggle_on=_parse_indexes(p.get("toggleOn")),
         toggle_off=_parse_indexes(p.get("toggleOff")),
         toggle_steps=_parse_indexes(p.get("toggleStep")),
-        linked_scene_mode=_as_int(p.get("linkedSceneMode")),
         exp_assignable=p.get("expAssignable") != "false",
         show_as_integer=p.get("showAsInteger") == "true",
     )
@@ -697,7 +702,11 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
 
 
 def _parse_indexes(value: str | None) -> tuple[int, ...]:
-    """Parse one integer, or a comma-separated list of integers."""
+    """Parse one integer, or a comma-separated list of integers.
+
+    Invalid parts are deliberately ignored: device catalogs are extensible,
+    and one unfamiliar token must not discard otherwise usable metadata.
+    """
     if not value:
         return ()
     ids = []

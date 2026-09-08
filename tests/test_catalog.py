@@ -7,6 +7,8 @@ synthetic XML fixture, so they run offline and ship no vendor data.
 
 import gzip
 import io
+import json
+import pathlib
 import tarfile
 
 import pytest
@@ -131,7 +133,7 @@ def test_parameter_carries_editor_and_conditional_metadata():
         <Parameter name="MODE" min="0" max="2" defaultValue="0"/>
         <Parameter name="PAN" min="0" max="10" defaultValue="5"
           mid_string="C" displayPos="7" toggleOn="0, 4"
-          toggleOff="2" toggleStep="1,2" linkedSceneMode="9"/>
+          toggleOff="2" toggleStep="1,2"/>
       </Model>
     </Category></Models>"""
 
@@ -142,7 +144,6 @@ def test_parameter_carries_editor_and_conditional_metadata():
     assert parameter.toggle_on == (0, 4)
     assert parameter.toggle_off == (2,)
     assert parameter.toggle_steps == (1, 2)
-    assert parameter.linked_scene_mode == 9
 
 
 def test_absent_editor_metadata_has_neutral_defaults(cat):
@@ -153,7 +154,44 @@ def test_absent_editor_metadata_has_neutral_defaults(cat):
     assert parameter.toggle_on == ()
     assert parameter.toggle_off == ()
     assert parameter.toggle_steps == ()
-    assert parameter.linked_scene_mode is None
+
+
+def test_real_catalog_editor_metadata_evidence_is_pinned():
+    path = pathlib.Path(__file__).parent / "fixtures" / "catalog" / \
+        "editor_metadata.json"
+    facts = json.loads(path.read_text(encoding="utf-8"))
+
+    assert facts["firmware"] == "CorOS 4.0.1"
+    assert facts["mid_string"] == {
+        "total": 36, "C": 35, "A/B": 1,
+        "all_have_min_and_max_labels": True, "all_have_skew": 1.0,
+    }
+    assert facts["displayPos"]["carriers"] == 1446
+    assert facts["displayPos"]["collision_models"] == 5
+    assert facts["displayPos"]["gap_models"] == 18
+    assert facts["displayPos"]["device_typo"] == {
+        "model": "Analog Delay (ST)", "parameter_index": 20,
+        "parameter": "FEEDBACK DEPTH", "attribute": "isplayPos", "value": 18,
+    }
+    assert facts["toggle"]["counts"] == {"on": 132, "off": 83, "step": 13}
+    assert facts["toggle"]["all_step_carriers_have_on_or_off"] is True
+    assert facts["toggle"]["self_references"] == [
+        {"model": "Mono Synth", "index": 15, "parameter": "OSC2 WAVE", "attribute": "toggleOn"},
+        {"model": "Mono Synth", "index": 24, "parameter": "SLOPE", "attribute": "toggleOn"},
+        {"model": "Mono Synth", "index": 48, "parameter": "FREE RATE", "attribute": "toggleOff"},
+    ]
+
+
+def test_self_referencing_toggle_metadata_is_preserved_not_interpreted():
+    xml = """<Models><Category id="1" name="Synth">
+      <Model id="1" name="Mono Synth">
+        <Parameter name="OSC2 WAVE" toggleOn="0" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    parameter = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+
+    assert parameter.toggle_on == (0,)
 
 
 def test_lookup_parameter_by_name_is_case_insensitive(cat):
