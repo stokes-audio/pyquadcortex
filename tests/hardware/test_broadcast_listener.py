@@ -59,12 +59,13 @@ def test_a_listener_registered_before_connecting_sees_the_handshake_burst(
     """The burst is what makes a push-fed cache warm for free.
 
     Note what the wait below says about the hook: ``connect()`` returns about 2 s
-    in, with only the ResetCommsBuffers echo and one Version recorded - the
-    unit's UPDATE answering our version announce, not a READ of its own
-    (``docs/protocol.md`` section 4) - and the state burst starts arriving about
-    5 s in. So a listener
-    registered on the client ``connect()`` hands back is already too late, which
-    is the whole reason ``before_handshake`` exists.
+    in, with only the ResetCommsBuffers echo and three ``Version`` messages
+    recorded - the full reply to connect's own identity READ, the unit's
+    ``Version{READ}`` a millisecond behind it, and the UPDATE answering our
+    version announce (``docs/protocol.md`` section 4; measured 2026-09-07 on
+    4.0.1 / d14e) - and the state burst starts arriving about 5 s in. So a
+    listener registered on the client ``connect()`` hands back is already too
+    late, which is the whole reason ``before_handshake`` exists.
 
     Confirmed on this unit (2026-08-12, CorOS 4.0.1 / d14e): 474 messages of 24
     distinct types by 15 s. The floors below sit well under that, because a test

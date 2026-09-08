@@ -16,12 +16,17 @@ You do **not** need to ask for access or to be added to the project first. The f
 
 1. **Fork** this repository to your own account.
 2. Create a **branch** for your change.
-3. Commit your work, push it to your fork, and open a **pull request** against `main`.
+3. Commit your work, push it to your fork, and open a **draft pull request** against
+   `main`. Mark it ready for review once the checks under "Before you mark a pull
+   request ready" below have run, or the description says why they could not.
 4. A maintainer reviews it. Every change is reviewed and approved before it is merged,
    so please be patient and expect a round or two of feedback.
 
-Continuous integration runs the test suite on every pull request. Please make sure it
-is green - a red build will block the merge.
+Continuous integration runs the offline suite, mypy and a packaging build on every
+pull request. Please
+make sure it is green - a red build will block the merge. Green proves the library
+agrees with itself; only a unit proves it agrees with the device, which is why the
+hardware suite below is part of every pull request too.
 
 ## Development setup
 
@@ -95,7 +100,9 @@ Two contracts the tests protect, worth knowing before you change import structur
 
 ## Working with hardware
 
-If your change touches the live device path and you want to verify it on a real unit:
+Every pull request runs the hardware suite before it is marked ready (see "Before
+you mark a pull request ready" below). To run it, or to verify anything else on a
+real unit:
 
 - Connect the Quad Cortex over **USB**. (Wi-Fi may stay on; it makes no difference.)
 - **Quit Cortex Control first.** It holds the USB interface exclusively, so nothing
@@ -107,9 +114,36 @@ If your change touches the live device path and you want to verify it on a real 
   (ADR-0020): record what you measure beside the 4.0.1 record in `docs/protocol.md`,
   dated and named by CorOS version, rather than in its place.
 
-When you confirm behavior on hardware, say so in the pull request: which operation,
-which CorOS version, and how you verified it (a read-back, or watching the unit).
-That evidence is what keeps [docs/protocol.md](docs/protocol.md) trustworthy.
+### Before you mark a pull request ready
+
+A pull request opens as a draft and is marked ready for review only after the
+hardware suite has run on its final commit:
+
+```bash
+pytest tests/hardware --hardware
+```
+
+The prerequisites are the ones above plus the hidapi library from "Development
+setup". On macOS prefix the command with `DYLD_LIBRARY_PATH=/opt/homebrew/lib`. On
+a unit the registry refuses (a firmware no profile has measured, or a Mini) add
+`--profile` with the class to measure as (see "Adding a device profile").
+
+Put four things in the pull request description: the short commit hash the run was
+made on, the CorOS version of the unit, the `operations on ...` block the suite
+prints, and pytest's own last line after it (the one with the pass, fail, error and
+skip counts). If
+your change adds or alters an operation, also say how you verified that operation on
+the unit (a read-back, or watching the screen), because the suite measures only the
+operations a hardware test names. This record is the evidence this project keeps:
+the offline suite proves the library agrees with itself, and a unit is what proves
+it agrees with the device.
+
+If you have no unit, say so in the description and mark the pull request ready
+anyway; a maintainer runs the suite before merging. If the change cannot reach the
+wire (documentation, packaging), a maintainer may waive the run, in the description.
+Either way the description says which it was: run, with the numbers, or not run,
+with the reason. A description that says nothing about hardware is not ready for
+review, whatever GitHub shows.
 
 ## Adding a device profile
 
