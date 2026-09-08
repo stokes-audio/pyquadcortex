@@ -20,17 +20,18 @@ _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
 
 
 class QuadCortex41(QuadCortex):
-    """Quad Cortex on CorOS 4.1 - connects, and verifies nothing yet.
+    """Quad Cortex on CorOS 4.1 - connects with 15 measured operations.
 
     PR #42's description (2026-09-03) reports ``pytest --hardware``: 2742
     passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
     d14e, by tony-xmelon. That is a contributor's report and the maintainer has
     not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
     connection is therefore known to work with this handshake and announce
-    string. Which operations behave as on 4.0.1 is not known per name, so every
-    inherited operation refuses under ``Support.VERIFIED`` and runs with a
-    warning under ``Support.EXPERIMENTAL``. Its generated constants are bound to
-    the contributed CorOS 4.1.0 snapshot rather than the 4.0.1 compatibility
+    string. A profile-aware hardware run on 2026-09-08 measured the operations
+    in ``VERIFIED`` below; every other inherited operation still refuses under
+    ``Support.VERIFIED`` and runs with a warning under
+    ``Support.EXPERIMENTAL``. Its generated constants are bound to the
+    contributed CorOS 4.1.0 snapshot rather than the 4.0.1 compatibility
     imports.
 
     To finish this profile, on a 4.1 unit:
@@ -44,7 +45,23 @@ class QuadCortex41(QuadCortex):
 
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
-    VERIFIED = frozenset()
+    VERIFIED = frozenset({
+        "active_scene",
+        "clear_expression",
+        "read_current_preset",
+        "set_bypass",
+        "set_chain_input",
+        "set_global_eq",
+        "set_hold_timing",
+        "set_input_port",
+        "set_param",
+        "set_scene_color",
+        "set_scene_label",
+        "set_tempo_mode",
+        "switch_scene",
+        "tempo_mode",
+        "update_settings",
+    })
     models = models_4_1
     params = params_4_1
     options = options_4_1
