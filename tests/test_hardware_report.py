@@ -117,8 +117,8 @@ def test_the_report_names_the_four_things_a_maintainer_asks_for(conftest):
     assert lines["failed or skipped"] == ["set_bypass"]
     # set_ir passed and the profile does not claim it: a candidate.
     assert lines["passed, not VERIFIED"] == ["set_ir"]
-    # set_bypass is claimed by the profile, a test names it, and it did not pass.
-    assert lines["VERIFIED and claimed by a test, not passed"] == ["set_bypass"]
+    # set_bypass is claimed by the profile, a test names it, and it FAILED.
+    assert lines["VERIFIED and claimed by a test, failed"] == ["set_bypass"]
 
 
 def test_one_failing_run_of_an_operation_sinks_all_of_them(conftest):
@@ -145,9 +145,59 @@ def test_a_regression_is_only_an_operation_some_test_claims(conftest):
 
     # set_ir and set_block are VERIFIED here too - EVERYTHING says so - and no
     # test names either, so neither is a regression. Only set_param is.
-    assert lines["VERIFIED and claimed by a test, not passed"] == ["set_param"]
+    assert lines["VERIFIED and claimed by a test, failed"] == ["set_param"]
     assert lines["passed, not VERIFIED"] == [], (
         "a profile that verifies everything can have no candidates")
+
+
+def test_a_skipped_test_is_not_a_regression(conftest):
+    """Measured on the first post-merge run, 2026-09-07: the bypass echo test
+    skipped ("no stored bypass entry") and the report called set_bypass a
+    regression. A skip measured nothing; it belongs on the failed-or-skipped
+    line and nowhere else."""
+    lines = dict(_named(conftest._report_lines(
+        _Everything, {"set_bypass": ["skipped"], "set_param": ["failed"]},
+        claimed={"set_bypass", "set_param"})))
+
+    assert lines["failed or skipped"] == ["set_bypass", "set_param"]
+    assert lines["VERIFIED and claimed by a test, failed"] == ["set_param"]
+
+
+def test_a_pass_and_a_skip_on_one_operation_is_neither_passed_nor_a_regression(conftest):
+    """Two tests name an operation; one skipped its precondition, one passed.
+    Not all of it passed, so it is not offered as VERIFIED; nothing failed, so
+    it is not a regression. It sits on the middle line, where a reader sees the
+    skip."""
+    lines = dict(_named(conftest._report_lines(
+        _Everything, {"set_param": ["passed", "skipped"]}, claimed={"set_param"})))
+
+    assert lines["passed"] == []
+    assert lines["failed or skipped"] == ["set_param"]
+    assert lines["VERIFIED and claimed by a test, failed"] == []
+
+
+def test_a_run_where_nothing_passed_is_flagged_not_read_as_clean(conftest):
+    """An all-skip run has an empty regression line, same as a healthy run.
+    The flag is what tells them apart."""
+    assert conftest._measured_nothing(
+        {"set_param": ["skipped"], "set_bypass": ["skipped"]},
+        claimed={"set_param", "set_bypass"}) is True
+    assert conftest._measured_nothing(
+        {"set_param": ["passed"], "set_bypass": ["skipped"]},
+        claimed={"set_param", "set_bypass"}) is False
+    assert conftest._measured_nothing({}, claimed=set()) is False, (
+        "nothing claimed is a deselected run, not a run that measured nothing")
+
+
+def test_claims_come_from_tests_that_ran_not_tests_that_were_collected(conftest):
+    """pytest's -k deselects after our hook records claims; only tests that
+    produced a report count. Seen on the unit 2026-09-07: a -k run of three
+    unmarked tests reported 16 claimed operations and NOTHING PASSED."""
+    verifies = {"t.py::a": {"set_param"}, "t.py::b": {"set_bypass", "switch_scene"},
+                "t.py::c": set()}
+    assert conftest._claimed(verifies, ran={"t.py::b", "t.py::c"}) == {"set_bypass", "switch_scene"}
+    assert conftest._claimed(verifies, ran=set()) == set()
+    assert conftest._claimed({}, ran={"t.py::a"}) == set()
 
 
 def test_an_operation_no_test_claims_is_never_a_regression(conftest):
@@ -155,7 +205,7 @@ def test_an_operation_no_test_claims_is_never_a_regression(conftest):
     lines = dict(_named(conftest._report_lines(
         _Everything, {"set_param": ["passed"]}, claimed={"set_param"})))
 
-    assert lines["VERIFIED and claimed by a test, not passed"] == []
+    assert lines["VERIFIED and claimed by a test, failed"] == []
 
 
 def test_a_profile_with_nothing_claimed_reports_nothing_as_a_regression(conftest):
@@ -219,8 +269,8 @@ def test_a_deselected_test_claims_nothing(conftest, collection):
 
     The recording used to happen before the deselection, so `claimed` was
     built from every COLLECTED test - and an operation whose test never ran
-    was printed under `VERIFIED and claimed by a test, not passed`, which the
-    report labels a regression. A run of one test reported ~104 of them.
+    was printed under the line the report labels a regression (then
+    `not passed`, now `failed`). A run of one test reported ~104 of them.
     """
     items = [_Item("t.py::a", "set_param"), _Item("t.py::b", "set_bypass")]
     config = _Config(verifies="set_param")
@@ -234,7 +284,7 @@ def test_a_deselected_test_claims_nothing(conftest, collection):
     claimed = set().union(*collection.values())
     lines = dict(_named(conftest._report_lines(
         _Everything, {"set_param": ["passed"]}, claimed)))
-    assert lines["VERIFIED and claimed by a test, not passed"] == [], (
+    assert lines["VERIFIED and claimed by a test, failed"] == [], (
         "set_bypass was deselected, so this run measured nothing about it")
 
 
