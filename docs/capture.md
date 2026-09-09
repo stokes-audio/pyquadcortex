@@ -41,7 +41,7 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 #     m.HasField("metronome_status") and not m.params
 #
 # Note this is a NOISE list, not an allow-list, and pair it with a heartbeat -
-# see "Three ways your instrument lies about silence" below.
+# see "Four ways your instrument lies about silence" below.
 NOISE = {"GlobalTempoMessage", "IOMeterMessage", "GridModelMeterMessage",
          "KeepAliveMessage", "ModuleStatsMessage"}
 
@@ -65,11 +65,11 @@ with lock:
         print(f"{name}: {body[:400]}")
 ```
 
-## Three ways your instrument lies about silence
+## Four ways your instrument lies about silence
 
-Every one of these produced a confident wrong conclusion in this project, and all three
+Every one of these produced a confident wrong conclusion in this project, and all four
 look identical from the outside: **the device appears not to answer.** The device was
-behaving correctly all three times.
+behaving correctly all four times.
 
 A useful heuristic came out of it. A *flaky* negative is usually the device - reads here are
 lazy and the first request after connecting is often dropped. A *perfectly consistent*
@@ -142,6 +142,33 @@ timed out cleanly and repeatably, and "Favorites cannot be read over USB" went i
 documentation, along with a method that quietly returned the wrong list. Correlate on
 `request_id`, which the device does echo, and when a match predicate times out, log what DID
 arrive before concluding nothing did.
+
+**4. A listener you never actually registered records nothing, and nothing looks
+exactly like silence.** The listener above is attached after `connect()` returns, which is
+fine for an action you perform yourself but too late for the connect handshake's own burst
+- by then it is seconds from starting. Catching the burst means subscribing through
+`protocol.connect(before_handshake=...)`, and that hook is called WITH the started
+transport and expects you to register on it:
+
+```python
+protocol.connect(before_handshake=tap)                                    # WRONG
+protocol.connect(before_handshake=lambda t: t.add_listener(tap))          # right
+```
+
+The wrong form raises nothing. `tap` is called exactly once, with the `Transport` object
+as its "message", and never again. Measured 2026-09-09: one recorded message in 35
+seconds, on a link that was healthy and had just delivered a 399-message folder
+enumeration to nobody.
+
+The heartbeat from lie 2 does not necessarily save you here. If it counts what the
+recorder holds, that one spurious entry can satisfy its liveness test, and it will print
+ALIVE over an empty recording - which is what happened. Count something you know the
+device sends unprompted, such as the tempo stream, rather than the total.
+
+What does catch it is a POSITIVE CONTROL: an arm of the experiment where you already know
+what the device should say. Run that arm FIRST. A silent instrument then shows up in the
+arm that was supposed to be noisy, before you have spent the session believing a negative.
+`tests/hardware/conftest.py` has the correct registration if you want a worked example.
 
 ## Diff the whole state, do not hunt for a field
 

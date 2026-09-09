@@ -570,10 +570,15 @@ class QuadCortex:
              valid CC version).
           3. ``Connection{connected: true}``.
           4. A READ for each state type in ``_SUBSCRIBE_TYPES`` - this is the
-             subscription that makes the device start pushing that state. The
-             ``File`` READ is optional because it immediately enumerates the
-             entire folder tree. Whether it also subscribes later file changes
-             has not been measured.
+             subscription that makes the device start pushing that state, with
+             one measured exception. The ``File`` READ only ENUMERATES: it
+             immediately dumps the whole folder tree, and omitting it does not
+             stop the push a save announces. Measured 2026-09-09 on CorOS 4.0.1
+             / ``d14e``: an on-unit Save As announced ``File`` identically with
+             the READ sent and with it omitted (``docs/protocol.md`` section
+             4.2, which also says what was NOT measured). So
+             ``initial_file_listing=False`` costs the enumeration and nothing
+             else a save announces.
 
         Returns the echoed ResetCommsBuffers reply. After this, ``read_preset``
         and the device's live-sync pushes work.
