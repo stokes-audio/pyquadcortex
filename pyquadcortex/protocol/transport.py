@@ -283,7 +283,15 @@ class Transport:
                 for report in reports:
                     self._write_report(report)
                 if interval and index + 1 < len(encoded):
-                    time.sleep(interval)
+                    try:
+                        time.sleep(interval)
+                    except BaseException:
+                        # Once a touch-down has been written, do not leave the
+                        # unit in drag mode if Ctrl-C interrupts the interval.
+                        for remaining in encoded[index + 1:]:
+                            for report in remaining:
+                                self._write_report(report)
+                        raise
 
     def _write_report(self, report):
         """Write one HID output report, tolerating the QC's status-stage STALL.

@@ -387,11 +387,11 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   rejected because it weakens the hardware-verified gesture; (d) hide the timing
   in a UI adapter - rejected because every caller would need to rediscover the
   same wire contract.
+- **Open Questions:** Whether the 300 ms settle, 20 ms interval, and interpreted
+  runtime meanings remain the same on firmware versions beyond CorOS 4.1.
 - **Rationale:** The transport already owns write serialization and all
   time-dependent protocol behavior. Extending that boundary keeps the client a
   testable protobuf layer and makes the gesture indivisible on the HID stream.
 - **Consequences:** `QuadCortex` transport doubles implement `send_sequence`.
   A long sequence blocks keepalives and other writers for its duration, so this
   primitive is for short measured protocol sequences, not general scheduling.
-- **Open Questions:** Whether the 300 ms settle, 20 ms interval, and inverted
-  runtime meanings remain the same on firmware versions beyond CorOS 4.1.

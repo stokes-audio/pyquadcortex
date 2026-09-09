@@ -406,8 +406,9 @@ The host's `License` READ that provoked it carries `08 03` and ENCRYPTED = 0
 Every frame's trailer carries a `CortexMessageType.Enum` value. The schema
 declares **73 types** (`Undefined = 0` through `RemoteControl = 72`, with
 `NumberOfMessageTypes = 73` as a sentinel). `ModelPreset = 71` and
-`RemoteControl = 72` are additions recovered from Cortex Control 4.1.0. The
-ones this library uses:
+`RemoteControl = 72` are additions recovered from Cortex Control 4.1.0.
+`ModelPreset` has not yet been observed on the wire and is not used by this
+library; its recovered schema remains a hypothesis. The types used here are:
 
 | Value | Type | Role here |
 |---|---|---|
@@ -425,8 +426,7 @@ ones this library uses:
 | 49 | `Connection` | connected / disconnected announce |
 | 51 | `ModelRepo` | required readiness step in the handshake |
 | 52 | `ResetCommsBuffers` | session hello with a session token |
-| 71 | `ModelPreset` | Cortex Control model-preset state; decoded, no client wrapper |
-| 72 | `RemoteControl` | physical display capture and touchscreen input |
+| 72 | `RemoteControl` | unit-screen capture and touchscreen input |
 
 `registry.py` registers roughly three dozen types in total, including state
 types the device pushes (`IOSettings`, `GeneralSettings`, `Mode`, `GlobalEQ`,
@@ -448,33 +448,6 @@ Most scalar fields in a preset payload are wrapped in a synthetic
 distinguishable on the wire and via `HasField()`. The protocol makes use of
 that: absent fields mean "unchanged / not addressed", which is what makes sparse
 keyed grid edits work.
-
-### 3.1 Remote touchscreen control
-
-`RemoteControl{UPDATE, mouse{x, y, type}}` addresses the physical display in
-raw 800 x 480 pixels. On QC CorOS 4.1.0 a reliable tap is two messages at the
-same coordinate, 20 ms apart: enum `RELEASE=1` followed by enum `PRESS=0`.
-Those runtime semantics are inverted against the recovered enum labels; using
-the labelled order leaves the touch held and eventually enters Grid drag mode.
-The nominal `TAP` type did not honour its supplied coordinate, and `MOVE` was
-not a reliable positioning primitive.
-
-One screenshot READ and a 300 ms UI settle must precede the first mouse event
-on a connection. Without that priming sequence CorOS intermittently ignores the
-mouse pair. `tap_screen()` performs it lazily; later taps on the same connection
-do not repeat the screenshot read.
-
-The device acknowledges neither mouse message. `tap_screen(x, y)` therefore
-sends the confirmed pair and returns after transmission; it cannot claim that a
-particular screen opened. `(184, 147)` opened the second block on the top Grid
-row during the hardware verification.
-
-The readback half is asynchronous: `RemoteControl{READ, screenshot:{}}`
-produces an uncorrelated `RemoteControl{UPDATE,
-screenshot:{payload:<PNG>}}`. On CorOS 4.1.0 the payload is a complete 800 x
-480 PNG in one reassembled protocol message. It carries no `request_id`, so a
-normal request waiter misses it; `capture_screen()` installs a type waiter first
-and validates the PNG signature before returning the bytes.
 
 **But presence is NOT universal, and `HasField` raises on a field that lacks it**
 (`ValueError: Field X does not have presence`). The exceptions are not obscure:
@@ -717,6 +690,46 @@ setlist holds 256 slots (32 banks of 8).
 Field paths below use `{}` for nested submessages, matching the captured
 traffic. Every shape in this section was seen on the wire unless explicitly
 noted.
+
+### 7.0 Remote touchscreen control
+
+`RemoteControl{UPDATE, mouse{x, y, type}}` addresses the unit's screen in raw
+800 x 480 pixels. The two messages observed to make a tap on Quad Cortex CorOS
+4.1.0 were 20 ms apart. The first carried `type: 1`; the second omitted `type`
+because its value was the proto3 default, zero. Interpreting those values using
+the recovered enum yields `RELEASE=1` followed by `PRESS=0`, although swapped
+recovered labels fit the same bytes. Sending the labelled PRESS/RELEASE order
+left the touch held and eventually entered Grid drag mode.
+
+Manual probing by tony-xmelon on 2026-09-04 used the Grid at `(184, 147)`, the
+second block on the top row. At least one `TAP=3` attempt at that coordinate did
+not open the block; at least one `MOVE=2` positioning attempt did not make the
+following gesture reliable. The probe log retained no defensible trial count,
+so these are bounded observations rather than rates. The value-1/value-0 pair
+opened the intended block and the following capture showed its editor.
+
+The retained session record has an unprimed pair that did not land and a pair
+that did after one screenshot read plus a conservative 300 ms wait. It did not
+test 250 ms or establish a minimum threshold. `tap_screen()` therefore treats
+300 ms as the observed recipe, records the most recent capture time, and asks
+the transport to wait only the remainder before a tap. Later taps after that
+settle do not repeat the screenshot read.
+
+The device acknowledges neither mouse message. `tap_screen(x, y, timeout=)`
+therefore sends the observed pair and returns after transmission; the timeout
+belongs to the priming capture and any failure is reported in tap context.
+
+The readback half, measured by tony-xmelon on 2026-09-08, is asynchronous:
+`RemoteControl{READ, screenshot:{}}` produces an uncorrelated
+`RemoteControl{UPDATE, screenshot:{payload:<PNG>}}`. On CorOS 4.1.0 the payload
+is a complete 800 x 480 PNG in one reassembled protocol message. It carries no
+`request_id`, so a normal request waiter misses it; `capture_screen()` installs
+a type waiter first and accepts only a full-profile PNG with IHDR and terminal
+IEND, rejecting region metadata.
+
+The older `Screenshot = 25` message carries a preset folder/index and returns a
+preset PNG; it was exercised as the preset-thumbnail path, not as a live
+framebuffer. `RemoteControl = 72` is the path that returned the current screen.
 
 ### 7.1 Recall a preset
 
@@ -2885,8 +2898,8 @@ screen; **captured only** = seen on the wire, with no independent read-back.
 | host undo / redo (no client method yet; PR #42 adds `undo()` / `redo()`) | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | preset read-back | measured 2026-09-03 on Quad Cortex, CorOS 4.0.1 / d14e: `08 01 28 01` reversed a bypass edit on a scratch preset and `08 01 30 01` reapplied it, the edit restored and the preset saved clean afterwards. Reported by a contributor on 4.1.0. Whether the recall that follows carries `reason: UNDO` was not captured |
 | `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as UPDATE in 2-11 ms (two hardware sessions); `is_dirty` has no presence, absent IS false; flips false across a save; also pushed unsolicited, but only when the flag CHANGES - see below |
 | `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
-| `tap_screen` | two `RemoteControl{UPDATE, mouse{x, y, RELEASE/PRESS}}` messages | on-unit + screenshot | Contributed measurement 2026-09-08 on Quad Cortex, CorOS 4.1.0: raw 800 x 480 pixels; runtime enum semantics are inverted. Not measured on 4.0.1 |
-| `capture_screen` | `RemoteControl{READ, screenshot:{}}` | async read-back | Contributed measurement 2026-09-08 on Quad Cortex, CorOS 4.1.0: returns the complete PNG from the following uncorrelated UPDATE. Not measured on 4.0.1 |
+| `tap_screen` | two `RemoteControl{UPDATE, mouse{x, y, value 1 / default 0}}` messages | on-unit + screenshot | Manually verified by tony-xmelon on 2026-09-04 on Quad Cortex, CorOS 4.1.0: raw 800 x 480 pixels; the pair opened the intended block and capture showed its editor. Not measured on 4.0.1 |
+| `capture_screen` | `RemoteControl{READ, screenshot:{}}` | async read-back | Verified by tony-xmelon on 2026-09-08 on Quad Cortex, CorOS 4.1.0: returns the complete PNG from the following uncorrelated UPDATE. Not measured on 4.0.1 |
 | `set_param(LaneInput(row), ...)` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | the per-row noise gate; NOISE REDUCTION, BYPASS and INPUT GAIN all confirmed in both directions, per-scene included. GAIN REDUCTION is a meter (`grMeter`), not a control |
 | `free_rows` | reads `models[]` + `Chain.split_control_points` | read-back | rows available for an independent chain: excludes the lane row of a branch, which is spoken for even when empty |
 | `wait_for_listing` | repeated `File{READ}` | read-back | polls until a listing settles; not a device operation of its own |

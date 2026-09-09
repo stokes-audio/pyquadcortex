@@ -33,7 +33,8 @@ def test_quadcortex_declares_the_4_0_1_profile():
     assert qc.MEASURED_ON == ("4.0.1",)
     assert qc.CC_VERSION == "4.0.1"
     assert qc.EVIDENCE is support.Evidence.MAINTAINER
-    assert qc.HARDWARE == support.Hardware(footswitches=8, expression_ports=2)
+    assert qc.HARDWARE == support.Hardware(
+        footswitches=8, expression_ports=2, display_size=(800, 480))
     assert qc.VERIFIED is support.EVERYTHING
     assert qc.models is coros_4_0_1.models
     assert qc.params is coros_4_0_1.params

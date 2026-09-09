@@ -165,9 +165,8 @@ one that lives in the template and the contributor guide is not.
 **What changed:** `connect()` reads the unit's `Version` before the handshake,
 resolves `(device_type, zenos_git_hash)` in a registry of profile classes, and
 refuses an unknown pair with `UnsupportedDevice`. `QuadCortex` declares itself
-as the 4.0.1 profile; `QuadCortex41` connects and verifies only operations with
-recorded 4.1 evidence; a unit's suite run fills its `VERIFIED` set;
-`QuadCortexMini` is recognised and
+as the 4.0.1 profile; `QuadCortex41` connects and verifies nothing until a 4.1
+unit's suite run fills its `VERIFIED` set; `QuadCortexMini` is recognised and
 refused. An operation a profile has not verified refuses under the default
 `Support.VERIFIED` and runs with one warning under `Support.EXPERIMENTAL`.
 Generated constants live in `pyquadcortex/protocol/catalogs/coros_4_0_1/`;
@@ -182,19 +181,22 @@ verifies and prints, per profile, which passed.
 
 ### 2026-09-04 - Physical screen capture and touchscreen input (ADR-0021)
 
-**What changed:** The CorOS 4.1 schema now includes `ModelPreset` and message
-type 72, `RemoteControl`, with regenerated bindings and stubs.
-`QuadCortex.capture_screen()` reads the current 800 x 480 display as PNG, and
+**What changed:** The recovered CorOS 4.1 schema now includes `ModelPreset`
+(not yet observed or used here) and message type 72, `RemoteControl`, with
+regenerated bindings and stubs. `QuadCortex41.capture_screen()` reads the
+current 800 x 480 display as PNG, and
 `tap_screen(x, y)` sends the measured touchscreen gesture after lazily priming
-the remote-control surface. `Transport.send_sequence()` owns the 300 ms initial
-settle, the 20 ms gesture interval, and atomicity against concurrent writes.
+the remote-control surface. The client chooses the observed 300 ms initial
+settle and 20 ms gesture interval; `Transport.send_sequence()` applies them and
+owns atomicity against concurrent writes.
 
 **Why:** Live tests on QC CorOS 4.1.0 established the complete path. Screenshot
-answers are asynchronous UPDATEs without request IDs. Mouse input is unreliable
-until one screenshot read initializes the surface. Runtime values are inverted
-against the recovered labels: RELEASE=1 begins the touch and PRESS=0 ends it;
-the labelled order leaves the UI held, while the nominal TAP ignores its
-coordinate. The verified pair at `(184, 147)` opened the intended block and the
+answers are asynchronous UPDATEs without request IDs. The retained probe record
+shows an unprimed failure and success after one screenshot plus a conservative
+300 ms wait; 250 ms and the minimum threshold were not measured. The observed
+bytes use value 1 to begin the touch and omit the default-valued type field in
+the ending message; interpreting those as RELEASE then PRESS matches the
+recovered enum. The pair at `(184, 147)` opened the intended block and the
 following framebuffer showed its parameter editor.
 
 **Scope of impact:** `protocol/proto/ProductionAutomation.proto`, generated

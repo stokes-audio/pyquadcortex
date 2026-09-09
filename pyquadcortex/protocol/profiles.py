@@ -24,11 +24,13 @@ class QuadCortex41(QuadCortex):
     d14e, by tony-xmelon. That is a contributor's report and the maintainer has
     not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
     connection is therefore known to work with this handshake and announce
-    string. ``capture_screen`` and ``tap_screen`` have dated 4.1.0 evidence and
-    are VERIFIED; other inherited operations refuse under ``Support.VERIFIED``
-    and run with a warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
-    binding the 4.0.1 constants would hand a 4.1 user names their unit does not
-    use.
+    string. ``capture_screen`` has a dated 4.1.0 hardware-test result;
+    ``tap_screen`` was manually verified by tony-xmelon on 2026-09-04 at
+    (184, 147), where it opened the intended Grid block and a following capture
+    showed its editor. Both are VERIFIED; other inherited operations refuse
+    under ``Support.VERIFIED`` and run with a warning under
+    ``Support.EXPERIMENTAL``. The snapshot is deliberately absent: binding the
+    4.0.1 constants would hand a 4.1 user names their unit does not use.
 
     To finish this profile, on a 4.1 unit:
 
@@ -52,9 +54,9 @@ class QuadCortex41(QuadCortex):
         """Return the CorOS 4.1 physical-display PNG."""
         return self._capture_screen(timeout=timeout)
 
-    def tap_screen(self, x: float, y: float) -> None:
+    def tap_screen(self, x: float, y: float, timeout: float = 10.0) -> None:
         """Tap a CorOS 4.1 physical-screen pixel coordinate."""
-        self._tap_screen(x, y)
+        self._tap_screen(x, y, timeout=timeout)
 
 
 class QuadCortexMini(QuadCortex):

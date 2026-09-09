@@ -308,7 +308,8 @@ class QuadCortex:
     #: eight letters A to H through `enums.Footswitch`; it reads this when a
     #: profile with a different count has actually been measured, which is not
     #: yet - the Mini's four is off a product page, not off a unit.
-    HARDWARE = Hardware(footswitches=8, expression_ports=2)
+    HARDWARE = Hardware(
+        footswitches=8, expression_ports=2, display_size=(800, 480))
     #: Operation names verified on this profile. Every method this class has
     #: carries 4.0.1 evidence, so the base verifies everything; a subclass
     #: starts from an empty set and grows it from the hardware suite's report.
@@ -406,6 +407,7 @@ class QuadCortex:
         # CorOS ignores mouse messages until the first screenshot READ has
         # initialized the remote-control surface for this connection.
         self._remote_control_ready = False
+        self._remote_control_last_capture_at: float | None = None
         # How this connection treats an operation its profile has not verified
         # (ADR-0020). Read by the guard `__init_subclass__` installs.
         self._support = support
@@ -2845,8 +2847,49 @@ class QuadCortex:
         Confirmed at 800 x 480 on QC CorOS 4.1.0. CorOS answers
         ``RemoteControl{READ, screenshot:{}}`` with an asynchronous,
         uncorrelated ``UPDATE`` carrying the PNG, so a type waiter is installed
-        before the read. Replies that are not screenshot PNGs are ignored.
+        before the read. A reply must be a complete full-display PNG; malformed
+        payloads and region updates are warned about and left undelivered.
         """
+        expected_size = self.HARDWARE.display_size
+        assert expected_size is not None
+
+        def complete_framebuffer(message) -> bool:
+            reason = None
+            screenshot = message.screenshot if message.HasField("screenshot") else None
+            payload = (bytes(screenshot.payload)
+                       if screenshot is not None and screenshot.HasField("payload")
+                       else b"")
+            region = ({name: getattr(screenshot, name)
+                       for name in ("x", "y", "w", "h")
+                       if screenshot.HasField(name)}
+                      if screenshot is not None else {})
+            if message.action != pa.MessageAction.UPDATE:
+                reason = "action is not UPDATE"
+            elif screenshot is None:
+                reason = "no screenshot field"
+            elif region:
+                reason = f"region metadata is present: {region}"
+            elif not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+                reason = "payload has no PNG signature"
+            elif len(payload) < 45 or payload[12:16] != b"IHDR":
+                reason = "payload has no complete IHDR"
+            elif tuple(int.from_bytes(payload[offset:offset + 4], "big")
+                       for offset in (16, 20)) != expected_size:
+                reason = "IHDR dimensions do not match the profile display"
+            elif payload[-12:] != b"\x00\x00\x00\x00IEND\xaeB`\x82":
+                reason = "payload has no terminal IEND chunk"
+            if reason is None:
+                return True
+            log.warning(
+                "Ignoring RemoteControl while waiting for a full screenshot: "
+                "%s (action=%s, fields=%s, payload_bytes=%d)",
+                reason,
+                message.action,
+                [field.name for field, _ in message.ListFields()],
+                len(payload),
+            )
+            return False
+
         reply = self._t.await_broadcast(
             pa.RemoteControlMessage,
             lambda: self._t.send(pa.RemoteControlMessage(
@@ -2854,17 +2897,13 @@ class QuadCortex:
                 screenshot=pa.RemoteControlScreenshot(),
             )),
             timeout=timeout,
-            match=lambda message: (
-                message.action == pa.MessageAction.UPDATE
-                and message.HasField("screenshot")
-                and message.screenshot.HasField("payload")
-                and message.screenshot.payload.startswith(b"\x89PNG\r\n\x1a\n")
-            ),
+            match=complete_framebuffer,
         )
         self._remote_control_ready = True
+        self._remote_control_last_capture_at = time.monotonic()
         return bytes(reply.screenshot.payload)
 
-    def tap_screen(self, x: float, y: float) -> None:
+    def tap_screen(self, x: float, y: float, timeout: float = 10.0) -> None:
         """Refuse physical-screen input on the CorOS 4.0.1 base profile."""
         raise ControlNotDrivable(
             "tap_screen",
@@ -2872,29 +2911,38 @@ class QuadCortex:
             "Use QuadCortex41 for a CorOS 4.1.0 unit.",
         )
 
-    def _tap_screen(self, x: float, y: float) -> None:
-        """Tap a raw pixel coordinate on the unit's 800 x 480 touchscreen.
+    def _tap_screen(self, x: float, y: float, timeout: float = 10.0) -> None:
+        """Tap a raw pixel coordinate on the unit's touchscreen.
 
         The coordinate space and two-message gesture were confirmed on QC
-        CorOS 4.1.0. Runtime semantics are inverted against the recovered enum
-        labels: wire value ``RELEASE=1`` begins the touch and ``PRESS=0`` ends
-        it. The nominal ``TAP`` type did not honour its coordinates.
+        CorOS 4.1.0. The observed first message carries value 1 and the second
+        omits the default value 0; interpreting them through the recovered enum
+        gives ``RELEASE`` then ``PRESS``. The nominal ``TAP`` type did not
+        honour its coordinates in the recorded Grid probe.
 
         The pair is fire-and-forget. The first call primes CorOS' remote-control
-        surface with :meth:`capture_screen`; the transport then sends the pair
+        surface with :meth:`_capture_screen`; the transport then sends the pair
         atomically after the measured settle and inter-message intervals.
         Prefer a semantic control where one exists.
         """
-        for name, value, upper in (("x", x, 800), ("y", y, 480)):
+        display_size = self.HARDWARE.display_size
+        assert display_size is not None
+        for name, value, upper in (("x", x, display_size[0]),
+                                   ("y", y, display_size[1])):
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise TypeError(f"{name} must be a real pixel coordinate")
             if not math.isfinite(value) or not 0 <= value < upper:
                 raise ValueError(f"{name} must be in the range 0 <= {name} < {upper}")
 
-        prime_delay = 0.0
         if not self._remote_control_ready:
-            self._capture_screen()
-            prime_delay = 0.3
+            try:
+                self._capture_screen(timeout=timeout)
+            except TimeoutError as exc:
+                raise TimeoutError(
+                    f"tap_screen could not prime remote control: {exc}") from exc
+        captured_at = self._remote_control_last_capture_at
+        assert captured_at is not None
+        prime_delay = max(0.0, 0.3 - (time.monotonic() - captured_at))
         self._t.send_sequence(
             (
                 pa.RemoteControlMessage(

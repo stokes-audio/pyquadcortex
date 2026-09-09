@@ -202,6 +202,25 @@ def test_send_sequence_cannot_be_split_by_a_concurrent_writer(monkeypatch):
     assert [frame.message_type for frame in frames] == [72, 72, 10]
 
 
+def test_send_sequence_finishes_after_interrupted_interval(monkeypatch):
+    fake = FakeHid()
+    t = transport.Transport(fake, keepalive_interval=QUIET_KEEPALIVE)
+
+    def interrupt(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(transport.time, "sleep", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        t.send_sequence(
+            (pa.RemoteControlMessage(action=pa.MessageAction.UPDATE),
+             pa.RemoteControlMessage(action=pa.MessageAction.UPDATE)),
+            interval=0.02,
+        )
+
+    frames = [framing.decode_reports([report]) for report in fake.writes]
+    assert [frame.message_type for frame in frames] == [72, 72]
+
+
 @pytest.mark.parametrize("delay,interval", [(-0.1, 0), (0, -0.1)])
 def test_send_sequence_rejects_negative_timing(delay, interval):
     t = transport.Transport(FakeHid(), keepalive_interval=QUIET_KEEPALIVE)

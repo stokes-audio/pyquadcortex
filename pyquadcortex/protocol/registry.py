@@ -69,6 +69,7 @@ _BY_NAME = {
     "ShowTuner": pa.ShowTunerMessage,
     "Looper": pa.LooperMessage,
     "GigViewButton": pa.GigViewButtonMessage,
+    "RemoteControl": pa.RemoteControlMessage,
 }
 _ENUM = pa.CortexMessageType.Enum
 
