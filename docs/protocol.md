@@ -2808,10 +2808,15 @@ See `protocol/proto/Preset.proto` for the full structure.
 
 ## Operation coverage
 
-Every operation the library exposes has been exercised live on hardware
-(firmware `d14e`, CorOS 4.0.1). "Verified by" means: **read-back** = device state
-re-read over the protocol and asserted; **on-unit** = the change was confirmed
-visually on the device's own screen.
+Every operation the library exposes has been exercised live on the profile
+named in its row, and on **Quad Cortex, CorOS 4.0.1** where the row names none
+(ADR-0020, and the note at the top of this file). A row naming another profile
+records an observation beside the 4.0.1 record, never in its place, so an
+operation measured only elsewhere says so rather than reading as the baseline.
+
+"Verified by" means: **read-back** = device state re-read over the protocol and
+asserted; **on-unit** = the change was confirmed visually on the device's own
+screen; **captured only** = seen on the wire, with no independent read-back.
 
 | Operation | Wire shape (brief) | Verified by | Notes |
 |---|---|---|---|
