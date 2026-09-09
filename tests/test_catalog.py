@@ -254,7 +254,7 @@ def test_non_numeric_clone_replacement_is_isolated_to_that_model():
 
 
 def test_distilled_real_catalog_clone_families_resolve_at_wire_indexes():
-    """Pin the clone shapes observed on the contributed CorOS 4.1 catalog."""
+    """Pin measured CorOS 4.0.1 facts independently of the input fixture."""
     path = pathlib.Path(__file__).parent / "fixtures" / "catalog_clones.json"
     facts = json.loads(path.read_text(encoding="utf-8"))
     models = []
@@ -279,12 +279,36 @@ def test_distilled_real_catalog_clone_families_resolve_at_wire_indexes():
 
     cat = catalog.parse_model_repo(make_payload(xml))
 
-    for family in facts["families"]:
-        child = cat[family["child"]]
-        replacement = family["replacement"]
-        assert len(child.parameters) == family["parent_parameters"]
-        assert child.parameters[replacement["index"]].name == replacement["name"]
-        assert child.parameters[replacement["index"]].default == replacement["default"]
+    expected = {
+        12001: (21, 1, "ir selector", 0.0),
+        12050: (31, 5, "POSITION", 0.3),
+        32001: (21, 3, "BALANCE", 0.0),
+        32050: (31, 3, "BALANCE", 0.0),
+        8016: (29, 8, "PRE 1 FREQ", 40.0),
+    }
+    assert set(expected) == {family["child"] for family in facts["families"]}
+    for child_id, (size, index, name, default) in expected.items():
+        child = cat[child_id]
+        assert len(child.parameters) == size
+        assert child.parameters[index].name == name
+        assert child.parameters[index].default == default
+
+
+def test_clone_resolution_fallback_logs_model_and_reason(caplog):
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="Broken" clones="1">
+        <Parameter name="C" replaces="2" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    with caplog.at_level("DEBUG", logger="pyquadcortex.protocol.catalog"):
+        catalog.parse_model_repo(make_payload(xml))
+
+    assert "model 2 clone resolution failed" in caplog.text
+    assert "non-contiguous parameter indexes" in caplog.text
 
 
 def test_lookup_parameter_by_name_is_case_insensitive(cat):

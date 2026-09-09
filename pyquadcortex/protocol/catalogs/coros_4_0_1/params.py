@@ -168,10 +168,10 @@ class Cabsim(ParamSet):
     cabs instead clone a 31-parameter layout (and carry 32 wire values),
     so resolve their extra controls through the live catalog.
 
-    Catalog evidence: index 3 is PAN over 0..10 on mono layouts but
-    BALANCE over -1..1 on stereo layouts. Therefore `Real(0.0)` means
-    hard left on mono and centre on stereo. Stereo screen behaviour has
-    not yet been verified.
+    The catalog declares index 3 as PAN over 0..10 on mono layouts and
+    BALANCE over -1..1 on stereo layouts. Neither span matches the
+    screen: on CorOS 4.0.1 both layouts displayed wire values 0, 0.5,
+    0.75 and 1 as 50 L, C, 25 R and 50 R. See issue #55.
 
     The mic-to-index mapping was confirmed against the unit's own
     editor on mono cabs. Index 21 exists on the wire, is absent from the catalog and
@@ -181,7 +181,7 @@ class Cabsim(ParamSet):
     MIC_1_BYPASS: Param[NoUnit] = Param(0, 'MIC_1_BYPASS')    # switch
     MIC_1_IR_SELECTOR: Param[NoUnit] = Param(1, 'MIC_1_IR_SELECTOR')    # string
     MIC_1_LEVEL: Param[DbUnit] = Param(2, 'MIC_1_LEVEL')    # float dB
-    MIC_1_PAN: Param[NoUnit] = Param(3, 'MIC_1_PAN')    # mono PAN 0..10; stereo BALANCE -1..1
+    MIC_1_PAN: Param[NoUnit] = Param(3, 'MIC_1_PAN')    # float; mono PAN 0..10, stereo BALANCE -1..1
     MIC_1_DISTANCE: Param[NoUnit] = Param(4, 'MIC_1_DISTANCE')    # float
     MIC_1_POSITION: Param[NoUnit] = Param(5, 'MIC_1_POSITION')    # float
     MIC_1_PHI: Param[NoUnit] = Param(6, 'MIC_1_PHI')    # switch

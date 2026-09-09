@@ -366,12 +366,11 @@ def test_the_same_knob_is_floored_under_both_of_its_spellings():
 
 
 def test_parallax_carries_the_cab_law_itself():
-    """It is a Bass Overdrive with a cab section, so it cannot borrow the layout.
+    """Parallax publishes both cab LEVEL laws in its own catalog entry.
 
-    `targets.wire_model` only borrows for models in CABSIM_CATEGORIES, and
-    Parallax is not one. It works only because its own catalog entry carries
-    MIN_CABSIM_DB and the same skew - which is also the evidence the
-    layout-borrowing design cites, so it is worth pinning where it is claimed.
+    It is a Bass Overdrive with two embedded cab sections rather than a cab
+    clone. Both controls therefore have to carry their own MIN_CABSIM_DB bound
+    and skew, independently of clone resolution.
     """
     for index in (16, 24):
         spec = SCALES[(3008, index)]

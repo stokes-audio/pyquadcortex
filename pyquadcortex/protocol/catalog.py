@@ -24,12 +24,16 @@ there. :attr:`Model.is_factory` encodes that rule (see the class docstring).
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field, replace
 import gzip
 import io
+import logging
 import math
 import tarfile
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field, replace
+
+
+logger = logging.getLogger(__name__)
 
 # The numbers behind the catalog's symbolic bounds. `units` imports nothing from
 # this module, so this direction is the only one and there is no cycle.
@@ -723,11 +727,17 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 continue
             try:
                 effective = _effective_parameter_elements(element, elements)
-            except ValueError:
+            except ValueError as exc:
                 # A catalog can include purchased content and player-created
                 # models this build has never seen. One malformed clone must
                 # not discard every other model; preserve its local parameters
                 # in published order, as the parser did before clone support.
+                logger.debug(
+                    "ModelRepo model %s clone resolution failed; using its local "
+                    "parameter order: %s",
+                    model_id,
+                    exc,
+                )
                 effective = tuple(enumerate(element.findall("Parameter")))
             parameters = tuple(
                 _parameter(index, parameter, element.get("name", ""))

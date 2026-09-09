@@ -351,6 +351,12 @@ the lane family, and that mistake shipped twice.
 nothing at the call site said which. The pair that forced the issue: on a lane
 VOLUME, `real=0.0` is unity and `value=0.0` is silence.
 
+**Later correction (2026-09-08):** the account below predates understanding
+`Model.clones` and numeric `Parameter.replaces`. Clone resolution now expands a
+cab's local contribution into its effective 21- or 31-parameter layout, so the
+shared-layout borrowing described there has been removed. See the 2026-09-08
+ModelRepo clone entry.
+
 **What to watch:** everything that asks "what sits at this wire index" must get
 the SAME answer. It did not at first, and the reason was deeper than a
 duplicated lookup: on 169 of the 174 cab models the model's OWN catalog entry is
