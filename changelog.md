@@ -31,7 +31,8 @@ one, for the same knob.
 
 `units.LABELLED_END_SPAN` now holds the drawn span, measured on CorOS 4.0.1
 across three of the four declared spans, and `Parameter.mid_label` carries the
-middle label. `mid_string` leaves the unexplained list in
+middle label. A declared default moves onto the drawn span with everything
+else, so a pan's default reports the position the screen shows. `mid_string` leaves the unexplained list in
 [docs/domain-model.md](docs/domain-model.md): it is the label at wire 0.5.
 
 

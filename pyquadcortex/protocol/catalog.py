@@ -622,15 +622,32 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
     minimum = _as_bound(p.get("min"), 0.0, where)
     maximum = _as_bound(p.get("max"), 1.0, where)
     skew = parse_skew(p.get("skew"))
+    default = _as_float(p.get("defaultValue"))
     min_label = p.get("min_string", "")
     mid_label = p.get("mid_string", "")
     max_label = p.get("max_string", "")
-    if min_label and mid_label and max_label:
+    if (min_label and mid_label and max_label
+            and skew == LIN_SKEW
+            and minimum is not None and maximum is not None
+            and maximum != minimum):
         # A labelled-end control draws a span the catalog does not state. All
         # three labels together are the discriminator: 267 parameters carry one
         # or two - almost always `min_string="OFF"` - and exactly 36 carry all
         # three. See :data:`units.LABELLED_END_SPAN` for the readings.
+        #
+        # The DEFAULT moves with the span, or it would keep meaning a position
+        # on the scale that was just replaced: a mono cab's PAN declares 5 of
+        # 0..10, which is the centre, and left alone it would read as 5 R. The
+        # conversion is checked against a reading - a Minivoicer's `V1 PAN`
+        # declares 0.6 of 0..1 and its untouched default shows `10 R`.
+        #
+        # Linear only, on purpose. Every one of the 36 declares no skew or
+        # skew=1, so the measured straight line and the declared taper agree,
+        # and a member that ever declares a taper is left alone rather than
+        # converted through a mapping nobody measured for it.
+        wire = (default - minimum) / (maximum - minimum)
         minimum, maximum = units.LABELLED_END_SPAN
+        default = minimum + (maximum - minimum) * wire
     # The floor is keyed by the LAW, not by how the vendor spelled the bound.
     # Keying it by the symbolic name protected most cabs and not the PCOM ones,
     # which write `min="-40" max="6"` for the identical control - so asking one
@@ -643,7 +660,7 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         name=p.get("name", ""),
         minimum=minimum,
         maximum=maximum,
-        default=_as_float(p.get("defaultValue")),
+        default=default,
         units=p.get("units", ""),
         type=p.get("type", ""),
         steps=_as_int(p.get("steps")),

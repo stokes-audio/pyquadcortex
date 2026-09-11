@@ -187,6 +187,18 @@ FLOOR_WIRE = {
 #: key: ``(0.0, 1.0, 1.0)`` is one of the commonest laws in the catalog and
 #: almost none of those parameters is in this family.
 #:
+#: The DEFAULT moves with the span. A declared default is a position on the
+#: declared scale, so leaving it behind would make a mono cab's `PAN` report 5
+#: against -50..+50 - "5 R" for a knob whose default is dead centre. Converted
+#: through the declared law, the three centred families all land on 0.0 and a
+#: Minivoicer's `V1 PAN` lands on 10.0, which is the `10 R` its untouched
+#: default actually shows.
+#:
+#: Applied to LINEAR members only. All 36 declare no skew or skew=1, so the
+#: measured straight line and the declared taper agree; a member that ever
+#: declares a taper keeps what the catalog said rather than being converted
+#: through a mapping nobody measured for it.
+#:
 #: What is NOT claimed: the granularity. ``steps`` reads 360 on 21 of them and
 #: nothing on the rest, while the one entry declaring the drawn span says 101.
 #: The readings land on whole numbers, and nobody has looked for the smallest

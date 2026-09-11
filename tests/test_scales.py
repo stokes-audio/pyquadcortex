@@ -326,6 +326,21 @@ def test_a_labelled_end_control_shows_a_letter_at_its_middle():
         assert spec.to_real(0.5) == pytest.approx(0.0)
 
 
+def test_a_pans_default_is_the_position_the_screen_showed():
+    """The Minivoicer's `V1 PAN` was read at its UNTOUCHED default.
+
+    It declares 0.6 of 0..1 and the screen showed `10 R`, so the default has to
+    move onto the drawn span with everything else. This is the one reading that
+    needed no write at all, which is what makes it a check on the conversion
+    rather than on the write path.
+    """
+    assert SCALES[(18007, 8)].default == pytest.approx(10.0)
+    assert SCALES[(18007, 12)].default == pytest.approx(-10.0)
+    # the cab pans declare their centre differently and both land on it
+    assert SCALES[(12000, 3)].default == pytest.approx(0.0)
+    assert SCALES[(32000, 3)].default == pytest.approx(0.0)
+
+
 def test_a_knob_with_no_off_detent_converts_at_its_minimum():
     """The EQ gains reach every position, so nothing is refused there."""
     band = SCALES[(4000, 0)]
