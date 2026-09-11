@@ -3286,6 +3286,7 @@ class QuadCortex:
         watching the unit create one and then doing the same from the host:
 
             File{CREATE, type: 0, folder{key: "/media/p4/Presets/<name>",
+                                         parent_key: "/media/p4/Presets",
                                          name: "<name>", is_factory: false}}
 
         The new key works everywhere a setlist path does, so presets can be saved
@@ -3294,6 +3295,7 @@ class QuadCortex:
         """
         msg = pa.FileMessage(type=0)
         msg.folder.key = f"{USER_SETLIST_ROOT}/{name}"
+        msg.folder.parent_key = USER_SETLIST_ROOT
         msg.folder.name = name
         msg.folder.is_factory = False
         self._file_operation(msg)
@@ -3406,14 +3408,16 @@ class QuadCortex:
     def delete_setlist(self, name: str):
         """Delete a setlist and whatever it holds.
 
-        ``File{DELETE, folder{key, name}}`` against the setlist's own key.
+        ``File{DELETE, folder{key, is_factory: false},
+        delete_from_library: false}`` against the setlist's own key.
         Confirmed: the folder disappears from the listing. Like the other file
         operations this is eventually consistent, so re-enumerate rather than
         checking immediately.
         """
         msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
         msg.folder.key = f"{USER_SETLIST_ROOT}/{name}"
-        msg.folder.name = name
+        msg.folder.is_factory = False
+        msg.delete_from_library = False
         return self._file_operation(msg)
 
     def copy_preset(self, from_setlist: str, position, to_setlist: str,
