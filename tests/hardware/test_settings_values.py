@@ -110,7 +110,7 @@ def test_a_global_eq_gain_in_db_lands_where_the_measured_span_says(qc, restores)
         f"the measured readings no longer carry both ends (have {sorted(wires)}); "
         f"this test exists to drive them back onto the unit")
 
-    band, offset = 1, 0
+    band, offset = 1, client.QuadCortex.GLOBAL_EQ_BAND_GAIN
     before = [p.value for p in qc.global_eq().parameters
               if p.parameter_index == offset]
     assert before, "the Global EQ reported no parameter 0"

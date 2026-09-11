@@ -20,6 +20,22 @@ correction.
 
 ## Unreleased
 
+### The Global EQ band offsets have names
+
+`QuadCortex` already named the Global EQ's stride, its band count and the three
+OUT tab indices. The five offsets WITHIN a band were bare digits inside
+`set_global_eq`. They are now `GLOBAL_EQ_BAND_GAIN`, `_FREQUENCY`, `_Q`, `_TYPE`
+and `_ENABLED`, which is useful if you address the Global EQ through
+`set_global_eq_band`'s raw-index door:
+
+```python
+qc.set_global_eq_band(
+    (band - 1) * qc.GLOBAL_EQ_BAND_STRIDE + qc.GLOBAL_EQ_BAND_Q, Encoded(0.2))
+```
+
+**Nothing you wrote needs to change.** No behavior moves and the numbers are the
+same; these are additions.
+
 ### The Global EQ gain span is measured, not taken from the manual
 
 `set_global_eq(band, gain=Db(...))` converts over -12..+12 dB, which is what it
