@@ -50,7 +50,7 @@ already read and need no connection; calling them as methods raises
 | **Add and remove blocks** | `set_block(Block(row, column, model_id))`, `remove_block(cell)`, `move_block(source, destination)`, `catalog` |
 | **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
-| **Lane output** | `set_param(LaneOutput(row), param, value)` - VOLUME, PAN, MUTE, SOLO. VOLUME speaks dB, so `Db(-6.0)` |
+| **Lane output** | `set_param(LaneOutput(row), param, value)` - VOLUME, PAN, MUTE, SOLO. VOLUME speaks dB, so `Db(-6.0)`. PAN reads 50 L through C to 50 R on screen, so `Real(-50.0)` is hard left, `Real(0.0)` is center and `Real(25.0)` is 25 R |
 | **Input gate** | `set_param(LaneInput(row), param, value)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
 | **Split and mix** | `set_param(Splitter(row), param, ...)`, `set_param(Mixer(row), param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(cell, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |

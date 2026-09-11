@@ -20,6 +20,21 @@ correction.
 
 ## Unreleased
 
+### A pan reads 50 L to 50 R, whatever the catalog declares
+
+36 parameters carry `min_string`, `mid_string` and `max_string` together. Those
+are pan-style controls, and the unit draws all of them as a bipolar scale from
+50 on one side to 50 on the other. The catalog declares that span four different
+ways and none of them matches, so `Real` was not speaking the numbers on screen:
+reaching hard left meant `Real(0.0)` on a mono cab and `Real(-1.0)` on a stereo
+one, for the same knob.
+
+`units.LABELLED_END_SPAN` now holds the drawn span, measured on CorOS 4.0.1
+across three of the four declared spans, and `Parameter.mid_label` carries the
+middle label. `mid_string` leaves the unexplained list in
+[docs/domain-model.md](docs/domain-model.md): it is the label at wire 0.5.
+
+
 ### The first hardware run of the profile seam, and what it corrected
 
 Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam

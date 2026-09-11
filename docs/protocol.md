@@ -3184,6 +3184,42 @@ decimals: two catalog facts and one wire reading pin both ends.
 The recorder's bound stays unknown on purpose. `Parameter.minimum` and `.maximum` are
 `None` there, and converting refuses rather than answering against a made-up number.
 
+#### A labelled-end control draws a span the catalog does not state
+
+Measured on Quad Cortex, CorOS 4.0.1, 2026-09-11. 36 parameters carry
+`min_string`, `mid_string` and `max_string` together. They are pan-style
+controls, and the unit draws every one of them the same way:
+
+| wire | screen |
+|---|---|
+| 0.0 | `50 L` |
+| 0.5 | `C` |
+| 0.75 | `25 R` |
+| 1.0 | `50 R` |
+
+So the display is `(wire - 0.5) * 100`, with the sign shown as the side letter,
+and the middle is the `mid_string` label rather than a number.
+
+The catalog does not say that, and it does not say it four different ways: the
+same drawn control is declared `-1..1` on 22 parameters, `0..10` on 10, `0..1`
+on 3, and `-50..50` on exactly one, `Micro Processor (ST)`'s `A/B PITCH MIX`,
+which also carries `steps="101"` - integers across the drawn span. Three of the
+four declared spans were read off the screen and the fourth states the drawn
+span already.
+
+The readings were taken by writing wire values through `set_param` and looking
+at the unit: a mono cab's `PAN` through a `Plini Cab (M)`, a stereo cab's
+`BALANCE` through a `412 CA Stand OS S V30 90s (ST)`, and a `Minivoicer`'s two
+`PAN` controls directly. The Minivoicer's `V1 PAN` needed no write at all: its
+untouched default of 0.6 reads `10 R`, which is the same line.
+
+The consequence is not cosmetic. Before this was measured, reaching hard left
+meant `Real(0.0)` on a mono cab and `Real(-1.0)` on a stereo one, for the same
+physical knob, because the two entries declare different numbers.
+`units.LABELLED_END_SPAN` holds the drawn span and the parser applies it to any
+parameter carrying all three labels. Every reading is in
+`tests/test_scales.py`.
+
 #### The bottom of a scale is sometimes a word
 
 `min_string` is set on 254 parameters - `OFF` on 191, and also `-Inf` and `L`. It says

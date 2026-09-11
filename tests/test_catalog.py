@@ -125,6 +125,48 @@ def test_parameters_are_ordered_and_carry_metadata(cat):
     assert cat[5005].parameters[0].units == "dB"
 
 
+def test_a_labelled_end_control_carries_the_span_the_unit_draws():
+    """A pan reads 50 L .. C .. 50 R on screen whatever span it declares.
+
+    Measured 2026-09-11 on CorOS 4.0.1 across three of the four declared spans
+    in this family - a mono cab's `PAN` (0..10), a stereo cab's `BALANCE`
+    (-1..1) and a Minivoicer's `V1 PAN` (0..1). All three draw the same -50..+50
+    bipolar scale, so the declared span is not what the screen shows and the
+    label triple is what identifies the control. See `tests/test_scales.py` for
+    the readings.
+    """
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="99" name="Labelled">
+  <Model id="9901" name="Declares Ten">
+    <Parameter name="PAN" type="float" min="0" max="10" defaultValue="5"
+               min_string="L" mid_string="C" max_string="R"/>
+  </Model>
+  <Model id="9902" name="Declares Unity">
+    <Parameter name="V1 PAN" type="float" min="0" max="1" defaultValue="0.6"
+               min_string="L" mid_string="C" max_string="R"/>
+  </Model>
+  <Model id="9903" name="Declares Nothing Special">
+    <Parameter name="MIX" type="float" min="0" max="10" defaultValue="5"/>
+  </Model>
+</Category>
+""" + "</Models>")
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    for model_id in (9901, 9902):
+        spec = cat[model_id].parameters[0]
+        assert (spec.minimum, spec.maximum) == (-50.0, 50.0), spec.name
+        assert spec.mid_label == "C"
+        # wire 0.5 is the center the unit labels rather than numbers
+        assert spec.to_real(0.0) == pytest.approx(-50.0)
+        assert spec.to_real(1.0) == pytest.approx(50.0)
+
+    # A parameter with no label triple keeps exactly what the catalog declared.
+    plain = cat[9903].parameters[0]
+    assert (plain.minimum, plain.maximum) == (0.0, 10.0)
+    assert plain.mid_label == ""
+
+
 def test_lookup_parameter_by_name_is_case_insensitive(cat):
     assert cat[1].parameter("gain").index == 0
     assert cat[1].parameter("TREBLE").index == 1
