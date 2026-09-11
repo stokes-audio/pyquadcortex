@@ -735,12 +735,15 @@ class QuadCortex:
         device push a folder listing per setlist, so this sends that READ and
         waits for the listing whose key matches ``setlist``.
 
-        A listing that arrives is COMPLETE - five READs against an 18-preset setlist
-        each produced a full listing, and no short one has been observed. But a READ
-        does not reliably produce one promptly: two of those five saw nothing for
-        that setlist within 8 s, delivery being lazy. So treat a timeout as "ask
-        again", which is what :meth:`wait_for_listing` does, rather than as an
-        answer about the setlist's contents.
+        A READ does not reliably produce one promptly: two of five early checks saw
+        nothing for the requested setlist within 8 s, delivery being lazy. Later
+        CorOS 4.1.0 mutation testing also observed one-slot partial broadcasts before
+        the eventual 256-slot user-setlist listing. This method returns the first
+        matching non-empty broadcast, so a workflow that needs an authoritative
+        user-setlist inventory must require and stabilize all 256 slot indices, as
+        :meth:`duplicate_setlist` does. Treat a timeout as "ask again", which is
+        what :meth:`wait_for_listing` does, rather than as an answer about the
+        setlist's contents.
 
         Note the trailing-slash asymmetry the match has to absorb: recalls need
         the factory path WITH its trailing slash (Cortex Control sends it that
@@ -3464,7 +3467,11 @@ class QuadCortex:
         until exactly one new folder has the source's complete
         position/name/instrument inventory. The COPY is never replayed. Firmware
         has taken more than 80 seconds for 74 presets, so the default deadline is
-        ``90 + 2 * occupied_presets`` seconds, capped at ten minutes.
+        ``90 + 2 * occupied_presets`` seconds, capped at ten minutes. A 2026-09-11
+        CorOS 4.1.0 run confirmed a disposable two-preset copy in 49.878 seconds.
+        That run also received partial ``File`` broadcasts before complete ones,
+        so both inventories require two identical generations containing every
+        user-setlist slot index before they are trusted.
 
         Returns the device-created :class:`Folder` when confirmed. With
         ``confirm=False``, returns the immediate File reply if one arrives,
@@ -3474,7 +3481,6 @@ class QuadCortex:
                       else f"{USER_SETLIST_ROOT}/{source_name}")
         if confirm:
             before = self.list_folders()
-            source = self.list_presets(source_key)
             before_keys = {folder.key for folder in before}
             if source_key not in before_keys:
                 raise ValueError(f"source setlist {source_key!r} is not in the fresh catalog")
@@ -3485,7 +3491,9 @@ class QuadCortex:
             ]
             if len(custom_setlists) >= 12:
                 raise ValueError("the device already has the maximum 12 user setlists")
-            expected = _preset_inventory(source)
+            expected = self._stable_complete_user_setlist(
+                source_key, timeout=120.0, interval=interval
+            )
             if timeout is None:
                 timeout = min(600.0, 90.0 + 2.0 * len(expected))
 
@@ -3496,7 +3504,9 @@ class QuadCortex:
         if not confirm:
             return reply
 
+        assert timeout is not None
         deadline = time.monotonic() + timeout
+        previous_destination = None
         while True:
             remaining = max(0.1, deadline - time.monotonic())
             folders = self.list_folders(seconds=min(20.0, remaining))
@@ -3513,15 +3523,55 @@ class QuadCortex:
             if created:
                 destination = created[0]
                 try:
-                    actual = _preset_inventory(self.list_presets(destination.key))
+                    listing = self.list_presets(
+                        destination.key,
+                        timeout=min(25.0, remaining),
+                        include_empty=True,
+                    )
                 except TimeoutError:
-                    actual = None
+                    listing = []
+                actual = _complete_user_setlist_inventory(listing)
                 if actual == expected:
-                    return destination
+                    if previous_destination == actual:
+                        return destination
+                    previous_destination = actual
+                else:
+                    previous_destination = None
             if time.monotonic() >= deadline:
                 raise TimeoutError(
                     f"setlist COPY was sent once but did not publish a complete "
                     f"matching destination within {timeout}s; it was not replayed"
+                )
+            time.sleep(interval)
+
+    def _stable_complete_user_setlist(self, key: str, *, timeout: float,
+                                      interval: float) -> tuple:
+        """Return two identical complete 256-slot generations for ``key``."""
+        deadline = time.monotonic() + timeout
+        previous = None
+        listings_seen = 0
+        while True:
+            remaining = max(0.1, deadline - time.monotonic())
+            try:
+                listing = self.list_presets(
+                    key,
+                    timeout=min(25.0, remaining),
+                    include_empty=True,
+                )
+            except TimeoutError:
+                listing = []
+            actual = _complete_user_setlist_inventory(listing)
+            if actual is not None:
+                listings_seen += 1
+                if previous == actual:
+                    return actual
+                previous = actual
+            else:
+                previous = None
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"no stable complete 256-slot listing arrived for {key!r} "
+                    f"within {timeout}s ({listings_seen} complete generation(s) seen)"
                 )
             time.sleep(interval)
 
@@ -4081,6 +4131,14 @@ def _preset_inventory(entries) -> tuple:
         for entry in entries
         if field_present(entry, "key") and entry.key
     ))
+
+
+def _complete_user_setlist_inventory(entries) -> tuple | None:
+    """Occupied identity only when a user-setlist generation has all 256 slots."""
+    positions = [entry.index for entry in entries if field_present(entry, "index")]
+    if len(entries) != 256 or set(positions) != set(range(256)):
+        return None
+    return _preset_inventory(entries)
 
 
 def _is_user_setlist_key(key: str) -> bool:

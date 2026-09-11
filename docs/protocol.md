@@ -2447,6 +2447,14 @@ takes a fresh catalog baseline, sends COPY exactly once, and uses read-only poll
 verify that exactly one new folder eventually matches every occupied source position,
 name, and instrument. A timeout never replays COPY or falls back to recall-and-save.
 
+On 2026-09-11 a contributed CorOS 4.1.0 run sent that sparse COPY once against a
+disposable two-preset setlist. Firmware created its collision-named destination and
+published the matching position/name/instrument inventory 49.878 seconds later. The
+same mutation campaign also observed one-slot and transient blank `File` broadcasts
+before later 256-slot user-setlist listings. A matching short generation is therefore
+not completion evidence: duplication stabilizes two identical generations, each with
+every slot index 0 through 255, for both its source baseline and destination proof.
+
 ### 7.7b3 Looper X, master volume, pinning, and the Global EQ
 
 **Looper X state.** `LooperStatus.state` was mapped by watching each transport

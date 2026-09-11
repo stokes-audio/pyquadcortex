@@ -3007,24 +3007,36 @@ def test_duplicate_setlist_sends_once_and_waits_for_matching_inventory(monkeypat
     before = [client.Folder(source_key, "Live", 256, 2, False)]
     after = before + [client.Folder(destination_key, "Live 2", 256, 2, False)]
 
-    source = []
-    destination_incomplete = []
-    destination_complete = []
-    for collection in (source, destination_complete):
-        first = pa.ProductData(index=1, name="One", key="key-one", instrument=1)
-        second = pa.ProductData(index=7, name="Two", key="key-two", instrument=2)
-        collection.extend((first, second))
-    destination_incomplete.append(source[0])
+    def complete(first_name="One", second_name="Two"):
+        entries = [pa.ProductData(index=index) for index in range(256)]
+        entries[1].name = first_name
+        entries[1].key = "key-one"
+        entries[1].instrument = 1
+        entries[7].name = second_name
+        entries[7].key = "key-two"
+        entries[7].instrument = 2
+        return entries
+
+    source = complete()
+    destination_partial = [source[1]]
+    destination_wrong = complete(second_name="Still copying")
+    destination_complete = complete()
 
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
-    folder_generations = iter((before, after, after))
-    destination_generations = iter((destination_incomplete, destination_complete))
+    folder_generations = iter((before, after, after, after, after))
+    source_generations = iter((source, source))
+    destination_generations = iter((
+        destination_partial,
+        destination_wrong,
+        destination_complete,
+        destination_complete,
+    ))
     qc.list_folders = lambda seconds=20.0: next(folder_generations)
 
     def list_presets(key, *args, **kwargs):
         if key == source_key:
-            return source
+            return next(source_generations)
         assert key == destination_key
         return next(destination_generations)
 
@@ -3042,6 +3054,32 @@ def test_duplicate_setlist_sends_once_and_waits_for_matching_inventory(monkeypat
     assert len(copies) == 1, "polling must never replay a persistent COPY"
 
 
+def test_duplicate_setlist_never_baselines_a_partial_source_listing(monkeypatch):
+    root = "/media/p4/Presets"
+    source_key = f"{root}/Live"
+    folders = [client.Folder(source_key, "Live", 256, 1, False)]
+    partial = [pa.ProductData(index=0, name="Only", key="one", instrument=1)]
+    complete = [pa.ProductData(index=index) for index in range(256)]
+    complete[0].name = "Only"
+    complete[0].key = "one"
+    complete[0].instrument = 1
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.list_folders = lambda seconds=20.0: folders
+    generations = iter((partial, complete, complete))
+    qc.list_presets = lambda *args, **kwargs: next(generations)
+    monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
+
+    # Exercise the authoritative preflight directly so the test cannot create a
+    # persistent COPY merely to prove that a partial generation was rejected.
+    inventory = qc._stable_complete_user_setlist(
+        source_key, timeout=5.0, interval=0.0
+    )
+    assert inventory == ((0, "Only", 1),)
+    assert fake.sent == []
+
+
 def test_duplicate_setlist_refuses_at_the_cortex_twelve_setlist_guard():
     root = "/media/p4/Presets"
     source_key = f"{root}/Live"
@@ -3053,8 +3091,8 @@ def test_duplicate_setlist_refuses_at_the_cortex_twelve_setlist_guard():
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
     qc.list_folders = lambda seconds=20.0: folders
-    qc.list_presets = lambda key: [
-        pa.ProductData(index=0, name="One", key="key-one", instrument=1)
+    qc.list_presets = lambda key, **kwargs: [
+        pa.ProductData(index=index) for index in range(256)
     ]
 
     with pytest.raises(ValueError, match="maximum 12"):
