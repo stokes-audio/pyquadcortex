@@ -44,7 +44,6 @@ class QuadCortex41(QuadCortex):
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
     VERIFIED = frozenset()
-    READ_ARRIVALS = {"preset": 2}
     models = NoSnapshot("coros_4_1_0")
     params = NoSnapshot("coros_4_1_0")
     options = NoSnapshot("coros_4_1_0")

@@ -1381,14 +1381,8 @@ def test_the_preset_entry_can_read_back_every_field_it_keeps(link):
 
 
 def test_two_normal_preset_pushes_still_settle_one_read(link):
-    """A live-preset READ emits an uncorrelated push, then its keyed answer."""
+    """An exact uncorrelated restatement cannot make the cache stale."""
     transport, cache = link
-
-    class CorOS41(protocol_client.QuadCortex):
-        MEASURED_ON = ()
-        READ_ARRIVALS = {"preset": 2}
-
-    cache.bind(CorOS41(transport))
 
     def uncorrelated_then_keyed(triggering):
         transport.push(recall_push())
@@ -1400,6 +1394,27 @@ def test_two_normal_preset_pushes_still_settle_one_read(link):
     assert cache.value("preset", "preset").name == "Structural Fixture"
     assert cache.needs_read("preset") is False
     assert transport.reads["RecallPresetMessage"] == 1
+
+
+def test_a_different_recall_after_the_read_answer_keeps_the_mark(link):
+    """A real recall must not be mistaken for CorOS 4.1's duplicate answer."""
+    transport, cache = link
+
+    answer = recall_push()
+
+    class RecallDuringRead:
+        def read_current_preset_push(self):
+            transport.push(answer)
+            recalled = recall_push()
+            recalled.preset.name = "newer preset"
+            transport.push(recalled)
+            return answer
+
+    cache.bind(RecallDuringRead())
+    cache.mark_for_reread("preset", "exercise a concurrent genuine recall")
+
+    assert cache.value("preset", "preset").name == "Structural Fixture"
+    assert cache.needs_read("preset") is True
 
 
 def test_a_recall_push_does_not_invalidate_the_preset_it_delivers():

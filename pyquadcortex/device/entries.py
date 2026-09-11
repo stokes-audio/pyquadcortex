@@ -118,10 +118,9 @@ class StateEntry:
             the unit's whole answer for this entry. Runs on the CALLER's thread,
             never the RX thread.
         feeds: message class -> :class:`FieldPlan`.
-    The read path normally expects one meaningful arrival. A profile whose
-    normal read has another shape declares its count on
-    ``QuadCortex.READ_ARRIVALS``; keeping that firmware fact on the profile is
-    ADR-0020's boundary.
+    The read path normally expects one meaningful arrival. Exact duplicate
+    restatements of that answer may be discounted; a different concurrent push
+    always leaves the entry untrusted (ADR-0011).
     """
 
     name: str
@@ -509,8 +508,9 @@ SCENE = StateEntry(
 #: a plan, not a fact, and every push mentioning a field it did not keep would
 #: mark it for a read nobody had asked for.
 #:
-#: Directory rows are not cache entries: one ``File`` READ streams hundreds of
-#: messages and completes by convergence rather than by a fixed arrival count.
+#: A future entry whose read provokes a stream of answers must declare how that
+#: stream completes. No directory entry exists yet; issue #12 still owns that
+#: design decision.
 ENTRIES = (IDENTITY, DIRTY, PRESET, SCENE, LOADED)
 
 ENTRY_BY_NAME = {entry.name: entry for entry in ENTRIES}

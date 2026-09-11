@@ -54,8 +54,8 @@ WATCHDOG_THREAD_NAME = "pyquadcortex-watchdog"
 class _Slot:
     """One entry's copy of the unit's state, and how much we trust it."""
 
-    __slots__ = ("fields", "needs_read", "witnessed", "marks", "_arrivals",
-                 "_marks")
+    __slots__ = ("fields", "needs_read", "witnessed", "marks", "observed",
+                 "_arrivals", "_marks")
 
     def __init__(self):
         #: field name -> value, holding only what the unit has actually said.
@@ -89,6 +89,11 @@ class _Slot:
         #: rule. Do not simplify this back.
         self._arrivals = itertools.count(1)
         self.witnessed = 0
+        #: Fields applied by meaningful messages since the current read began.
+        #: The read path uses these to distinguish CorOS 4.1's exact duplicate
+        #: live-preset reply from a genuine recall that happens in the same
+        #: window. Cleared under the slot lock immediately before each read.
+        self.observed = []
         #: How many times a path OTHER than the listener has said this copy
         #: cannot be trusted: `mark_for_reread` and everything that calls it -
         #: a recall's `resets`, the write watchdog giving up, a caller of its
@@ -240,6 +245,7 @@ class DeviceState:
                 # unit's own `Version{READ}` is exactly that message - see
                 # :class:`_Slot`.
                 slot.arrived()
+                slot.observed.append((dict(applied), why))
             was_empty = not slot.fields
             # Worked out BEFORE the update, and against the values we held,
             # because a caller tracking changes wants the ones that are
@@ -395,6 +401,7 @@ class DeviceState:
                     return slot.fields[field]
                 witnessed_before = slot.witnessed
                 marks_before = slot.marks
+                slot.observed = []
                 client = self._client
             if client is None:
                 raise RuntimeError(
@@ -422,12 +429,17 @@ class DeviceState:
                 # than one message: the unit answers a `Version` READ and then
                 # asks one of its own, and a question is not news about the
                 # unit's state. `_apply_one` is where that is decided, because
-                # the read path cannot tell the two apart after the fact. An
-                # profile whose read normally produces more than one meaningful
-                # message declares that measured count on the client class.
+                # the read path cannot tell the two apart after the fact.
                 extra = slot.witnessed - witnessed_before
-                expected = getattr(client, "READ_ARRIVALS", {}).get(
-                    entry_name, 1)
+                observations = tuple(slot.observed)
+                # CorOS 4.1.0 was measured returning an unkeyed RecallPreset
+                # immediately before the keyed answer. It is safe to discount
+                # that second arrival only when every arrival restates the
+                # fields in the answer exactly. A real recall in this window
+                # carries a different preset and therefore keeps the mark.
+                restated_answer = all(applied == answer and why is None
+                                      for applied, why in observations)
+                conflicting_push = extra > 1 and not restated_answer
                 # And the marks that came from something OTHER than a
                 # message to this entry, which the count above cannot see
                 # however carefully it counts: a recall's `resets`, the
@@ -441,17 +453,18 @@ class DeviceState:
                 # snapshot and the request going out is kept although the unit
                 # might have accounted for it. `witnessed_before` has had the
                 # same gap since it was written, and both err by re-reading. The obvious
-                # `slot.needs_read or extra > expected` does not
+                # `slot.needs_read or conflicting_push` does not
                 # work: the read's own
                 # reply re-arms the mark through the listener from the fields
                 # this entry does not keep, so the entry would never cache
                 # anything again.
                 marked_since = slot.marks - marks_before
                 was_marked = slot.needs_read
-                slot.needs_read = extra > expected or marked_since > 0
-                if extra > expected:
+                slot.needs_read = conflicting_push or marked_since > 0
+                if conflicting_push:
                     log.info("push.forced_reread %s - %d message(s) arrived "
-                             "while it was being read", entry_name, extra)
+                             "while it was being read and did not all restate "
+                             "its answer", entry_name, extra)
                 elif slot.needs_read:
                     # The mirror of the line below, at info rather than its
                     # debug: a surviving mark costs a real round trip, where a

@@ -705,10 +705,12 @@ the preset (next section).
 ### 7.2 Read the current preset
 
 `RecallPreset{READ, request_id}` reads the live grid without recalling a stored
-slot or discarding edits. On CorOS 4.1.0 one request produces two broadcasts:
-first an uncorrelated current-state `UPDATE`, then an otherwise equivalent
-`UPDATE` echoing the request id. A client must wait for the keyed second message;
-the first is not evidence that some other preset was loaded.
+slot or discarding edits. Measured on CorOS 4.0.1 on 2026-08-14, the device may
+service this push lazily: 10 to 25 seconds was observed. Measured on CorOS 4.1.0
+on 2026-09-11, one request produces two broadcasts: first an uncorrelated
+current-state `UPDATE`, then an otherwise equivalent `UPDATE` echoing the
+request id. A client must wait for the keyed second message; the first is not
+evidence that some other preset was loaded.
 
 Whenever a preset is recalled, by the host or on the unit, the device also
 **broadcasts**:
@@ -725,8 +727,9 @@ Consequences for a client:
 
 - reading the live preset is side-effect free; reading a stored preset still
   recalls that slot and is a different operation;
-- the first request after connecting can be dropped, so the library makes two
-  attempts of 15 seconds each before reporting a timeout;
+- on CorOS 4.1.0, measured 2026-09-11, the first request after connecting can
+  be dropped. The library deliberately applies a bounded two-attempt retry to
+  every profile, dividing the caller's total timeout between the attempts;
 - the push must be correlated by `request_id` to avoid returning a stale or seed
   push (see [section 5](#5-requestresponse-correlation)).
 
@@ -2797,7 +2800,7 @@ screen; **captured only** = seen on the wire, with no independent read-back.
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
 | version read | `Version{action: READ}` | read-back | serial and firmware returned. TWO messages come back: the `UPDATE` with fifteen fields, then the device's own `Version{READ}` 0.5-0.8 ms later. `version()` accepts only a `Version` carrying `device_serial_number` or `app_fw_version`, so the second one is never returned as the answer; five back-to-back calls after that change all returned the full reply (2026-09-03) - see "A `Version` READ is answered twice" |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
-| `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply, which carries `reason` beside the preset |
+| `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. Two bounded attempts share the caller's timeout; CorOS 4.1.0 was measured emitting an unkeyed duplicate before the keyed reply. The push variant hands back the whole reply, which carries `reason` beside the preset |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured. A READ names no slot - an UPDATE that did would recall it |
 | `list_presets` | `File{action: READ}` then `File{folder{files[] = ProductData}}` | read-back | factory listing gzipped; 256 slots; listings lag a few seconds after a `File` mutation |
 | `switch_scene` | `Scene{UPDATE, selected_scene}` | on-unit | zero-based |

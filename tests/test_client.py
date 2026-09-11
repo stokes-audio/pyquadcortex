@@ -1325,6 +1325,24 @@ def test_read_current_preset_retries_a_dropped_first_request():
     assert transport.calls == 2
     assert [m.request_id for m in transport.sent] == [1, 2]
     assert transport.matches[-1](push) is True
+    assert transport.matches[-1](
+        pa.RecallPresetMessage(request_id=1)) is False
+
+
+def test_read_current_preset_one_attempt_sends_once_and_raises():
+    cause = TimeoutError("one miss")
+
+    class NeverAnswers(FakeTransport):
+        def await_broadcast(self, expected_class, trigger, timeout=40.0,
+                            match=None):
+            trigger()
+            raise cause
+
+    qc = client.QuadCortex(NeverAnswers())
+    with pytest.raises(TimeoutError, match=r"1 attempt\(s\)") as raised:
+        qc.read_current_preset(timeout=0.25, attempts=1)
+    assert raised.value.__cause__ is cause
+    assert len(qc._t.sent) == 1
 
 
 def test_read_current_preset_timeout_reports_all_attempts():
@@ -1335,9 +1353,11 @@ def test_read_current_preset_timeout_reports_all_attempts():
             raise TimeoutError("nothing")
 
     qc = client.QuadCortex(NeverAnswers())
-    with pytest.raises(TimeoutError, match=r"2 attempt\(s\) of 0.01s each"):
+    with pytest.raises(TimeoutError, match=r"2 attempt\(s\) within 0.01s total") \
+            as raised:
         qc.read_current_preset(timeout=0.01)
     assert [m.request_id for m in qc._t.sent] == [1, 2]
+    assert isinstance(raised.value.__cause__, TimeoutError)
 
 
 def test_loaded_position_reads_the_slot_without_recalling_it():

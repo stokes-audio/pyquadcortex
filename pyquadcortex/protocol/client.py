@@ -313,11 +313,6 @@ class QuadCortex:
     #: Annotated `Any`: this holds either the `EVERYTHING` sentinel or a
     #: `frozenset[str]`, and both only need to answer `in`.
     VERIFIED: typing.Any = EVERYTHING
-    #: Meaningful inbound messages produced by one normal state-cache read,
-    #: when a profile differs from the default of one. This is profile data:
-    #: CorOS 4.1.0's live-preset read has a measured unkeyed update before its
-    #: keyed answer, while no such claim is made for the 4.0.1 baseline.
-    READ_ARRIVALS: typing.Mapping[str, int] = {}
     #: The constants snapshot read from this firmware. A subclass rebinds these.
     #: Dynamic on purpose: `qc.models` follows the connection, at the price of
     #: mypy seeing `Any` through it - import a snapshot module directly for
@@ -1455,8 +1450,10 @@ class QuadCortex:
         scene-targeted writes silently retargets them; use this method for
         inspection during editing.
 
-        The first request after a connection can be dropped. ``attempts``
-        defaults to two; ``timeout`` applies to each attempt.
+        On CorOS 4.1.0, measured 2026-09-11, the first request after a
+        connection can be dropped. ``attempts`` deliberately defaults to two
+        on every profile as a bounded resilience measure; ``timeout`` is the
+        total budget and is divided between attempts.
         """
         return self.read_current_preset_push(
             timeout=timeout, attempts=attempts).preset
@@ -1479,7 +1476,8 @@ class QuadCortex:
         """
         last = None
         tries = max(1, attempts)
-        for _ in range(tries):
+        attempt_timeout = timeout / tries
+        for attempt in range(1, tries + 1):
             request_id = self._t.next_request_id()
             message = pa.RecallPresetMessage(action=pa.MessageAction.READ,
                                              request_id=request_id)
@@ -1487,15 +1485,17 @@ class QuadCortex:
                 return self._t.await_broadcast(
                     pa.RecallPresetMessage,
                     lambda outgoing=message: self._t.send(outgoing),
-                    timeout=timeout,
+                    timeout=attempt_timeout,
                     match=lambda m, wanted=request_id: (
                         m.HasField("request_id") and m.request_id == wanted))
             except TimeoutError as exc:
                 last = exc
+                log.warning("live-preset read attempt %d/%d timed out after "
+                            "%ss", attempt, tries, attempt_timeout)
         raise TimeoutError(
             f"the device did not answer a live-preset read in {tries} "
-            f"attempt(s) of {timeout}s each; the first request after connecting "
-            f"can be dropped") from last
+            f"attempt(s) within {timeout}s total; CorOS 4.1.0 was measured "
+            f"dropping the first request after connecting") from last
 
     def loaded_position(self, timeout: float = 10.0):
         """Which preset slot is on the grid right now.
