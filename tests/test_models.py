@@ -1,8 +1,8 @@
 """Tests for the generated factory-model constants (pyquadcortex.protocol.models).
 
 The constants are generated from a device's ModelRepo by
-``scripts/generate_models.py`` and cover the FACTORY models in the CorOS 4.1.0
-snapshot. CorOS 4.0.1 has 412 rather than 420. Purchased plugin models and the
+``scripts/generate_models.py`` and cover the FACTORY models in both committed
+firmware snapshots. Purchased plugin models and the
 player's own Neural Captures are deliberately absent: their ids are not
 portable, so they must be looked up at runtime through ``qc.catalog``.
 """
@@ -11,10 +11,16 @@ import pathlib
 
 import pytest
 
-from pyquadcortex.protocol.catalogs.coros_4_1_0 import models
+from pyquadcortex.protocol import models
+from pyquadcortex.protocol.catalogs.coros_4_0_1 import models as models_4_0_1
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import models as models_4_1_0
 
 
-PUBLISHED_NAMES = pathlib.Path(__file__).parent / "fixtures/generated/model_names.txt"
+FIXTURES = pathlib.Path(__file__).parent / "fixtures/generated"
+SNAPSHOTS = [
+    ("coros_4_0_1", models_4_0_1, 412),
+    ("coros_4_1_0", models_4_1_0, 420),
+]
 
 
 def test_anchors_match_ids_confirmed_on_hardware():
@@ -61,16 +67,20 @@ def test_constants_are_usable_where_a_model_is_expected():
     assert int(some_id) == some_id
 
 
-def test_count_is_the_full_factory_set():
-    # 420 factory models on CorOS 4.1.0; a drift here means the generator
-    # was re-run against a device with different content - re-check before
-    # updating this number.
-    assert len(models.ALL) == 420
+@pytest.mark.parametrize("snapshot,module,count", SNAPSHOTS,
+                         ids=[row[0] for row in SNAPSHOTS])
+def test_count_is_the_full_factory_set(snapshot, module, count):
+    assert len(module.ALL) == count
 
 
-def test_the_published_model_names_have_not_changed():
-    expected = PUBLISHED_NAMES.read_text(encoding="utf-8").splitlines()
-    assert sorted(models.ALL) == expected
+@pytest.mark.parametrize("snapshot,module,count", SNAPSHOTS,
+                         ids=[row[0] for row in SNAPSHOTS])
+def test_the_published_model_names_and_ids_have_not_changed(
+        snapshot, module, count):
+    expected = (FIXTURES / f"model_members_{snapshot}.txt").read_text(
+        encoding="utf-8").splitlines()
+    actual = [f"{name}={model_id}" for name, model_id in sorted(module.ALL.items())]
+    assert actual == expected
 
 
 def test_unknown_attribute_raises():

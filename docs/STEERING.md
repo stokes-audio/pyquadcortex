@@ -179,6 +179,18 @@ verifies and prints, per profile, which passed.
 `CC_VERSION` still announces 4.0.1 on every profile. The later CorOS 4.1 catalog
 contribution adds its snapshot under that profile without changing either rule.
 
+### 2026-09-11 - The CorOS 4.1 profile gains its snapshot and measurements
+
+**What changed:** `QuadCortex41` now binds its own generated models, parameters
+and options and names the 16 operations passed by the contributor's CorOS 4.1.0
+hardware gate. The unversioned public constant modules remain the CorOS 4.0.1
+compatibility snapshot. The Version and PresetDirty findings are recorded beside,
+not in place of, the 4.0.1 observations.
+
+**Why:** ADR-0020 makes firmware-specific constants, evidence and operation
+coverage properties of the resolved profile. This contribution is the first
+measured profile to complete that seam.
+
 ### 2026-09-03 - One baseline becomes a registry of device profiles (ADR-0020)
 
 **What changed:** the repo stops describing one firmware as "the" baseline and

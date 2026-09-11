@@ -230,7 +230,8 @@ def test_the_burst_warms_identity_from_connects_own_version_read(
         f"that is a finding for protocol.md, not a reason to loosen this.")
 
 
-def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
+def test_a_version_read_is_answered_and_then_questioned(
+        qc, profile, record_property):
     """The two-message answer the entry below is built around, on the unit.
 
     The protocol is symmetric, so a host ``Version{READ}`` gets the unit's answer
@@ -286,8 +287,14 @@ def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
         f"one Version READ brought back {len(answers)} identity answers: {seen}")
     assert len(reads) == 1, (
         f"one Version READ brought back {len(reads)} unit questions: {seen}")
-    assert len(announce_answers) <= 1, (
-        f"the earlier connect announce was answered {len(announce_answers)} times")
+    if profile.__name__ == "QuadCortex41":
+        assert len(announce_answers) <= 1, (
+            "the earlier 4.1 connect announce was answered "
+            f"{len(announce_answers)} times")
+    else:
+        assert not announce_answers, (
+            "the CorOS 4.0.1 announce answer arrived long after its measured "
+            f"+0.73 s window: {announce_answers}")
     assert not unknown, f"one Version READ window contained unknown shapes: {unknown}"
     answer, question = answers[0], reads[0]
     assert answer.action == pa.MessageAction.UPDATE, (

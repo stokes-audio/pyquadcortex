@@ -527,13 +527,12 @@ Skipping it also means the device asks nothing back. Measured 2026-08-27 on
 CorOS 4.0.1 / `d14e`:
 `_hello()` and its whole burst produce exactly one inbound
 `Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer to the
-announce, and eight seconds of idling after it produce none. CorOS 4.1.0 sends
-the same announce answer: an exact full-suite trace on 2026-09-11 captured
-`UPDATE(identity)`, `READ(action only)`, then
-`UPDATE(request_id=0, cortex_control_version_valid)`. This corrects a 2026-09-04
-observation whose four connection windows missed the final message. Step 3
-above is therefore a consequence of step 2 rather than something the device
-does on connecting on both measured profiles.
+announce, and eight seconds of idling after it produce none. Measured 2026-09-11
+on CorOS 4.1.0, the unit sends the same three shapes: `UPDATE(identity)` at
++0.848 s, `READ(action only)` 0.8 ms later, then
+`UPDATE(request_id=0, cortex_control_version_valid)` at +0.898 s. Step 3 is
+therefore a consequence of step 2 rather than something the device volunteers
+on connecting on either measured profile.
 
 Since ADR-0020, `connect()` itself makes one `Version` READ BEFORE calling
 `_hello()`, to resolve the profile. Measured 2026-09-07 on CorOS 4.0.1 / d14e: a

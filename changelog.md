@@ -20,14 +20,15 @@ correction.
 
 ## Unreleased
 
-### CorOS 4.1 hardware profile follow-up
+### CorOS 4.1 catalog and measured profile
 
-The exact 2026-09-11 CorOS 4.1.0 suite passed 96 hardware tests with three
-fixture-dependent skips and all 16 claimed operations green. `set_expression`
-joins the profile's verified operations. Its connect trace also corrected the
-earlier missing-acknowledgement observation: the unit sends the same three
-Version shapes as 4.0.1, including the update carrying
-`cortex_control_version_valid`.
+`QuadCortex41` now binds a generated CorOS 4.1.0 snapshot containing 420 factory
+models and 148 fixed option enums. Contributor hardware runs on 2026-09-11 put
+16 operations, including `set_expression`, in that profile's `VERIFIED` set.
+They also measured the same three Version shapes as CorOS 4.0.1, including the
+update carrying `cortex_control_version_valid`, and a `PresetDirty{true}`
+restatement during an edit window. The exact isolated final-head hardware run
+follows after PR #62's prerequisite live-preset fix merges.
 
 ### The first hardware run of the profile seam, and what it corrected
 
@@ -89,20 +90,18 @@ A partial reply carrying one of the two is still returned; the state cache
 keeps what the unit sent and re-reads for the rest. Measured on Quad Cortex,
 CorOS 4.0.1 / d14e.
 
-### Draft: contribute the CorOS 4.1.0 catalog snapshot
+### CorOS 4.0.1 and 4.1.0 snapshot differences
 
-This draft supplies the 4.1.0 snapshot and migration evidence needed by the
-device-profile seam decided in ADR-0020. It must remain a draft until that seam
-gives the generated constants a per-profile namespace; the unversioned
-`protocol.models`, `params`, and `options` names remain the 4.0.1 baseline.
+These are differences between profile-owned snapshots, not global public-name
+renames: the unversioned `protocol.models`, `params`, and `options` imports stay
+on CorOS 4.0.1. Code using a connected 4.1 client sees these through `qc.models`,
+`qc.params`, and `qc.options`.
 
-The contributed snapshot covers 420 factory models and 148 fixed option enums,
-including the delay, pitch, morph, reverb, compressor, and EQ models exposed by
-the CorOS 4.1.0 catalog.
+**Wire-meaning change:** `MinivoicerMode` value `2` means `CHROM` on 4.0.1 but
+`NATURAL_MINOR` on 4.1.0. Use the enum from the connected profile rather than a
+stored bare integer.
 
-Catalog labels changed public generated names. The migration map is:
-
-| Before | After |
+| CorOS 4.0.1 snapshot | CorOS 4.1.0 snapshot |
 |---|---|
 | `BassOverdrive.MICROTUBES_B3K` | `BassOverdrive.DOUGLAS_MT_3K` |
 | `BassOverdrive.MICROTUBES_VMT` | `BassOverdrive.DOUGLAS_VINTAGE_MT` |

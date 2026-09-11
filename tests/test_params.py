@@ -1,8 +1,7 @@
 """Tests for the generated parameter constants (pyquadcortex.protocol.params).
 
-Generated from the CorOS 4.1.0 ModelRepo by ``scripts/generate_params.py``.
-They are firmware-specific for the same reason ``models.py`` is: a 4.0.1 unit
-does not expose every 4.1 model or parameter.
+Generated from each firmware's ModelRepo by ``scripts/generate_params.py``.
+The public import remains the CorOS 4.0.1 compatibility snapshot.
 
 The anchors below are values confirmed against hardware or against the unit's
 own editor. They are what stops a regeneration silently renumbering something.
@@ -11,17 +10,29 @@ import pathlib
 
 import pytest
 
-from pyquadcortex.protocol.catalogs.coros_4_1_0 import params
+from pyquadcortex.protocol import params
+from pyquadcortex.protocol.catalogs.coros_4_0_1 import params as params_4_0_1
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import params as params_4_1_0
 
 
-PUBLISHED_CLASSES = (
-    pathlib.Path(__file__).parent / "fixtures/generated/param_classes.txt"
-)
+FIXTURES = pathlib.Path(__file__).parent / "fixtures/generated"
+SNAPSHOTS = [
+    ("coros_4_0_1", params_4_0_1),
+    ("coros_4_1_0", params_4_1_0),
+]
 
 
-def test_the_published_parameter_classes_have_not_changed():
-    expected = PUBLISHED_CLASSES.read_text(encoding="utf-8").splitlines()
-    assert sorted({cls.__name__ for cls in params.BY_MODEL.values()}) == expected
+@pytest.mark.parametrize("snapshot,module", SNAPSHOTS,
+                         ids=[row[0] for row in SNAPSHOTS])
+def test_the_published_parameter_members_have_not_changed(snapshot, module):
+    expected = (FIXTURES / f"param_members_{snapshot}.txt").read_text(
+        encoding="utf-8").splitlines()
+    classes = sorted(set(module.BY_MODEL.values()), key=lambda cls: cls.__name__)
+    actual = [
+        f"{cls.__name__}.{name}={member.value}"
+        for cls in classes for name, member in cls.__members__.items()
+    ]
+    assert actual == expected
 
 
 def test_the_container_enums_match_what_the_targets_address():

@@ -2,7 +2,7 @@
 
 A profile is a client class (ADR-0020). ``QuadCortex`` in ``client.py`` is the
 Quad Cortex on CorOS 4.0.1 and the base of every other profile. This module
-holds the two profiles we know are coming and have not measured, and the
+holds the measured CorOS 4.1 profile, the unmeasured Mini profile, and the
 registry ``connect()`` resolves through. Adding a profile is: subclass
 ``QuadCortex``, declare the class attributes, and the registry sees it.
 """
@@ -22,13 +22,13 @@ _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
 class QuadCortex41(QuadCortex):
     """Quad Cortex on CorOS 4.1 - connects with 16 measured operations.
 
-    PR #42's description (2026-09-03) reports ``pytest --hardware``: 2742
-    passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
-    d14e, by tony-xmelon. That is a contributor's report and the maintainer has
-    not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
-    connection is therefore known to work with this handshake and announce
-    string. Profile-aware hardware runs through 2026-09-11 measured the
-    operations in ``VERIFIED`` below; every other inherited operation refuses under
+    Contributor hardware run 99a5cd5 on 2026-09-11, combining this profile with
+    PR #62's live-preset fix, passed 95 tests with 4 fixture-dependent skips and
+    all 16 claimed operations green on CorOS 4.1.0 / app firmware d14e. The
+    maintainer has not reproduced that run, which is what
+    ``Evidence.CONTRIBUTED`` says here. Profile-aware runs measured the
+    operations in ``VERIFIED`` below; this PR's isolated final-head run follows
+    after #62 merges. Every other inherited operation refuses under
     ``Support.VERIFIED`` and runs with a warning under
     ``Support.EXPERIMENTAL``. Its generated constants are bound to the
     contributed CorOS 4.1.0 snapshot rather than the 4.0.1 compatibility
