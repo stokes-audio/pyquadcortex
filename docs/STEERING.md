@@ -138,6 +138,39 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-11 - A pan's drawn span is measured, not declared (ADR-0015)
+
+**What changed:** `units.LABELLED_END_SPAN` holds `(-50.0, 50.0)`, the span the
+unit actually draws for the 36 parameters carrying `min_string`, `mid_string`
+and `max_string` together. `catalog._parameter` applies it to any parameter
+carrying all three, and `Parameter.mid_label` carries the middle label.
+`mid_string` leaves the unexplained appendix in `domain-model.md`.
+
+**Why:** the declared span was measurably wrong, not imprecise. A pan reads
+`50 L` at wire 0.0, `C` at 0.5 and `50 R` at 1.0, and the catalog declares that
+same drawn control four different ways - `-1..1` on 22 parameters, `0..10` on
+10, `0..1` on 3, `-50..50` on one. Reaching hard left therefore meant
+`Real(0.0)` on a mono cab and `Real(-1.0)` on a stereo one, for one physical
+knob. Three of the four declared spans were read off the screen and the fourth
+declares the drawn span itself, so nothing is inherited from a knob nobody
+drove. Readings in `tests/test_scales.py`, narrative in `protocol.md`.
+
+**The tension with ADR-0015, stated rather than buried:** that record makes the
+catalog the source of a scale and measurements the tests. Here the test failed
+and the finding is about the device. The catalog is still the source for every
+other parameter, and this is the first span the library overrides. If a second
+one appears, that is the point to stop and write a record rather than grow the
+table.
+
+**What did NOT change, on purpose:** the key is the label triple, not the law.
+`(0.0, 1.0, 1.0)` is one of the commonest laws in the catalog and almost none of
+those parameters is a pan, so keying by law would have swept in unrelated
+knobs. 267 parameters carry one or two of the three labels - almost always
+`min_string="OFF"` - and none of those is in the family. Granularity is also
+untouched: `steps` disagrees with itself here and nobody has measured the
+smallest move the screen will show.
+
+
 ### 2026-09-07 - A pull request is a draft until the hardware suite has run on it
 
 **What changed:** `contributing.md` gains "Before you mark a pull request ready":

@@ -197,6 +197,26 @@ READINGS = [
     # about the NAME as well as the law, on a model that names it otherwise.
     (12000, 2, 0.339665, -3.0, 1),
 
+    # -- the pan family, 2026-09-11 ------------------------------------------
+    # A labelled-end control draws 50 on one side, through the middle label, to
+    # 50 on the other, and the catalog declares that span four different ways.
+    # Recorded against the LAYOUT the way the cab LEVEL above is: the mono
+    # readings were taken through a `Plini Cab (M)` (12053), which inherits
+    # 12100's PAN, and 12000/12100 declare that parameter identically. The
+    # stereo readings came through a `412 CA Stand OS S V30 90s (ST)` (32001),
+    # which inherits 32000's BALANCE. The Minivoicer was driven directly.
+    #
+    # Wire 0.5 is deliberately absent: the screen shows the `mid_string` letter
+    # "C" there rather than a number, so asserting 0.0 would be asserting a
+    # number the unit did not print. See the test below it.
+    (12000, 3, 0.0, -50.0, 0),          # screen: 50 L
+    (12000, 3, 1.0, 50.0, 0),           # screen: 50 R
+    (32000, 3, 0.0, -50.0, 0),          # screen: 50 L, declared -1..1
+    (32000, 3, 0.75, 25.0, 0),          # screen: 25 R
+    (32000, 3, 1.0, 50.0, 0),           # screen: 50 R
+    (18007, 8, 0.6, 10.0, 0),           # screen: 10 R, at its untouched default
+    (18007, 12, 0.0, -50.0, 0),         # screen: 50 L, declared 0..1
+
     # -- the Splitter Crossover, 2026-08-26 ----------------------------------
     # Not read off the screen. The catalog states defaultValue="400.0" and the
     # unit was holding this wire value for that knob, which is what pins the
@@ -286,6 +306,39 @@ def test_asking_a_cab_for_a_level_it_cannot_reach_refuses():
     assert cab.floor == pytest.approx(-21.8, abs=0.05)
     with pytest.raises(ValueError, match="does not exist there"):
         cab.to_normalized(-30.0)
+
+
+def test_a_labelled_end_control_shows_a_letter_at_its_middle():
+    """`mid_string` is the label at wire 0.5, which nobody had pinned before.
+
+    Measured 2026-09-11: a mono cab's `PAN` and a stereo cab's `BALANCE` both
+    read "C" at wire 0.5, and the appendix in `docs/domain-model.md` had this
+    attribute listed as seen-but-unexplained because the catalog never says
+    WHICH middle position it labels. It is the center of the wire.
+
+    The law still answers 0.0 there, and that is the honest number to convert
+    against; the letter is what the screen prints instead.
+    """
+    for key in ((12000, 3), (32000, 3)):
+        spec = SCALES[key]
+        assert spec.mid_label == "C", spec.name
+        assert (spec.min_label, spec.max_label) == ("L", "R")
+        assert spec.to_real(0.5) == pytest.approx(0.0)
+
+
+def test_a_pans_default_is_the_position_the_screen_showed():
+    """The Minivoicer's `V1 PAN` was read at its UNTOUCHED default.
+
+    It declares 0.6 of 0..1 and the screen showed `10 R`, so the default has to
+    move onto the drawn span with everything else. This is the one reading that
+    needed no write at all, which is what makes it a check on the conversion
+    rather than on the write path.
+    """
+    assert SCALES[(18007, 8)].default == pytest.approx(10.0)
+    assert SCALES[(18007, 12)].default == pytest.approx(-10.0)
+    # the cab pans declare their centre differently and both land on it
+    assert SCALES[(12000, 3)].default == pytest.approx(0.0)
+    assert SCALES[(32000, 3)].default == pytest.approx(0.0)
 
 
 def test_a_knob_with_no_off_detent_converts_at_its_minimum():

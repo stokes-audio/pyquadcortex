@@ -143,6 +143,68 @@ FLOOR_WIRE = {
     (-40.0, 0.0, 1.0): (0.01, -39.6),
 }
 
+#: The span a LABELLED-END control actually draws, whatever it declares.
+#:
+#: 36 parameters carry ``min_string``, ``mid_string`` and ``max_string``
+#: together - 35 spell them "L"/"C"/"R" and one, `Micro Processor (ST)`'s
+#: `A/B PITCH MIX`, spells them "A"/"A/B"/"B". They are pan-style controls, and
+#: the unit draws every one of them as a bipolar scale reading 50 on one side
+#: through the middle label to 50 on the other. The declared ``min``/``max`` do
+#: NOT say that, and they do not even agree with each other: the same drawn
+#: control is declared four different ways.
+#:
+#: | declared span | parameters | measured on |
+#: |---|---|---|
+#: | -1..1 | 22 | a stereo cab's `BALANCE` |
+#: | 0..10 | 10 | a mono cab's `PAN` |
+#: | 0..1 | 3 | a Minivoicer's `V1 PAN` and `V2 PAN` |
+#: | -50..50 | 1 | declares the drawn span already, with ``steps=101`` |
+#:
+#: Read off the screen on CorOS 4.0.1, 2026-09-11, by writing wire values and
+#: looking: wire 0.0 shows "50 L", wire 0.5 shows "C", wire 0.75 shows "25 R",
+#: wire 1.0 shows "50 R". A Minivoicer `V1 PAN` sitting at its untouched
+#: default of 0.6 shows "10 R", which is the same line and needed no write at
+#: all. So the display is ``(wire - 0.5) * 100``, with the sign shown as the
+#: side letter. Every reading is in `tests/test_scales.py`.
+#:
+#: Corroborated by a note in `protocol.md` that predates this work: the lane
+#: output's `1 PAN` is recorded there as "0.5 is centre". That parameter
+#: declares 0..1, where wire 0.5 would read "0.50" rather than a middle
+#: label, so the bipolar behaviour had been seen before without being named.
+#:
+#: **Why this is a span and not a refusal.** ADR-0015 makes the catalog the
+#: source of a scale, and here the catalog is measurably wrong rather than
+#: imprecise - `Real(0.0)` reached hard left on a mono cab and dead center on a
+#: stereo one, for the same physical knob, purely because the two entries
+#: declare different numbers. Refusing `Real` on all 36 was the other option and
+#: would have been safe and useless. Three of the four declared spans are
+#: measured and the fourth states the drawn span itself, so nothing here is
+#: inherited from a knob nobody drove.
+#:
+#: **Why the key is all three labels.** 267 parameters carry one or two of them,
+#: almost always ``min_string="OFF"`` on a dB scale, and none of those is a pan.
+#: Requiring all three selects exactly the 36. The declared span cannot be the
+#: key: ``(0.0, 1.0, 1.0)`` is one of the commonest laws in the catalog and
+#: almost none of those parameters is in this family.
+#:
+#: The DEFAULT moves with the span. A declared default is a position on the
+#: declared scale, so leaving it behind would make a mono cab's `PAN` report 5
+#: against -50..+50 - "5 R" for a knob whose default is dead centre. Converted
+#: through the declared law, the three centred families all land on 0.0 and a
+#: Minivoicer's `V1 PAN` lands on 10.0, which is the `10 R` its untouched
+#: default actually shows.
+#:
+#: Applied to LINEAR members only. All 36 declare no skew or skew=1, so the
+#: measured straight line and the declared taper agree; a member that ever
+#: declares a taper keeps what the catalog said rather than being converted
+#: through a mapping nobody measured for it.
+#:
+#: What is NOT claimed: the granularity. ``steps`` reads 360 on 21 of them and
+#: nothing on the rest, while the one entry declaring the drawn span says 101.
+#: The readings land on whole numbers, and nobody has looked for the smallest
+#: move the screen will show.
+LABELLED_END_SPAN = (-50.0, 50.0)
+
 #: What a caller wanting silence should write instead of the bottom of a dB
 #: scale. Shared by every family in :data:`FLOOR_WIRE`.
 OFF_HINT = ("for silence write the wire value 0.0, the Off position - the "
