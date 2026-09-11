@@ -541,10 +541,18 @@ the first `device.firmware` read still asks the unit once.
 
 ### 4.3 Keepalive and disconnect
 
-Cortex Control sends `KeepAlive{action: UPDATE}` about once per second. The
-library defaults to every 5 seconds, and the device tolerated 20-second idle
-gaps in the capture without dropping the session, so the exact interval is not
-critical. On quit, Cortex Control sends `Connection{connected: false}`. This library now does the
+Cortex Control 4.0.1 sends `KeepAlive{action: UPDATE}` about once per second:
+944 keepalives across three complete captured sessions all carried action
+UPDATE and no `request_id`. Early in each session it used payload `08 01`; after
+roughly two minutes it usually added `is_online: true` (`08 01 18 01`). The
+library keeps the measured opening shape. Cortex Control 4.1.0 was observed on
+2026-09-11 using a different shape, `10 00 18 01` (explicit request id zero,
+`is_online: true`, action absent); the old 4.0.1-compatible shape has not been
+shown to fail on that firmware, so no wire change is made from that observation.
+
+The library defaults to every 5 seconds, and the device tolerated 20-second
+idle gaps in the capture without dropping the session, so the exact interval is
+not critical. On quit, Cortex Control sends `Connection{connected: false}`. This library now does the
 same, as the first step of teardown - the send needs a live transport, so it has to
 precede stopping it and closing the handle.
 

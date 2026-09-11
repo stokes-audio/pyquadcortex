@@ -248,8 +248,8 @@ def test_request_times_out_when_no_response():
 
 
 def test_keepalive_is_sent_periodically():
-    # With a tiny interval, the keepalive thread should emit Cortex Control's
-    # exact sentinel payload: default CREATE, explicit request_id=0, online.
+    # With a tiny interval, the keepalive thread should emit the exact CorOS
+    # 4.0.1 Cortex Control payload captured 944 times across three sessions.
     fake = FakeHid()
     t = transport.Transport(fake, keepalive_interval=0.02)
     t.start()
@@ -265,11 +265,10 @@ def test_keepalive_is_sent_periodically():
 
         assert _wait_until(saw_keepalive, timeout=REQUEST_TIMEOUT)
         message, payload = saw_keepalive()
-        assert payload == bytes.fromhex("10 00 18 01")
-        assert message.action == pa.MessageAction.CREATE
-        assert message.HasField("request_id")
-        assert message.request_id == 0
-        assert message.is_online is True
+        assert payload == bytes.fromhex("08 01")
+        assert message.action == pa.MessageAction.UPDATE
+        assert not message.HasField("request_id")
+        assert not message.is_online
     finally:
         t.stop()
 
