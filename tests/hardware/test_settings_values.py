@@ -20,6 +20,10 @@ import time
 
 import pytest
 
+# The offline module, by bare name - pytest puts `tests/` on sys.path, and
+# `tests/test_profiles.py` reaches for `test_client` the same way.
+from test_scales import SETTING_READINGS
+
 from pyquadcortex.protocol import client, units, values
 from pyquadcortex.protocol.enums import Input
 
@@ -39,7 +43,7 @@ def _input_level(qc, port_id):
 
 @pytest.mark.verifies("set_input_port")
 def test_an_input_gain_written_in_db_reads_back_as_that_db(qc, restores):
-    """The one setting with a measured span, driven both ways.
+    """One of the two settings with a measured span, driven both ways.
 
     -12..+60 dB from four screen/wire pairs. This does not re-derive the span -
     it checks the unit stores what the span predicts, which is what would fail
@@ -71,14 +75,14 @@ def test_zero_db_is_exactly_one_sixth_on_the_unit(qc, restores):
     assert _input_level(qc, PORT) == pytest.approx(1 / 6, abs=1e-4)
 
 
-#: The 2026-09-11 screen readings, as `(dB on the page, wire value)`. Band 1's
-#: GAIN was written over the wire and the Global EQ page read each time, on
-#: CorOS 4.0.1. The ENDS are what settle the span - before this the span was the
-#: MANUAL's on two interior points 6 dB apart on a range claimed to be 24 dB
-#: wide. The dB half of each pair cannot be checked from here; it is asserted
-#: against the span in `tests/test_scales.py`, and this drives the wire half
-#: back onto the unit.
-GLOBAL_EQ_GAIN_READINGS = [(-12.0, 0.0), (-6.0, 0.25), (6.0, 0.75), (12.0, 1.0)]
+#: The 2026-09-11 screen readings as `(dB on the page, wire value)`, derived from
+#: the one place CLAUDE.md puts screen readings so the two cannot drift apart. A
+#: correction there reaches the unit through this test rather than leaving it
+#: driving points nobody has read any more. Sorted by wire, so the sweep is
+#: monotonic instead of jumping end to end.
+GLOBAL_EQ_GAIN_READINGS = [(screen, wire) for key, wire, screen, _
+                           in sorted(SETTING_READINGS, key=lambda r: r[1])
+                           if key == "GLOBAL_EQ_GAIN_DB"]
 
 
 @pytest.mark.verifies("set_global_eq")
@@ -86,9 +90,10 @@ def test_a_global_eq_gain_in_db_lands_where_the_measured_span_says(qc, restores)
     """Every point of the 2026-09-11 screen measurement, driven again.
 
     The unit has to ACCEPT the ends, not just the middle: a span measured at its
-    ends is worth nothing if writing them is refused or clamped. This is also
-    the widest swing in the file, which is why the restore is registered before
-    the first write rather than after.
+    ends is worth nothing if writing them is refused or clamped. The dB half of
+    each pair cannot be checked from here - that is `tests/test_scales.py`,
+    which holds the readings against the span. This drives the wire half back
+    onto the unit.
     """
     band, offset = 1, 0
     before = [p.value for p in qc.global_eq().parameters

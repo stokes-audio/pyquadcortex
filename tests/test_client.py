@@ -4191,6 +4191,9 @@ def test_a_global_eq_gain_takes_db_on_the_measured_span():
     until then. The readings themselves live in `tests/test_scales.py`.
     """
     qc = client.QuadCortex(FakeTransport())
+    # The four measured points, plus 0 dB at the centre - that one is
+    # INTERPOLATED, not a reading, and is here because unity is the value a
+    # caller is most likely to write.
     for db, wire in ((-12.0, 0.0), (-6.0, 0.25), (0.0, 0.5), (6.0, 0.75),
                      (12.0, 1.0)):
         qc.set_global_eq(1, gain=Db(db))

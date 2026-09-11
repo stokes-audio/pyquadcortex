@@ -389,8 +389,10 @@ SETTING_SPANS = {
     # span was the MANUAL's on two points 6 dB apart on a range claimed to be
     # 24 dB wide, which is the shape of the mistake that put -100..+30 in
     # MIN_MIXER_DB above for two releases. The two quartiles came along free and
-    # rule out a taper: at the display's own 0.1 dB rounding they hold a skew
-    # to 0.994..1.006, so this is linear, not a power law close to it.
+    # rule out a taper: at the display's own 0.1 dB rounding the two together
+    # admit only skews 0.994..1.006, so this is linear rather than a power law
+    # close to it. `test_the_global_eq_gain_quartiles_rule_out_a_taper` computes
+    # that intersection rather than quoting this comment.
     "GLOBAL_EQ_GAIN_DB": (-12.0, 12.0),
 }
 

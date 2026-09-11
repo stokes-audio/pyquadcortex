@@ -156,11 +156,13 @@ releases with a measured unity point sitting on it. So the measurement went
 after the ENDS, not a third interior point.
 
 **What the quartiles bought, which was not the plan:** they rule out a taper.
-At the display's own 0.1 dB rounding they hold the skew to 0.994..1.006, so
-"linear" is measured rather than assumed - and a cab LEVEL is the standing proof
-that shape hides from well-separated points (`protocol.md`). That bound is
-asserted, not asserted-about: `test_the_global_eq_gain_quartiles_rule_out_a_taper`
-derives it from the recorded readings and fails if they stop discriminating.
+At the display's own 0.1 dB rounding the two together admit only skews
+0.994..1.006, so "linear" is measured rather than assumed - and a cab LEVEL is
+the standing proof that shape hides from well-separated points (`protocol.md`).
+`test_the_global_eq_gain_quartiles_rule_out_a_taper` computes that intersection
+from the recorded readings and fails if they stop excluding a taper. The
+tolerance it holds them to is stated ahead of the data rather than fitted to it;
+the readings clear it with margin.
 
 **What did NOT change:** the Global EQ's FREQUENCY, Q and OUT level still take
 `Encoded` only. Nothing ties any of them to a reading on screen, and this run
