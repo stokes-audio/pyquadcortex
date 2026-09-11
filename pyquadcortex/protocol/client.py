@@ -149,7 +149,7 @@ def _setting_scale(name: str, span_key: str, unit: str):
 #: -12..+60 dB, measured. See ``units.SETTING_SPANS``.
 _INPUT_GAIN = _setting_scale("an input port's GAIN", "INPUT_GAIN_DB", "dB")
 
-#: -12..+12 dB, the MANUAL's span on two points. See ``units.SETTING_SPANS``.
+#: -12..+12 dB, measured on screen at both ends. See ``units.SETTING_SPANS``.
 _GLOBAL_EQ_GAIN = _setting_scale("a Global EQ band's GAIN",
                                  "GLOBAL_EQ_GAIN_DB", "dB")
 
@@ -3526,11 +3526,11 @@ class QuadCortex:
         ``band`` is 1 to 5 as the unit numbers them.
 
         ``gain`` takes ``Db`` or ``Encoded``. Its span is **-12..+12 dB**, and
-        that span is the MANUAL's rather than a measurement - what supports it
-        here is two points, wire 0.5 reading 0 dB and 0.75 reading +6 dB, which
-        a straight line over -12..+12 reproduces exactly. Recorded as the
-        weaker evidence it is in ``units.SETTING_SPANS``, and queued to be
-        driven on screen::
+        that is confirmed on hardware (2026-09-11, CorOS 4.0.1): band 1's GAIN
+        was driven over the wire and the Global EQ page read each time, with
+        wire 0.0/0.25/0.75/1.0 displaying -12.0/-6.0/+6.0/+12.0 dB. The ENDS are
+        what settle the span; the quartiles rule out a taper. The readings are
+        in ``units.SETTING_SPANS`` and ``tests/test_scales.py``::
 
             qc.set_global_eq(2, gain=Db(-3.0))
 

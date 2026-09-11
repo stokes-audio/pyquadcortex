@@ -20,6 +20,18 @@ correction.
 
 ## Unreleased
 
+### The Global EQ gain span is measured, not taken from the manual
+
+`set_global_eq(band, gain=Db(...))` converts over -12..+12 dB, which is what it
+already did. What changed is the evidence: the span is now read off the unit's
+own screen at both ends (wire 0.0 shows -12.0 dB, wire 1.0 shows +12.0), plus
+both quartiles, which show the control is linear rather than tapered.
+
+**Nothing you wrote needs to change.** The numbers are the same. This entry is
+here because the docs said this span was the weaker of the two the library
+knows, and it is not weaker any more - if you avoided `Db` on a Global EQ band
+for that reason, the reason is gone.
+
 ### A pan reads 50 L to 50 R, whatever the catalog declares
 
 36 parameters carry `min_string`, `mid_string` and `max_string` together. Those

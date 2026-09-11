@@ -4184,13 +4184,17 @@ def test_a_bare_number_is_refused_by_every_settings_write(call):
     assert qc._t.sent == []
 
 
-def test_a_global_eq_gain_takes_db_on_the_manuals_span():
-    """-12..+12 dB. Both documented points, which is all the evidence there is."""
+def test_a_global_eq_gain_takes_db_on_the_measured_span():
+    """-12..+12 dB, measured on screen at both ends (2026-09-11, CorOS 4.0.1).
+
+    The ENDS are the point: they are what a span needs and what this one lacked
+    until then. The readings themselves live in `tests/test_scales.py`.
+    """
     qc = client.QuadCortex(FakeTransport())
-    qc.set_global_eq(1, gain=Db(0.0))
-    assert qc._t.sent[-1].parameters[0].value == pytest.approx(0.5)
-    qc.set_global_eq(1, gain=Db(6.0))
-    assert qc._t.sent[-1].parameters[0].value == pytest.approx(0.75)
+    for db, wire in ((-12.0, 0.0), (-6.0, 0.25), (0.0, 0.5), (6.0, 0.75),
+                     (12.0, 1.0)):
+        qc.set_global_eq(1, gain=Db(db))
+        assert qc._t.sent[-1].parameters[0].value == pytest.approx(wire), db
 
 
 def test_a_global_eq_frequency_has_no_scale_and_says_so():
@@ -4283,8 +4287,12 @@ def test_the_global_eq_output_level_refuses_a_real_too():
 
 
 def test_a_global_eq_gain_outside_its_span_is_refused():
-    """The input gain had this test and the Global EQ gain did not, which
-    matters more here: its span is the weaker of the two."""
+    """The input gain had this test and the Global EQ gain did not.
+
+    It matters more here now than when the span was the manual's: the ends were
+    read on screen, so -12 and +12 are the real edge of the control and a dB
+    past them is a value the unit cannot show.
+    """
     qc = client.QuadCortex(FakeTransport())
     for bad in (Db(-20.0), Db(20.0)):
         with pytest.raises(ValueError):

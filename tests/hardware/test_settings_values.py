@@ -71,13 +71,24 @@ def test_zero_db_is_exactly_one_sixth_on_the_unit(qc, restores):
     assert _input_level(qc, PORT) == pytest.approx(1 / 6, abs=1e-4)
 
 
+#: The 2026-09-11 screen readings, as `(dB on the page, wire value)`. Band 1's
+#: GAIN was written over the wire and the Global EQ page read each time, on
+#: CorOS 4.0.1. The ENDS are what settle the span - before this the span was the
+#: MANUAL's on two interior points 6 dB apart on a range claimed to be 24 dB
+#: wide. The dB half of each pair cannot be checked from here; it is asserted
+#: against the span in `tests/test_scales.py`, and this drives the wire half
+#: back onto the unit.
+GLOBAL_EQ_GAIN_READINGS = [(-12.0, 0.0), (-6.0, 0.25), (6.0, 0.75), (12.0, 1.0)]
+
+
 @pytest.mark.verifies("set_global_eq")
-def test_a_global_eq_gain_in_db_lands_where_the_manuals_span_says(qc, restores):
-    """The span here is the MANUAL's on two points, so this is the weakest
-    claim in the file and is labelled as such rather than presented beside the
-    input port's as equal evidence. What it pins is the wire value; whether the
-    SCREEN reads -3.0 dB there is the reading still owed - see
-    ``units.SETTING_SPANS``.
+def test_a_global_eq_gain_in_db_lands_where_the_measured_span_says(qc, restores):
+    """Every point of the 2026-09-11 screen measurement, driven again.
+
+    The unit has to ACCEPT the ends, not just the middle: a span measured at its
+    ends is worth nothing if writing them is refused or clamped. This is also
+    the widest swing in the file, which is why the restore is registered before
+    the first write rather than after.
     """
     band, offset = 1, 0
     before = [p.value for p in qc.global_eq().parameters
@@ -86,14 +97,17 @@ def test_a_global_eq_gain_in_db_lands_where_the_manuals_span_says(qc, restores):
     restores("global EQ band 1 gain",
              lambda: qc.set_global_eq_band(offset, values.Encoded(before[0])))
 
-    qc.set_global_eq(band, gain=values.Db(-3.0))
-    time.sleep(SETTLE)
+    for db, wire in GLOBAL_EQ_GAIN_READINGS:
+        qc.set_global_eq(band, gain=values.Db(db))
+        time.sleep(SETTLE)
 
-    now = [p.value for p in qc.global_eq().parameters
-           if p.parameter_index == offset]
-    # Through the same object the write used, which is the point: one law.
-    assert now[0] == pytest.approx(
-        client._GLOBAL_EQ_GAIN.to_normalized(-3.0), abs=1e-4)
+        now = [p.value for p in qc.global_eq().parameters
+               if p.parameter_index == offset]
+        assert now[0] == pytest.approx(wire, abs=1e-4), (
+            f"{db} dB was read on screen at wire {wire}")
+        # Through the same object the write used, which is the point: one law.
+        assert now[0] == pytest.approx(
+            client._GLOBAL_EQ_GAIN.to_normalized(db), abs=1e-4)
 
 
 @pytest.mark.verifies("set_hold_timing")

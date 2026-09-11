@@ -138,6 +138,35 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-11 - The Global EQ gain span is measured at its ends (ADR-0017)
+
+**What changed:** `units.SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]` is still
+`(-12.0, 12.0)`, and the evidence under it is no longer the manual's. Band 1's
+GAIN was written over the wire and the Global EQ page read each time, on CorOS
+4.0.1: wire 0.0/0.25/0.75/1.0 display -12.0/-6.0/+6.0/+12.0 dB. The four
+readings are in `tests/test_scales.py`, the hardware test drives all four back
+onto the unit, and every place that called this the weaker of the two known
+spans now says what it rests on instead.
+
+**Why:** the number was right and the evidence was not, which is the harder case
+to notice. It shipped on the manual's span plus two points 6 dB apart on a range
+claimed to be 24 dB wide - and two close points cannot tell one span from a
+wider one. That is exactly how `-100..+30` survived in `MIN_MIXER_DB` for two
+releases with a measured unity point sitting on it. So the measurement went
+after the ENDS, not a third interior point.
+
+**What the quartiles bought, which was not the plan:** they rule out a taper.
+At the display's own 0.1 dB rounding they hold the skew to 0.994..1.006, so
+"linear" is measured rather than assumed - and a cab LEVEL is the standing proof
+that shape hides from well-separated points (`protocol.md`). That bound is
+asserted, not asserted-about: `test_the_global_eq_gain_quartiles_rule_out_a_taper`
+derives it from the recorded readings and fails if they stop discriminating.
+
+**What did NOT change:** the Global EQ's FREQUENCY, Q and OUT level still take
+`Encoded` only. Nothing ties any of them to a reading on screen, and this run
+did not go looking.
+
+
 ### 2026-09-11 - A pan's drawn span is measured, not declared (ADR-0015)
 
 **What changed:** `units.LABELLED_END_SPAN` holds `(-50.0, 50.0)`, the span the
@@ -363,11 +392,13 @@ naming what would settle it - never an invented span. A setting with no 0..1
 line at all, like the HOLD threshold in ms, refuses `Encoded` instead. Selectors
 are not values and stay plain.
 
-The two known spans are NOT equally known, and `units.SETTING_SPANS` says so
-beside each: the input port has four measured points, the Global EQ gain has the
-manual plus two points 6 dB apart on a 24 dB range. That second one is queued to
-be driven on screen. Two close points could not tell -40..+12 from -100..+30 for
-the lane family, and that mistake shipped twice.
+The two known spans are both measured now, and `units.SETTING_SPANS` still says
+what each rests on beside it: the input port has four points in the bottom half
+of its travel plus the spec sheet for the top, the Global EQ gain has four points
+driven on screen across the whole travel. The Global EQ gain shipped for two
+releases on the manual plus two points 6 dB apart on a 24 dB range; see the
+2026-09-11 entry. Two close points could not tell -40..+12 from -100..+30 for the
+lane family either, and that mistake shipped twice.
 
 ### 2026-08-27 - A parameter value carries its own scale (ADR-0016)
 

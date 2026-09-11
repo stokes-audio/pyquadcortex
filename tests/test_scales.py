@@ -18,6 +18,7 @@ for why the fixture holds distilled parameters instead of the whole ModelRepo.
 import gzip
 import io
 import json
+import math
 import pathlib
 import tarfile
 
@@ -536,14 +537,17 @@ SETTING_READINGS = [
     ("INPUT_GAIN_DB", 0.40556, 17.2, 1),
     ("INPUT_GAIN_DB", 0.50009, 24.0, 1),
 
-    # -- a Global EQ band's GAIN ---------------------------------------------
-    # NOT a screen reading in the sense above, and listed apart on purpose: the
-    # span is the MANUAL's, and these two points are what the library was told
-    # rather than what anyone measured. They are 6 dB apart on a span claimed to
-    # be 24 dB wide, so they cannot distinguish it from a wider one - exactly
-    # the trap that put -100..+30 in this file for two releases. Driving the
-    # ENDS on screen is what would settle it.
-    ("GLOBAL_EQ_GAIN_DB", 0.5, 0.0, 1),
+    # -- a Global EQ band's GAIN, 2026-09-11 ---------------------------------
+    # Band 1's GAIN driven over the wire and the Global EQ page read each time,
+    # on CorOS 4.0.1. The first two are the ENDS, which is what this run was
+    # for: the span used to be the MANUAL's on two interior points 6 dB apart
+    # on a range claimed to be 24 dB wide, and two close points cannot tell one
+    # span from a wider one - the trap that put -100..+30 in this file for two
+    # releases. The quartiles rule out a taper as well; see
+    # `test_the_global_eq_gain_quartiles_rule_out_a_taper` below.
+    ("GLOBAL_EQ_GAIN_DB", 0.0, -12.0, 1),
+    ("GLOBAL_EQ_GAIN_DB", 1.0, 12.0, 1),
+    ("GLOBAL_EQ_GAIN_DB", 0.25, -6.0, 1),
     ("GLOBAL_EQ_GAIN_DB", 0.75, 6.0, 1),
 ]
 
@@ -561,6 +565,37 @@ def test_a_setting_span_reproduces_what_was_read(span_key, wire, screen, digits)
         screen, abs=0), (
         f"{span_key} at wire {wire} was read as {screen}, and the span says "
         f"{round(low + (high - low) * wire, digits)}")
+
+
+def test_the_global_eq_gain_quartiles_rule_out_a_taper():
+    """What the two quartile readings buy beyond the two ends.
+
+    The ends settle the SPAN. They say nothing about the shape between them, and
+    a cab LEVEL is the standing proof that shape hides: three well-separated
+    points fitted it beautifully and it is a power law with skew 0.202 (see
+    `docs/protocol.md`). So this checks the readings actually discriminate,
+    rather than trusting that four points must be enough.
+
+    Under ADR-0015's one law a taper is `wire ** (1 / skew)`. The display rounds
+    to 0.1 dB, so each quartile reading admits a band of skews; this asserts that
+    band is narrow enough that "linear" is a measurement and not an assumption.
+    """
+    low, high = units.SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]
+    quartiles = [(w, s) for k, w, s, _ in SETTING_READINGS
+                 if k == "GLOBAL_EQ_GAIN_DB" and w not in (0.0, 1.0)]
+    assert len(quartiles) == 2, "the two quartile readings are what this rests on"
+
+    for wire, screen in quartiles:
+        # The screen showed `screen`, so the true dB lies within half a display
+        # step of it; turn that into the exponents that could have produced it.
+        bounds = [(target - low) / (high - low)
+                  for target in (screen - 0.05, screen + 0.05)]
+        skews = sorted(math.log(wire) / math.log(b) for b in bounds)
+        assert skews[0] < 1.0 < skews[1], (
+            f"wire {wire} reading {screen} dB does not admit a linear law")
+        assert skews[1] - skews[0] < 0.02, (
+            f"wire {wire} only pins the skew to {skews[0]:.3f}..{skews[1]:.3f}, "
+            f"which is too loose to call the law linear")
 
 
 def test_the_setting_spans_and_the_parameters_built_from_them_agree():
