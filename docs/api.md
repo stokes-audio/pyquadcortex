@@ -197,12 +197,13 @@ qc.set_master_volume(Encoded(0.30))           # no screen scale is known
 qc.set_hold_timing(Milliseconds(800))         # no DEVICE scale exists
 ```
 
-**A known scale** takes the unit type and converts. There are two, and they are
-not known equally well. An input port's gain rests on four screen-and-wire pairs
-read together. A Global EQ band's gain rests on the MANUAL's span plus two
-points 6 dB apart on a range said to be 24 dB wide - enough to be useful, not
-enough to be sure, and `units.SETTING_SPANS` says so beside the number. Driving
-its ends on screen is what would settle it.
+**A known scale** takes the unit type and converts. There are two, and both are
+measured, though not the same way. An input port's gain rests on four
+screen-and-wire pairs read together, all in the bottom half of its travel, with
+the spec sheet backing the top. A Global EQ band's gain rests on four points
+driven on screen that span the whole travel - wire 0.0 and 1.0 read -12.0 and
++12.0 dB, and the two quartiles read -6.0 and +6.0, which rules out a taper.
+`units.SETTING_SPANS` records what each rests on beside the number.
 
 **No known scale** takes `Encoded` and nothing else - output port level, USB
 level, master volume, Global EQ frequency and Q, the Global EQ output level. A

@@ -2521,7 +2521,7 @@ how a duplicate gets cleaned up.
 
 | offset | control | notes |
 |---|---|---|
-| 0 | GAIN | 0.5 is 0 dB, 0.75 is +6 dB on the manual's -12..+12 dB |
+| 0 | GAIN | -12..+12 dB, linear. Measured on screen 2026-09-11: wire 0.0/0.25/0.75/1.0 display -12.0/-6.0/+6.0/+12.0 dB |
 | 1 | FREQUENCY | |
 | 2 | Q | |
 | 3 | TYPE | a five-option list, so `index / 4` - see below |
@@ -2844,7 +2844,8 @@ screen; **captured only** = seen on the wire, with no independent read-back.
 | `set_master_volume_assignment` | `GeneralSettings{UPDATE, master_volume_assignment{...}}` | read-back | which outputs the knob governs. Read-merge-write, because a submessage is replaced wholesale |
 | `set_master_volume` | `MasterVolume{UPDATE, volume}` | read-back + on-unit + by ear | normalized 0..1, displayed as `round(v * 100)`. Travels alone. The earlier "accepted and ignored" was a stale read. Never add `calibrate` - it opens the calibration dialog |
 | `set_global_bypass` | `GeneralSettings{UPDATE, global_bypass_cab` / `_ir{row1..row4}}` | read-back | global Cab / IR bypass per row |
-| `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index; which index is which band control is unestablished, so it takes `Encoded` only - `set_global_eq` knows the offsets and takes `Db` for a band's GAIN |
+| `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index. The raw door: an index alone names no control, so it takes `Encoded` only - the LAYOUT is established (see the table above), and `set_global_eq` addresses a band by number and takes `Db` for a GAIN |
+| `set_global_eq` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back + on unit's screen | band 1-5 by number rather than wire index, `(band - 1) * 5 + offset`. GAIN takes `Db` over -12..+12, measured on the Global EQ page 2026-09-11 (CorOS 4.0.1) - see the layout table above. FREQUENCY, Q and the OUT level take `Encoded`; nothing ties them to a reading |
 | `set_mode_cycle` | `Mode{UPDATE, available_modes{modes}}` | read-back | the mode cycle order; the whole list is replaced |
 | `settings` / `update_settings` | `GeneralSettings{READ}` / `{UPDATE, <fields>}` | read-back | the Device Settings and System menus; sparse. `power_option` and `reset_wifi_networks` are refused as commands rather than settings |
 | `set_scene_bypass_behavior` | `GeneralSettings{UPDATE, scene_block_bypass}` | read-back | global, and it decides what `set_bypass` persists |

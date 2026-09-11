@@ -369,8 +369,11 @@ def bpm_to_tempo(bpm: float) -> float:
 #: Separate from :data:`FIRMWARE_CONSTANTS`, which resolves a name the catalog
 #: itself writes. Nothing in the catalog mentions an input port or the Global
 #: EQ at all, so these numbers have no name to resolve and their only home is
-#: here. Each records how it is known, and the two are known very differently -
-#: which is the point of writing it down rather than presenting one list.
+#: here. Each records how it is known, and they are not known the same way -
+#: which is the point of writing it down rather than presenting one list. The
+#: input port's four points all sit in the bottom half of its travel and lean on
+#: the spec sheet for the top; the Global EQ's four span the whole travel and
+#: include both ends.
 SETTING_SPANS = {
     # An input port's gain. Solved from four owner-set trims read simultaneously
     # on screen and on the wire - screen +17.2/+16.8/+24.0/0.0 against wire
@@ -379,13 +382,17 @@ SETTING_SPANS = {
     # sheet's "MAX INPUT GAIN: +60dB". See :func:`input_level_db`.
     "INPUT_GAIN_DB": (-12.0, 60.0),
 
-    # A Global EQ band's GAIN. WEAKER EVIDENCE, deliberately recorded as such:
-    # the span is the MANUAL's, and what supports it here is two consistent
-    # points - wire 0.5 reads 0 dB and 0.75 reads +6 dB, which a linear
-    # -12..+12 reproduces exactly. That is not a measurement campaign. Two close
-    # points could not tell -40..+12 from -100..+30 for the lane family (see
-    # MIN_MIXER_DB above), and the same caution applies here: these two are 6 dB
-    # apart on a span claimed to be 24 dB wide. Queued to be driven on screen.
+    # A Global EQ band's GAIN. Driven on screen 2026-09-11, CorOS 4.0.1: band 1's
+    # GAIN written over the wire and the Global EQ page read each time - wire
+    # 0.0/0.25/0.75/1.0 displayed -12.0/-6.0/+6.0/+12.0 dB. The ENDS are what
+    # settle the span, and they were the measurement's point: before this the
+    # span was the MANUAL's on two points 6 dB apart on a range claimed to be
+    # 24 dB wide, which is the shape of the mistake that put -100..+30 in
+    # MIN_MIXER_DB above for two releases. The two quartiles came along free and
+    # rule out a taper: at the display's own 0.1 dB rounding the two together
+    # admit only skews 0.994..1.006, so this is linear rather than a power law
+    # close to it. `test_the_global_eq_gain_quartiles_rule_out_a_taper` computes
+    # that intersection rather than quoting this comment.
     "GLOBAL_EQ_GAIN_DB": (-12.0, 12.0),
 }
 

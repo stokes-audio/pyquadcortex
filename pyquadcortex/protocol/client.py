@@ -149,7 +149,7 @@ def _setting_scale(name: str, span_key: str, unit: str):
 #: -12..+60 dB, measured. See ``units.SETTING_SPANS``.
 _INPUT_GAIN = _setting_scale("an input port's GAIN", "INPUT_GAIN_DB", "dB")
 
-#: -12..+12 dB, the MANUAL's span on two points. See ``units.SETTING_SPANS``.
+#: -12..+12 dB, measured on screen at both ends. See ``units.SETTING_SPANS``.
 _GLOBAL_EQ_GAIN = _setting_scale("a Global EQ band's GAIN",
                                  "GLOBAL_EQ_GAIN_DB", "dB")
 
@@ -3061,16 +3061,25 @@ class QuadCortex:
     def set_global_eq_band(self, parameter_index: int, value):
         """Set one Global EQ parameter, by its wire index.
 
-        ``Encoded`` only, and necessarily so: this addresses a parameter by a
-        raw index whose MEANING is not established, so there is nothing to say
-        what scale it would be on. :meth:`set_global_eq` knows which offset is
-        a band's GAIN and takes ``Db`` there.
+        ``Encoded`` only, and that is about this METHOD rather than about the
+        device: an index alone does not say which control it addresses, so
+        there is no scale to check a unit against. The layout IS established -
+        :meth:`set_global_eq` carries it, addresses a band's controls by number
+        and takes ``Db`` for a GAIN. Prefer it; this is the raw door, for an
+        index whose scale nobody knows.
 
         The Global EQ reports 28 ``parameters`` entries, each
         ``{parameter_index, value}``. Confirmed writable and sparse: writing index
-        1 left the rest alone. Which index is which band's type, gain, frequency
-        or Q is not established, so read :meth:`global_eq` and compare rather than
-        guessing.
+        1 left the rest alone. Every index is accounted for - 0 to 24 are the five
+        bands at five each (:meth:`set_global_eq`), 25 to 27 the OUT tab
+        (:meth:`set_global_eq_output`), with 27 identified by elimination rather
+        than by having been seen written.
+
+        What is NOT established is the SCALE of most of them. A band's GAIN is
+        -12..+12 dB, measured on screen; FREQUENCY and Q have no reading tying
+        them to anything, which is why they take ``Encoded`` through
+        :meth:`set_global_eq` too, and the same goes for the OUT level through
+        :meth:`set_global_eq_output`.
         """
         msg = pa.GlobalEQMessage(action=pa.MessageAction.UPDATE)
         prm = msg.parameters.add()
@@ -3526,11 +3535,11 @@ class QuadCortex:
         ``band`` is 1 to 5 as the unit numbers them.
 
         ``gain`` takes ``Db`` or ``Encoded``. Its span is **-12..+12 dB**, and
-        that span is the MANUAL's rather than a measurement - what supports it
-        here is two points, wire 0.5 reading 0 dB and 0.75 reading +6 dB, which
-        a straight line over -12..+12 reproduces exactly. Recorded as the
-        weaker evidence it is in ``units.SETTING_SPANS``, and queued to be
-        driven on screen::
+        that is confirmed on hardware (2026-09-11, CorOS 4.0.1): band 1's GAIN
+        was driven over the wire and the Global EQ page read each time, with
+        wire 0.0/0.25/0.75/1.0 displaying -12.0/-6.0/+6.0/+12.0 dB. The ENDS are
+        what settle the span; the quartiles rule out a taper. The readings are
+        in ``units.SETTING_SPANS`` and ``tests/test_scales.py``::
 
             qc.set_global_eq(2, gain=Db(-3.0))
 

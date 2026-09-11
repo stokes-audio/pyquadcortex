@@ -20,6 +20,14 @@ import time
 
 import pytest
 
+# The offline module, by bare name. What puts `tests/` on sys.path for a module
+# down here in `tests/hardware/` is pytest importing `tests/conftest.py` - which
+# exists and must, since it is where `--hardware` is declared. That is NOT the
+# same mechanism as `tests/test_profiles.py` importing `test_client`, where the
+# module's own basedir is already `tests/`. Worth the distinction if this file
+# ever moves.
+from test_scales import SETTING_READINGS
+
 from pyquadcortex.protocol import client, units, values
 from pyquadcortex.protocol.enums import Input
 
@@ -39,7 +47,7 @@ def _input_level(qc, port_id):
 
 @pytest.mark.verifies("set_input_port")
 def test_an_input_gain_written_in_db_reads_back_as_that_db(qc, restores):
-    """The one setting with a measured span, driven both ways.
+    """One of the two settings with a measured span, driven both ways.
 
     -12..+60 dB from four screen/wire pairs. This does not re-derive the span -
     it checks the unit stores what the span predicts, which is what would fail
@@ -71,14 +79,37 @@ def test_zero_db_is_exactly_one_sixth_on_the_unit(qc, restores):
     assert _input_level(qc, PORT) == pytest.approx(1 / 6, abs=1e-4)
 
 
+#: The 2026-09-11 screen readings as `(dB on the page, wire value)`, derived from
+#: the one place CLAUDE.md puts screen readings so the two cannot drift apart. A
+#: correction there reaches the unit through this test rather than leaving it
+#: driving points nobody has read any more. Sorted by wire, so the sweep is
+#: monotonic instead of jumping end to end.
+GLOBAL_EQ_GAIN_READINGS = [(screen, wire) for key, wire, screen, _
+                           in sorted(SETTING_READINGS, key=lambda r: r[1])
+                           if key == "GLOBAL_EQ_GAIN_DB"]
+
+
 @pytest.mark.verifies("set_global_eq")
-def test_a_global_eq_gain_in_db_lands_where_the_manuals_span_says(qc, restores):
-    """The span here is the MANUAL's on two points, so this is the weakest
-    claim in the file and is labelled as such rather than presented beside the
-    input port's as equal evidence. What it pins is the wire value; whether the
-    SCREEN reads -3.0 dB there is the reading still owed - see
-    ``units.SETTING_SPANS``.
+def test_a_global_eq_gain_in_db_lands_where_the_measured_span_says(qc, restores):
+    """Every point of the 2026-09-11 screen measurement, driven again.
+
+    The unit has to ACCEPT the ends, not just the middle: a span measured at its
+    ends is worth nothing if writing them is refused or clamped. The dB half of
+    each pair cannot be checked from here - that is `tests/test_scales.py`,
+    which holds the readings against the span. This drives the wire half back
+    onto the unit.
     """
+    # The list is derived, so it can go empty or lose its ends without anything
+    # else noticing - and this test would then pass having asserted nothing
+    # while `verifies` still reported `set_global_eq` as measured. The ENDS
+    # specifically: the offline taper test only needs the two interior readings,
+    # so dropping 0.0 and 1.0 would leave it green while this one quietly
+    # stopped checking the thing its docstring calls the point.
+    wires = {wire for _, wire in GLOBAL_EQ_GAIN_READINGS}
+    assert {0.0, 1.0} <= wires, (
+        f"the measured readings no longer carry both ends (have {sorted(wires)}); "
+        f"this test exists to drive them back onto the unit")
+
     band, offset = 1, 0
     before = [p.value for p in qc.global_eq().parameters
               if p.parameter_index == offset]
@@ -86,14 +117,17 @@ def test_a_global_eq_gain_in_db_lands_where_the_manuals_span_says(qc, restores):
     restores("global EQ band 1 gain",
              lambda: qc.set_global_eq_band(offset, values.Encoded(before[0])))
 
-    qc.set_global_eq(band, gain=values.Db(-3.0))
-    time.sleep(SETTLE)
+    for db, wire in GLOBAL_EQ_GAIN_READINGS:
+        qc.set_global_eq(band, gain=values.Db(db))
+        time.sleep(SETTLE)
 
-    now = [p.value for p in qc.global_eq().parameters
-           if p.parameter_index == offset]
-    # Through the same object the write used, which is the point: one law.
-    assert now[0] == pytest.approx(
-        client._GLOBAL_EQ_GAIN.to_normalized(-3.0), abs=1e-4)
+        now = [p.value for p in qc.global_eq().parameters
+               if p.parameter_index == offset]
+        assert now[0] == pytest.approx(wire, abs=1e-4), (
+            f"{db} dB was read on screen at wire {wire}")
+        # Through the same object the write used, which is the point: one law.
+        assert now[0] == pytest.approx(
+            client._GLOBAL_EQ_GAIN.to_normalized(db), abs=1e-4)
 
 
 @pytest.mark.verifies("set_hold_timing")
