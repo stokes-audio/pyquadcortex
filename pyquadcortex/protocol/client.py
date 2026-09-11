@@ -3448,36 +3448,82 @@ class QuadCortex:
                                         name or source_name or "copy",
                                         instrument=instrument, confirm=True)
 
-    def duplicate_setlist(self, source_name: str, dest_name: str,
-                          limit: int | None = None):
-        """Copy a whole setlist into a new one, preset by preset.
+    def duplicate_setlist(self, source_name: str, *, confirm: bool = True,
+                          timeout: float | None = None,
+                          interval: float = 2.0):
+        """Ask firmware to duplicate a complete user setlist exactly once.
 
-        Also a composition rather than a device operation. The unit's own
-        duplicate action broadcasts a ``BulkOperation`` narrating its progress -
-        ``"Duplicating, please wait."``, then a progress fraction, then
-        ``finished`` - but that is the device REPORTING: replaying it copies
-        nothing, and no host-drivable duplicate exists. So this creates the
-        destination and copies each preset with :meth:`copy_preset`.
+        Cortex Control sends one sparse ``File{COPY}`` containing only the
+        source folder key and explicit ``is_factory: false``. Firmware chooses
+        the collision-safe destination name and key and copies the inventory
+        asynchronously; no destination identity or per-preset writes belong on
+        the wire.
 
-        Which means it is SLOW - a recall and a save per preset, several seconds
-        each - and it recalls every one of them on the unit as it goes. ``limit``
-        caps how many are copied, for trying it out on a large setlist.
+        With ``confirm=True`` (the default), this takes a fresh folder and source
+        inventory baseline before the write, then performs read-only polling
+        until exactly one new folder has the source's complete
+        position/name/instrument inventory. The COPY is never replayed. Firmware
+        has taken more than 80 seconds for 74 presets, so the default deadline is
+        ``90 + 2 * occupied_presets`` seconds, capped at ten minutes.
 
-        Returns the list of names stored in the destination.
+        Returns the device-created :class:`Folder` when confirmed. With
+        ``confirm=False``, returns the immediate File reply if one arrives,
+        otherwise ``None``; that mode does not prove completion.
         """
-        dest_key = self.create_setlist(dest_name)
-        time.sleep(3.0)
         source_key = (source_name if source_name.startswith("/")
                       else f"{USER_SETLIST_ROOT}/{source_name}")
-        entries = self.list_presets(source_key)
-        if limit is not None:
-            entries = entries[:limit]
-        stored = []
-        for i, entry in enumerate(entries):
-            stored.append(self.copy_preset(source_key, entry.index, dest_key,
-                                           to_position=i, name=entry.name,
-                                           instrument=entry.instrument))
-        return stored
+        if confirm:
+            before = self.list_folders()
+            source = self.list_presets(source_key)
+            before_keys = {folder.key for folder in before}
+            if source_key not in before_keys:
+                raise ValueError(f"source setlist {source_key!r} is not in the fresh catalog")
+            custom_setlists = [
+                folder for folder in before
+                if _is_user_setlist_key(folder.key)
+                and folder.key != str(Setlist.USER)
+            ]
+            if len(custom_setlists) >= 12:
+                raise ValueError("the device already has the maximum 12 user setlists")
+            expected = _preset_inventory(source)
+            if timeout is None:
+                timeout = min(600.0, 90.0 + 2.0 * len(expected))
+
+        msg = pa.FileMessage(action=pa.MessageAction.COPY, type=0)
+        msg.folder.key = source_key
+        msg.folder.is_factory = False
+        reply = self._file_operation(msg)
+        if not confirm:
+            return reply
+
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = max(0.1, deadline - time.monotonic())
+            folders = self.list_folders(seconds=min(20.0, remaining))
+            created = [
+                folder for folder in folders
+                if folder.key not in before_keys
+                and _is_user_setlist_key(folder.key)
+            ]
+            if len(created) > 1:
+                raise RuntimeError(
+                    "more than one folder appeared during duplicate verification; "
+                    "the device-created destination is ambiguous"
+                )
+            if created:
+                destination = created[0]
+                try:
+                    actual = _preset_inventory(self.list_presets(destination.key))
+                except TimeoutError:
+                    actual = None
+                if actual == expected:
+                    return destination
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"setlist COPY was sent once but did not publish a complete "
+                    f"matching destination within {timeout}s; it was not replayed"
+                )
+            time.sleep(interval)
 
     #: How many parameters each Global EQ band occupies, and the offset of each
     #: control within a band. See :meth:`set_global_eq`.
@@ -4022,6 +4068,25 @@ def field_present(message, field: str) -> bool:
         return message.HasField(field)
     except ValueError:
         return False
+
+
+def _preset_inventory(entries) -> tuple:
+    """Stable occupied-inventory identity used for setlist COPY verification."""
+    return tuple(sorted(
+        (
+            entry.index,
+            entry.name,
+            entry.instrument if field_present(entry, "instrument") else 0,
+        )
+        for entry in entries
+        if field_present(entry, "key") and entry.key
+    ))
+
+
+def _is_user_setlist_key(key: str) -> bool:
+    """Whether ``key`` is a direct setlist child of the user preset root."""
+    prefix = f"{USER_SETLIST_ROOT}/"
+    return key.startswith(prefix) and "/" not in key[len(prefix):]
 
 
 def blocks(p: preset.BinaryPreset) -> list:

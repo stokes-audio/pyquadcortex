@@ -2435,19 +2435,17 @@ not fixed setlists.
 setlist's own key - the folder leaves the listing, subject to the usual eventual
 consistency.
 
-**There is no host-drivable copy, and none is needed.** The unit's duplicate action
-sends a `File` CREATE for the destination and then narrates itself through
-`BulkOperation` - `"Duplicating, please wait."`, a progress fraction, then `finished` -
-and doing the same from the host creates an EMPTY destination. Everything in that window
-is the device REPORTING, not a command.
+**Setlist duplication is one host-drivable folder COPY.** Cortex Control sends
+`File{COPY, type: 0, folder{key: <source>, is_factory: false}}` with no destination
+folder, name, index, or per-preset entries. Firmware chooses the collision-safe
+destination identity and performs the copy asynchronously. `BulkOperation` only
+narrates progress; it is not the command.
 
-The unit's per-preset copy/paste gives the way in: pasting broadcasts
-`File{CREATE, folder{key, files{key, index, name, ...}}}`, which is the same shape as a
-Save As pointed at a different folder. And a save DOES accept any folder key (confirmed:
-recalling a factory preset and saving it into `/media/p4/Presets/probe` put it there). So
-copying a preset is recall-then-save, and duplicating a setlist is that per preset -
-which is what `copy_preset()` and `duplicate_setlist()` do. The cost is inherent: each
-one recalls the source on the unit.
+The destination can remain visibly empty for more than 45 seconds and later publish
+the complete source inventory without a second write. `duplicate_setlist()` therefore
+takes a fresh catalog baseline, sends COPY exactly once, and uses read-only polling to
+verify that exactly one new folder eventually matches every occupied source position,
+name, and instrument. A timeout never replays COPY or falls back to recall-and-save.
 
 ### 7.7b3 Looper X, master volume, pinning, and the Global EQ
 

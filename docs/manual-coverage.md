@@ -133,7 +133,7 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. CC#32's 'User folders' 2-12 are created, not built in |
 | Create a folder, nested navigation | yes | `create_setlist(name)`. The earlier failure was the path: setlists are siblings under `/media/p4/Presets`, not children of My Presets |
 | Favorites and Recents | yes | `recents()` and `favorites()` read the two lists - the request's `is_favorites` flag selects which, though the REPLY never sets it, so correlate on `request_id`. `add_favorite()`/`remove_favorite()` write, one entry at a time, confirmed by the device's echo of the changed entry. Entries feed straight into `find_preset()`/`recall_preset()`. Only presets can be favourited |
-| Bulk actions | partly | there is no host-drivable bulk copy - `BulkOperation` only narrates progress - but `copy_preset()` and `duplicate_setlist()` achieve it by recall + save, at a few seconds per preset |
+| Bulk actions | yes | `duplicate_setlist()` sends Cortex Control's single firmware-side folder COPY, then verifies the asynchronously created destination without replaying the write; `BulkOperation` only narrates progress |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
 | Neural Captures: list | yes | `captures()` browses the library - over 2000 entries, shown on the unit as Factory Captures V1/V2 and My Captures. NOT the catalog, which does not grow when a capture is saved |

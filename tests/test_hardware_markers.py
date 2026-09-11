@@ -37,7 +37,7 @@ UNMARKED_OPERATIONS = {
     "wait_for_listing": "no hardware test yet; it is the polling wrapper round list_presets and says nothing until a write changes a listing",
     "create_setlist": "no hardware test yet; it adds a folder to the owner's Directory that a failed run would leave behind",
     "delete_setlist": "no hardware test yet; it deletes a folder and everything in it, which is the one preset-library mistake nothing can undo",
-    "duplicate_setlist": "no hardware test yet; it copies a whole setlist preset by preset, so a failed run leaves a partial folder behind",
+    "duplicate_setlist": "no Python same-commit hardware test yet; firmware creates a new folder asynchronously, so a disposable source and separately authorized cleanup are required",
 
     # -- library listings whose CONTENT belongs to the owner -------------------
     # Each returns whatever this unit happens to hold, so a test can assert the

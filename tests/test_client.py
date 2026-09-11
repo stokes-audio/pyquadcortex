@@ -2987,6 +2987,81 @@ def test_copy_preset_does_recall_the_source_which_changes_the_grid():
     assert any(isinstance(m, pa.SetlistPositionMessage) for m in qc._t.sent)
 
 
+def test_duplicate_setlist_sends_the_exact_cortex_folder_copy():
+    qc = client.QuadCortex(FakeTransport())
+    qc.duplicate_setlist("Live", confirm=False)
+    sent = qc._t.sent[-1]
+    assert sent.SerializeToString() == bytes.fromhex(
+        "08 05 18 00 22 1a 0a 16 2f 6d 65 64 69 61 2f 70 34 2f 50 72 65 73 "
+        "65 74 73 2f 4c 69 76 65 20 00"
+    )
+    assert not sent.HasField("request_id")  # Transport.request assigns it later.
+    assert not sent.HasField("to_folder")
+    assert len(sent.folder.files) == 0
+
+
+def test_duplicate_setlist_sends_once_and_waits_for_matching_inventory(monkeypatch):
+    root = "/media/p4/Presets"
+    source_key = f"{root}/Live"
+    destination_key = f"{root}/Live 2"
+    before = [client.Folder(source_key, "Live", 256, 2, False)]
+    after = before + [client.Folder(destination_key, "Live 2", 256, 2, False)]
+
+    source = []
+    destination_incomplete = []
+    destination_complete = []
+    for collection in (source, destination_complete):
+        first = pa.ProductData(index=1, name="One", key="key-one", instrument=1)
+        second = pa.ProductData(index=7, name="Two", key="key-two", instrument=2)
+        collection.extend((first, second))
+    destination_incomplete.append(source[0])
+
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    folder_generations = iter((before, after, after))
+    destination_generations = iter((destination_incomplete, destination_complete))
+    qc.list_folders = lambda seconds=20.0: next(folder_generations)
+
+    def list_presets(key, *args, **kwargs):
+        if key == source_key:
+            return source
+        assert key == destination_key
+        return next(destination_generations)
+
+    qc.list_presets = list_presets
+    monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
+
+    created = qc.duplicate_setlist("Live", timeout=5.0, interval=0.0)
+
+    assert created.key == destination_key
+    copies = [
+        message for message in fake.sent
+        if isinstance(message, pa.FileMessage)
+        and message.action == pa.MessageAction.COPY
+    ]
+    assert len(copies) == 1, "polling must never replay a persistent COPY"
+
+
+def test_duplicate_setlist_refuses_at_the_cortex_twelve_setlist_guard():
+    root = "/media/p4/Presets"
+    source_key = f"{root}/Live"
+    folders = [client.Folder(source_key, "Live", 256, 1, False)]
+    folders.extend(
+        client.Folder(f"{root}/Setlist {index}", f"Setlist {index}", 256, 0, False)
+        for index in range(1, 12)
+    )
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.list_folders = lambda seconds=20.0: folders
+    qc.list_presets = lambda key: [
+        pa.ProductData(index=0, name="One", key="key-one", instrument=1)
+    ]
+
+    with pytest.raises(ValueError, match="maximum 12"):
+        qc.duplicate_setlist("Live")
+    assert fake.sent == []
+
+
 # -- Global EQ by band, not by wire index --------------------------------------
 # 5 parameters per band at offsets GAIN 0, FREQUENCY 1, Q 2, TYPE 3. Established by
 # changing each of band 1's controls and seeing which index moved, then checked
