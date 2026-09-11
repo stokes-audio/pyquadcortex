@@ -1,5 +1,31 @@
 [
   {
+    "model_id": 1001,
+    "model": "Brit 2203",
+    "index": 6,
+    "name": "OUTPUT",
+    "raw": {
+      "defaultValue": "0.0",
+      "displayPos": "6",
+      "max": "12",
+      "min": "-60",
+      "min_string": "OFF",
+      "name": "OUTPUT",
+      "skew": "3.8018",
+      "type": "float",
+      "units": "dB"
+    },
+    "minimum": -60.0,
+    "maximum": 12.0,
+    "units": "dB",
+    "type": "float",
+    "steps": null,
+    "skew": 3.8018,
+    "floor_wire": 0.0,
+    "floor_display": null,
+    "why": "Brit 2203 OUTPUT - the -60..12 dB skew 3.8018 family, 125 knobs carrying min_label, and the first of them ever driven"
+  },
+  {
     "model_id": 3008,
     "model": "Parallax",
     "index": 16,
@@ -146,6 +172,31 @@
     "floor_wire": 0.0,
     "floor_display": null,
     "why": "Low-High Cut OUTPUT - no skew, the linear control case"
+  },
+  {
+    "model_id": 6005,
+    "model": "Digital Delay (M)",
+    "index": 17,
+    "name": "GAIN REDUCTION",
+    "raw": {
+      "defaultValue": "0",
+      "max": "0",
+      "min": "-60",
+      "min_string": "-Inf",
+      "name": "GAIN REDUCTION",
+      "steps": "180",
+      "type": "grMeter",
+      "units": "dB"
+    },
+    "minimum": -60.0,
+    "maximum": 0.0,
+    "units": "dB",
+    "type": "grMeter",
+    "steps": 180,
+    "skew": 1.0,
+    "floor_wire": 0.0,
+    "floor_display": null,
+    "why": "Digital Delay (M) GAIN REDUCTION - a METER, not a knob. Here so that claim is checkable against the catalog it came from"
   },
   {
     "model_id": 10000,
@@ -722,6 +773,33 @@
     "floor_wire": 0.0,
     "floor_display": null,
     "why": "TEMPO - MIN_TEMPO, steps=201"
+  },
+  {
+    "model_id": 29001,
+    "model": "Single (M)",
+    "index": 4,
+    "name": "HI PASS",
+    "raw": {
+      "defaultValue": "20",
+      "max": "800",
+      "min": "20",
+      "min_string": "OFF",
+      "name": "HI PASS",
+      "showAsInteger": "true",
+      "skew": "0.6",
+      "steps": "200",
+      "type": "float",
+      "units": "Hz"
+    },
+    "minimum": 20.0,
+    "maximum": 800.0,
+    "units": "Hz",
+    "type": "float",
+    "steps": 200,
+    "skew": 0.6,
+    "floor_wire": 0.0,
+    "floor_display": null,
+    "why": "Single (M) HI PASS - the IR loader family, steps=200, and the one Off detent of the three that turned out to be real"
   },
   {
     "model_id": 32000,

@@ -218,6 +218,37 @@ READINGS = [
     (18007, 8, 0.6, 10.0, 0),           # screen: 10 R, at its untouched default
     (18007, 12, 0.0, -50.0, 0),         # screen: 50 L, declared 0..1
 
+    # -- the amp OUTPUT family, 2026-09-11 -----------------------------------
+    # 125 knobs on one law - every guitar and bass amp's OUTPUT, plus a drive
+    # and three utilities - and none of them had ever been driven. Read off a
+    # `Brit 2203` (1001) on the factory preset of the same name. The three wire
+    # values were written from the host, because the unit's own encoder cannot
+    # reach below 0.01 on a knob the catalog gives no `steps`: the owner turned
+    # it down to the bottom and one step up landed on 0.01 exactly, which is
+    # where all three floors recorded before this sat.
+    #
+    # This is the first hardware confirmation of skew 3.8018, and it holds over
+    # four decades of wire: the law renders these -38.558, -42.132 and -58.098.
+    (1001, 6, 0.01, -38.6, 1),
+    (1001, 6, 0.005, -42.1, 1),
+    (1001, 6, 0.000001, -58.1, 1),
+
+    # -- the IR loader HI PASS, 2026-09-11 -----------------------------------
+    # The one Off detent of the three looked at that turned out to be real: at
+    # wire 0.000001 this screen says OFF, where the amp above says -58.1. Read
+    # off a `Single (M)` (29001) placed on a free row. 20 Hz is the law's own
+    # minimum, so the detent hides no value - see the test below.
+    (29001, 4, 0.003, 20, 0),
+    (29001, 4, 0.005025126, 20, 0),
+
+    # -- the cab LEVEL below its recorded floor, 2026-09-11 ------------------
+    # Read through a `412 CA Stand OS A V30 01 (M)` (12031), which inherits
+    # 12000's layout the way the 2026-08-27 reading above does. It is here
+    # because it CONTRADICTS a shipped record: FLOOR_WIRE says this knob reads
+    # OFF below wire 0.01, and at wire 0.000001 the screen read -37.2 dB.
+    # See `test_the_cab_floor_records_a_detent_the_screen_does_not_show`.
+    (12000, 2, 0.000001, -37.2, 1),
+
     # -- the Splitter Crossover, 2026-08-26 ----------------------------------
     # Not read off the screen. The catalog states defaultValue="400.0" and the
     # unit was holding this wire value for that knob, which is what pins the
@@ -417,6 +448,124 @@ def test_the_same_knob_is_floored_under_both_of_its_spellings():
         assert spec.floor == pytest.approx(-21.8, abs=0.05)
         with pytest.raises(ValueError, match="does not exist there"):
             spec.to_normalized(-30.0)
+
+
+
+# -- what the 2026-09-11 Off-detent session found ------------------------------
+#
+# Three laws were driven, covering 161 of the 189 parameters that carried a
+# min_label and no measured floor. Not one of them produced a new FLOOR_WIRE
+# entry, and each failed to for a different reason. These tests hold the three
+# answers, because "we looked and there was nothing there" is a result that
+# costs a session to rediscover.
+
+
+def test_gain_reduction_is_a_meter_and_the_device_says_so():
+    """The 20 knobs on the '-Inf' law are readouts, not controls.
+
+    The owner at the unit: it sits at 0.0 with no audio and flickers while
+    something is playing, and a host write of wire 0.5 moved nothing on screen -
+    though the value round-tripped through the preset, which is the
+    accept-and-ignore trap and proves storage rather than control.
+
+    The catalog had said so all along. ``type="grMeter"`` is its own kind, 39
+    parameters across 39 models, every one of them named GAIN REDUCTION - so
+    this needed no hardware at all, and the checking-the-catalog-first rule got
+    another instance.
+    """
+    spec = SCALES[(6005, 17)]
+    assert spec.type == "grMeter"
+    assert spec.name == "GAIN REDUCTION"
+    assert spec.min_label == "-Inf"
+    # A meter has no floor to measure, so it must not acquire one by sharing a
+    # law with something drivable. Nothing else in the catalog carries this law.
+    assert (spec.minimum, spec.maximum, spec.skew) not in units.FLOOR_WIRE
+
+
+def test_the_amp_output_family_has_no_off_detent_to_find():
+    """125 knobs, and the numbers run all the way down.
+
+    At wire 0.000001 a `Brit 2203` OUTPUT reads -58.1 dB - a number, not the
+    word. OFF is the single position at wire 0.0 and nothing else, so there is
+    no gap between the detent and where the numbers resume, and no entry to
+    write. What LOOKED like a gap was the encoder: turning the knob off the
+    bottom lands on wire 0.01, 18 dB above where a host write can reach.
+    """
+    spec = SCALES[(1001, 6)]
+    assert spec.min_label == "OFF"
+    assert (spec.minimum, spec.maximum, spec.skew) not in units.FLOOR_WIRE
+    assert spec.floor_is_measured is False
+    # The whole declared span stays available, which is the point of recording
+    # no floor: the bottom of the law is reachable to the display's precision.
+    assert float(spec.to_normalized(-58.1)) < 0.01
+    assert float(spec.floor) == pytest.approx(-60.0)
+
+
+def test_the_ir_loader_detent_hides_nothing():
+    """A real detent, and the numbers resume at the law's own minimum.
+
+    `Single (M)` HI PASS reads OFF at wire 0.000001 and 20 Hz at 0.003, so
+    unlike the amp this one has a genuine boundary. 20 Hz is ``minimum``,
+    though, so no value the caller can name becomes unreachable - which is why
+    there is still no FLOOR_WIRE entry. The entry would change `floor` from
+    20 Hz to 20 Hz.
+
+    The boundary itself was not bisected; the owner had to step away. It lies
+    between wire 0.000001 and 0.003, and the knob's own step is 1/199 (the
+    catalog gives ``steps=200``), which is where the encoder puts it.
+    """
+    spec = SCALES[(29001, 4)]
+    assert spec.min_label == "OFF" and spec.steps == 200
+    assert spec.units == "Hz" and spec.show_as_integer is True
+    assert float(spec.floor) == pytest.approx(spec.minimum)
+    # 1/199 is position 1 of 200, the lowest the encoder reaches, and it
+    # displays the same 20 Hz that a host write of 0.003 does.
+    assert float(spec.to_real(1 / 199)) == pytest.approx(20.115, abs=0.01)
+
+
+def test_the_cab_floor_records_a_detent_the_screen_does_not_show():
+    """The finding this session did NOT act on, held where it cannot be lost.
+
+    FLOOR_WIRE says a cab LEVEL reads OFF below wire 0.01 and so refuses -30 dB.
+    On 2026-09-11 a `412 CA Stand OS A V30 01 (M)` was written to wire 0.000001
+    and the screen read -37.2 dB. Both assertions below pass today, and they
+    cannot both be describing the same device correctly.
+
+    The guard is left ALONE on purpose. The record it rests on cites muted
+    AUDIO, and a screen that prints -37.2 does not establish the microphone is
+    audible there; only listening does. So this pins the contradiction rather
+    than resolving it, and `units.FLOOR_WIRE` names what would settle it.
+    """
+    spec = SCALES[(12000, 2)]
+    # What the guard believes.
+    assert spec.floor_wire == 0.01
+    assert float(spec.floor) == pytest.approx(-21.8, abs=0.05)
+    with pytest.raises(ValueError, match="does not exist there"):
+        spec.to_normalized(-30.0)
+    # What the screen showed, four decades of wire below the recorded floor.
+    assert float(spec.to_real(0.000001)) == pytest.approx(-37.2, abs=0.05)
+
+
+def test_every_family_with_a_recorded_floor_is_a_stepless_knob():
+    """Why the three recorded floors are all exactly 0.01, and are all suspect.
+
+    The catalog gives none of them a ``steps``, and a stepless knob's encoder
+    moves in hundredths - so 0.01 is the first position a player can turn to,
+    whether or not it is the first that shows a number. The amp above is the
+    fourth stepless family and the first driven BELOW that position, and there
+    the word turned out to stop at wire 0.0.
+
+    Stated as a pattern rather than a rule: three stepless families with a
+    floor of 0.01 measured by turning the knob, one stepless family with no
+    floor measured by writing under it, and one 200-step family whose detent is
+    real. That is not enough to key a table on, and the last attempt to key
+    this table on a rule shipped a bug, so nothing here acts on it.
+    """
+    for key in units.FLOOR_WIRE:
+        assert units.FLOOR_WIRE[key][0] == 0.01, key
+    for model_id, index in ((12000, 2), (23000, 0), (13000, 0), (1001, 6)):
+        assert SCALES[(model_id, index)].steps is None, (model_id, index)
+    assert SCALES[(29001, 4)].steps == 200
 
 
 def test_parallax_carries_the_cab_law_itself():

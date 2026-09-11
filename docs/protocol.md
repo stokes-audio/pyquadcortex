@@ -3233,6 +3233,41 @@ That gap is not cosmetic. Without a floor, asking a cab for -30 dB converts to w
 something else. `units.FLOOR_WIRE` holds the measured floors, keyed by the same
 family names, and a value below one is refused. For silence, write the wire's `0.0`.
 
+**Three of those laws were driven on 2026-09-11, and none produced a new floor.** The
+session set out to measure the 189 parameters carrying a `min_string` with no measured
+floor, biggest law first. The three biggest covered 161 of them, and each answered
+differently:
+
+| law | parameters | what the screen showed | outcome |
+|---|---|---|---|
+| -60..12 dB, skew 3.8018 | 125 | `-58.1 dB` at wire 0.000001 | no detent: `OFF` is wire 0.0 alone |
+| -60..0 dB, skew 1, `-Inf` | 20 | never moves | `type="grMeter"` - a readout, not a knob |
+| 20..800 Hz, skew 0.6 | 16 | `OFF` at 0.000001, `20 Hz` at 0.003 | a real detent, resuming at `minimum` |
+
+So the count of knobs with an unmeasured Off detent is **169 on 13 laws**, not 189 on
+14: the `-Inf` law is 20 gain-reduction meters. `type` distinguishes them and always
+did - `grMeter` is 39 parameters across 39 models, every one named `GAIN REDUCTION`,
+beside 8 more of `type="meter"`. The owner confirmed it at the unit (it sits at 0.0
+with no audio and flickers while something plays) and a host write of wire 0.5 moved
+nothing on screen, though the value round-tripped through the preset - storage, not
+control. Reading `type` first would have skipped the hardware session entirely.
+
+**The measurement method matters more than the numbers here, and the three floors
+already recorded used the wrong one.** They were read by turning the unit's encoder.
+A knob the catalog gives no `steps` moves in hundredths when turned, so wire 0.01 is
+the first position a player reaches - which is why all three say exactly 0.01. A host
+write goes lower, and when the amp OUTPUT was driven that way the word stopped only at
+wire 0.0, 18 dB below where the encoder bottoms out.
+
+Driving the cab the same way contradicts its record outright: a `412 CA Stand OS A V30
+01 (M)` at wire 0.000001 read **-37.2 dB**, where `FLOOR_WIRE` says `OFF` below 0.01
+and calls -21.8 dB the quietest position. The guard is deliberately left in place. Its
+own evidence is muted **audio**, and a screen printing -37.2 says nothing about whether
+a microphone at that level is audible; only listening does, and nobody has. Until then
+the guard costs the bottom 16 dB of a cab's range and prevents a silent mute, which is
+still the trade worth having - on a measurement now known to be the wrong one.
+`tests/test_scales.py` asserts both halves so the contradiction cannot be lost.
+
 **Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on -40..+12.
 Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on every one
 of the 34 rows carrying them across 17 factory presets, and lane `VOLUME` on 52 of 68

@@ -20,6 +20,38 @@ correction.
 
 ## Unreleased
 
+### Three Off-detent families were driven, and none of them had a floor to add
+
+254 parameters tell you the bottom of their range shows a WORD instead of a
+number, and the library has only ever known where the numbers resume on three
+families. The three largest unmeasured ones were driven on the unit. Each
+answered differently and none produced a new guard:
+
+* **Every amp's OUTPUT** (125 knobs, -60..12 dB) has no detent at all. `OFF` is
+  the single wire position 0.0; a hair above it the screen reads -58.1 dB. The
+  whole declared range is yours.
+* **`GAIN REDUCTION`** (20 parameters) is not a control. The catalog calls it
+  `type="grMeter"` and the unit draws a moving readout. Writing it stores a
+  value and changes nothing.
+* **The IR loader's `HI PASS`** (16 knobs, 20..800 Hz) does have a real detent,
+  and the numbers resume at 20 Hz - the bottom of its own range. Nothing you
+  could ask for was unreachable.
+
+**Nothing you wrote needs to change, and no call that worked now fails.** No
+`FLOOR_WIRE` entry was added or removed, so every conversion behaves exactly as
+it did. This entry is here because the opposite was expected: measuring a floor
+normally makes `to_normalized` start refusing values below it, and on these
+three families there was nothing to refuse.
+
+One thing did come out of it that a user may care about. The three floors the
+library already enforces were measured by turning the unit's knob, and a knob
+the catalog gives no step size moves in hundredths - so those floors are where
+a *player* bottoms out, not where the numbers stop. Driving a cab below that
+point from the host prints -37.2 dB on screen, while the library still refuses
+-30 dB on that knob. The refusal stays for now: the record behind it cites a
+muted microphone, and a number on screen does not prove the mic is audible.
+`docs/protocol.md` has the detail and says what would settle it.
+
 ### The Global EQ gain span is measured, not taken from the manual
 
 `set_global_eq(band, gain=Db(...))` converts over -12..+12 dB, which is what it

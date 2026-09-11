@@ -130,6 +130,27 @@ UNMEASURED_BOUNDS = {
 #: linear families that costs at most a loud refusal across a 0.5 dB sliver at
 #: the very bottom. For the cab it prevents an 18 dB silent mute. That trade is
 #: the right way round.
+#:
+#: **Every value in here was read with the unit's own encoder, and that is not
+#: the same measurement as the one described above.** A knob the catalog gives
+#: no ``steps`` moves in hundredths when it is turned, so 0.01 is the first
+#: position a PLAYER can reach - which is why all three entries say 0.01. A
+#: host write goes lower. Driven that way on 2026-09-11, a `Brit 2203` OUTPUT
+#: on the -60..12 dB skew 3.8018 law showed -58.1 dB at wire 0.000001, where
+#: the word stops only at wire 0.0; and a `412 CA Stand OS A V30 01 (M)` on
+#: the cab law below showed -37.2 dB at that same wire, four decades under the
+#: 0.01 this table calls its floor and 16 dB under the -21.8 it calls its
+#: quietest position.
+#:
+#: So the cab entry says OFF where the screen prints a number, and the other
+#: two were taken the same way. They are LEFT ALONE rather than corrected,
+#: because the record behind the cab cites muted AUDIO and a screen reading
+#: does not speak to that: -37.2 dB on a microphone may well be inaudible in a
+#: mix and still print. What settles it is listening to a cab at wire 0.000001,
+#: which nobody has done. Until then the guard costs a caller the bottom 16 dB
+#: of a range and protects against a silent mute, and that trade is still the
+#: right way round - but it is now known to rest on the wrong measurement.
+#: `tests/test_scales.py` holds both halves so neither can be quietly lost.
 FLOOR_WIRE = {
     # The cab section's per-mic LEVEL. -21.8 dB at wire 0.01, OFF below it.
     # Measured 2026-08-26 on a 212 Darkglass Neo (M); the same law covers the

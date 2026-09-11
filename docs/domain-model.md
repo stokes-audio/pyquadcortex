@@ -1414,6 +1414,29 @@ The counts are from the shipped CorOS 4.0.1 catalog, 3,809 parameters.
 | `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`). |
 | `isplayPos` | 1 | `displayPos` with the `d` missing. The device's own typo. Recorded rather than silently accepted as an alias, because a parser that took both would hide that the catalog has a defect. |
 
+### `type` names the widget, and two of its values are readouts
+
+`type` has been parsed all along (`Parameter.type`) and never read for meaning.
+It is worth reading. Across the 4.0.1 catalog it takes twelve values: `float`
+2618, `switch` 461, `string` 396, `rotarySwitch` 140, `fader` 48, `int` 44,
+`comboBox` 34, `grMeter` 39, `empty` 16, `meter` 8, `toggleButton` 3,
+`floatWithLed` 2.
+
+`grMeter` and `meter` are not controls. All 39 `grMeter` parameters are named
+`GAIN REDUCTION`, one per model across 39 delay and dynamics models, and the
+unit draws them as a moving readout: with no audio playing one sits at 0.0, and
+it flickers while something plays. A host write is STORED - wire 0.5 round-trips
+through the preset - and moves nothing on screen, which is the accept-and-ignore
+trap wearing its most convincing disguise, since the read-back looks like
+success.
+
+This cost a hardware session on 2026-09-11. 20 of them share a law
+(-60..0 dB, skew 1) and carry `min_string="-Inf"`, so they came up as the
+second-largest group of Off detents to measure, and `type` said they were not
+knobs before anyone connected a cable. What the library does with the other 8
+`meter` parameters, and whether `set_param` should refuse all 47, is open -
+nothing has been driven, and ADR-0010 wants the capture before the refusal.
+
 ### `mid_string` is the label at the middle of the wire
 
 This sat in the table above because the catalog never says which middle position

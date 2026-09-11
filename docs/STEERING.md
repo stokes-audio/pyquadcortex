@@ -138,6 +138,38 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-11 - Three Off detents were driven, and the method was the finding
+
+**What changed:** readings only. Six new entries in `tests/test_scales.py`, three
+new fixture rows, and five tests holding what the 2026-09-11 session learned
+about the 189 parameters that carry a `min_string` and no measured floor. No
+value in `units.FLOOR_WIRE` moved, and no behaviour changed.
+
+**What the three biggest laws answered.** The -60..12 dB skew 3.8018 family, 125
+knobs and every amp's OUTPUT, has no detent: `OFF` is wire 0.0 alone and -58.1 dB
+prints just above it. The `-Inf` family, 20 parameters, is not knobs - the
+catalog types them `grMeter` and the unit draws a moving readout, so the real
+count of unmeasured Off detents is 169 on 13 laws rather than 189 on 14. The IR
+loader's `HI PASS`, 16 knobs, has a real detent whose numbers resume at its own
+`minimum`, so it hides nothing. Three laws, 161 parameters, no new entry.
+
+**Why the method is the part worth keeping.** All three floors already in the
+table read exactly 0.01, all three were taken by turning the unit's encoder, and
+a knob with no `steps` moves in hundredths when turned. So 0.01 is where a PLAYER
+bottoms out, not where the numbers stop - the distinction the table's own doc
+draws and its values do not honour. Driven from the host instead, a cab LEVEL
+prints -37.2 dB four decades below its recorded floor, contradicting the entry
+outright.
+
+**What was deliberately NOT done.** The cab guard stands. Its evidence is muted
+AUDIO and this session only read a screen, so removing it would swap one
+unproven claim for another; what settles it is listening to a cab at wire
+0.000001. `tests/test_scales.py` asserts the guard and the reading side by side
+so the contradiction stays visible, and `units.FLOOR_WIRE`'s comment names the
+experiment. A `steps`-based rule for which families have a detent fits all five
+data points and is written down as a hypothesis only - the last table keyed on a
+rule about parameters shipped a bug, and five points is not a rule.
+
 ### 2026-09-11 - The Global EQ gain span is measured at its ends (ADR-0017)
 
 **What changed:** `units.SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]` is still

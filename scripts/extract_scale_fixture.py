@@ -70,6 +70,12 @@ WANTED = {
     (13000, 0): "Send LEVEL - MIN_FXLOOP_OUT_GAIN_DB, which tops out at unity",
     (13002, 0): "FX Loop LEVEL - MIN_FXLOOP_IN_GAIN_DB, which can boost",
     (20000, 2): "NC_Recorder OUT LEVEL - the one unmeasured bound; refuses",
+    (1001, 6): "Brit 2203 OUTPUT - the -60..12 dB skew 3.8018 family, 125 knobs"
+              " carrying min_label, and the first of them ever driven",
+    (29001, 4): "Single (M) HI PASS - the IR loader family, steps=200, and the"
+                " one Off detent of the three that turned out to be real",
+    (6005, 17): "Digital Delay (M) GAIN REDUCTION - a METER, not a knob. Here so"
+                " that claim is checkable against the catalog it came from",
 }
 
 
