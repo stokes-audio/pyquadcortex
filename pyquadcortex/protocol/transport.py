@@ -793,7 +793,10 @@ class Transport:
                 self._stop_event.wait()
                 return
             try:
-                self.send(pa.KeepAliveMessage(action=pa.MessageAction.UPDATE))
+                # Cortex Control sends the protobuf-default CREATE action with
+                # an explicit request-id zero sentinel.  Zero is deliberately
+                # not drawn from the normal request counter.
+                self.send(pa.KeepAliveMessage(request_id=0, is_online=True))
             except DeviceLostError:
                 self._stop_event.wait()
                 return
