@@ -20,15 +20,15 @@ _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
 
 
 class QuadCortex41(QuadCortex):
-    """Quad Cortex on CorOS 4.1 - connects with 15 measured operations.
+    """Quad Cortex on CorOS 4.1 - connects with 16 measured operations.
 
     PR #42's description (2026-09-03) reports ``pytest --hardware``: 2742
     passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
     d14e, by tony-xmelon. That is a contributor's report and the maintainer has
     not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
     connection is therefore known to work with this handshake and announce
-    string. A profile-aware hardware run on 2026-09-08 measured the operations
-    in ``VERIFIED`` below; every other inherited operation still refuses under
+    string. Profile-aware hardware runs through 2026-09-11 measured the
+    operations in ``VERIFIED`` below; every other inherited operation refuses under
     ``Support.VERIFIED`` and runs with a warning under
     ``Support.EXPERIMENTAL``. Its generated constants are bound to the
     contributed CorOS 4.1.0 snapshot rather than the 4.0.1 compatibility
@@ -51,6 +51,7 @@ class QuadCortex41(QuadCortex):
         "read_current_preset",
         "set_bypass",
         "set_chain_input",
+        "set_expression",
         "set_global_eq",
         "set_hold_timing",
         "set_input_port",

@@ -20,6 +20,15 @@ correction.
 
 ## Unreleased
 
+### CorOS 4.1 hardware profile follow-up
+
+The exact 2026-09-11 CorOS 4.1.0 suite passed 96 hardware tests with three
+fixture-dependent skips and all 16 claimed operations green. `set_expression`
+joins the profile's verified operations. Its connect trace also corrected the
+earlier missing-acknowledgement observation: the unit sends the same three
+Version shapes as 4.0.1, including the update carrying
+`cortex_control_version_valid`.
+
 ### The first hardware run of the profile seam, and what it corrected
 
 Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam

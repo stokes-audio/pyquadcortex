@@ -523,16 +523,17 @@ same thing with one deliberate difference: it does **not** issue a host
 version request - READ replies carry no `request_id` to disambiguate them, so
 the transport hands a `Version` with no id to whichever waiter is first in line.
 
-Skipping it also means the device asks nothing back, but whether the announce is
-acknowledged is firmware-specific. Measured 2026-08-27 on CorOS 4.0.1 / `d14e`:
+Skipping it also means the device asks nothing back. Measured 2026-08-27 on
+CorOS 4.0.1 / `d14e`:
 `_hello()` and its whole burst produce exactly one inbound
 `Version`, an `UPDATE` carrying `cortex_control_version_valid` in answer to the
-announce, and eight seconds of idling after it produce none. Measured 2026-09-04
-on CorOS 4.1.0: four consecutive fresh connections produced zero inbound
-`Version` messages during the connect burst, while the subscribed state burst
-still arrived. On 4.0.1, step 3 above is therefore a consequence of step 2 rather
-than something the device does on connecting; 4.1.0 does not expose that
-acknowledgement on the wire.
+announce, and eight seconds of idling after it produce none. CorOS 4.1.0 sends
+the same announce answer: an exact full-suite trace on 2026-09-11 captured
+`UPDATE(identity)`, `READ(action only)`, then
+`UPDATE(request_id=0, cortex_control_version_valid)`. This corrects a 2026-09-04
+observation whose four connection windows missed the final message. Step 3
+above is therefore a consequence of step 2 rather than something the device
+does on connecting on both measured profiles.
 
 Since ADR-0020, `connect()` itself makes one `Version` READ BEFORE calling
 `_hello()`, to resolve the profile. Measured 2026-09-07 on CorOS 4.0.1 / d14e: a
@@ -543,9 +544,8 @@ the full reply to that READ (15 fields, at +0.71 s), the unit's own
 entry holds `device_serial_number` and `app_fw_version` from that reply; the
 reply also carries fields the entry does not keep, so the entry stays marked and
 the first `device.firmware` read still asks the unit once.
-On CorOS 4.1.0 the same pre-handshake READ still contributes the full reply and
-the unit's own `Version{READ}`; only the announce answer is absent. Retries can
-add another full-reply/own-READ pair on either profile, so the hardware assertion
+CorOS 4.1.0 produces the same three shapes. Retries can add another
+full-reply/own-READ pair on either profile, so the hardware assertion
 checks their shapes and relationship rather than assuming a fixed total.
 
 ### 4.3 Keepalive and disconnect

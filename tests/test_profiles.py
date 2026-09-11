@@ -255,8 +255,8 @@ def test_the_4_1_profile_connects_with_its_snapshot_and_measured_operations():
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
     assert cls.VERIFIED == frozenset({
         "active_scene", "clear_expression", "read_current_preset", "set_bypass",
-        "set_chain_input", "set_global_eq", "set_hold_timing", "set_input_port",
-        "set_param", "set_scene_color", "set_scene_label", "set_tempo_mode",
+        "set_chain_input", "set_expression", "set_global_eq", "set_hold_timing",
+        "set_input_port", "set_param", "set_scene_color", "set_scene_label", "set_tempo_mode",
         "switch_scene", "tempo_mode", "update_settings",
     })
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
