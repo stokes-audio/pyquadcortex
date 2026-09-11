@@ -3075,6 +3075,13 @@ class QuadCortex:
         (:meth:`set_global_eq_output`), with 27 identified by elimination rather
         than by having been seen written.
 
+        The offsets within a band are the ``GLOBAL_EQ_BAND_*`` constants on this
+        class, so an index is
+        ``(band - 1) * GLOBAL_EQ_BAND_STRIDE + GLOBAL_EQ_BAND_<control>``. This
+        method is where they earn their keep - :meth:`set_global_eq` does that
+        arithmetic for you, and is the better door unless you have a reason to
+        address the index yourself.
+
         What is NOT established is the SCALE of most of them. A band's GAIN is
         -12..+12 dB, measured on screen; FREQUENCY and Q have no reading tying
         them to anything, which is why they take ``Encoded`` through
@@ -3564,16 +3571,18 @@ class QuadCortex:
         ``(N - 1) * GLOBAL_EQ_BAND_STRIDE + offset``. The offsets are the
         ``GLOBAL_EQ_BAND_*`` constants on this class rather than numbers written
         out here, so the mapping has one home the code reads; ``docs/protocol.md``
-        carries the same table, and `test_the_band_offsets_match_the_protocol_record`
-        holds the two together. Established by changing each of band 1's controls
+        carries the same table, and
+        ``test_the_band_offsets_match_the_protocol_record`` holds the two
+        together. Established by changing each of band 1's controls
         in turn and reading which index moved, then checked against the whole
         28-parameter list: laid out five per band the defaults line up exactly as a
         five-band parametric EQ should - identical gains, identical Qs,
         monotonically increasing frequencies, and shelf/peak/peak/peak/shelf types.
 
         ``enabled`` is ``GLOBAL_EQ_BAND_ENABLED`` - the manual's EQ BAND BYPASS -
-        where **1.0 means the band is active** and 0.0 bypasses it. Confirmed by toggling band 1's bypass on
-        the unit, and consistent with every band shipping at 1.0.
+        where **1.0 means the band is active** and 0.0 bypasses it. Confirmed by
+        toggling band 1's bypass on the unit, and consistent with every band
+        shipping at 1.0.
 
         Indices 25 to 27 are the OUT tab, reached through
         :meth:`set_global_eq_output`.

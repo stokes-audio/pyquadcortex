@@ -4217,8 +4217,22 @@ def test_the_band_offsets_match_the_protocol_record():
     narrow: it checks the five offsets, not the whole document.
     """
     lines = PROTOCOL_DOC.read_text().splitlines()
-    start = next(i for i, line in enumerate(lines)
-                 if line.startswith("| offset | control |"))
+    # Anchored on the paragraph rather than on the first offset/control header
+    # in a 2,500-line document, so a second block's layout table added later
+    # cannot quietly rebind this test to itself.
+    heading = next((i for i, line in enumerate(lines)
+                    if line.startswith("**Global EQ parameter layout:")), None)
+    assert heading is not None, (
+        "docs/protocol.md no longer has a paragraph starting '**Global EQ "
+        "parameter layout:' - this test reads the table under it, so say where "
+        "the layout moved to rather than deleting the anchor")
+    start = next((i for i, line in enumerate(lines[heading:], heading)
+                  if line.startswith("| offset | control |")), None)
+    assert start is not None, (
+        "docs/protocol.md's Global EQ layout paragraph is no longer followed by "
+        "a table with the header '| offset | control |'; if the table was "
+        "reformatted, teach this test the new shape - the constants in "
+        "QuadCortex are checked against it")
     table = {}
     for line in lines[start + 2:]:
         if not line.startswith("|"):

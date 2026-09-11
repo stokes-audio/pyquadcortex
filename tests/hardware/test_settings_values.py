@@ -110,19 +110,25 @@ def test_a_global_eq_gain_in_db_lands_where_the_measured_span_says(qc, restores)
         f"the measured readings no longer carry both ends (have {sorted(wires)}); "
         f"this test exists to drive them back onto the unit")
 
-    band, offset = 1, client.QuadCortex.GLOBAL_EQ_BAND_GAIN
+    # An OFFSET is not a wire index. `set_global_eq_band` and `parameter_index`
+    # both want the whole index, so the base has to be added - band 1 is the
+    # one band where forgetting that still works, which is exactly why it is
+    # spelled out here rather than left as the offset alone.
+    band = 1
+    index = ((band - 1) * client.QuadCortex.GLOBAL_EQ_BAND_STRIDE
+             + client.QuadCortex.GLOBAL_EQ_BAND_GAIN)
     before = [p.value for p in qc.global_eq().parameters
-              if p.parameter_index == offset]
-    assert before, "the Global EQ reported no parameter 0"
-    restores("global EQ band 1 gain",
-             lambda: qc.set_global_eq_band(offset, values.Encoded(before[0])))
+              if p.parameter_index == index]
+    assert before, f"the Global EQ reported no parameter {index}"
+    restores(f"global EQ band {band} gain",
+             lambda: qc.set_global_eq_band(index, values.Encoded(before[0])))
 
     for db, wire in GLOBAL_EQ_GAIN_READINGS:
         qc.set_global_eq(band, gain=values.Db(db))
         time.sleep(SETTLE)
 
         now = [p.value for p in qc.global_eq().parameters
-               if p.parameter_index == offset]
+               if p.parameter_index == index]
         assert now[0] == pytest.approx(wire, abs=1e-4), (
             f"{db} dB was read on screen at wire {wire}")
         # Through the same object the write used, which is the point: one law.

@@ -25,16 +25,15 @@ correction.
 `QuadCortex` already named the Global EQ's stride, its band count and the three
 OUT tab indices. The five offsets WITHIN a band were bare digits inside
 `set_global_eq`. They are now `GLOBAL_EQ_BAND_GAIN`, `_FREQUENCY`, `_Q`, `_TYPE`
-and `_ENABLED`, which is useful if you address the Global EQ through
-`set_global_eq_band`'s raw-index door:
+and `_ENABLED`.
 
-```python
-qc.set_global_eq_band(
-    (band - 1) * qc.GLOBAL_EQ_BAND_STRIDE + qc.GLOBAL_EQ_BAND_Q, Encoded(0.2))
-```
-
-**Nothing you wrote needs to change.** No behavior moves and the numbers are the
-same; these are additions.
+**Nothing you wrote needs to change**, and there is no new thing to call: every
+one of those five controls is already reachable through
+`set_global_eq(band, gain=..., frequency=..., q=..., filter_type=, enabled=)`,
+which validates the band and does the arithmetic. The constants are for reading
+a wire index the unit reported, or checking one you are about to pass to
+`set_global_eq_band`'s raw-index door - they say which of the 28 slots you are
+looking at without counting in fives.
 
 ### The Global EQ gain span is measured, not taken from the manual
 
