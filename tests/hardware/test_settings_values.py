@@ -115,8 +115,10 @@ def test_a_global_eq_gain_in_db_lands_where_the_measured_span_says(qc, restores)
     # one band where forgetting that still works, which is exactly why it is
     # spelled out here rather than left as the offset alone.
     band = 1
-    index = ((band - 1) * client.QuadCortex.GLOBAL_EQ_BAND_STRIDE
-             + client.QuadCortex.GLOBAL_EQ_BAND_GAIN)
+    # Off `qc`, not off `QuadCortex`: under ADR-0020 the connection is a profile
+    # subclass, and a profile that ever carried a different layout would be
+    # measured against the base class's numbers if these were read off the class.
+    index = ((band - 1) * qc.GLOBAL_EQ_BAND_STRIDE + qc.GLOBAL_EQ_BAND_GAIN)
     before = [p.value for p in qc.global_eq().parameters
               if p.parameter_index == index]
     assert before, f"the Global EQ reported no parameter {index}"
@@ -129,6 +131,7 @@ def test_a_global_eq_gain_in_db_lands_where_the_measured_span_says(qc, restores)
 
         now = [p.value for p in qc.global_eq().parameters
                if p.parameter_index == index]
+        assert now, f"the Global EQ stopped reporting parameter {index}"
         assert now[0] == pytest.approx(wire, abs=1e-4), (
             f"{db} dB was read on screen at wire {wire}")
         # Through the same object the write used, which is the point: one law.

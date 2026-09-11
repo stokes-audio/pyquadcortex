@@ -3075,12 +3075,11 @@ class QuadCortex:
         (:meth:`set_global_eq_output`), with 27 identified by elimination rather
         than by having been seen written.
 
-        The offsets within a band are the ``GLOBAL_EQ_BAND_*`` constants on this
-        class, so an index is
-        ``(band - 1) * GLOBAL_EQ_BAND_STRIDE + GLOBAL_EQ_BAND_<control>``. This
-        method is where they earn their keep - :meth:`set_global_eq` does that
-        arithmetic for you, and is the better door unless you have a reason to
-        address the index yourself.
+        Building an index is what the class's constants are for, and this is the
+        method they are for: ``(band - 1) * GLOBAL_EQ_BAND_STRIDE`` plus one of
+        ``GLOBAL_EQ_BAND_GAIN``, ``_FREQUENCY``, ``_Q``, ``_TYPE`` or
+        ``_ENABLED``. Those five are OFFSETS within a band; the OUT tab's
+        ``GLOBAL_EQ_OUT_*`` are whole indices and nothing is added to them.
 
         What is NOT established is the SCALE of most of them. A band's GAIN is
         -12..+12 dB, measured on screen; FREQUENCY and Q have no reading tying
@@ -3569,8 +3568,9 @@ class QuadCortex:
 
         The layout is **5 parameters per band**, so band N's controls live at
         ``(N - 1) * GLOBAL_EQ_BAND_STRIDE + offset``. The offsets are the
-        ``GLOBAL_EQ_BAND_*`` constants on this class rather than numbers written
-        out here, so the mapping has one home the code reads; ``docs/protocol.md``
+        ``GLOBAL_EQ_BAND_GAIN`` / ``_FREQUENCY`` / ``_Q`` / ``_TYPE`` /
+        ``_ENABLED`` constants on this class rather than numbers written out
+        here, so the mapping has one home the code reads; ``docs/protocol.md``
         carries the same table, and
         ``test_the_band_offsets_match_the_protocol_record`` holds the two
         together. Established by changing each of band 1's controls

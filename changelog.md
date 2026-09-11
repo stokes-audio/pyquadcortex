@@ -29,11 +29,12 @@ and `_ENABLED`.
 
 **Nothing you wrote needs to change**, and there is no new thing to call: every
 one of those five controls is already reachable through
-`set_global_eq(band, gain=..., frequency=..., q=..., filter_type=, enabled=)`,
-which validates the band and does the arithmetic. The constants are for reading
-a wire index the unit reported, or checking one you are about to pass to
-`set_global_eq_band`'s raw-index door - they say which of the 28 slots you are
-looking at without counting in fives.
+`set_global_eq(band, gain=..., frequency=..., q=..., filter_type=...,
+enabled=...)`, which validates the band and does the arithmetic. The constants
+are for reading a wire index the unit reported, or checking one you are about to
+pass to `set_global_eq_band`'s raw-index door - they say which control within a
+band you are looking at without counting in fives. (Slots 25 to 27 are the OUT
+tab and have their own absolute constants.)
 
 ### The Global EQ gain span is measured, not taken from the manual
 
