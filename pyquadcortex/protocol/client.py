@@ -3061,16 +3061,24 @@ class QuadCortex:
     def set_global_eq_band(self, parameter_index: int, value):
         """Set one Global EQ parameter, by its wire index.
 
-        ``Encoded`` only, and necessarily so: this addresses a parameter by a
-        raw index whose MEANING is not established, so there is nothing to say
-        what scale it would be on. :meth:`set_global_eq` knows which offset is
-        a band's GAIN and takes ``Db`` there.
+        ``Encoded`` only, and that is about this METHOD rather than about the
+        device: an index alone does not say which control it addresses, so
+        there is no scale to check a unit against. The layout IS established -
+        :meth:`set_global_eq` carries it, addresses a band's controls by number
+        and takes ``Db`` for a GAIN. Prefer it; this is the raw door, for an
+        index whose scale nobody knows.
 
         The Global EQ reports 28 ``parameters`` entries, each
         ``{parameter_index, value}``. Confirmed writable and sparse: writing index
-        1 left the rest alone. Which index is which band's type, gain, frequency
-        or Q is not established, so read :meth:`global_eq` and compare rather than
-        guessing.
+        1 left the rest alone. Every index is accounted for - 0 to 24 are the five
+        bands at five each (:meth:`set_global_eq`), 25 to 27 the OUT tab
+        (:meth:`set_global_eq_output`), with 27 identified by elimination rather
+        than by having been seen written.
+
+        What is NOT established is the SCALE of most of them. A band's GAIN is
+        -12..+12 dB, measured on screen; FREQUENCY, Q and the OUT level have no
+        reading tying them to anything, which is why they take ``Encoded`` through
+        :meth:`set_global_eq` too.
         """
         msg = pa.GlobalEQMessage(action=pa.MessageAction.UPDATE)
         prm = msg.parameters.add()
