@@ -20,6 +20,15 @@ correction.
 
 ## Unreleased
 
+### Live-preset reads tolerate the device's lazy two-message reply
+
+`read_current_preset()` and `read_current_preset_push()` now make a second
+attempt when the first keyed reply times out. CorOS 4.1.0 sends an uncorrelated
+current-preset update before the request-id-correlated answer; the state cache
+models both as one normal read and no longer schedules an unnecessary reread.
+Version messages that only answer the Cortex Control compatibility announcement
+are likewise kept out of the device-identity cache.
+
 ### The first hardware run of the profile seam, and what it corrected
 
 Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam

@@ -440,6 +440,7 @@ def test_a_grid_push_that_lands_during_a_preset_read_is_not_lost_either(link):
 
     def preset_but_a_grid_first(triggering=None):
         transport.push(grid_push())
+        transport.push(recall_push())
         return recall_push(triggering)
 
     transport.broadcasts["RecallPresetMessage"] = preset_but_a_grid_first
@@ -492,6 +493,20 @@ def test_the_unit_asking_a_question_back_is_not_a_push_that_landed(link):
         "the unit asking a question back was counted as a push that landed "
         "during the read, so the second field went to the unit again")
     assert cache.needs_read("identity") is False
+
+
+def test_the_cortex_control_answer_is_not_device_identity(link):
+    """The Version response to our host announce carries no device fact."""
+    transport, cache = link
+    assert cache.value("identity", "app_fw_version") == "d14e"
+
+    transport.push(pa.VersionMessage(
+        action=pa.MessageAction.UPDATE, request_id=0,
+        cortex_control_version_valid=True))
+
+    assert cache.value("identity", "app_fw_version") == "d14e"
+    assert cache.needs_read("identity") is False
+    assert transport.reads["VersionMessage"] == 1
 
 
 def test_a_recall_landing_during_a_read_of_the_dirty_flag_is_not_lost(link):
@@ -683,6 +698,8 @@ def test_a_marking_push_during_any_entrys_read_survives_it(entry, link):
     def marks_first(canned):
         def pushing(*args):
             transport.push(marking)
+            if entry is entries.PRESET:
+                transport.push(recall_push())
             return canned(*args) if callable(canned) else canned
         return pushing
 
@@ -1364,6 +1381,22 @@ def test_the_preset_entry_can_read_back_every_field_it_keeps(link):
     cache.mark_for_reread("preset", "this test")
     assert cache.value("preset", "reason") is not None
     assert cache.value("preset", "preset").name == "Structural Fixture"
+
+
+def test_two_normal_preset_pushes_still_settle_one_read(link):
+    """A live-preset READ emits an uncorrelated push, then its keyed answer."""
+    transport, cache = link
+
+    def uncorrelated_then_keyed(triggering):
+        transport.push(recall_push())
+        return recall_push(triggering)
+
+    transport.broadcasts["RecallPresetMessage"] = uncorrelated_then_keyed
+    cache.mark_for_reread("preset", "exercise the measured two-push reply")
+
+    assert cache.value("preset", "preset").name == "Structural Fixture"
+    assert cache.needs_read("preset") is False
+    assert transport.reads["RecallPresetMessage"] == 1
 
 
 def test_a_recall_push_does_not_invalidate_the_preset_it_delivers():

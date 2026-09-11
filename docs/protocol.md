@@ -704,9 +704,14 @@ the preset (next section).
 
 ### 7.2 Read the current preset
 
-**There is no host-initiated "read preset" request.** A `Grid` or `RecallPreset`
-READ gets no reply. Instead, whenever a preset is recalled, by the host or on the
-unit, the device **broadcasts**:
+`RecallPreset{READ, request_id}` reads the live grid without recalling a stored
+slot or discarding edits. On CorOS 4.1.0 one request produces two broadcasts:
+first an uncorrelated current-state `UPDATE`, then an otherwise equivalent
+`UPDATE` echoing the request id. A client must wait for the keyed second message;
+the first is not evidence that some other preset was loaded.
+
+Whenever a preset is recalled, by the host or on the unit, the device also
+**broadcasts**:
 
 ```
 RecallPreset{action: UPDATE, preset: <BinaryPreset>, reason: <RecallPresetReason>}
@@ -718,10 +723,10 @@ is the only way to obtain the full current preset.
 
 Consequences for a client:
 
-- reading a preset **is not side-effect free**: it recalls the slot, which loads
-  it onto the grid;
-- the device services the push lazily; 10 to 25 seconds has been observed, so
-  timeouts must be generous (the library defaults to 40 seconds);
+- reading the live preset is side-effect free; reading a stored preset still
+  recalls that slot and is a different operation;
+- the first request after connecting can be dropped, so the library makes two
+  attempts of 15 seconds each before reporting a timeout;
 - the push must be correlated by `request_id` to avoid returning a stale or seed
   push (see [section 5](#5-requestresponse-correlation)).
 

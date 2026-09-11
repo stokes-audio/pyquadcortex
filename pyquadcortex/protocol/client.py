@@ -1426,7 +1426,7 @@ class QuadCortex:
             pa.PresetDirtyMessage(action=pa.MessageAction.READ), timeout=timeout)
         return bool(reply.is_dirty)
 
-    def read_current_preset(self, timeout: float = 15.0):
+    def read_current_preset(self, timeout: float = 15.0, attempts: int = 2):
         """The LIVE grid - the current editing state, unsaved changes included.
 
         ``RecallPreset{READ}`` answers with the preset as it exists on the device
@@ -1449,10 +1449,15 @@ class QuadCortex:
         every time** - even when it recalls the preset already loaded. Interleaving it with
         scene-targeted writes silently retargets them; use this method for
         inspection during editing.
-        """
-        return self.read_current_preset_push(timeout=timeout).preset
 
-    def read_current_preset_push(self, timeout: float = 15.0):
+        The first request after a connection can be dropped. ``attempts``
+        defaults to two; ``timeout`` applies to each attempt.
+        """
+        return self.read_current_preset_push(
+            timeout=timeout, attempts=attempts).preset
+
+    def read_current_preset_push(self, timeout: float = 15.0,
+                                 attempts: int = 2):
         """The whole ``RecallPreset`` reply, not just the preset inside it.
 
         Same request and same match as :meth:`read_current_preset` - this is
@@ -1463,15 +1468,29 @@ class QuadCortex:
         It exists because the reply carries ``reason`` beside the preset, and a
         caller tracking state needs both from one answer. Confirmed on hardware
         2026-08-15: the connect burst's seed push sets ``action``, ``preset``
-        and ``reason``, and so does the push a recall produces.
+        and ``reason``, and so does the push a recall produces. Re-measured on
+        CorOS 4.1.0 on 2026-09-11: a READ emits an uncorrelated copy before the
+        request-id-correlated answer, and its first request can be dropped.
         """
-        request_id = self._t.next_request_id()
-        message = pa.RecallPresetMessage(action=pa.MessageAction.READ,
-                                         request_id=request_id)
-        return self._t.await_broadcast(
-            pa.RecallPresetMessage, lambda: self._t.send(message), timeout=timeout,
-            match=lambda m: (m.HasField("request_id")
-                             and m.request_id == request_id))
+        last = None
+        tries = max(1, attempts)
+        for _ in range(tries):
+            request_id = self._t.next_request_id()
+            message = pa.RecallPresetMessage(action=pa.MessageAction.READ,
+                                             request_id=request_id)
+            try:
+                return self._t.await_broadcast(
+                    pa.RecallPresetMessage,
+                    lambda outgoing=message: self._t.send(outgoing),
+                    timeout=timeout,
+                    match=lambda m, wanted=request_id: (
+                        m.HasField("request_id") and m.request_id == wanted))
+            except TimeoutError as exc:
+                last = exc
+        raise TimeoutError(
+            f"the device did not answer a live-preset read in {tries} "
+            f"attempt(s) of {timeout}s each; the first request after connecting "
+            f"can be dropped") from last
 
     def loaded_position(self, timeout: float = 10.0):
         """Which preset slot is on the grid right now.
