@@ -3076,9 +3076,10 @@ class QuadCortex:
         than by having been seen written.
 
         What is NOT established is the SCALE of most of them. A band's GAIN is
-        -12..+12 dB, measured on screen; FREQUENCY, Q and the OUT level have no
-        reading tying them to anything, which is why they take ``Encoded`` through
-        :meth:`set_global_eq` too.
+        -12..+12 dB, measured on screen; FREQUENCY and Q have no reading tying
+        them to anything, which is why they take ``Encoded`` through
+        :meth:`set_global_eq` too, and the same goes for the OUT level through
+        :meth:`set_global_eq_output`.
         """
         msg = pa.GlobalEQMessage(action=pa.MessageAction.UPDATE)
         prm = msg.parameters.add()

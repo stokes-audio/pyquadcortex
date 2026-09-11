@@ -567,12 +567,16 @@ def test_a_setting_span_reproduces_what_was_read(span_key, wire, screen, digits)
         f"{round(low + (high - low) * wire, digits)}")
 
 
-#: How far the exponent may sit from 1.0 and still be called linear. A standard
-#: chosen ahead of the data, not fitted to it: 2% in the exponent is under the
-#: display's own resolution everywhere on this control. The 2026-09-11 readings
-#: clear it with room (they pin 0.994..1.006), and that margin is the point - a
-#: gate sitting on the data would flip red on any refinement of the half-step.
-LINEAR_SKEW_TOLERANCE = 0.02
+#: How far the exponent may sit from 1.0 and still be called linear. Set by what
+#: the SCREEN could have shown, not by what the readings happen to give: a skew
+#: this far from unity moves the display by 0.088 dB at worst anywhere on this
+#: control, which is under one 0.1 dB step. So a law this test admits is one the
+#: screen could not have told from a straight line at any point on the travel.
+#: The 2026-09-11 readings pin 0.994..1.006 and clear it with about 40% to
+#: spare - deliberately, so the gate is not fitted to them. A COARSER future
+#: reading widens its band and can push past this, which is the failure this
+#: guards; a finer one moves further inside.
+LINEAR_SKEW_TOLERANCE = 0.01
 
 
 def test_the_global_eq_gain_quartiles_rule_out_a_taper():
@@ -611,6 +615,14 @@ def test_the_global_eq_gain_quartiles_rule_out_a_taper():
         # here can catch that; it is a discipline about writing readings down.
         half = 0.5 * 10 ** -digits
         bounds = [(screen + d - low) / (high - low) for d in (-half, half)]
+        # A reading whose rounding band reaches a span END has no exponent to
+        # solve for - 0 and 1 are fixed points of every power law - and one
+        # sitting outside the span is not a reading of this control at all.
+        # Both are `math.log` crashes rather than failures, so say which.
+        assert all(0.0 < b < 1.0 for b in bounds), (
+            f"the reading {screen} at wire {wire} rounds to within {half} of a "
+            f"span end, so it constrains no exponent; drop it from this test "
+            f"or record it to more digits")
         bands.append(sorted(math.log(wire) / math.log(b) for b in bounds))
 
     lowest, highest = max(b[0] for b in bands), min(b[1] for b in bands)

@@ -20,8 +20,12 @@ import time
 
 import pytest
 
-# The offline module, by bare name - pytest puts `tests/` on sys.path, and
-# `tests/test_profiles.py` reaches for `test_client` the same way.
+# The offline module, by bare name. What puts `tests/` on sys.path for a module
+# down here in `tests/hardware/` is pytest importing `tests/conftest.py` - which
+# exists and must, since it is where `--hardware` is declared. That is NOT the
+# same mechanism as `tests/test_profiles.py` importing `test_client`, where the
+# module's own basedir is already `tests/`. Worth the distinction if this file
+# ever moves.
 from test_scales import SETTING_READINGS
 
 from pyquadcortex.protocol import client, units, values
@@ -95,6 +99,17 @@ def test_a_global_eq_gain_in_db_lands_where_the_measured_span_says(qc, restores)
     which holds the readings against the span. This drives the wire half back
     onto the unit.
     """
+    # The list is derived, so it can go empty or lose its ends without anything
+    # else noticing - and this test would then pass having asserted nothing
+    # while `verifies` still reported `set_global_eq` as measured. The ENDS
+    # specifically: the offline taper test only needs the two interior readings,
+    # so dropping 0.0 and 1.0 would leave it green while this one quietly
+    # stopped checking the thing its docstring calls the point.
+    wires = {wire for _, wire in GLOBAL_EQ_GAIN_READINGS}
+    assert {0.0, 1.0} <= wires, (
+        f"the measured readings no longer carry both ends (have {sorted(wires)}); "
+        f"this test exists to drive them back onto the unit")
+
     band, offset = 1, 0
     before = [p.value for p in qc.global_eq().parameters
               if p.parameter_index == offset]
