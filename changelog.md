@@ -20,6 +20,15 @@ correction.
 
 ## Unreleased
 
+### CorOS 4.1 can duplicate a setlist with one firmware-side copy
+
+`QuadCortex41.duplicate_setlist()` sends the sparse folder COPY extracted from
+Cortex Control 4.1 exactly once, then confirms the firmware-created destination
+with stable folder generations and two identical complete 256-slot inventories.
+A contributed CorOS 4.1.0 hardware run on 2026-09-11 confirmed a two-preset copy
+in 49.878 seconds. The CorOS 4.0.1 base refuses this unmeasured command and points
+callers to the older, measured `copy_preset()` recall-and-save composition.
+
 ### The first hardware run of the profile seam, and what it corrected
 
 Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam

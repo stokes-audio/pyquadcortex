@@ -2435,7 +2435,13 @@ not fixed setlists.
 setlist's own key - the folder leaves the listing, subject to the usual eventual
 consistency.
 
-**Setlist duplication is one host-drivable folder COPY.** Cortex Control sends
+On CorOS 4.0.1, the unit's own duplicate action was captured sending a `File`
+CREATE and narrating progress through `BulkOperation`; replaying that CREATE
+from the host produced an empty destination. Separately, a save was confirmed
+to accept any folder key, which is the measured basis of `copy_preset()`'s
+recall-and-save fallback. No firmware-native COPY has been measured on 4.0.1.
+
+**On CorOS 4.1, setlist duplication is one host-drivable folder COPY.** Cortex Control sends
 `File{COPY, type: 0, folder{key: <source>, is_factory: false}}` with no destination
 folder, name, index, or per-preset entries. Firmware chooses the collision-safe
 destination identity and performs the copy asynchronously. `BulkOperation` only
@@ -2835,6 +2841,7 @@ screen; **captured only** = seen on the wire, with no independent read-back.
 | `pin_model` / `unpin_model` / `pinned_models` | `PinnedModels{models}` with NO action / `{DELETE, models}` | read-back + on-unit | pinning APPENDS and can duplicate; DELETE removes every entry for an id |
 | `delete_setlist` | `File{DELETE, folder{key, name}}` | read-back | removes the setlist and its contents |
 | `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root, not children of My Presets |
+| `duplicate_setlist` (CorOS 4.1) | `File{COPY, folder{key: <source>, is_factory: false}}` | Cortex Control 4.1 binary + contributed hardware read-back | sends once, then stabilizes folder and complete 256-slot preset listings; CorOS 4.0.1 refuses because this shape has not been measured there |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | the single splitter/mixer MUTE; reported back in `mixBypass`, and one write sets all eight scenes |
 | `set_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence; an UPDATE alone leaves the old assignment |
 | `set_stomp_momentary` | `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}` | read-back + on-unit | keyed by footswitch, not column. **Only lands on a switch driving exactly one block** - the device refuses multi-block switches silently, as its own toggle does |

@@ -37,7 +37,7 @@ UNMARKED_OPERATIONS = {
     "wait_for_listing": "no hardware test yet; it is the polling wrapper round list_presets and says nothing until a write changes a listing",
     "create_setlist": "no hardware test yet; it adds a folder to the owner's Directory that a failed run would leave behind",
     "delete_setlist": "no hardware test yet; it deletes a folder and everything in it, which is the one preset-library mistake nothing can undo",
-    "duplicate_setlist": "same-commit CorOS 4.1.0 corroboration exists outside the pytest hardware suite; add a state-neutral suite test before removing this marker",
+    "duplicate_setlist": "no hardware test yet; a failed run leaves a firmware-named folder behind and cleanup requires discovering then destructively deleting it. A contributed CorOS 4.1.0 run on 2026-09-11 corroborated the operation outside pytest",
 
     # -- library listings whose CONTENT belongs to the owner -------------------
     # Each returns whatever this unit happens to hold, so a test can assert the

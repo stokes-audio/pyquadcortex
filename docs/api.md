@@ -70,7 +70,7 @@ already read and need no connection; calling them as methods raises
 | **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
 | **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`, `set_tuner_mute()`, `looper()` (states named by `LooperState`) |
 | **List parameters** | `set_param_option(cell, param, option, source)`, `protocol.param_options(preset, ...)` - includes a block's side-chain SOURCE |
-| **Setlists** | `create_setlist(name)`, `delete_setlist(name)`, `duplicate_setlist(source)`, `list_folders()`; duplication is one firmware-side COPY and the device chooses the destination name |
+| **Setlists** | `create_setlist(name)`, `delete_setlist(name)`, `duplicate_setlist(source)`, `list_folders()`; on CorOS 4.1 duplication is one firmware-side COPY and the device chooses the destination name. The CorOS 4.0.1 profile refuses that unmeasured command and points to `copy_preset()` |
 | **Copying** | `copy_preset(from_setlist, position, to_setlist)` - recall + save, so it loads each source |
 | **Device list** | `pin_model()`, `unpin_model()`, `pinned_models()`, `master_volume()` |
 | **Neural Captures** | `captures()`, `list_irs()` to browse the library, `set_capture(cell, entry)` to place one. Creating a capture is the unit's own wizard - disconnect first, since a connected client suppresses it |
