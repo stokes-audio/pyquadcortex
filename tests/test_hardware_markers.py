@@ -32,7 +32,6 @@ UNMARKED_OPERATIONS = {
     "delete_preset": "no hardware test yet; only scratch_preset's teardown deletes anything, and a teardown asserts nothing",
     "copy_preset": "no hardware test yet; it writes into a second setlist, so a failed run leaves a stray preset in the owner's Directory",
     "move_preset": "no hardware test yet; it rearranges the slots a player has laid out for a gig, which a restore cannot make invisible mid-run",
-    "rename_preset": "no Python same-commit hardware test yet; the exact Cortex File UPDATE previously failed firmware readback and needs a disposable stored preset",
     "read_preset": "no hardware test yet; it RECALLS the preset it reads, so it is a write in disguise and needs scratch_preset",
     "find_preset": "no hardware test yet; it needs a name that exists on the unit, which the loaded preset supplies - just not written",
     "wait_for_listing": "no hardware test yet; it is the polling wrapper round list_presets and says nothing until a write changes a listing",

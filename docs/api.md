@@ -75,7 +75,7 @@ already read and need no connection; calling them as methods raises
 | **Device list** | `pin_model()`, `unpin_model()`, `pinned_models()`, `master_volume()` |
 | **Neural Captures** | `captures()`, `list_irs()` to browse the library, `set_capture(cell, entry)` to place one. Creating a capture is the unit's own wizard - disconnect first, since a connected client suppresses it |
 | **Discovery** | `list_folders()` - every folder the device knows, including the factory Captures Library and plugin artist presets; `recents()`, `favorites()`, `add_favorite()`, `remove_favorite()` |
-| **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
+| **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, preset)`, `move_preset(setlist, preset, to_slot)`; `preset` may be the exact name or a `ProductData` returned by `list_presets()` |
 
 **Rows and columns are zero-based, and the unit displays rows 1 to 4.** `row=0` is
 the top row on screen and `row=2` is the one labelled 3. This matters more than it

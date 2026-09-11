@@ -3964,92 +3964,62 @@ class QuadCortex:
                 return e.name
         return None
 
-    def _stored_preset(self, setlist_path: str, preset, listing=None):
-        """Resolve a name or listed ProductData to its authoritative file key."""
-        if isinstance(preset, pa.ProductData):
-            entry = preset
-        else:
-            if listing is None:
-                listing = self.list_presets(setlist_path)
-            matches = [
-                entry for entry in listing
-                if field_present(entry, "name") and entry.name == preset
-            ]
-            if not matches:
-                raise ValueError(f"preset {preset!r} is not in {setlist_path!r}")
-            if len(matches) != 1:
-                raise ValueError(
-                    f"preset name {preset!r} is ambiguous in {setlist_path!r}; "
-                    "pass the ProductData returned by list_presets()"
-                )
-            entry = matches[0]
-        if not (field_present(entry, "key") and entry.key):
-            raise ValueError("stored preset has no authoritative product key")
-        return entry
+    def _stored_preset_key(self, setlist_path: str, preset) -> str:
+        """Resolve a display name or validate a listed ProductData key."""
+        if not isinstance(preset, pa.ProductData):
+            # Backward-compatible and deliberately listing-free: hardware
+            # teardown depends on a best-effort delete even when listing reads
+            # are silent. On measured 4.0.1 listings this reconstructed path is
+            # byte-for-byte the same value as the device-supplied key.
+            return f"{setlist_path.rstrip('/')}/{preset}.pb"
+        if not (field_present(preset, "key") and preset.key):
+            raise ControlNotDrivable(
+                "stored preset product key",
+                "the supplied ProductData carries no key, so the device did "
+                "not provide an address",
+                "pass a populated ProductData from list_presets(), or pass "
+                "the exact display name to use the measured 4.0.1 path shape",
+            )
+        prefix = setlist_path.rstrip("/") + "/"
+        if not preset.key.startswith(prefix):
+            raise ValueError(
+                f"preset key {preset.key!r} does not belong to "
+                f"setlist {setlist_path!r}")
+        return preset.key
 
-    def delete_preset(self, setlist_path: str, name):
+    def delete_preset(self, setlist_path: str, preset):
         """Delete a stored preset from ``setlist_path``.
 
-        ``name`` is either its exact display name or the ``ProductData``
-        returned by :meth:`list_presets`. Cortex Control addresses the selection
-        by that catalog entry's authoritative, potentially opaque product key;
-        it does not reconstruct a path from the display name.
+        ``preset`` is either its exact display name or the ``ProductData``
+        returned by :meth:`list_presets`. On three CorOS 4.0.1 captures every
+        occupied entry's key was exactly ``<setlist>/<name>.pb``; passing a
+        listing entry avoids reconstructing it, while the name form remains a
+        listing-free compatibility path for best-effort cleanup.
         """
-        entry = self._stored_preset(setlist_path, name)
         msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
         msg.folder.key = setlist_path
         msg.folder.is_factory = False
-        msg.folder.files.add().key = entry.key
+        msg.folder.files.add().key = self._stored_preset_key(
+            setlist_path, preset)
         return self._file_operation(msg)
 
-    def move_preset(self, setlist_path: str, name, to_position):
-        """Move or swap a stored preset into ``to_position`` in the same setlist.
+    def move_preset(self, setlist_path: str, preset, to_position):
+        """Move a stored preset into ``to_position`` in the same setlist.
 
         ``to_position`` is either the linear slot index or the slot name shown on
-        the unit (``"28D"``). An empty target uses File MOVE and an occupied
-        target uses File SWAP, matching Cortex Control's ``isSaved`` branch.
-        Occupancy is authoritative product-key presence, not display text.
+        the unit (``"28D"``). ``preset`` may be its exact display name or the
+        ``ProductData`` returned by :meth:`list_presets`; the latter supplies
+        the device's own key. Cortex Control 4.0.1 was captured adding
+        ``is_downloads: false`` to this MOVE shape.
         """
-        position = _as_position(to_position)
-        listing = self.list_presets(setlist_path, include_empty=True)
-        entry = self._stored_preset(setlist_path, name, listing)
-        if field_present(entry, "index") and entry.index == position:
-            raise ValueError("source and destination positions are identical")
-        target = next(
-            (item for item in listing
-             if field_present(item, "index") and item.index == position),
-            None,
-        )
-        occupied = target is not None and field_present(target, "key") and bool(target.key)
-        action = pa.MessageAction.SWAP if occupied else pa.MessageAction.MOVE
-        msg = pa.FileMessage(action=action, type=0)
+        msg = pa.FileMessage(action=pa.MessageAction.MOVE, type=0)
         msg.folder.key = setlist_path
         msg.folder.is_factory = False
-        if not occupied:
-            msg.folder.is_downloads = False
-        msg.folder.files.add().key = entry.key
+        msg.folder.is_downloads = False
+        msg.folder.files.add().key = self._stored_preset_key(
+            setlist_path, preset)
         msg.to_folder.key = setlist_path
-        msg.to_folder.files.add().index = position
-        return self._file_operation(msg)
-
-    def rename_preset(self, setlist_path: str, preset, name: str):
-        """Rename a stored preset using Cortex Control's sparse File UPDATE.
-
-        The authoritative product key and instrument metadata come from the
-        selected catalog entry. This operation neither recalls nor re-saves the
-        preset.
-        """
-        entry = self._stored_preset(setlist_path, preset)
-        msg = pa.FileMessage(action=pa.MessageAction.UPDATE, type=0)
-        msg.folder.key = setlist_path
-        msg.folder.is_factory = False
-        updated = msg.folder.files.add()
-        updated.key = entry.key
-        updated.name = name
-        updated.instrument = (
-            entry.instrument if field_present(entry, "instrument")
-            else int(Instrument.NONE)
-        )
+        msg.to_folder.files.add().index = _as_position(to_position)
         return self._file_operation(msg)
 
 
