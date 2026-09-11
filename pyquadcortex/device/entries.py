@@ -118,21 +118,15 @@ class StateEntry:
             the unit's whole answer for this entry. Runs on the CALLER's thread,
             never the RX thread.
         feeds: message class -> :class:`FieldPlan`.
-        read_arrivals: messages that say something to this entry during one
-            normal read. Most reads have one. A live-preset read produces two
-            on CorOS 4.1.0, so the first must not be mistaken for an unrelated
-            push that raced the request.
-
-    The read path compares meaningful arrivals with :attr:`read_arrivals`.
-    A symmetric protocol question carrying only scaffolding does not count. A
-    larger count means an external push landed during the read and its cache
-    mark must survive.
+    The read path normally expects one meaningful arrival. A profile whose
+    normal read has another shape declares its count on
+    ``QuadCortex.READ_ARRIVALS``; keeping that firmware fact on the profile is
+    ADR-0020's boundary.
     """
 
     name: str
     read: typing.Callable
     feeds: typing.Mapping
-    read_arrivals: int = 1
     #: Entries whose copies stop being true when THIS entry's value moves.
     #: Applied only on a real change, which is what makes it different from
     #: listing the same message type on each of them: the model's own READ of
@@ -481,7 +475,6 @@ PRESET = StateEntry(
         pa.SceneLabelMessage: _SCENE_TEXT_CHANGED,
         pa.SceneColorMessage: _SCENE_TEXT_CHANGED,
     },
-    read_arrivals=2,
 )
 
 

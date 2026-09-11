@@ -313,6 +313,11 @@ class QuadCortex:
     #: Annotated `Any`: this holds either the `EVERYTHING` sentinel or a
     #: `frozenset[str]`, and both only need to answer `in`.
     VERIFIED: typing.Any = EVERYTHING
+    #: Meaningful inbound messages produced by one normal state-cache read,
+    #: when a profile differs from the default of one. This is profile data:
+    #: CorOS 4.1.0's live-preset read has a measured unkeyed update before its
+    #: keyed answer, while no such claim is made for the 4.0.1 baseline.
+    READ_ARRIVALS: typing.Mapping[str, int] = {}
     #: The constants snapshot read from this firmware. A subclass rebinds these.
     #: Dynamic on purpose: `qc.models` follows the connection, at the price of
     #: mypy seeing `Any` through it - import a snapshot module directly for

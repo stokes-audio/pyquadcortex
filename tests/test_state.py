@@ -440,7 +440,6 @@ def test_a_grid_push_that_lands_during_a_preset_read_is_not_lost_either(link):
 
     def preset_but_a_grid_first(triggering=None):
         transport.push(grid_push())
-        transport.push(recall_push())
         return recall_push(triggering)
 
     transport.broadcasts["RecallPresetMessage"] = preset_but_a_grid_first
@@ -698,8 +697,6 @@ def test_a_marking_push_during_any_entrys_read_survives_it(entry, link):
     def marks_first(canned):
         def pushing(*args):
             transport.push(marking)
-            if entry is entries.PRESET:
-                transport.push(recall_push())
             return canned(*args) if callable(canned) else canned
         return pushing
 
@@ -1386,6 +1383,12 @@ def test_the_preset_entry_can_read_back_every_field_it_keeps(link):
 def test_two_normal_preset_pushes_still_settle_one_read(link):
     """A live-preset READ emits an uncorrelated push, then its keyed answer."""
     transport, cache = link
+
+    class CorOS41(protocol_client.QuadCortex):
+        MEASURED_ON = ()
+        READ_ARRIVALS = {"preset": 2}
+
+    cache.bind(CorOS41(transport))
 
     def uncorrelated_then_keyed(triggering):
         transport.push(recall_push())

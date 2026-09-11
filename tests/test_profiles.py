@@ -254,6 +254,7 @@ def test_the_4_1_stub_connects_but_verifies_nothing_and_has_no_snapshot():
     assert cls.MEASURED_ON == ("4.1.0",)
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
     assert cls.VERIFIED == frozenset()
+    assert cls.READ_ARRIVALS == {"preset": 2}
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
     assert isinstance(cls.models, support.NoSnapshot)
     with pytest.raises(AttributeError, match="coros_4_1_0"):

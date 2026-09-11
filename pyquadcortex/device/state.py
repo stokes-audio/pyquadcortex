@@ -423,9 +423,10 @@ class DeviceState:
                 # asks one of its own, and a question is not news about the
                 # unit's state. `_apply_one` is where that is decided, because
                 # the read path cannot tell the two apart after the fact. An
-                # entry whose read normally produces more than one meaningful
-                # message declares that measured count on `StateEntry`.
+                # profile whose read normally produces more than one meaningful
+                # message declares that measured count on the client class.
                 extra = slot.witnessed - witnessed_before
+                expected = client.READ_ARRIVALS.get(entry_name, 1)
                 # And the marks that came from something OTHER than a
                 # message to this entry, which the count above cannot see
                 # however carefully it counts: a recall's `resets`, the
@@ -439,16 +440,15 @@ class DeviceState:
                 # snapshot and the request going out is kept although the unit
                 # might have accounted for it. `witnessed_before` has had the
                 # same gap since it was written, and both err by re-reading. The obvious
-                # `slot.needs_read or extra > entry.read_arrivals` does not
+                # `slot.needs_read or extra > expected` does not
                 # work: the read's own
                 # reply re-arms the mark through the listener from the fields
                 # this entry does not keep, so the entry would never cache
                 # anything again.
                 marked_since = slot.marks - marks_before
                 was_marked = slot.needs_read
-                slot.needs_read = (extra > entry.read_arrivals
-                                   or marked_since > 0)
-                if extra > entry.read_arrivals:
+                slot.needs_read = extra > expected or marked_since > 0
+                if extra > expected:
                     log.info("push.forced_reread %s - %d message(s) arrived "
                              "while it was being read", entry_name, extra)
                 elif slot.needs_read:
