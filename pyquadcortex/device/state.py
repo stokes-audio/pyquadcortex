@@ -426,7 +426,8 @@ class DeviceState:
                 # profile whose read normally produces more than one meaningful
                 # message declares that measured count on the client class.
                 extra = slot.witnessed - witnessed_before
-                expected = client.READ_ARRIVALS.get(entry_name, 1)
+                expected = getattr(client, "READ_ARRIVALS", {}).get(
+                    entry_name, 1)
                 # And the marks that came from something OTHER than a
                 # message to this entry, which the count above cannot see
                 # however carefully it counts: a recall's `resets`, the
