@@ -246,7 +246,10 @@ def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
     anywhere else, because a question that says nothing leaves no other trace.
 
     Timing is deliberately not asserted. The gap is recorded in the docs as
-    measured; what the code depends on is the SHAPE.
+    measured; what the code depends on is the SHAPE. The listener can also
+    catch the connect handshake's delayed compatibility answer, so that one
+    separately identified shape is allowed but never counted as this read's
+    answer.
     """
     versions = Pushes("VersionMessage")
     qc.add_listener(versions)
@@ -266,8 +269,27 @@ def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
         {"action": pa.MessageAction.Enum.Name(m.action),
          "fields": sorted(f.name for f, _ in m.ListFields())} for m in seen])
 
-    assert len(seen) == 2, f"one Version READ brought back {len(seen)} messages"
-    answer, question = seen
+    reads = [m for m in seen if m.action == pa.MessageAction.READ]
+    answers = [m for m in seen if m.action == pa.MessageAction.UPDATE
+               and (m.app_fw_version or m.device_serial_number)]
+    announce_answers = [
+        m for m in seen
+        if m.action == pa.MessageAction.UPDATE
+        and "cortex_control_version_valid" in {
+            field.name for field, _ in m.ListFields()
+        }
+    ]
+    known = reads + answers + announce_answers
+    unknown = [m for m in seen if not any(m is item for item in known)]
+
+    assert len(answers) == 1, (
+        f"one Version READ brought back {len(answers)} identity answers: {seen}")
+    assert len(reads) == 1, (
+        f"one Version READ brought back {len(reads)} unit questions: {seen}")
+    assert len(announce_answers) <= 1, (
+        f"the earlier connect announce was answered {len(announce_answers)} times")
+    assert not unknown, f"one Version READ window contained unknown shapes: {unknown}"
+    answer, question = answers[0], reads[0]
     assert answer.action == pa.MessageAction.UPDATE, (
         f"the unit answered with action {answer.action}, not an UPDATE")
     assert answer.app_fw_version and answer.device_serial_number, (
