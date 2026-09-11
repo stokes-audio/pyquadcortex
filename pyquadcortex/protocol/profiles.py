@@ -8,7 +8,7 @@ registry ``connect()`` resolves through. Adding a profile is: subclass
 """
 from __future__ import annotations
 
-from pyquadcortex.protocol.client import QuadCortex
+from pyquadcortex.protocol.client import QuadCortex, USER_SETLIST_ROOT
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.support import Evidence, Hardware, NoSnapshot
 
@@ -43,10 +43,37 @@ class QuadCortex41(QuadCortex):
 
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
-    VERIFIED = frozenset()
+    VERIFIED = frozenset({"create_setlist", "delete_setlist"})
     models = NoSnapshot("coros_4_1_0")
     params = NoSnapshot("coros_4_1_0")
     options = NoSnapshot("coros_4_1_0")
+
+    def create_setlist(self, name: str):
+        """Create a user setlist using the CorOS 4.1 Cortex Control shape.
+
+        Measured on CorOS 4.1.0 on 2026-09-11 against a disposable setlist:
+        ``parent_key`` is present and listing read-back confirms creation.
+        """
+        msg = pa.FileMessage(type=0)
+        msg.folder.key = f"{USER_SETLIST_ROOT}/{name}"
+        msg.folder.parent_key = USER_SETLIST_ROOT
+        msg.folder.name = name
+        msg.folder.is_factory = False
+        self._file_operation(msg)
+        return msg.folder.key
+
+    def delete_setlist(self, name: str):
+        """Delete a user setlist using the measured CorOS 4.1 shape.
+
+        Measured on CorOS 4.1.0 on 2026-09-11 against a disposable setlist:
+        omitting ``name`` and sending the explicit false flags removed it, as
+        confirmed by listing read-back.
+        """
+        msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
+        msg.folder.key = f"{USER_SETLIST_ROOT}/{name}"
+        msg.folder.is_factory = False
+        msg.delete_from_library = False
+        return self._file_operation(msg)
 
 
 class QuadCortexMini(QuadCortex):
