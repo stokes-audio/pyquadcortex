@@ -169,11 +169,14 @@ on a record that misread its own evidence - "muted the microphone" was the level
 the caller asked for, arriving correctly. The other two were points somebody
 happened to measure rather than floors.
 
-**What was deliberately NOT done.** 14 cab LEVELs omit the `min_string` the
-other 160 carry, for the identical control. Unioning by law was rejected: 559
-parameters share a law with a labelled one without being labelled, and 474 of
-those are ordinary 0-100% controls whose 0% is a real value. The device's
-per-parameter statement wins and the omission is recorded as a catalog question.
+**Why `min_string` is trusted per parameter rather than per law.** 14 cab LEVELs
+omit it where the other 160 carry it, on the same law - which looked like a
+catalog defect and is not: a `Parallax` cab LEVEL accepts -40 and displays
+-40.0 dB where a labelled cab shows `OFF` at the same wire 0.0, measured
+2026-09-12. Unioning by law was the tempting repair and would have been wrong
+twice over: 559 parameters share a law with a labelled one without being
+labelled, and 474 of those are ordinary 0-100% controls whose 0% is a real
+value.
 
 ### 2026-09-11 - The Global EQ gain span is measured at its ends (ADR-0017)
 

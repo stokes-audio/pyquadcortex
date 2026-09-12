@@ -48,7 +48,7 @@
     "skew": 4.9594844,
     "floor_wire": 0.0,
     "floor_display": null,
-    "why": "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so it cannot borrow the layout and must carry the law itself"
+    "why": "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so it cannot borrow the layout and must carry the law itself. Also the cab law WITHOUT a min_string: typed to -40 on the unit it displays -40.0 dB where a labelled cab shows OFF at that wire"
   },
   {
     "model_id": 3008,

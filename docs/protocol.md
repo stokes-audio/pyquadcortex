@@ -3285,14 +3285,19 @@ apart across the claimed boundary - sound the same rather than silence against a
 The record that built the table had misread its own evidence: a caller asking for
 -30 dB got -30 dB, which on one microphone is close to inaudible.
 
-**One vendor inconsistency is left, and it is recorded rather than patched.** 14 cab
-LEVELs - the PCOM variants and Parallax - omit `min_string` while the other 160 carry
-it, for the identical control with identical bounds and taper. So the library believes
--40.0 dB exists on those and is the Off position on the rest. Unioning by law was
-considered and rejected: 559 parameters share a law with a labelled one without being
-labelled, and 474 of those are ordinary 0-100% controls where 0% is a real value. The
-device's per-parameter statement wins, and the omission is a question about the
-catalog.
+**What looked like a vendor inconsistency is a real difference, and measuring it is
+what proves `min_string` is trustworthy per parameter.** 14 cab LEVELs - the PCOM
+variants and Parallax - omit `min_string` while the other 160 carry it, for what is
+otherwise the identical control: same bounds, same taper, same borrowed layout. Typed
+into on 2026-09-12, a `Parallax` cab LEVEL states "-40 to 6", accepts -40 and
+**displays -40.0 dB**, where a labelled cab shows `OFF` at that same wire 0.0.
+
+So the device means what it says, knob by knob, and the old law-keyed table had been
+papering over a genuine difference rather than fixing a data defect. It is also the
+disproof of the repair that suggests itself: 559 parameters share a law with a
+labelled one without carrying the label, 474 of them ordinary 0-100% controls whose 0%
+is a real value, and unioning by law would have invented an Off position for every one
+of them.
 
 #### Three laws were driven looking for floors, and found none
 

@@ -43,7 +43,9 @@ WANTED = {
     (11000, 0): "Mixer LEVEL A - scene-following, and briefly mistaken for undrivable",
     (11000, 2): "Mixer LEVEL B - the other half of that pair",
     (3008, 16): "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so"
-                " it cannot borrow the layout and must carry the law itself",
+                " it cannot borrow the layout and must carry the law itself. Also"
+                " the cab law WITHOUT a min_string: typed to -40 on the unit it"
+                " displays -40.0 dB where a labelled cab shows OFF at that wire",
     (3008, 24): "Parallax cab LEVEL, mic 2",
     (12114, 25): "PCOM Core Cabsim LEVEL - the same knob with LITERAL bounds,"
                  " which is what the floor's law-keying exists for",

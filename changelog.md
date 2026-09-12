@@ -50,11 +50,11 @@ screen ROUNDS - a lane output prints `-40.0 dB` at its lowest real position and
 numeric entry box does, and it states exactly the catalog's own `min`..`max`
 every time.
 
-One thing the library still gets from the device and cannot check: 14 cab LEVELs
-(the PCOM variants and Parallax) omit the `OFF` label the other 160 carry, for
-what is the same knob. So `Db(-40.0)` is refused on most cabs and accepted on
-those. That is the catalog's inconsistency, recorded in `docs/protocol.md`
-rather than papered over.
+One consequence worth knowing about: `Db(-40.0)` is refused on most cabs and
+accepted on 14 of them (the PCOM variants and Parallax), which omit the `OFF`
+label the other 160 carry. That is not a bug in the library or the catalog - a
+Parallax cab LEVEL really does display -40.0 dB where a labelled cab shows
+`OFF`, measured on the unit. Same law, different controls.
 
 ### The Global EQ band offsets have names
 

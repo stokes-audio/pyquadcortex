@@ -254,6 +254,11 @@ READINGS = [
     # reads OFF below wire 0.01, and at wire 0.000001 the screen read -37.2 dB.
     # See `test_the_cab_floor_records_a_detent_the_screen_does_not_show`.
     (12000, 2, 0.000001, -37.2, 1),
+    # The same law on a model that does NOT declare an Off position: a
+    # `Parallax` cab LEVEL, typed to -40 on 2026-09-12, displays -40.0 dB where
+    # a labelled cab shows OFF at that same wire 0.0. Recorded against 3008
+    # because Parallax carries the law itself rather than borrowing it.
+    (3008, 16, 0.0, -40.0, 1),
 
     # -- the Splitter Crossover, 2026-08-26 ----------------------------------
     # Not read off the screen. The catalog states defaultValue="400.0" and the
@@ -520,37 +525,35 @@ def test_the_floor_is_derived_from_the_device_rather_than_a_table():
 
 
 def test_one_cab_knob_is_labelled_on_some_models_and_not_others():
-    """The vendor inconsistency that made the old table key by law.
+    """A vendor inconsistency that turned out not to be one.
 
     A cab LEVEL is `min="MIN_CABSIM_DB"` on most models and `min="-40" max="6"`
-    on the PCOM variants - one control, two spellings - and the bound spelling
-    is no longer load-bearing, because the floor is derived from the NUMBERS.
+    on the PCOM variants and Parallax - and 14 of them omit the `min_string`
+    the other 160 carry. Same law, same taper. That looked like a data omission
+    worth flagging, and the old law-keyed floor table had papered over it.
 
-    What is still load-bearing is `min_string`, and the vendor omits it on the
-    literal spelling: 14 cab LEVELs across the PCOM models and Parallax say
-    nothing about an Off position while the other 160 say "OFF". Same taper,
-    same bounds, same knob. So the two disagree about whether -40.0 dB exists,
-    and this test records that rather than papering over it.
+    It is real. Typed into on 2026-09-12: a `Parallax` cab LEVEL states "-40 to
+    6", accepts -40, and DISPLAYS -40.0 dB - where a labelled cab shows OFF at
+    the same wire 0.0 on the same law. So the device means what it says per
+    parameter, and deriving the floor from `min_string` is right where keying
+    by law would have been wrong.
 
-    Unioning by law was considered and is wrong: 559 parameters share a law with
-    a labelled one without being labelled, and 474 of those are ordinary 0-100%
-    controls - a drive amount's 0% is a real value, not an Off detent. The
-    device's per-parameter statement has to win, so the omission is a question
-    about the catalog and is recorded in docs/protocol.md.
+    This is also the disproof of the tempting repair: 559 parameters share a law
+    with a labelled one without being labelled, and unioning by law would have
+    given all of them an Off position none of them has.
     """
-    symbolic = SCALES[(12000, 2)]        # min="MIN_CABSIM_DB", min_string="OFF"
-    literal = SCALES[(12114, 25)]        # min="-40" max="6", no min_string
-    assert (symbolic.minimum, symbolic.maximum, symbolic.skew) == (
-        literal.minimum, literal.maximum, literal.skew)
-    assert symbolic.has_an_off_position is True
-    assert literal.has_an_off_position is False
-    # The consequence, stated so a change to it is deliberate.
-    assert float(symbolic.floor) == pytest.approx(-39.99)
-    assert float(literal.floor) == pytest.approx(-40.0)
-    # Both still convert an ordinary value identically, which is what the
-    # bound-spelling half of the old defect was about.
-    for spec in (symbolic, literal):
-        assert float(spec.to_normalized(-30.0)) == pytest.approx(0.000516, abs=1e-5)
+    labelled = SCALES[(12000, 2)]        # min_string="OFF"
+    bare = SCALES[(12114, 25)]           # no min_string, same numbers
+    assert (labelled.minimum, labelled.maximum, labelled.skew) == (
+        bare.minimum, bare.maximum, bare.skew)
+    assert labelled.has_an_off_position is True
+    assert bare.has_an_off_position is False
+    # Measured: wire 0.0 is the Off position on one and -40.0 dB on the other.
+    assert float(labelled.floor) == pytest.approx(-39.99)
+    assert float(bare.floor) == pytest.approx(-40.0)
+    with pytest.raises(ValueError, match="Off position"):
+        labelled.to_normalized(-40.0)
+    assert float(bare.to_normalized(-40.0)) == pytest.approx(0.0)
 
 
 # -- what the 2026-09-11 Off-detent session found ------------------------------
