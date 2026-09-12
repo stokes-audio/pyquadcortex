@@ -127,8 +127,8 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | Preset descriptive tags | n/a | not preserved by ANY save path - the unit's own Save As strips them too (factory 5D's six tags -> none), so they are build-chain/cloud metadata no library can write. The instrument category is separate, survives, and is fully mapped (`Instrument`: Guitar 1, Bass 2, Synth 3, Vocal 4, Other 5) |
 | Preset description, author, cloud id | no | ignored by a `Grid` update. The device stamps `author_name` from the signed-in cloud account on every save |
 | Preset volume and pan | n/a | ignored by every route tried, and the unit has no control for them - they read 1.0 and 0.5 on every preset. Inert fields, not a gap |
-| Delete a preset | yes | `delete_preset()`, eventually consistent. `delete_setlist()` removes a whole setlist |
-| Move a preset | yes | `move_preset()`, same-setlist only observed |
+| Delete a preset | yes | `delete_preset()`, eventually consistent. Pass a listing's `ProductData` to preserve the device-provided key, or the exact display name for the measured 4.0.1 path shape. `delete_setlist()` removes a whole setlist |
+| Move a preset | yes | `move_preset()`, same-setlist only observed; accepts the same device-provided `ProductData` or exact-name forms as delete |
 | Factory and My Presets setlists | yes | `Setlist.FACTORY`, `Setlist.USER` |
 | User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. CC#32's 'User folders' 2-12 are created, not built in |
 | Create a folder, nested navigation | yes | `create_setlist(name)`. The earlier failure was the path: setlists are siblings under `/media/p4/Presets`, not children of My Presets |

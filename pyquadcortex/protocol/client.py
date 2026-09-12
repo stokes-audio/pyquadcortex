@@ -4000,37 +4000,60 @@ class QuadCortex:
                 return e.name
         return None
 
-    def delete_preset(self, setlist_path: str, name: str):
-        """Delete the preset named ``name`` from the setlist at ``setlist_path``.
+    def _stored_preset_key(self, setlist_path: str, preset) -> str:
+        """Resolve a display name or validate a listed ProductData key."""
+        if not isinstance(preset, pa.ProductData):
+            # Backward-compatible and deliberately listing-free: hardware
+            # teardown depends on a best-effort delete even when listing reads
+            # are silent. On measured 4.0.1 listings this reconstructed path is
+            # byte-for-byte the same value as the device-supplied key.
+            return f"{setlist_path.rstrip('/')}/{preset}.pb"
+        if not (field_present(preset, "key") and preset.key):
+            raise ControlNotDrivable(
+                "stored preset product key",
+                "the supplied ProductData carries no key, so the device did "
+                "not provide an address",
+                "pass a populated ProductData from list_presets(), or pass "
+                "the exact display name to use the measured 4.0.1 path shape",
+            )
+        prefix = setlist_path.rstrip("/") + "/"
+        if not preset.key.startswith(prefix):
+            raise ValueError(
+                f"preset key {preset.key!r} does not belong to "
+                f"setlist {setlist_path!r}")
+        return preset.key
 
-        Confirmed by capture: deleting "Test save to user
-        sl" from slot 28E sent ``File{action: DELETE, type: 0, folder{key:
-        <setlist path>, is_factory: false, files{key: "<setlist
-        path>/<name>.pb"}}}`` - the preset is addressed by its device FILE
-        PATH (name-based, ``.pb`` extension), NOT by slot index.
+    def delete_preset(self, setlist_path: str, preset):
+        """Delete a stored preset from ``setlist_path``.
+
+        ``preset`` is either its exact display name or the ``ProductData``
+        returned by :meth:`list_presets`. On three CorOS 4.0.1 captures every
+        occupied entry's key was exactly ``<setlist>/<name>.pb``; passing a
+        listing entry avoids reconstructing it, while the name form remains a
+        listing-free compatibility path for best-effort cleanup.
         """
         msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
         msg.folder.key = setlist_path
         msg.folder.is_factory = False
-        msg.folder.files.add().key = f"{setlist_path}/{name}.pb"
+        msg.folder.files.add().key = self._stored_preset_key(
+            setlist_path, preset)
         return self._file_operation(msg)
 
-    def move_preset(self, setlist_path: str, name: str, to_position):
-        """Move the preset named ``name`` to slot ``to_position`` (same setlist).
+    def move_preset(self, setlist_path: str, preset, to_position):
+        """Move a stored preset into ``to_position`` in the same setlist.
 
         ``to_position`` is either the linear slot index or the slot name shown on
-        the unit (``"28D"``).
-
-        Confirmed by capture: dragging "Darkglass AO900
-        2_1" onto slot 28D sent ``File{action: MOVE, type: 0, folder{key:
-        <setlist path>, files{key: "<setlist path>/<name>.pb"}},
-        to_folder{key: <setlist path>, files{index: 219}}}`` - source by FILE
-        PATH, destination by LINEAR slot index.
+        the unit (``"28D"``). ``preset`` may be its exact display name or the
+        ``ProductData`` returned by :meth:`list_presets`; the latter supplies
+        the device's own key. Cortex Control 4.0.1 was captured adding
+        ``is_downloads: false`` to this MOVE shape.
         """
         msg = pa.FileMessage(action=pa.MessageAction.MOVE, type=0)
         msg.folder.key = setlist_path
         msg.folder.is_factory = False
-        msg.folder.files.add().key = f"{setlist_path}/{name}.pb"
+        msg.folder.is_downloads = False
+        msg.folder.files.add().key = self._stored_preset_key(
+            setlist_path, preset)
         msg.to_folder.key = setlist_path
         msg.to_folder.files.add().index = _as_position(to_position)
         return self._file_operation(msg)

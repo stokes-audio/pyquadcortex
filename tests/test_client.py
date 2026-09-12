@@ -429,37 +429,105 @@ def test_save_current_preset_sends_file_create_by_reference():
     )
 
 
-def test_delete_preset_sends_file_delete_by_path():
-    # CONFIRMED wire shape (Windows capture 2): delete addresses the preset by
-    # its device file path "<setlist>/<name>.pb", not by slot index.
-    qc = client.QuadCortex(FakeTransport())
-    qc.delete_preset("/media/p4/Presets/My Presets", "Test save to user sl")
+def _preset_listing(setlist, *entries):
+    listing = pa.FileMessage()
+    listing.folder.key = setlist
+    for values in entries:
+        entry = listing.folder.files.add()
+        for field, value in values.items():
+            setattr(entry, field, value)
+    return listing
+
+
+def test_delete_preset_uses_the_authoritative_catalog_key():
+    setlist = "/media/p4/Presets/My Presets"
+    listing = _preset_listing(setlist, {
+        "index": 220,
+        "name": "Test save to user sl",
+        "key": f"{setlist}/opaque-device-key-220",
+    })
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.delete_preset(setlist, listing.folder.files[0])
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.FileMessage)
     assert sent.action == pa.MessageAction.DELETE
     assert sent.type == 0
     assert sent.folder.key == "/media/p4/Presets/My Presets"
     assert sent.folder.is_factory is False
-    assert (
-        sent.folder.files[0].key
-        == "/media/p4/Presets/My Presets/Test save to user sl.pb"
-    )
+    assert sent.folder.files[0].key == f"{setlist}/opaque-device-key-220"
+    assert not sent.folder.files[0].HasField("name")
+    assert not sent.folder.files[0].HasField("index")
+    assert not sent.HasField("to_folder")
 
 
-def test_move_preset_sends_file_move():
-    # CONFIRMED wire shape (Windows capture 2): source by file path,
-    # destination by linear slot index in to_folder.
+def test_delete_preset_by_name_stays_listing_free_for_hardware_cleanup():
+    setlist = "/media/p4/Presets/My Presets"
     qc = client.QuadCortex(FakeTransport())
-    qc.move_preset("/media/p4/Presets/My Presets", "Darkglass AO900 2_1", 219)
+    qc.delete_preset(setlist, "Test save to user sl")
+    assert qc._t.sent[-1].folder.files[0].key == \
+        f"{setlist}/Test save to user sl.pb"
+
+
+def test_a_product_key_must_belong_to_the_named_setlist():
+    qc = client.QuadCortex(FakeTransport())
+    wrong = pa.ProductData(
+        key="/media/p4/Presets/Factory Presets/Cali Basswalk.pb")
+    with pytest.raises(ValueError, match="does not belong"):
+        qc.delete_preset("/media/p4/Presets/My Presets", wrong)
+    assert qc._t.sent == []
+
+
+def test_a_product_without_a_key_refuses_with_auditable_evidence():
+    qc = client.QuadCortex(FakeTransport())
+    with pytest.raises(ControlNotDrivable) as caught:
+        qc.delete_preset("/media/p4/Presets/My Presets",
+                         pa.ProductData(name="Unnamed"))
+    assert caught.value.control == "stored preset product key"
+    assert "no key" in caught.value.evidence
+    assert "list_presets" in caught.value.workaround
+
+
+def test_move_preset_uses_an_authoritative_key_and_the_captured_flag():
+    setlist = "/media/p4/Presets/My Presets"
+    listing = _preset_listing(
+        setlist,
+        {"index": 218, "name": "Darkglass AO900 2_1",
+         "key": f"{setlist}/opaque-source"},
+        {"index": 219, "name": "Unsaved"},
+    )
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.move_preset(setlist, listing.folder.files[0], 219)
     sent = qc._t.sent[-1]
     assert isinstance(sent, pa.FileMessage)
     assert sent.action == pa.MessageAction.MOVE
-    assert (
-        sent.folder.files[0].key
-        == "/media/p4/Presets/My Presets/Darkglass AO900 2_1.pb"
-    )
+    assert sent.folder.is_downloads is False
+    assert sent.folder.files[0].key == f"{setlist}/opaque-source"
     assert sent.to_folder.key == "/media/p4/Presets/My Presets"
     assert sent.to_folder.files[0].index == 219
+    assert not sent.to_folder.HasField("is_factory")
+
+
+def test_move_preset_matches_the_captured_cortex_builder_bytes():
+    setlist = "/media/p4/Presets/My Presets"
+    product_key = f"{setlist}/Numb.pb"
+    listing = _preset_listing(
+        setlist,
+        {"index": 55, "name": "Numb", "key": product_key},
+        {"index": 54, "name": "Unsaved"},
+    )
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    qc.move_preset(setlist, listing.folder.files[0], 54)
+    assert fake.sent[-1].SerializeToString() == bytes.fromhex(
+        "08 04 18 00 22 4a 0a 1c 2f 6d 65 64 69 61 2f 70 34 2f 50 72 65 73 "
+        "65 74 73 2f 4d 79 20 50 72 65 73 65 74 73 20 00 28 00 3a 26 0a 24 "
+        "2f 6d 65 64 69 61 2f 70 34 2f 50 72 65 73 65 74 73 2f 4d 79 20 50 "
+        "72 65 73 65 74 73 2f 4e 75 6d 62 2e 70 62 2a 22 0a 1c 2f 6d 65 64 "
+        "69 61 2f 70 34 2f 50 72 65 73 65 74 73 2f 4d 79 20 50 72 65 73 65 "
+        "74 73 3a 02 10 36"
+    )
 
 
 # -- session hello -------------------------------------------------------------
@@ -563,6 +631,12 @@ def test_find_preset_looks_a_preset_up_by_name():
 
 def test_save_and_move_accept_slot_names():
     fake = FakeTransport()
+    fake.broadcast = _preset_listing(
+        str(Setlist.USER),
+        {"index": 1, "name": "Some Preset",
+         "key": f"{Setlist.USER}/opaque-source"},
+        {"index": 219, "name": "Unsaved"},
+    )
     qc = client.QuadCortex(fake)
 
     qc.save_current_preset(Setlist.USER, "30A", "Some Preset")
@@ -792,9 +866,17 @@ def test_file_operations_do_not_raise_when_the_device_stays_silent():
     # File ops are asynchronous and every host write is STALLed, so a missing reply
     # says nothing about success. Raising made callers wrap each one in
     # try/except and verify by re-reading anyway.
-    qc = client.QuadCortex(TimingOutTransport())
-    assert qc.delete_preset(Setlist.USER, "Some Preset") is None
-    assert qc.move_preset(Setlist.USER, "Some Preset", "28D") is None
+    transport = TimingOutTransport()
+    transport.broadcast = _preset_listing(
+        str(Setlist.USER),
+        {"index": 1, "name": "Some Preset",
+         "key": f"{Setlist.USER}/opaque-source"},
+        {"index": 219, "name": "Unsaved"},
+    )
+    qc = client.QuadCortex(transport)
+    source = transport.broadcast.folder.files[0]
+    assert qc.delete_preset(Setlist.USER, source) is None
+    assert qc.move_preset(Setlist.USER, source, "28D") is None
     assert qc.save_current_preset(Setlist.USER, "30A", "Some Preset") == "Some Preset"
 
 
