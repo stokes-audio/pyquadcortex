@@ -248,7 +248,8 @@ def test_request_times_out_when_no_response():
 
 
 def test_keepalive_is_sent_periodically():
-    # With a tiny interval, the keepalive thread should emit KeepAlive writes.
+    # With a tiny interval, the keepalive thread should emit the exact CorOS
+    # 4.0.1 Cortex Control payload captured 944 times across three sessions.
     fake = FakeHid()
     t = transport.Transport(fake, keepalive_interval=0.02)
     t.start()
@@ -257,10 +258,17 @@ def test_keepalive_is_sent_periodically():
             for report in list(fake.writes):
                 frame = framing.decode_reports([report])
                 if registry.class_for(frame.message_type) is pa.KeepAliveMessage:
-                    return True
+                    message = pa.KeepAliveMessage()
+                    message.ParseFromString(frame.payload)
+                    return message, frame.payload
             return False
 
         assert _wait_until(saw_keepalive, timeout=REQUEST_TIMEOUT)
+        message, payload = saw_keepalive()
+        assert payload == bytes.fromhex("08 01")
+        assert message.action == pa.MessageAction.UPDATE
+        assert not message.HasField("request_id")
+        assert not message.is_online
     finally:
         t.stop()
 
