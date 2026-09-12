@@ -2831,9 +2831,22 @@ def test_create_setlist_uses_a_sibling_path_under_the_presets_root():
     assert path == "/media/p4/Presets/probe"
     folder = qc._t.sent[-1].folder
     assert folder.key == "/media/p4/Presets/probe"
+    assert not folder.HasField("parent_key")
     assert folder.name == "probe"
     assert folder.is_factory is False
     assert "My Presets" not in folder.key, "a setlist is not nested inside My Presets"
+
+
+def test_coros_4_1_create_setlist_serialization_pin():
+    from pyquadcortex.protocol.profiles import QuadCortex41
+    qc = QuadCortex41(FakeTransport())
+    qc.create_setlist("Tour")
+    msg = qc._t.sent[-1]
+    assert msg.SerializeToString() == bytes.fromhex(
+        "18 00 22 33 0a 16 2f 6d 65 64 69 61 2f 70 34 2f 50 72 65 73 65 74 "
+        "73 2f 54 6f 75 72 12 11 2f 6d 65 64 69 61 2f 70 34 2f 50 72 65 73 "
+        "65 74 73 1a 04 54 6f 75 72 20 00"
+    )
 
 
 # -- master volume, pinning, setlist deletion ----------------------------------
@@ -2885,6 +2898,19 @@ def test_delete_setlist_addresses_the_folder_key():
     assert msg.action == pa.MessageAction.DELETE
     assert msg.folder.key == "/media/p4/Presets/probe"
     assert msg.folder.name == "probe"
+    assert not msg.folder.HasField("is_factory")
+    assert not msg.HasField("delete_from_library")
+    assert not msg.HasField("to_folder")
+
+
+def test_coros_4_1_delete_setlist_serialization_pin():
+    from pyquadcortex.protocol.profiles import QuadCortex41
+    qc = QuadCortex41(FakeTransport())
+    qc.delete_setlist("Tour")
+    assert qc._t.sent[-1].SerializeToString() == bytes.fromhex(
+        "08 02 18 00 22 1a 0a 16 2f 6d 65 64 69 61 2f 70 34 2f 50 72 65 73 "
+        "65 74 73 2f 54 6f 75 72 20 00 50 00"
+    )
 
 
 def test_looper_state_enum_omits_the_value_never_observed():

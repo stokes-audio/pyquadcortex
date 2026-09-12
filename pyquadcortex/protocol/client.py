@@ -3422,9 +3422,9 @@ class QuadCortex:
         """Delete a setlist and whatever it holds.
 
         ``File{DELETE, folder{key, name}}`` against the setlist's own key.
-        Confirmed: the folder disappears from the listing. Like the other file
-        operations this is eventually consistent, so re-enumerate rather than
-        checking immediately.
+        Confirmed on CorOS 4.0.1: the folder disappears from the listing. Like
+        the other file operations this is eventually consistent, so
+        re-enumerate rather than checking immediately.
         """
         msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
         msg.folder.key = f"{USER_SETLIST_ROOT}/{name}"
