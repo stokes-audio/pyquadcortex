@@ -8,6 +8,8 @@ client can be exercised without a device.
 
 import itertools
 import json
+import pathlib
+import re
 
 import pytest
 
@@ -4341,13 +4343,90 @@ def test_a_bare_number_is_refused_by_every_settings_write(call):
     assert qc._t.sent == []
 
 
-def test_a_global_eq_gain_takes_db_on_the_manuals_span():
-    """-12..+12 dB. Both documented points, which is all the evidence there is."""
+#: The protocol record's own Global EQ layout table. Read rather than restated,
+#: because restating it here would be the fourth copy of the same five numbers.
+PROTOCOL_DOC = (pathlib.Path(__file__).resolve().parent.parent
+                / "docs" / "protocol.md")
+
+#: How the record spells each control, against the constant that carries it. The
+#: record's words are the DEVICE's; the constants are this library's names for
+#: them, so the mapping between the two is the one thing written twice.
+_BAND_CONTROL_NAMES = {
+    "GAIN": "GLOBAL_EQ_BAND_GAIN",
+    "FREQUENCY": "GLOBAL_EQ_BAND_FREQUENCY",
+    "Q": "GLOBAL_EQ_BAND_Q",
+    "TYPE": "GLOBAL_EQ_BAND_TYPE",
+    "band ENABLE": "GLOBAL_EQ_BAND_ENABLED",
+}
+
+
+@pytest.mark.skipif(not PROTOCOL_DOC.exists(), reason="docs/protocol.md not present")
+def test_the_band_offsets_match_the_protocol_record():
+    """The constants and `docs/protocol.md`'s layout table say the same thing.
+
+    The offsets used to be bare digits inside `set_global_eq`, with the same
+    mapping restated in that method's docstring and a third time as a table in
+    the protocol record. Three copies, one of which the code read - so a
+    correction to the record could leave the code addressing the old layout and
+    nothing would notice, because no test read the prose.
+
+    This is the test that makes the record load-bearing. It is deliberately
+    narrow: it checks the five offsets, not the whole document.
+    """
+    lines = PROTOCOL_DOC.read_text().splitlines()
+    # Anchored on the paragraph rather than on the first offset/control header
+    # in a 2,500-line document, so a second block's layout table added later
+    # cannot quietly rebind this test to itself.
+    heading = next((i for i, line in enumerate(lines)
+                    if line.startswith("**Global EQ parameter layout:")), None)
+    assert heading is not None, (
+        "docs/protocol.md no longer has a paragraph starting '**Global EQ "
+        "parameter layout:' - this test reads the table under it, so say where "
+        "the layout moved to rather than deleting the anchor")
+    start = next((i for i, line in enumerate(lines[heading:], heading)
+                  if line.startswith("| offset | control |")), None)
+    assert start is not None, (
+        "docs/protocol.md's Global EQ layout paragraph is no longer followed by "
+        "a table with the header '| offset | control |'; if the table was "
+        "reformatted, teach this test the new shape - the constants in "
+        "QuadCortex are checked against it")
+    table = {}
+    for line in lines[start + 2:]:
+        if not line.startswith("|"):
+            break
+        fields = [f.strip() for f in line.strip().strip("|").split("|")]
+        table[fields[1]] = int(fields[0])
+
+    assert set(table) == set(_BAND_CONTROL_NAMES), (
+        f"the record's layout table lists {sorted(table)}, and this test knows "
+        f"{sorted(_BAND_CONTROL_NAMES)} - one of them moved without the other")
+    for control, offset in table.items():
+        constant = _BAND_CONTROL_NAMES[control]
+        assert getattr(client.QuadCortex, constant) == offset, (
+            f"docs/protocol.md puts {control} at offset {offset}, and "
+            f"QuadCortex.{constant} is "
+            f"{getattr(client.QuadCortex, constant)}")
+
+    assert len(table) == client.QuadCortex.GLOBAL_EQ_BAND_STRIDE, (
+        "the stride is how many offsets there are; the record lists "
+        f"{len(table)} and the stride is "
+        f"{client.QuadCortex.GLOBAL_EQ_BAND_STRIDE}")
+
+
+def test_a_global_eq_gain_takes_db_on_the_measured_span():
+    """-12..+12 dB, measured on screen at both ends (2026-09-11, CorOS 4.0.1).
+
+    The ENDS are the point: they are what a span needs and what this one lacked
+    until then. The readings themselves live in `tests/test_scales.py`.
+    """
     qc = client.QuadCortex(FakeTransport())
-    qc.set_global_eq(1, gain=Db(0.0))
-    assert qc._t.sent[-1].parameters[0].value == pytest.approx(0.5)
-    qc.set_global_eq(1, gain=Db(6.0))
-    assert qc._t.sent[-1].parameters[0].value == pytest.approx(0.75)
+    # The four measured points, plus 0 dB at the centre - that one is
+    # INTERPOLATED, not a reading, and is here because unity is the value a
+    # caller is most likely to write.
+    for db, wire in ((-12.0, 0.0), (-6.0, 0.25), (0.0, 0.5), (6.0, 0.75),
+                     (12.0, 1.0)):
+        qc.set_global_eq(1, gain=Db(db))
+        assert qc._t.sent[-1].parameters[0].value == pytest.approx(wire), db
 
 
 def test_a_global_eq_frequency_has_no_scale_and_says_so():
@@ -4440,8 +4519,12 @@ def test_the_global_eq_output_level_refuses_a_real_too():
 
 
 def test_a_global_eq_gain_outside_its_span_is_refused():
-    """The input gain had this test and the Global EQ gain did not, which
-    matters more here: its span is the weaker of the two."""
+    """The input gain had this test and the Global EQ gain did not.
+
+    It matters more here now than when the span was the manual's: the ends were
+    read on screen, so -12 and +12 are the real edge of the control and a dB
+    past them is a value the unit cannot show.
+    """
     qc = client.QuadCortex(FakeTransport())
     for bad in (Db(-20.0), Db(20.0)):
         with pytest.raises(ValueError):

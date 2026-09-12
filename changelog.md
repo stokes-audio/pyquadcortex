@@ -20,6 +20,50 @@ correction.
 
 ## Unreleased
 
+### The Global EQ band offsets have names
+
+`QuadCortex` already named the Global EQ's stride, its band count and the three
+OUT tab indices. The five offsets WITHIN a band were bare digits inside
+`set_global_eq`. They are now `GLOBAL_EQ_BAND_GAIN`, `_FREQUENCY`, `_Q`, `_TYPE`
+and `_ENABLED`.
+
+**Nothing you wrote needs to change**, and there is no new thing to call: every
+one of those five controls is already reachable through
+`set_global_eq(band, gain=..., frequency=..., q=..., filter_type=...,
+enabled=...)`, which validates the band and does the arithmetic. The constants
+are for reading a wire index the unit reported, or checking one you are about to
+pass to `set_global_eq_band`'s raw-index door - they say which control within a
+band you are looking at without counting in fives. (Slots 25 to 27 are the OUT
+tab and have their own absolute constants.)
+
+### The Global EQ gain span is measured, not taken from the manual
+
+`set_global_eq(band, gain=Db(...))` converts over -12..+12 dB, which is what it
+already did. What changed is the evidence: the span is now read off the unit's
+own screen at both ends (wire 0.0 shows -12.0 dB, wire 1.0 shows +12.0), plus
+both quartiles, which show the control is linear rather than tapered.
+
+**Nothing you wrote needs to change.** The numbers are the same. This entry is
+here because the docs said this span was the weaker of the two the library
+knows, and it is not weaker any more - if you avoided `Db` on a Global EQ band
+for that reason, the reason is gone.
+
+### A pan reads 50 L to 50 R, whatever the catalog declares
+
+36 parameters carry `min_string`, `mid_string` and `max_string` together. Those
+are pan-style controls, and the unit draws all of them as a bipolar scale from
+50 on one side to 50 on the other. The catalog declares that span four different
+ways and none of them matches, so `Real` was not speaking the numbers on screen:
+reaching hard left meant `Real(0.0)` on a mono cab and `Real(-1.0)` on a stereo
+one, for the same knob.
+
+`units.LABELLED_END_SPAN` now holds the drawn span, measured on CorOS 4.0.1
+across three of the four declared spans, and `Parameter.mid_label` carries the
+middle label. A declared default moves onto the drawn span with everything
+else, so a pan's default reports the position the screen shows. `mid_string` leaves the unexplained list in
+[docs/domain-model.md](docs/domain-model.md): it is the label at wire 0.5.
+
+
 ### The first hardware run of the profile seam, and what it corrected
 
 Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam
