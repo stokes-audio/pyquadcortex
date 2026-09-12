@@ -116,6 +116,12 @@ real unit:
 
 ### Before you mark a pull request ready
 
+A draft is work in progress, so a maintainer does not read one. Two things have
+to happen before it becomes reviewable, both on the SAME final commit: the
+hardware suite runs, and the pull request gets a review pass whose findings are
+addressed. Changing the code afterwards means doing both again, because each is
+evidence about the commit it was run on.
+
 A pull request opens as a draft and is marked ready for review only after the
 hardware suite has run on its final commit:
 
