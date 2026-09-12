@@ -143,6 +143,68 @@ FLOOR_WIRE = {
     (-40.0, 0.0, 1.0): (0.01, -39.6),
 }
 
+#: The span a LABELLED-END control actually draws, whatever it declares.
+#:
+#: 36 parameters carry ``min_string``, ``mid_string`` and ``max_string``
+#: together - 35 spell them "L"/"C"/"R" and one, `Micro Processor (ST)`'s
+#: `A/B PITCH MIX`, spells them "A"/"A/B"/"B". They are pan-style controls, and
+#: the unit draws every one of them as a bipolar scale reading 50 on one side
+#: through the middle label to 50 on the other. The declared ``min``/``max`` do
+#: NOT say that, and they do not even agree with each other: the same drawn
+#: control is declared four different ways.
+#:
+#: | declared span | parameters | measured on |
+#: |---|---|---|
+#: | -1..1 | 22 | a stereo cab's `BALANCE` |
+#: | 0..10 | 10 | a mono cab's `PAN` |
+#: | 0..1 | 3 | a Minivoicer's `V1 PAN` and `V2 PAN` |
+#: | -50..50 | 1 | declares the drawn span already, with ``steps=101`` |
+#:
+#: Read off the screen on CorOS 4.0.1, 2026-09-11, by writing wire values and
+#: looking: wire 0.0 shows "50 L", wire 0.5 shows "C", wire 0.75 shows "25 R",
+#: wire 1.0 shows "50 R". A Minivoicer `V1 PAN` sitting at its untouched
+#: default of 0.6 shows "10 R", which is the same line and needed no write at
+#: all. So the display is ``(wire - 0.5) * 100``, with the sign shown as the
+#: side letter. Every reading is in `tests/test_scales.py`.
+#:
+#: Corroborated by a note in `protocol.md` that predates this work: the lane
+#: output's `1 PAN` is recorded there as "0.5 is centre". That parameter
+#: declares 0..1, where wire 0.5 would read "0.50" rather than a middle
+#: label, so the bipolar behaviour had been seen before without being named.
+#:
+#: **Why this is a span and not a refusal.** ADR-0015 makes the catalog the
+#: source of a scale, and here the catalog is measurably wrong rather than
+#: imprecise - `Real(0.0)` reached hard left on a mono cab and dead center on a
+#: stereo one, for the same physical knob, purely because the two entries
+#: declare different numbers. Refusing `Real` on all 36 was the other option and
+#: would have been safe and useless. Three of the four declared spans are
+#: measured and the fourth states the drawn span itself, so nothing here is
+#: inherited from a knob nobody drove.
+#:
+#: **Why the key is all three labels.** 267 parameters carry one or two of them,
+#: almost always ``min_string="OFF"`` on a dB scale, and none of those is a pan.
+#: Requiring all three selects exactly the 36. The declared span cannot be the
+#: key: ``(0.0, 1.0, 1.0)`` is one of the commonest laws in the catalog and
+#: almost none of those parameters is in this family.
+#:
+#: The DEFAULT moves with the span. A declared default is a position on the
+#: declared scale, so leaving it behind would make a mono cab's `PAN` report 5
+#: against -50..+50 - "5 R" for a knob whose default is dead centre. Converted
+#: through the declared law, the three centred families all land on 0.0 and a
+#: Minivoicer's `V1 PAN` lands on 10.0, which is the `10 R` its untouched
+#: default actually shows.
+#:
+#: Applied to LINEAR members only. All 36 declare no skew or skew=1, so the
+#: measured straight line and the declared taper agree; a member that ever
+#: declares a taper keeps what the catalog said rather than being converted
+#: through a mapping nobody measured for it.
+#:
+#: What is NOT claimed: the granularity. ``steps`` reads 360 on 21 of them and
+#: nothing on the rest, while the one entry declaring the drawn span says 101.
+#: The readings land on whole numbers, and nobody has looked for the smallest
+#: move the screen will show.
+LABELLED_END_SPAN = (-50.0, 50.0)
+
 #: What a caller wanting silence should write instead of the bottom of a dB
 #: scale. Shared by every family in :data:`FLOOR_WIRE`.
 OFF_HINT = ("for silence write the wire value 0.0, the Off position - the "
@@ -307,8 +369,11 @@ def bpm_to_tempo(bpm: float) -> float:
 #: Separate from :data:`FIRMWARE_CONSTANTS`, which resolves a name the catalog
 #: itself writes. Nothing in the catalog mentions an input port or the Global
 #: EQ at all, so these numbers have no name to resolve and their only home is
-#: here. Each records how it is known, and the two are known very differently -
-#: which is the point of writing it down rather than presenting one list.
+#: here. Each records how it is known, and they are not known the same way -
+#: which is the point of writing it down rather than presenting one list. The
+#: input port's four points all sit in the bottom half of its travel and lean on
+#: the spec sheet for the top; the Global EQ's four span the whole travel and
+#: include both ends.
 SETTING_SPANS = {
     # An input port's gain. Solved from four owner-set trims read simultaneously
     # on screen and on the wire - screen +17.2/+16.8/+24.0/0.0 against wire
@@ -317,13 +382,17 @@ SETTING_SPANS = {
     # sheet's "MAX INPUT GAIN: +60dB". See :func:`input_level_db`.
     "INPUT_GAIN_DB": (-12.0, 60.0),
 
-    # A Global EQ band's GAIN. WEAKER EVIDENCE, deliberately recorded as such:
-    # the span is the MANUAL's, and what supports it here is two consistent
-    # points - wire 0.5 reads 0 dB and 0.75 reads +6 dB, which a linear
-    # -12..+12 reproduces exactly. That is not a measurement campaign. Two close
-    # points could not tell -40..+12 from -100..+30 for the lane family (see
-    # MIN_MIXER_DB above), and the same caution applies here: these two are 6 dB
-    # apart on a span claimed to be 24 dB wide. Queued to be driven on screen.
+    # A Global EQ band's GAIN. Driven on screen 2026-09-11, CorOS 4.0.1: band 1's
+    # GAIN written over the wire and the Global EQ page read each time - wire
+    # 0.0/0.25/0.75/1.0 displayed -12.0/-6.0/+6.0/+12.0 dB. The ENDS are what
+    # settle the span, and they were the measurement's point: before this the
+    # span was the MANUAL's on two points 6 dB apart on a range claimed to be
+    # 24 dB wide, which is the shape of the mistake that put -100..+30 in
+    # MIN_MIXER_DB above for two releases. The two quartiles came along free and
+    # rule out a taper: at the display's own 0.1 dB rounding the two together
+    # admit only skews 0.994..1.006, so this is linear rather than a power law
+    # close to it. `test_the_global_eq_gain_quartiles_rule_out_a_taper` computes
+    # that intersection rather than quoting this comment.
     "GLOBAL_EQ_GAIN_DB": (-12.0, 12.0),
 }
 
