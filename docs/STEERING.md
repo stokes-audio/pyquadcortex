@@ -139,6 +139,70 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-11 - The Global EQ gain span is measured at its ends (ADR-0017)
+
+**What changed:** `units.SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]` is still
+`(-12.0, 12.0)`, and the evidence under it is no longer the manual's. Band 1's
+GAIN was written over the wire and the Global EQ page read each time, on CorOS
+4.0.1: wire 0.0/0.25/0.75/1.0 display -12.0/-6.0/+6.0/+12.0 dB. The four
+readings are in `tests/test_scales.py`, the hardware test drives all four back
+onto the unit, and every place that called this the weaker of the two known
+spans now says what it rests on instead.
+
+**Why:** the number was right and the evidence was not, which is the harder case
+to notice. It shipped on the manual's span plus two points 6 dB apart on a range
+claimed to be 24 dB wide - and two close points cannot tell one span from a
+wider one. That is exactly how `-100..+30` survived in `MIN_MIXER_DB` for two
+releases with a measured unity point sitting on it. So the measurement went
+after the ENDS, not a third interior point.
+
+**What the quartiles bought, which was not the plan:** they rule out a taper.
+At the display's own 0.1 dB rounding the two together admit only skews
+0.994..1.006, so "linear" is measured rather than assumed - and a cab LEVEL is
+the standing proof that shape hides from well-separated points (`protocol.md`).
+`test_the_global_eq_gain_quartiles_rule_out_a_taper` computes that intersection
+from the recorded readings and fails if they stop excluding a taper. The
+tolerance it holds them to is stated ahead of the data rather than fitted to it;
+the readings clear it with margin.
+
+**What did NOT change:** the Global EQ's FREQUENCY, Q and OUT level still take
+`Encoded` only. Nothing ties any of them to a reading on screen, and this run
+did not go looking.
+
+
+### 2026-09-11 - A pan's drawn span is measured, not declared (ADR-0015)
+
+**What changed:** `units.LABELLED_END_SPAN` holds `(-50.0, 50.0)`, the span the
+unit actually draws for the 36 parameters carrying `min_string`, `mid_string`
+and `max_string` together. `catalog._parameter` applies it to any parameter
+carrying all three, and `Parameter.mid_label` carries the middle label.
+`mid_string` leaves the unexplained appendix in `domain-model.md`.
+
+**Why:** the declared span was measurably wrong, not imprecise. A pan reads
+`50 L` at wire 0.0, `C` at 0.5 and `50 R` at 1.0, and the catalog declares that
+same drawn control four different ways - `-1..1` on 22 parameters, `0..10` on
+10, `0..1` on 3, `-50..50` on one. Reaching hard left therefore meant
+`Real(0.0)` on a mono cab and `Real(-1.0)` on a stereo one, for one physical
+knob. Three of the four declared spans were read off the screen and the fourth
+declares the drawn span itself, so nothing is inherited from a knob nobody
+drove. Readings in `tests/test_scales.py`, narrative in `protocol.md`.
+
+**The tension with ADR-0015, stated rather than buried:** that record makes the
+catalog the source of a scale and measurements the tests. Here the test failed
+and the finding is about the device. The catalog is still the source for every
+other parameter, and this is the first span the library overrides. If a second
+one appears, that is the point to stop and write a record rather than grow the
+table.
+
+**What did NOT change, on purpose:** the key is the label triple, not the law.
+`(0.0, 1.0, 1.0)` is one of the commonest laws in the catalog and almost none of
+those parameters is a pan, so keying by law would have swept in unrelated
+knobs. 267 parameters carry one or two of the three labels - almost always
+`min_string="OFF"` - and none of those is in the family. Granularity is also
+untouched: `steps` disagrees with itself here and nobody has measured the
+smallest move the screen will show.
+
+
 ### 2026-09-07 - A pull request is a draft until the hardware suite has run on it
 
 **What changed:** `contributing.md` gains "Before you mark a pull request ready":
@@ -356,11 +420,13 @@ naming what would settle it - never an invented span. A setting with no 0..1
 line at all, like the HOLD threshold in ms, refuses `Encoded` instead. Selectors
 are not values and stay plain.
 
-The two known spans are NOT equally known, and `units.SETTING_SPANS` says so
-beside each: the input port has four measured points, the Global EQ gain has the
-manual plus two points 6 dB apart on a 24 dB range. That second one is queued to
-be driven on screen. Two close points could not tell -40..+12 from -100..+30 for
-the lane family, and that mistake shipped twice.
+The two known spans are both measured now, and `units.SETTING_SPANS` still says
+what each rests on beside it: the input port has four points in the bottom half
+of its travel plus the spec sheet for the top, the Global EQ gain has four points
+driven on screen across the whole travel. The Global EQ gain shipped for two
+releases on the manual plus two points 6 dB apart on a 24 dB range; see the
+2026-09-11 entry. Two close points could not tell -40..+12 from -100..+30 for the
+lane family either, and that mistake shipped twice.
 
 ### 2026-08-27 - A parameter value carries its own scale (ADR-0016)
 

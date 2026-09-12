@@ -55,8 +55,8 @@ that does not run one is unaffected.
 
 - **A known scale**, so the unit type works: an input port's gain
   (-12..+60 dB, from four measured points) and a Global EQ band's gain
-  (-12..+12 dB, which is the MANUAL's span on two points and is weaker evidence
-  - see `units.SETTING_SPANS`).
+  (-12..+12 dB, from four points driven on screen including both ends - see
+  `units.SETTING_SPANS`).
 - **No known scale**, so `Encoded` is the only thing accepted: output level,
   USB level, master volume, Global EQ frequency/Q/output level, and a Global EQ
   parameter addressed by raw index. A `Db` there raises `ControlNotDrivable`

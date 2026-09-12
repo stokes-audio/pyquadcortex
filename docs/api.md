@@ -51,7 +51,7 @@ already read and need no connection; calling them as methods raises
 | **Add and remove blocks** | `set_block(Block(row, column, model_id))`, `remove_block(cell)`, `move_block(source, destination)`, `catalog` |
 | **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Route a row** | `set_chain_input(row, input)`, `set_chain_output(row, output)` |
-| **Lane output** | `set_param(LaneOutput(row), param, value)` - VOLUME, PAN, MUTE, SOLO. VOLUME speaks dB, so `Db(-6.0)` |
+| **Lane output** | `set_param(LaneOutput(row), param, value)` - VOLUME, PAN, MUTE, SOLO. VOLUME speaks dB, so `Db(-6.0)`. PAN reads 50 L through C to 50 R on screen, so `Real(-50.0)` is hard left, `Real(0.0)` is center and `Real(25.0)` is 25 R |
 | **Input gate** | `set_param(LaneInput(row), param, value)` - NOISE REDUCTION, BYPASS, INPUT GAIN |
 | **Split and mix** | `set_param(Splitter(row), param, ...)`, `set_param(Mixer(row), param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(cell, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
@@ -198,12 +198,13 @@ qc.set_master_volume(Encoded(0.30))           # no screen scale is known
 qc.set_hold_timing(Milliseconds(800))         # no DEVICE scale exists
 ```
 
-**A known scale** takes the unit type and converts. There are two, and they are
-not known equally well. An input port's gain rests on four screen-and-wire pairs
-read together. A Global EQ band's gain rests on the MANUAL's span plus two
-points 6 dB apart on a range said to be 24 dB wide - enough to be useful, not
-enough to be sure, and `units.SETTING_SPANS` says so beside the number. Driving
-its ends on screen is what would settle it.
+**A known scale** takes the unit type and converts. There are two, and both are
+measured, though not the same way. An input port's gain rests on four
+screen-and-wire pairs read together, all in the bottom half of its travel, with
+the spec sheet backing the top. A Global EQ band's gain rests on four points
+driven on screen that span the whole travel - wire 0.0 and 1.0 read -12.0 and
++12.0 dB, and the two quartiles read -6.0 and +6.0, which rules out a taper.
+`units.SETTING_SPANS` records what each rests on beside the number.
 
 **No known scale** takes `Encoded` and nothing else - output port level, USB
 level, master volume, Global EQ frequency and Q, the Global EQ output level. A

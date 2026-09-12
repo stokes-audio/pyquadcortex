@@ -125,6 +125,151 @@ def test_parameters_are_ordered_and_carry_metadata(cat):
     assert cat[5005].parameters[0].units == "dB"
 
 
+def test_a_labelled_end_control_carries_the_span_the_unit_draws():
+    """A pan reads 50 L .. C .. 50 R on screen whatever span it declares.
+
+    Measured 2026-09-11 on CorOS 4.0.1 across three of the four declared spans
+    in this family - a mono cab's `PAN` (0..10), a stereo cab's `BALANCE`
+    (-1..1) and a Minivoicer's `V1 PAN` (0..1). All three draw the same -50..+50
+    bipolar scale, so the declared span is not what the screen shows and the
+    label triple is what identifies the control. See `tests/test_scales.py` for
+    the readings.
+    """
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="99" name="Labelled">
+  <Model id="9901" name="Declares Ten">
+    <Parameter name="PAN" type="float" min="0" max="10" defaultValue="5"
+               min_string="L" mid_string="C" max_string="R"/>
+  </Model>
+  <Model id="9902" name="Declares Unity">
+    <Parameter name="V1 PAN" type="float" min="0" max="1" defaultValue="0.6"
+               min_string="L" mid_string="C" max_string="R"/>
+  </Model>
+  <Model id="9903" name="Declares Nothing Special">
+    <Parameter name="MIX" type="float" min="0" max="10" defaultValue="5"/>
+  </Model>
+</Category>
+""" + "</Models>")
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    for model_id in (9901, 9902):
+        spec = cat[model_id].parameters[0]
+        assert (spec.minimum, spec.maximum) == (-50.0, 50.0), spec.name
+        assert spec.mid_label == "C"
+        # wire 0.5 is the center the unit labels rather than numbers
+        assert spec.to_real(0.0) == pytest.approx(-50.0)
+        assert spec.to_real(1.0) == pytest.approx(50.0)
+
+    # A parameter with no label triple keeps exactly what the catalog declared.
+    plain = cat[9903].parameters[0]
+    assert (plain.minimum, plain.maximum) == (0.0, 10.0)
+    assert plain.mid_label == ""
+
+
+def test_a_labelled_end_control_moves_its_default_onto_the_drawn_span():
+    """Or the default keeps meaning a position on the scale it just replaced.
+
+    A mono cab declares 5 of 0..10 for its `PAN`, which is the centre; left
+    alone against -50..+50 it would read as 5 R. The conversion is checked
+    against a reading rather than only against itself: a Minivoicer's `V1 PAN`
+    declares 0.6 of 0..1, and its untouched default shows `10 R` on the unit.
+    """
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="98" name="Defaults">
+  <Model id="9801" name="Centre Of Ten">
+    <Parameter name="PAN" type="float" min="0" max="10" defaultValue="5"
+               min_string="L" mid_string="C" max_string="R"/>
+  </Model>
+  <Model id="9802" name="Six Tenths">
+    <Parameter name="V1 PAN" type="float" min="0" max="1" defaultValue="0.6"
+               min_string="L" mid_string="C" max_string="R"/>
+  </Model>
+</Category>
+""" + "</Models>")
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    assert cat[9801].parameters[0].default == pytest.approx(0.0)
+    assert cat[9802].parameters[0].default == pytest.approx(10.0)
+
+
+def test_a_partial_label_set_is_not_a_labelled_end_control():
+    """The boundary the predicate draws, held from the other side.
+
+    267 parameters carry one or two of the three labels - almost always
+    `min_string="OFF"` on a dB scale - and none of them is a pan. No parameter
+    in the shipped catalog carries min and max without mid, so this case is
+    synthetic, and it is still where the rule would go wrong first.
+    """
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="97" name="Partial">
+  <Model id="9701" name="Ends Only">
+    <Parameter name="NEARLY" type="float" min="0" max="10" defaultValue="5"
+               min_string="L" max_string="R"/>
+  </Model>
+  <Model id="9702" name="Bottom Only">
+    <Parameter name="LEVEL" type="float" min="-40" max="6" defaultValue="0"
+               min_string="OFF"/>
+  </Model>
+</Category>
+""" + "</Models>")
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    for model_id, span in ((9701, (0.0, 10.0)), (9702, (-40.0, 6.0))):
+        spec = cat[model_id].parameters[0]
+        assert (spec.minimum, spec.maximum) == span, spec.name
+        assert spec.mid_label == ""
+
+
+def test_a_labelled_end_control_that_declares_a_taper_is_left_alone():
+    """All 36 in the shipped catalog are linear, and that is not asserted
+    anywhere else.
+
+    The drawn span was measured as a straight line in the wire. Applying it
+    through a taper nobody measured would put the screen numbers somewhere new
+    and silently, so a member declaring one keeps what the catalog said.
+    """
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="96" name="Tapered">
+  <Model id="9601" name="Skewed Pan">
+    <Parameter name="PAN" type="float" min="0" max="10" defaultValue="5"
+               skew="0.3" min_string="L" mid_string="C" max_string="R"/>
+  </Model>
+</Category>
+""" + "</Models>")
+
+    spec = catalog.parse_model_repo(make_payload(xml))[9601].parameters[0]
+
+    assert (spec.minimum, spec.maximum) == (0.0, 10.0)
+    assert spec.mid_label == "C"        # still recorded, just not acted on
+
+
+def test_the_one_labelled_end_control_that_is_not_left_and_right():
+    """`A/B PITCH MIX` labels its ends A and B, and already declares -50..50.
+
+    Worth pinning BECAUSE the override is a no-op there: it is the only entry
+    in the catalog that states the drawn span, and it is the corroboration the
+    other 35 are measured against.
+    """
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="95" name="Pitch">
+  <Model id="9501" name="Micro Processor (ST)">
+    <Parameter name="A/B PITCH MIX" type="float" min="-50" max="50"
+               defaultValue="0" steps="101"
+               min_string="A" mid_string="A/B" max_string="B"/>
+  </Model>
+</Category>
+""" + "</Models>")
+
+    spec = catalog.parse_model_repo(make_payload(xml))[9501].parameters[0]
+
+    assert (spec.minimum, spec.maximum) == (-50.0, 50.0)
+    assert spec.default == pytest.approx(0.0)
+    assert (spec.min_label, spec.mid_label, spec.max_label) == ("A", "A/B", "B")
+
+
 def test_lookup_parameter_by_name_is_case_insensitive(cat):
     assert cat[1].parameter("gain").index == 0
     assert cat[1].parameter("TREBLE").index == 1
