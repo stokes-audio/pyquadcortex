@@ -51,7 +51,7 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
 from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
-                                          ControlNotDrivable)
+                                          ControlNotDrivable, ScreenshotError)
 from pyquadcortex.protocol.support import (EVERYTHING, Evidence, Hardware,
                                            Support, measured_firmware,
                                            unverified_text)
@@ -1498,6 +1498,77 @@ class QuadCortex:
             timeout=timeout,
             match=lambda m: (m.HasField("request_id")
                              and m.request_id == request_id))
+
+    def preset_screenshot(
+        self,
+        folder_name: str,
+        position,
+        is_factory: bool = False,
+        timeout: float = 10.0,
+    ) -> bytes:
+        """Refuse a preset screenshot on the CorOS 4.0.1 base profile.
+
+        This operation has contributed CorOS 4.1.0 evidence but has not been
+        measured on 4.0.1. Use :class:`~pyquadcortex.protocol.QuadCortex41`
+        when the connected unit identifies as that profile.
+        """
+        raise ControlNotDrivable(
+            "preset_screenshot",
+            "not measured on QuadCortex (CorOS 4.0.1).",
+            "Use QuadCortex41 for a CorOS 4.1.0 unit.",
+        )
+
+    def _preset_screenshot(
+        self,
+        folder_name: str,
+        position,
+        is_factory: bool = False,
+        timeout: float = 10.0,
+    ) -> bytes:
+        """Return the device-rendered preset view as PNG bytes.
+
+        ``folder_name`` is the display name (for example ``"My Presets"``),
+        not the folder key used by :meth:`recall_preset`. ``position`` is the
+        same zero-based linear slot index or display slot (for example
+        ``"28C"``) used by the other preset methods.
+        Entries from :meth:`list_folders` provide both ``name`` and
+        ``is_factory`` when the folder is not already known.
+
+        The address fields are mandatory in practice. A bare ``Screenshot``
+        READ is ignored, while a correctly addressed request replies with a
+        PNG (observed at 800 x 384) and echoes the request id. Measured by a
+        contributor with two user-preset slots on CorOS 4.1.0, not yet measured
+        on 4.0.1; this reads only and does not recall the preset or change the screen.
+        """
+        if not isinstance(folder_name, str) or not folder_name:
+            raise ValueError("folder_name must be a non-empty display name")
+        raw_position = position
+        try:
+            position = _as_position(position)
+        except (TypeError, ValueError) as error:
+            raise ValueError("position must be a slot name or non-negative integer") from error
+        if (isinstance(raw_position, bool)
+                or not isinstance(raw_position, (int, str)) or position < 0):
+            raise ValueError("position must be a slot name or non-negative integer")
+
+        reply = self._t.request(
+            pa.ScreenshotMessage(
+                action=pa.MessageAction.READ,
+                folder_name=folder_name,
+                is_factory=is_factory,
+                index=position,
+            ),
+            timeout=timeout,
+        )
+        if reply is None or not reply.HasField("png"):
+            raise ScreenshotError("the device's Screenshot reply did not contain PNG data")
+        image = bytes(reply.png)
+        if not image.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ScreenshotError("the device's Screenshot reply was not a PNG image")
+        if (reply.folder_name != folder_name or reply.is_factory != is_factory
+                or reply.index != position):
+            raise ScreenshotError("the device's Screenshot reply addressed a different preset")
+        return image
 
     def active_scene(self, timeout: float = 10.0):
         """Which scene the unit is on right now, as a :class:`~pyquadcortex.protocol.Scene`.

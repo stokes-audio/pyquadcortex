@@ -2802,6 +2802,7 @@ screen; **captured only** = seen on the wire, with no independent read-back.
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply, which carries `reason` beside the preset |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured. A READ names no slot - an UPDATE that did would recall it |
+| `preset_screenshot` | `Screenshot{READ, folder_name, is_factory, index, request_id}` | read-back | Contributed measurement 2026-09-08 on Quad Cortex, CorOS 4.1.0: 800 x 384 PNG, echoed address/request id, and two slots returned distinct images without recall. A bare READ got no reply. Not yet measured on baseline 4.0.1 |
 | `list_presets` | `File{action: READ}` then `File{folder{files[] = ProductData}}` | read-back | factory listing gzipped; 256 slots; listings lag a few seconds after a `File` mutation |
 | `switch_scene` | `Scene{UPDATE, selected_scene}` | on-unit | zero-based |
 | `set_chain_input` / `reroute_grid_input` | `Grid{UPDATE, preset{chains{row, in_portid}}}` | read-back + on-unit | row-keyed; the only shape that persists input routing |
