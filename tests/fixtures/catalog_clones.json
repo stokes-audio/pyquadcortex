@@ -1,0 +1,10 @@
+{
+  "source": "Distilled ModelRepo clone records. Layout sizes were measured on Quad Cortex CorOS 4.0.1 by the maintainer on 2026-09-09; names and replacement fields below match that catalog.",
+  "families": [
+    {"parent": 12000, "parent_name": "Default Cabsim", "parent_parameters": 21, "child": 12001, "child_name": "412 CA Stand OS S V30 90s (M)", "replacement": {"index": 1, "name": "ir selector", "default": 0}},
+    {"parent": 12100, "parent_name": "PCOM Default Cabsim", "parent_parameters": 31, "child": 12050, "child_name": "Gojira Cab 1 (M)", "replacement": {"index": 5, "name": "POSITION", "default": 0.3}},
+    {"parent": 32000, "parent_name": "Default Cabsim (ST)", "parent_parameters": 21, "child": 32001, "child_name": "412 CA Stand OS S V30 90s (ST)", "replacement": {"index": 3, "name": "BALANCE", "default": 0}},
+    {"parent": 32100, "parent_name": "PCOM Default Cabsim (ST)", "parent_parameters": 31, "child": 32050, "child_name": "Gojira Cab 1 (ST)", "replacement": {"index": 3, "name": "BALANCE", "default": 0}},
+    {"parent": 8015, "parent_name": "Default Reverb", "parent_parameters": 29, "child": 8016, "child_name": "Gojira REV", "replacement": {"index": 8, "name": "PRE 1 FREQ", "default": 40.0}}
+  ]
+}

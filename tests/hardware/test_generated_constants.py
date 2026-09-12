@@ -74,25 +74,25 @@ def test_the_committed_snapshot_matches_this_unit(live_catalog, profile, name):
 
 
 def test_the_cab_layout_claim_still_holds(qc, live_catalog):
-    """`params.Cabsim` asserts every cab shares the Default Cabsim layout.
+    """Cab clones resolve to the two layouts measured on CorOS 4.0.1.
 
-    That is the one claim in the generated file the catalog cannot support -
-    the catalog lists two parameters per cab and the wire carries 22 - so it is
-    held against the catalog entry the layout is taken FROM, and against the
-    cab models still being under-described in the way that made this necessary.
+    The ordinary families publish 21 catalog parameters and PCOM families
+    publish 31. The wire carries one additional value in both cases. This
+    tripwire replaces the old claim that every cab published only two local
+    parameters and therefore needed to borrow one shared layout.
     """
     from pyquadcortex.protocol import params
 
-    reference = live_catalog[12000]
-    assert len(reference.parameters) == len(params.Cabsim), (
-        "the Default Cabsim layout changed size; params.Cabsim is derived from it")
+    assert len(live_catalog[12000].parameters) == len(params.Cabsim) == 21
+    assert len(live_catalog[12100].parameters) == 31
+    assert len(live_catalog[32000].parameters) == 21
+    assert len(live_catalog[32100].parameters) == 31
 
     cabs = [m for m in live_catalog
             if m.category in ("Cabsim Guitar (M)", "Cabsim Guitar (ST)",
                               "Cabsim Bass (M)", "Cabsim Bass (ST)")
             and m.is_factory]
     assert cabs, "no factory cabs on this unit"
-    assert all(len(m.parameters) == 2 for m in cabs), (
-        "a cab now publishes more than its two mic selectors - the catalog may "
-        "have started describing cabs properly, which would make the shared "
-        "params.Cabsim layout unnecessary")
+    assert {len(m.parameters) for m in cabs} == {21, 31}, (
+        "factory cabs no longer resolve exclusively to the measured ordinary "
+        "and PCOM layouts")

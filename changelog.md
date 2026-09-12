@@ -20,6 +20,13 @@ correction.
 
 ## Unreleased
 
+### ModelRepo clone layouts are resolved
+
+Models that declare `clones` now expose the inherited wire layout with numeric
+parameter replacements applied before child-only extensions. This fixes both
+ordinary and PCOM cab addressing and the cloned reverb families. A malformed
+model falls back locally without discarding the rest of the device catalog.
+
 ### The Global EQ band offsets have names
 
 `QuadCortex` already named the Global EQ's stride, its band count and the three
@@ -62,7 +69,6 @@ across three of the four declared spans, and `Parameter.mid_label` carries the
 middle label. A declared default moves onto the drawn span with everything
 else, so a pan's default reports the position the screen shows. `mid_string` leaves the unexplained list in
 [docs/domain-model.md](docs/domain-model.md): it is the label at wire 0.5.
-
 
 ### The first hardware run of the profile seam, and what it corrected
 

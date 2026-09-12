@@ -7,6 +7,8 @@ synthetic XML fixture, so they run offline and ship no vendor data.
 
 import gzip
 import io
+import json
+import pathlib
 import tarfile
 
 import pytest
@@ -125,6 +127,188 @@ def test_parameters_are_ordered_and_carry_metadata(cat):
     assert cat[5005].parameters[0].units == "dB"
 
 
+def test_cloned_models_inherit_and_replace_parameters_at_wire_indexes():
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="12" name="Cabsim Guitar (M)">
+  <Model id="12000" name="Cab Layout" hidden="true">
+    <Parameter name="BYPASS" min="0" max="1" defaultValue="0" type="switch"/>
+    <Parameter name="IR 1" min="0" max="999" defaultValue="base-1" type="string"/>
+    <Parameter name="LEVEL" min="-40" max="6" defaultValue="0" type="float" units="dB"/>
+    <Parameter name="IR 2" min="0" max="999" defaultValue="base-2" type="string"/>
+  </Model>
+  <Model id="12001" name="Visible Cab" clones="12000">
+    <Parameter name="CHILD IR 1" replaces="1" min="0" max="999" defaultValue="child-1" type="string"/>
+    <Parameter name="CHILD IR 2" replaces="3" min="0" max="999" defaultValue="child-2" type="string"/>
+    <Parameter name="EXTRA" min="0" max="10" defaultValue="5" type="float"/>
+  </Model>
+</Category>
+</Models>""")
+
+    cab = catalog.parse_model_repo(make_payload(xml))[12001]
+
+    assert [p.index for p in cab.parameters] == [0, 1, 2, 3, 4]
+    assert [p.name for p in cab.parameters] == [
+        "BYPASS", "CHILD IR 1", "LEVEL", "CHILD IR 2", "EXTRA"
+    ]
+    assert cab.parameters[1].default == 0.0  # string defaults remain lenient
+    assert cab.parameters[2].units == "dB"  # untouched inherited metadata
+    assert cab.parameters[4].default == 5.0
+
+
+def test_clone_inheritance_is_recursive():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+        <Parameter name="B" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="Middle" clones="1">
+        <Parameter name="MIDDLE B" replaces="1" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="3" name="Leaf" clones="2">
+        <Parameter name="LEAF A" replaces="0" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    leaf = catalog.parse_model_repo(make_payload(xml))[3]
+
+    assert [(p.index, p.name) for p in leaf.parameters] == [
+        (0, "LEAF A"), (1, "MIDDLE B")
+    ]
+
+
+def test_missing_clone_target_falls_back_to_local_parameters():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Partial" clones="999">
+        <Parameter name="LOCAL" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    model = catalog.parse_model_repo(make_payload(xml))[1]
+
+    assert [(p.index, p.name) for p in model.parameters] == [(0, "LOCAL")]
+
+
+def test_clone_cycle_falls_back_locally_without_discarding_the_catalog():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="One" clones="2"/>
+      <Model id="2" name="Two" clones="1"/>
+    </Category></Models>"""
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    assert cat[1].parameters == ()
+    assert cat[2].parameters == ()
+
+
+def test_non_contiguous_clone_indexes_fall_back_to_local_parameters():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="Broken" clones="1">
+        <Parameter name="C" replaces="2" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    model = catalog.parse_model_repo(make_payload(xml))[2]
+
+    assert [(p.index, p.name) for p in model.parameters] == [(0, "C")]
+
+
+def test_clone_replacements_are_applied_before_extensions():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+        <Parameter name="B" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="Child" clones="1">
+        <Parameter name="C" min="0" max="1" defaultValue="0"/>
+        <Parameter name="CHILD B" replaces="1" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    model = catalog.parse_model_repo(make_payload(xml))[2]
+
+    assert [(p.index, p.name) for p in model.parameters] == [
+        (0, "A"), (1, "CHILD B"), (2, "C")
+    ]
+
+
+def test_non_numeric_clone_replacement_is_isolated_to_that_model():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="MX Vibe" clones="1">
+        <Parameter name="Intensity" replaces="INTENSITY" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="3" name="Good">
+        <Parameter name="GAIN" min="0" max="10" defaultValue="5"/>
+      </Model>
+    </Category></Models>"""
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    assert [(p.index, p.name) for p in cat[2].parameters] == [(0, "Intensity")]
+    assert [(p.index, p.name) for p in cat[3].parameters] == [(0, "GAIN")]
+
+
+def test_distilled_real_catalog_clone_families_resolve_at_wire_indexes():
+    """Pin measured CorOS 4.0.1 facts independently of the input fixture."""
+    path = pathlib.Path(__file__).parent / "fixtures" / "catalog_clones.json"
+    facts = json.loads(path.read_text(encoding="utf-8"))
+    models = []
+    for family in facts["families"]:
+        params = "".join(
+            f'<Parameter name="P{i}" min="0" max="1" defaultValue="0"/>'
+            for i in range(family["parent_parameters"])
+        )
+        models.append(
+            f'<Model id="{family["parent"]}" name="{family["parent_name"]}">'
+            f"{params}</Model>"
+        )
+        replacement = family["replacement"]
+        models.append(
+            f'<Model id="{family["child"]}" name="{family["child_name"]}" '
+            f'clones="{family["parent"]}"><Parameter name="{replacement["name"]}" '
+            f'replaces="{replacement["index"]}" min="0" max="1" '
+            f'defaultValue="{replacement["default"]}"/></Model>'
+        )
+    xml = '<Models><Category id="1" name="Fixture">' + "".join(models) + \
+        "</Category></Models>"
+
+    cat = catalog.parse_model_repo(make_payload(xml))
+
+    expected = {
+        12001: (21, 1, "ir selector", 0.0),
+        12050: (31, 5, "POSITION", 0.3),
+        32001: (21, 3, "BALANCE", 0.0),
+        32050: (31, 3, "BALANCE", 0.0),
+        8016: (29, 8, "PRE 1 FREQ", 40.0),
+    }
+    assert set(expected) == {family["child"] for family in facts["families"]}
+    for child_id, (size, index, name, default) in expected.items():
+        child = cat[child_id]
+        assert len(child.parameters) == size
+        assert child.parameters[index].name == name
+        assert child.parameters[index].default == default
+
+
+def test_clone_resolution_fallback_logs_model_and_reason(caplog):
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Base">
+        <Parameter name="A" min="0" max="1" defaultValue="0"/>
+      </Model>
+      <Model id="2" name="Broken" clones="1">
+        <Parameter name="C" replaces="2" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>"""
+
+    with caplog.at_level("DEBUG", logger="pyquadcortex.protocol.catalog"):
+        catalog.parse_model_repo(make_payload(xml))
+
+    assert "model 2 clone resolution failed" in caplog.text
+    assert "non-contiguous parameter indexes" in caplog.text
 def test_a_labelled_end_control_carries_the_span_the_unit_draws():
     """A pan reads 50 L .. C .. 50 R on screen whatever span it declares.
 
