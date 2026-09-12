@@ -33,6 +33,13 @@ from pyquadcortex.protocol import catalog  # noqa: E402
 #: Each entry says why it is here, because an entry nobody can justify is one
 #: nobody will dare delete.
 WANTED = {
+    (12000, 3): "Default Cabsim PAN - a labelled-end control declaring 0..10,"
+                " measured as 50 L .. C .. 50 R",
+    (32000, 3): "Default Cabsim (ST) BALANCE - the same drawn control declaring"
+                " -1..1, which is why the declared span cannot key the family",
+    (18007, 8): "Minivoicer V1 PAN - the third declared span, 0..1, and its"
+                " untouched default reads 10 R with no write at all",
+    (18007, 12): "Minivoicer V2 PAN - the same law driven to the bottom of the wire",
     (11000, 0): "Mixer LEVEL A - scene-following, and briefly mistaken for undrivable",
     (11000, 2): "Mixer LEVEL B - the other half of that pair",
     (3008, 16): "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so"
