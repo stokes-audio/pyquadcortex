@@ -460,11 +460,15 @@ Two findings from it are worth keeping in their own right, because the catalog
 does NOT supply them:
 
 **Wire 0.0 is an OFF detent, not the bottom of the scale.** `min_string="OFF"`
-says the bottom shows a word; only measurement says where the numbers resume. A
-cab LEVEL's law runs to -40 dB and its quietest real position is -21.8 dB, so
-asking for -30 dB would return a wire value the unit reads as OFF and mute the
-microphone. `units.FLOOR_WIRE` holds the measured floors and `real=` refuses
-below them.
+says the bottom shows a word, so asking for the very bottom of such a range
+returns a wire value the unit reads as OFF rather than the value you named, and
+that is refused. Where the numbers RESUME above the detent only measurement
+says, and `units.FLOOR_WIRE` holds the two families where a gap has been found.
+
+The cab LEVEL used to be the example here and is no longer one of them: it was
+driven below the encoder's reach later in this same release cycle and turned out
+to have no gap at all. See "A cab's LEVEL no longer refuses values it can
+actually reach" above, which supersedes this paragraph's original claim.
 
 **One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable
 only by placing the internal Neural Capture recorder on the grid, and that
