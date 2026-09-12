@@ -1299,7 +1299,7 @@ the n/a rows below where they intersect the API at all.
 | Looper X: parameters | `LooperBlock.params` | yes | |
 | Looper X: transport actions | **omitted**; `LooperBlock.state` is readable | partly | transport is not drivable over USB; MIDI CC#48-61 is the documented route |
 | Assign Looper X Actions (footswitch layout) | `device.settings.looper_actions` | yes | `GeneralSettings.looper_stomp_assignments` - GLOBAL, not per preset. Eight entries indexed by footswitch, each the Looper X parameter index. The MIDI CC follows the action, not the switch |
-| Undo / redo | **omitted** | no | `UndoRedo` arrives as an acceptance signal only; never driven |
+| Undo / redo | **omitted from the model** | yes | the protocol client's `undo()` / `redo()` reversed and reapplied a bypass edit on CorOS 4.0.1 and 4.1.0; a model-level history surface is not designed yet |
 
 ## Chapter 5 - The Directory
 
@@ -1374,7 +1374,7 @@ the n/a rows below where they intersect the API at all.
 | GIG VIEW ACCESS | `settings.gig_view_access` | yes | |
 | LATENCY COMPENSATION | `settings.latency_compensation` | yes | |
 | MIDI submenu | `settings.midi` | partly | see ch. 8 row |
-| Device name | **omitted** | no | candidates `Serialization`/`GeneralSettings`, unexplored |
+| Device name | **omitted from the model** | yes | protocol `set_device_name()` is confirmed on CorOS 4.0.1 and 4.1.0; a model-level identity editor is not designed yet |
 | Firmware and serial (Device Information) | `device.firmware`, `device.serial` | yes | |
 | Diagnostics / Send Report | **omitted** | no | decoded but never driven |
 | 3rd-party licenses | - | n/a | reference text |
@@ -1385,13 +1385,13 @@ the n/a rows below where they intersect the API at all.
 |---|---|---|---|
 | USB audio channels, DI vs processed, host monitoring | `io.usb` covers the on-unit controls | partly | channel-map routing choices live in unexplored `IOSettings`; host driver/DAW concerns are n/a |
 | Everything Cortex Control mirrors from the unit | the same objects above | n/a | this library is an alternative client to the same protocol |
-| CC-only: device name display/edit | **omitted** | no | see Device name row |
+| CC-only: device name display/edit | **omitted from the model** | yes | see Device name row; available through the protocol client |
 | CC-only: per-scene tempo claim | **omitted** | n/a | contradicts the unit; on-unit presentation wins |
 | CC-only: preset / plugin-preset / IR import from computer | **omitted** | no | candidate `File` with payloads; the import flow is unsolved (and IR import probing is hazardous - see CLAUDE.md) |
 | CC-only: local backups | **omitted** | no | `LocalBackup` unexplored |
 | CC-only: CorOS update via USB | **omitted** - permanently | no | `Updater` |
 | CC-only: keyboard shortcuts, window sizing | - | n/a | app UI |
-| CC-only: undo/redo shortcuts | **omitted** | no | see Undo/redo row |
+| CC-only: undo/redo shortcuts | **omitted from the model** | yes | see Undo/redo row; available through the protocol client |
 
 ---
 

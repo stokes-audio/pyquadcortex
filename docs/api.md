@@ -44,7 +44,7 @@ already read and need no connection; calling them as methods raises
 | | |
 |---|---|
 | **Connect** | `protocol.connect(profile=, support=)` resolves the unit's own device profile before the handshake (ADR-0020) and returns it, already connected; an unrecognised `(device_type, zenos_git_hash)` raises `UnsupportedDevice`. `Support.VERIFIED` (default) refuses an operation its profile has not verified; `Support.EXPERIMENTAL` runs it with one warning. `qc.models`, `qc.params`, `qc.options` are that connection's own constants snapshot |
-| **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
+| **Inspect / device identity** | `version()`, `set_device_name(name)`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(target, param, value)`, `set_bypass(Block(row, column), bypassed)` |
 | **Add and remove blocks** | `set_block(Block(row, column, model_id))`, `remove_block(cell)`, `move_block(source, destination)`, `catalog` |
@@ -66,6 +66,7 @@ already read and need no connection; calling them as methods raises
 | **Watch what the unit pushes** | `add_listener(fn)`, `remove_listener(fn)` - your `fn` is called with every message the unit sends, asked for or not. It runs on the transport's read thread, so it must not block and may not read from the device. To catch the connect handshake's own burst of state, register before it with `protocol.connect(before_handshake=...)` |
 | **Scenes** | `copy_scene(from_scene, to_scene, swap=False)`, `set_scene_label(scene, label)`, `set_scene_color(scene, argb)` |
 | **Global settings** | `settings()`, `update_settings(**fields)`, `set_scene_bypass_behavior()`, `set_global_bypass()`, `set_master_volume_assignment()`, `mode()`, `set_mode()`, `set_mode_cycle()`, `set_gig_view()` |
+| **Inhibited global modules** | `inhibited_modules()` |
 | **Global EQ** | `global_eq()`, `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)`, `set_global_eq_bypassed()` |
 | **I/O ports** | `io_settings()`, `set_input_port()`, `set_output_port()`, `set_usb_port()`, `set_midi_thru()`, `set_output_pairing()` |
 | **Tuner and Looper** | `tuner()`, `show_tuner()`, `set_tuner_input()`, `set_tuner_reference()`, `set_tuner_mute()`, `looper()` (states named by `LooperState`) |
@@ -74,6 +75,7 @@ already read and need no connection; calling them as methods raises
 | **Copying** | `copy_preset(from_setlist, position, to_setlist)` - recall + save, so it loads each source |
 | **Device list** | `pin_model()`, `unpin_model()`, `pinned_models()`, `master_volume()` |
 | **Neural Captures** | `captures()`, `list_irs()` to browse the library, `set_capture(cell, entry)` to place one. Creating a capture is the unit's own wizard - disconnect first, since a connected client suppresses it |
+| **Edit history** | `undo()`, `redo()` |
 | **Discovery** | `list_folders()` - every folder the device knows, including the factory Captures Library and plugin artist presets; `recents()`, `favorites()`, `add_favorite()`, `remove_favorite()` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
 

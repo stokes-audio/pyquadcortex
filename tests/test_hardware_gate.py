@@ -39,7 +39,7 @@ SUITE = ROOT / "tests" / "hardware"
 #: way. Recursive on purpose: the conftest hook filters on
 #: ``path.is_relative_to(SUITE)``, so it gates a module in a subdirectory too, and
 #: a flat glob here would quietly stop covering what the hook covers.
-MODULES = sorted(str(path.relative_to(ROOT))
+MODULES = sorted(path.relative_to(ROOT).as_posix()
                  for path in SUITE.rglob("test_*.py"))
 
 

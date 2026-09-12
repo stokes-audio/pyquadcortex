@@ -22,7 +22,7 @@ def test_code_fences_are_balanced(doc):
     """An odd fence count means a section is rendering inside a code block."""
     if not doc.exists():
         pytest.skip(f"{doc.name} not present")
-    opens = sum(1 for line in doc.read_text().splitlines()
+    opens = sum(1 for line in doc.read_text(encoding="utf-8").splitlines()
                 if line.startswith("```"))
     assert opens % 2 == 0, (
         f"{doc.name} has {opens} fence lines - one is unclosed, and everything "
@@ -31,7 +31,7 @@ def test_code_fences_are_balanced(doc):
 
 
 def _api_table_rows() -> str:
-    text = (ROOT / "docs" / "api.md").read_text()
+    text = (ROOT / "docs" / "api.md").read_text(encoding="utf-8")
     section = text[text.index("## Method groups"):text.index("**Rows and columns")]
     return "\n".join(line for line in section.splitlines()
                      if line.startswith("|"))     # table rows only, not prose
@@ -118,7 +118,7 @@ def _drop_before_blocks(snippet):
 
 def _python_snippets(path):
     """Every ```python fence in a .md, or every ``::`` block in a .py docstring."""
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     if path.suffix == ".md":
         return [_drop_before_blocks(f)
                 for f in re.findall(r"```python\n(.*?)```", text, re.DOTALL)]
