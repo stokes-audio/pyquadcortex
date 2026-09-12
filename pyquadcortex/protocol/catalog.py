@@ -203,6 +203,23 @@ class Parameter:
     exp_assignable: bool = True
     #: Whether the screen shows this without a decimal point.
     show_as_integer: bool = False
+    #: This control's position in the model's on-device editor, from
+    #: ``displayPos``. This is a layout hint, not enough to recreate an editor:
+    #: five CorOS 4.0.1 models collide at a position and 18 have gaps. ``None``
+    #: normally means omitted; Analog Delay (ST) FEEDBACK DEPTH instead carries
+    #: the device typo ``isplayPos="18"``, which is deliberately not aliased.
+    display_position: int | None = None
+    #: Parameter indexes named by ``toggleOn``. Catalog shape implies these are
+    #: visibility drivers: Splitter controls point to TYPE and its applicable
+    #: option. Three Mono Synth parameters point to themselves, whose meaning
+    #: remains unknown.
+    toggle_on: tuple[int, ...] = ()
+    #: Parameter indexes named by ``toggleOff``; inferred as visibility drivers
+    #: from the same catalog evidence, with the same self-reference exception.
+    toggle_off: tuple[int, ...] = ()
+    #: Option indexes named by ``toggleStep`` for the inferred visibility
+    #: driver. Every CorOS 4.0.1 carrier also has ``toggleOn`` or ``toggleOff``.
+    toggle_steps: tuple[int, ...] = ()
 
     @property
     def floor(self) -> "values.Real | None":
@@ -672,6 +689,10 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         min_label=min_label,
         mid_label=mid_label,
         max_label=max_label,
+        display_position=_as_int(p.get("displayPos")),
+        toggle_on=_parse_indexes(p.get("toggleOn")),
+        toggle_off=_parse_indexes(p.get("toggleOff")),
+        toggle_steps=_parse_indexes(p.get("toggleStep")),
         exp_assignable=p.get("expAssignable") != "false",
         show_as_integer=p.get("showAsInteger") == "true",
     )
@@ -705,7 +726,7 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 hidden=element.get("hidden") is not None,
                 internal=element.get("internal") is not None,
                 category_hidden=category_hidden,
-                replaces=_parse_replaces(element.get("replaces")),
+                replaces=_parse_indexes(element.get("replaces")),
             )
 
     # Second pass: a model is superseded once some other model claims to replace
@@ -716,8 +737,12 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
     return catalog
 
 
-def _parse_replaces(value: str | None) -> tuple[int, ...]:
-    """Parse a ``replaces`` attribute: one id, or several comma-separated."""
+def _parse_indexes(value: str | None) -> tuple[int, ...]:
+    """Parse one integer, or a comma-separated list of integers.
+
+    Invalid parts are deliberately ignored: device catalogs are extensible,
+    and one unfamiliar token must not discard otherwise usable metadata.
+    """
     if not value:
         return ()
     ids = []

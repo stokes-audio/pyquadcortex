@@ -1397,22 +1397,33 @@ the n/a rows below where they intersect the API at all.
 
 ## Catalog attributes we can see and cannot yet explain
 
-The device puts **24** distinct attributes on its `<Parameter>` elements. Fifteen
-are parsed. These are the other nine, recorded so the next person does not have to
+The CorOS 4.0.1 catalog puts **24** distinct attributes on its 3,809
+`<Parameter>` elements. Nineteen are parsed. These are the other five, recorded
+so the next person does not have to
 rediscover that they exist. None is guessed at, per the rule that a control we do
 not understand is omitted with the reason written down.
 
-The counts are from the shipped CorOS 4.0.1 catalog, 3,809 parameters.
+The counts in this table are from CorOS 4.0.1.
 
 | attribute | on | what it looks like, and what is unknown |
 |---|---|---|
-| `displayPos` | 1446 | The order the unit lays knobs out on screen, which is not wire order. Confirmed 2026-09-11: a cab's four visible controls read POSITION, DISTANCE, LEVEL, PAN on screen, which is `displayPos` 0, 1, 2, 3 and not their wire order. Still unused here; a UI would want it. |
 | `hidden` | 650 | Present on a parameter, distinct from the `hidden` we already read on a `<Model>`. Whether it means "not shown on screen" or "not writable" is untested, and the two have very different consequences for a host. |
 | `replaces` | 462 | Also distinct from the `<Model>` attribute of the same name, which we do parse. On a parameter it presumably names a superseded index, which would matter for reading an old preset - untested. |
-| `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, **212 parameters between them** | `toggleOn` carries a number (`4`, `5`, `6`) on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`). The obvious reading is the two values a footswitch toggle alternates between - obvious, and untested. Driving one and watching the screen would settle it. |
 | `tooltip` | 126 | The help text the unit shows. Real prose, occasionally load-bearing: a Vibrato's `MODE` warns that changing it causes a brief mute. Note the values contain HTML (`<div align="left">`), which is where an `align` "attribute" appears - it is markup inside the tooltip, not an attribute of the parameter. |
 | `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`). |
 | `isplayPos` | 1 | `displayPos` with the `d` missing. The device's own typo. Recorded rather than silently accepted as an alias, because a parser that took both would hide that the catalog has a defect. |
+
+The five newly parsed editor fields retain evidence rather than promising a UI:
+on CorOS 4.0.1, `mid_string` appears 36 times (35 `C`, one `A/B`), every
+carrier also has bottom/top labels and linear skew; `displayPos` appears 1,446
+times but five models collide and 18 have gaps; and `toggleOn` / `toggleOff` /
+`toggleStep` appear 132 / 83 / 13 times. Catalog shape, especially Splitter's
+TYPE-dependent controls, implies the toggle fields describe conditional
+visibility. Three Mono Synth self-references remain unexplained.
+
+`linkedSceneMode` appears 44 times in the contributed CorOS 4.1.0 catalog and
+zero times in 4.0.1. Its meaning and relationship, if any, to preset
+`scene_mode` are unknown, so it is recorded here and not exposed as shared API.
 
 ### `mid_string` is the label at the middle of the wire
 

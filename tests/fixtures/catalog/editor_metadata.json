@@ -1,0 +1,25 @@
+{
+  "source": "Maintainer audit of the Quad Cortex CorOS 4.0.1 ModelRepo, reported in PR #46 on 2026-09-08.",
+  "firmware": "CorOS 4.0.1",
+  "parameters": 3809,
+  "mid_string": {"total": 36, "C": 35, "A/B": 1, "all_have_min_and_max_labels": true, "all_have_skew": 1.0},
+  "displayPos": {
+    "carriers": 1446,
+    "collision_models": 5,
+    "gap_models": 18,
+    "examples": [
+      {"model": "Soldano SLO-100", "position": 11, "parameters": ["DEPTH", "MUTE TRIG"]},
+      {"model": "Minivoicer", "positions": [3, 8, 18]}
+    ],
+    "device_typo": {"model": "Analog Delay (ST)", "parameter_index": 20, "parameter": "FEEDBACK DEPTH", "attribute": "isplayPos", "value": 18}
+  },
+  "toggle": {
+    "counts": {"on": 132, "off": 83, "step": 13},
+    "all_step_carriers_have_on_or_off": true,
+    "self_references": [
+      {"model": "Mono Synth", "index": 15, "parameter": "OSC2 WAVE", "attribute": "toggleOn"},
+      {"model": "Mono Synth", "index": 24, "parameter": "SLOPE", "attribute": "toggleOn"},
+      {"model": "Mono Synth", "index": 48, "parameter": "FREE RATE", "attribute": "toggleOff"}
+    ]
+  }
+}

@@ -20,6 +20,13 @@ correction.
 
 ## Unreleased
 
+### ModelRepo editor metadata is available
+
+Parameters expose midpoint labels, editor position hints, and the three
+conditional-visibility references published by the catalog. These are raw
+metadata: positions may collide or have gaps, and three self-references remain
+unexplained. CorOS 4.1-only `linkedSceneMode` is documented but not exposed.
+
 ### The Global EQ band offsets have names
 
 `QuadCortex` already named the Global EQ's stride, its band count and the three
@@ -62,7 +69,6 @@ across three of the four declared spans, and `Parameter.mid_label` carries the
 middle label. A declared default moves onto the drawn span with everything
 else, so a pan's default reports the position the screen shows. `mid_string` leaves the unexplained list in
 [docs/domain-model.md](docs/domain-model.md): it is the label at wire 0.5.
-
 
 ### The first hardware run of the profile seam, and what it corrected
 
