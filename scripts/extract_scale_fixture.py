@@ -76,6 +76,15 @@ WANTED = {
                 " one Off detent of the three that turned out to be real",
     (6005, 17): "Digital Delay (M) GAIN REDUCTION - a METER, not a knob. Here so"
                 " that claim is checkable against the catalog it came from",
+    (12000, 16): "cab HPF - typed into on the unit: states 20 to 500, whole"
+                 " numbers only, 20 reads OFF and 21 Hz is the lowest number",
+    (12000, 18): "cab OUTPUT VOLUME - the decimal twin of the above, -96 reads"
+                 " OFF and -95.99 is accepted and drawn as -96.0 dB",
+    (4006, 0): "Plugin Graphic-9 HPF - an integer knob whose minimum 19 is the"
+               " Off position, so 20 Hz is the floor and 19 Hz does not exist",
+    (4002, 0): "Graphic-9 HPF - the superseded model, alone on the 19..250 law",
+    (16002, 4): "Utility Gate RANGE - a decimal knob, -90 reads OFF",
+    (27000, 8): "Looper X PLAYBACK LEVEL - a decimal knob, -60 reads OFF",
 }
 
 

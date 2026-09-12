@@ -3862,8 +3862,8 @@ def test_set_param_real_refuses_below_the_floor():
     allowed. The lane family's detent IS real, and is what this guards now.
     """
     qc = _scale_client()
-    with pytest.raises(ValueError, match="does not exist there"):
-        qc.set_param(LaneOutput(0), "VOLUME", Real(-39.9))
+    with pytest.raises(ValueError, match="Off position"):
+        qc.set_param(LaneOutput(0), "VOLUME", Real(-40.0))
 
 
 def test_set_param_real_no_longer_refuses_a_cab_level_it_can_reach():

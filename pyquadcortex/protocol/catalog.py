@@ -226,7 +226,8 @@ class Parameter:
         Driving one can also REMOVE a floor, and has. A cab LEVEL carried
         (0.01, -21.8 dB) until 2026-09-11, when it was written below the
         position the unit's own encoder can reach and turned out to have no
-        detent at all - see :data:`~pyquadcortex.protocol.units.FLOOR_WIRE`.
+        detent at all, and its floor is now derived from the catalog like every
+        other - see :data:`~pyquadcortex.protocol.units.OFF_STEP_DECIMAL`.
         """
         if self.minimum is None or self.maximum is None:
             return None
@@ -238,29 +239,25 @@ class Parameter:
     def floor_is_measured(self) -> bool:
         """Whether a DETENT has been measured on this knob, and where it ends.
 
-        Not "whether anybody looked": a family can be driven to a conclusion of
-        *no detent* and still report False, because there is nothing to record.
-        Five laws were driven on 2026-09-11 and three of them ended that way -
-        see :data:`~pyquadcortex.protocol.units.FLOOR_WIRE`. What this answers
-        is whether :attr:`floor` is the bottom of the TRAVEL (True) or the
-        bottom of the SCALE (False), which is what a caller needs from it.
+        True exactly where the device declares an Off position, because the
+        floor is derived from that declaration rather than measured per family
+        - see :data:`~pyquadcortex.protocol.units.OFF_STEP_DECIMAL`. It answers
+        whether :attr:`floor` is the bottom of the TRAVEL (True) or the bottom
+        of the SCALE (False), which is what a caller needs from it.
         """
         return self.floor_display is not None
 
     @property
-    def bottom_is_a_word(self) -> bool:
+    def has_an_off_position(self) -> bool:
         """Whether wire 0.0 shows a word on this knob instead of a number.
 
         :attr:`min_label` is the device saying so, which is why this needs no
         measurement. The exception is the pan family, which carries a
         :attr:`mid_label` as well: there the bottom label is the SIDE - a pan
         reads "50 L" at wire 0.0 - and :data:`units.LABELLED_END_SPAN` makes
-        -50.0 the correct real value for that position, so it is not refused.
-
-        False once a detent has been measured, because then :attr:`floor` is
-        already above wire 0.0 and the ordinary range check covers it.
+        -50.0 the correct real value for that position.
         """
-        return bool(self.min_label) and not self.mid_label and not self.floor_is_measured
+        return bool(self.min_label) and not self.mid_label
 
     @property
     def option_count(self) -> int | None:
@@ -346,7 +343,24 @@ class Parameter:
         if span == 0:
             return 0.0
         fraction = min(1.0, max(0.0, (real - low) / span))
-        return fraction ** self.skew
+        wire = fraction ** self.skew
+        if self.floor_wire > 0.0 and wire < self.floor_wire:
+            # Above the floor's DISPLAY and below its WIRE. The two are not the
+            # same test where the screen rounds: a lane output prints -40.0 dB
+            # at wire 0.000192 and OFF below it, so -39.995 passes the range
+            # check on a display that cannot show the difference and lands on
+            # the detent. Refusing here is what makes `floor_wire` a guard
+            # rather than a note - measured 2026-09-12 by typing values into
+            # the unit, which is the only instrument fine enough to see it.
+            unit = f" {self.units}" if self.units else ""
+            raise ValueError(
+                f"{real:g}{unit} converts to wire {wire:g} on {self.name!r}, "
+                f"below the lowest position that shows a number "
+                f"({self.floor_wire:g}), so the unit would show "
+                f"{self.min_label!r} instead. Ask for a value the screen can "
+                f"tell apart, or say Encoded(0.0) for the Off position."
+            )
+        return wire
 
     def _reject_outside_range(self, real: float):
         """Refuse a value the knob has no position for, rather than clamping.
@@ -378,26 +392,13 @@ class Parameter:
         # including both of its own endpoints.
         low, high = sorted((float(bottom), float(top)))
         if low <= real <= high:
-            if real == low and self.bottom_is_a_word:
-                # The bottom of the LAW converts to wire 0.0, and on a knob
-                # carrying a `min_label` the device has told us wire 0.0 shows a
-                # word. So this value is reachable and does not mean what it
-                # says: asking a cab for -40 dB wrote the Off position, looking
-                # exactly like it worked. That is the failure this whole family
-                # of checks exists for, at the one point the range check lets
-                # through, and it reached every knob with an unmeasured detent -
-                # 141 of them at the last count, including all 125 amp OUTPUTs.
-                unit = f" {self.units}" if self.units else ""
-                raise ValueError(
-                    f"{self.name!r} shows {self.min_label!r} at "
-                    f"{real:g}{unit}, not a number, so writing it sets the Off "
-                    f"position rather than that value. Ask for a value above "
-                    f"{low:g}{unit}, or say Encoded(0.0) if the Off position is "
-                    f"what you want."
-                )
             return
         unit = f" {self.units}" if self.units else ""
-        hint = f" ({units.OFF_HINT})" if self.floor_wire > 0.0 else ""
+        hint = ""
+        if self.has_an_off_position and self.minimum is not None:
+            hint = (f" ({self.minimum:g}{unit} is the Off position, which shows "
+                    f"{self.min_label!r} rather than a number - say Encoded(0.0) "
+                    f"if that is what you want)")
         raise ValueError(
             # The bound printed is the bound COMPARED. Rounding only the message
             # produced a dead end: the lane family's fitted floor is -39.48, the
@@ -710,8 +711,22 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
     # has carried no floor since 2026-09-11, so that entry is not here to be got
     # wrong any more; the keying stays because the vendor still spells single
     # controls more than one way.
-    floor_wire, floor_display = units.FLOOR_WIRE.get((minimum, maximum, skew),
-                                                     (0.0, None))
+    # The floor is DERIVED from the device's own description, not measured into
+    # a table. `min_string` says the bottom of the range is a word; `min`/`max`
+    # are the range the unit's numeric entry states; `showAsInteger` says
+    # whether it takes whole numbers. Typing the minimum gives the word, and one
+    # UI step up is the lowest real number. See units.OFF_STEP for the readings.
+    #
+    # A parameter carrying `mid_string` is exempt: there the bottom label is a
+    # SIDE, not a stand-in for a number, and units.LABELLED_END_SPAN governs.
+    show_as_integer = p.get("showAsInteger") == "true"
+    floor_wire, floor_display = 0.0, None
+    if (min_label and not mid_label
+            and minimum is not None and maximum is not None
+            and maximum != minimum):
+        floor_display = minimum + (units.OFF_STEP_INTEGER if show_as_integer
+                                   else units.OFF_STEP_DECIMAL)
+        floor_wire = abs((floor_display - minimum) / (maximum - minimum)) ** skew
     return Parameter(
         index=index,
         name=p.get("name", ""),
@@ -730,7 +745,7 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         mid_label=mid_label,
         max_label=max_label,
         exp_assignable=p.get("expAssignable") != "false",
-        show_as_integer=p.get("showAsInteger") == "true",
+        show_as_integer=show_as_integer,
     )
 
 

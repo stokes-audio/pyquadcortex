@@ -178,7 +178,7 @@ def test_a_floor_is_typed_whether_it_was_measured_or_derived():
         floor_display=-21.8)
     # These numbers were a real cab's floor until 2026-09-11, when the knob was
     # driven below the encoder's reach and turned out to have no detent - see
-    # units.FLOOR_WIRE. Kept as a hand-built parameter because what is under
+    # units.OFF_STEP_DECIMAL. Kept hand-built because what is under
     # test is the typed-floor branch, which needs A floor and does not care
     # whose. Do not read them back as a record of the device.
     assert isinstance(measured.floor, values.Db)

@@ -1414,6 +1414,17 @@ The counts are from the shipped CorOS 4.0.1 catalog, 3,809 parameters.
 | `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`). |
 | `isplayPos` | 1 | `displayPos` with the `d` missing. The device's own typo. Recorded rather than silently accepted as an alias, because a parser that took both would hide that the catalog has a defect. |
 
+### `showAsInteger` says how the unit's numeric entry behaves
+
+Parsed since the catalog work and read for the first time on 2026-09-12, when it
+turned out to answer the Off-detent question outright. A parameter carrying it
+takes WHOLE numbers in the unit's entry box; one without it takes two decimal
+places. Ten for ten across everything driven, and it is what makes a cab HPF's
+lowest real value 21 Hz where a lane VOLUME's is -39.99 dB.
+
+The entry box also states exactly `min`..`max` - eight for eight - which is the
+fact that removed a hand-measured table. See `protocol.md`.
+
 ### `type` names the widget, and two of its values are readouts
 
 `type` has been parsed all along (`Parameter.type`) and never read for meaning.

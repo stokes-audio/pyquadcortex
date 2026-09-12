@@ -460,13 +460,14 @@ def test_a_measured_family_carries_its_floor_from_the_units_table():
            ' min_string="OFF"/>'
            '</Model></Category></Models>')
     p = catalog.parse_model_repo(make_payload(xml))[12000].parameters[0]
-    # The cab's own law carries NO floor since 2026-09-11 - it was driven below
-    # the encoder's reach and has no detent - so this reads the table through a
-    # family that does. What is under test is the lookup, not the cab.
-    assert p.floor_wire == 0.0 and p.floor_is_measured is False
+    # Derived from the device's own description since 2026-09-12, not looked up:
+    # `min_string` says the bottom is a word, and a decimal knob's numbers start
+    # 0.01 above the minimum. See units.OFF_STEP_DECIMAL for the readings.
+    assert p.has_an_off_position is True
+    assert p.floor == pytest.approx(-39.99)
+    assert p.floor_wire > 0.0
     lane = _lane_level_parameter()
-    assert lane.floor_wire == 0.01
-    assert lane.floor == pytest.approx(-39.5, abs=0.05)
+    assert lane.floor == pytest.approx(-39.99)
 
 
 def _lane_level_parameter():
@@ -611,7 +612,7 @@ def _knob(minimum, maximum, skew, units=""):
     # A cab LEVEL, whose taper took three days to fit and one attribute to read.
     (-40.0, 6.0, 4.9594844, 0.01, -21.8, 0.05),
     # The same law four decades lower, read 2026-09-11 - which is what showed
-    # the knob has no Off detent and removed its FLOOR_WIRE entry.
+    # the knob's numbers run nearly to the bottom of its own law.
     (-40.0, 6.0, 4.9594844, 0.000001, -37.2, 0.05),
     (-40.0, 6.0, 4.9594844, 0.50, 0.0, 0.05),
     (-40.0, 6.0, 4.9594844, 1.00, 6.0, 0.05),

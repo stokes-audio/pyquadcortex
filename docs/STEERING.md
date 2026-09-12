@@ -138,44 +138,42 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
-### 2026-09-11 - The Off-detent table lost its founding entry (ADR-0015)
+### 2026-09-12 - The Off-detent table is deleted; the floor is derived (ADR-0015)
 
-**What changed:** `units.FLOOR_WIRE` no longer carries the cab LEVEL law, and the
-FX send's floor moved from `(0.01, -39.6)` to `(0.005, -39.8)`. The lane family's
-entry is unchanged. Six new readings in `tests/test_scales.py`, three fixture
-rows, and eight tests rewritten around the new answers.
+**What changed:** `units.FLOOR_WIRE` is gone. `Parameter.floor` is derived from
+the catalog - `min_string` that the bottom is a word, `min`/`max` the range, and
+`showAsInteger` the step - leaving `units.OFF_STEP_INTEGER` and
+`OFF_STEP_DECIMAL` as the only numbers. Two behaviour changes: a cab accepts
+`Db(-30.0)` again, and the exact bottom of any such range is refused everywhere
+rather than silently writing the Off position.
 
-**What the session set out to do and found instead.** The task was to measure
-where the numbers resume on the 189 parameters carrying a `min_string` and no
-measured floor. The three biggest laws cover 161 of them and none needed an
-entry: the amp OUTPUT family (125 knobs) has no detent, the `-Inf` family (20)
-is `type="grMeter"` readouts rather than knobs, and the IR loader's HI PASS (16)
-resumes at its own `minimum`. Dropping the meters leaves 169 knobs on 13 laws,
-of which 141 are now driven and 28 are untouched - "carries no entry" stopped
-meaning "nobody looked" here, which is why `floor_is_measured` says what it
-measures in as many words now.
+**What the session was for and what it found.** The task was to measure where
+the numbers resume on 189 parameters across 14 laws. Three laws covering 161 of
+them were driven and produced no entry: the amp OUTPUT family reaches nearly to
+its own bottom, the `-Inf` family is 20 `type="grMeter"` readouts rather than
+knobs, and the IR loader's HI PASS is an integer knob. Driving the rest showed
+the table was the wrong shape entirely.
 
-**The finding that mattered was about method.** All three existing floors read
-exactly 0.01, and all three were taken by turning the unit's encoder - which on
-a knob with no `steps` moves in hundredths. That is where a PLAYER bottoms out,
-not where the numbers stop, and a host write goes lower. Driven that way the
-three families disagreed: the lane and the send really do read `OFF` near zero,
-and the cab prints -37.2 dB.
+**The instrument was the finding.** Three attempts had gone wrong three ways.
+Turning the knob cannot reach below 1% of travel, which is why all three
+recorded floors read exactly wire 0.01 - a player's floor, not the knob's.
+Writing finer wire values and reading the screen fails too, because the display
+ROUNDS: a lane output prints "-40.0 dB" at its lowest real position and "OFF"
+one step below. Only the unit's numeric ENTRY separates them, and it states
+exactly the catalog's `min`..`max`, eight for eight, with `showAsInteger`
+predicting whole-number entry ten for ten.
 
-**Why the cab entry was removed rather than flagged.** Three readings, not one:
-the screen prints a number four decades below the recorded floor; with the
-second microphone fully Off the cab is audibly passing signal at wire 0.009; and
-0.009 against 0.011, straddling the claimed boundary 0.7 dB apart, sound the
-same where a cliff would be silence against a tone. So the record that built
-this table misread its evidence - a caller asking for -30 dB got -30 dB, which
-on one microphone is close to inaudible, and "muted" was the level arriving
-correctly. The guard cost 16 dB of a real range for two releases.
+**The cost of the old table, stated because it is the argument for deriving.**
+The cab entry was wrong by 16 dB and had refused `Db(-30.0)` for two releases,
+on a record that misread its own evidence - "muted the microphone" was the level
+the caller asked for, arriving correctly. The other two were points somebody
+happened to measure rather than floors.
 
-**What was deliberately NOT done.** No rule was adopted for which families have
-a detent. "A stepless knob has no detent" fits the cab and the amp and is false
-for the lane and the send; five families is not a rule, and the last table keyed
-on a rule about parameters shipped a bug. `tests/test_scales.py` pins the
-disproof so the next session does not re-derive it.
+**What was deliberately NOT done.** 14 cab LEVELs omit the `min_string` the
+other 160 carry, for the identical control. Unioning by law was rejected: 559
+parameters share a law with a labelled one without being labelled, and 474 of
+those are ordinary 0-100% controls whose 0% is a real value. The device's
+per-parameter statement wins and the omission is recorded as a catalog question.
 
 ### 2026-09-11 - The Global EQ gain span is measured at its ends (ADR-0017)
 

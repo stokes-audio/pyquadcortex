@@ -306,8 +306,8 @@ def test_a_value_below_the_knobs_floor_is_refused_not_silently_muted():
     passing signal below the old floor - so that entry is gone. The lane
     family's detent is real and is what a target refuses against now.
     """
-    with pytest.raises(ValueError, match="does not exist there"):
-        LaneOutput(0).normalize(0, -39.9, _scale_catalog())
+    with pytest.raises(ValueError, match="Off position"):
+        LaneOutput(0).normalize(0, -40.0, _scale_catalog())
 
 
 def test_a_cab_level_below_its_old_floor_now_converts():
@@ -318,9 +318,9 @@ def test_a_cab_level_below_its_old_floor_now_converts():
 
 def test_a_refusal_names_the_parameters_own_floor_and_the_way_out():
     with pytest.raises(ValueError) as excinfo:
-        LaneOutput(0).normalize(0, -39.9, _scale_catalog())
+        LaneOutput(0).normalize(0, -40.0, _scale_catalog())
     message = str(excinfo.value)
-    assert "-39.5" in message and "dB" in message
+    assert "-39.99" in message and "dB" in message
     assert "the Off position" in message
 
 

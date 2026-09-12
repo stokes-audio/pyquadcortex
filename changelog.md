@@ -20,49 +20,41 @@ correction.
 
 ## Unreleased
 
-### A cab's LEVEL no longer refuses values it can actually reach
+### Where a knob's numbers start comes from the device now, not a table
 
-**This is a behaviour change, and it is the point of the release note.**
-`set_param(block, "MIC 1 LEVEL", Db(-30.0))` on a cab used to raise. It now
-converts and writes, as do all values down to the bottom of the knob's -40 dB
-range. If you were catching that error, you can stop.
+The Quad Cortex has knobs whose bottom position shows a word - usually `OFF` -
+instead of a number. The library kept a hand-measured table of where the numbers
+started on such knobs. **That table is gone.** It was wrong twice, and everything
+it tried to hold turned out to be in the device's own catalog.
 
-The library believed a cab's quietest real position was -21.8 dB and that
-anything below it read `OFF` on screen and muted the microphone. Driving the
-knob below the point the unit's own encoder can reach shows otherwise: the
-screen prints -37.2 dB near the bottom of the wire, and with the cab's second
-microphone fully Off it is audibly passing signal below the old floor - with no
-cliff where the floor claimed one. -30 dB on one microphone is simply very
-quiet, which is what "muted" had been.
+**What changed for you, concretely:**
 
-The other two floors stand. A lane, mixer or splitter LEVEL really does read
-`OFF` below its floor and still refuses values under -39.5 dB. The FX loop's
-send side really does too, and its floor moved *down* from -39.6 dB to -39.8 dB,
-so a 0.2 dB sliver that used to raise now converts.
+* **`Db(-30.0)` on a cab used to raise. It now writes.** That guard was wrong by
+  16 dB - the knob reaches far below where the table claimed, and is audibly
+  passing signal there.
+* **Asking for the exact bottom of a range now raises**, on any knob whose
+  screen shows a word there. `Db(-60.0)` on an amp OUTPUT, `Db(-40.0)` on a cab
+  or a lane VOLUME, `Hertz(20.0)` on a cab HPF. Every one of those used to
+  convert to wire 0.0 - the Off position, not the value you named - and look
+  like a successful write. Write `Encoded(0.0)` if the Off position is what you
+  mean.
+* **The lowest real value on such a knob is one step above its minimum**: `+1`
+  on a whole-number knob, `+0.01` on a decimal one. So a lane VOLUME reaches
+  -39.99 dB, a cab HPF reaches 21 Hz, and the library now knows that for all 254
+  of them rather than the three somebody had measured.
 
-### Three more Off-detent families were driven, and none needed a floor
+**How it was settled**, since three previous attempts got it wrong: by typing
+values into the unit. Turning the knob cannot reach below 1% of travel, and the
+screen ROUNDS - a lane output prints `-40.0 dB` at its lowest real position and
+`OFF` one step below, so no amount of reading the display separates them. The
+numeric entry box does, and it states exactly the catalog's own `min`..`max`
+every time.
 
-254 parameters tell you the bottom of their range shows a WORD instead of a
-number. The three largest families nobody had driven were driven, and none of
-them needed a guard:
-
-* **Every amp's OUTPUT** (125 knobs, -60..12 dB) has no detent at all. `OFF` is
-  the single wire position 0.0; a hair above it the screen reads -58.1 dB.
-* **`GAIN REDUCTION`** (20 parameters) is not a control. The catalog calls it
-  `type="grMeter"` and the unit draws a moving readout. Writing it stores a
-  value and changes nothing.
-* **The IR loader's `HI PASS`** (16 knobs, 20..800 Hz) does have a real detent,
-  and the numbers resume at 20 Hz - the bottom of its own range - so no interior
-  value was out of reach.
-
-One thing did change for all three, and for every other knob whose screen shows
-a word at the bottom. **Asking for the exact bottom of the range is now
-refused.** `Db(-60.0)` on an amp OUTPUT, `Db(-40.0)` on a cab and `Hertz(20.0)`
-on an IR loader's HI PASS all used to convert to wire 0.0 - which is the Off
-position, not the value asked for - and looked like successful writes. They now
-raise and tell you to write `Encoded(0.0)` if the Off position is what you
-meant. This affected 141 knobs and predates the work above; it came to light
-because removing the cab's floor exposed the same hole one knob wider.
+One thing the library still gets from the device and cannot check: 14 cab LEVELs
+(the PCOM variants and Parallax) omit the `OFF` label the other 160 carry, for
+what is the same knob. So `Db(-40.0)` is refused on most cabs and accepted on
+those. That is the catalog's inconsistency, recorded in `docs/protocol.md`
+rather than papered over.
 
 ### The Global EQ gain span is measured, not taken from the manual
 

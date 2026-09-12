@@ -3223,80 +3223,87 @@ physical knob, because the two entries declare different numbers.
 parameter carrying all three labels. Every reading is in
 `tests/test_scales.py`.
 
-#### The bottom of a scale is sometimes a word
+#### The bottom of a scale is sometimes a word, and the catalog says where numbers start
 
 `min_string` is set on 254 parameters - `OFF` on 191, and also `-Inf` and `L`. It says
-the bottom of the range shows a word rather than a number. It does **not** say where
-the numbers resume, and only measurement knows that: a lane output's VOLUME law runs
-to -40 dB while its quietest real position is **-39.5 dB at wire 0.01**, with OFF
-below.
+the bottom of the range shows a word rather than a number. For three releases the
+library held a hand-measured table of where the numbers resumed, keyed by law. **That
+table is gone, and this is the session that removed it.**
 
-That gap is not cosmetic, where there is one. `units.FLOOR_WIRE` holds the measured
-floors, keyed by the law, and a value below one is refused. Two families are in it and
-a third was removed - see below, because which families have a gap turned out to be
-the harder question.
+The device describes all of it, and the instrument that showed so was the unit's own
+NUMERIC ENTRY rather than its knob or its screen. Typed into on CorOS 4.0.1, 2026-09-11
+and 2026-09-12:
 
-What `min_string` DOES settle without measurement is the endpoint: wire 0.0 shows the
-word, so the bottom of the law is not a number on these knobs and asking for it is
-refused whether or not a detent has been measured. `Db(-40.0)` on a cab wrote the Off
-position and looked like a successful write until 2026-09-11. For the Off position,
-say `Encoded(0.0)` and mean it.
+| knob | entry box says | takes | minimum typed | lowest number |
+|---|---|---|---|---|
+| cab `HPF` | 20 to 500 | integers | `OFF` | 21 Hz |
+| `Plugin Graphic-9` `HPF` | 19 to 500 | integers | `OFF` | 20 Hz |
+| `Graphic-9` (4002) `HPF` | 19 to 250 | integers | `OFF` | 20 Hz |
+| lane output `VOLUME` | -40 to 12 | decimals | `OFF` | -39.99, drawn `-40.0 dB` |
+| cab `OUTPUT VOLUME` | -96 to 12 | decimals | `OFF` | -95.99, drawn `-96.0 dB` |
+| `Digital Flanger` `DRIVE` | 0 to 100 | decimals | `OFF` | 0.01, drawn `0%` |
+| `Utility Gate` `RANGE` | -90 to -6 | decimals | `OFF` | -89.9 drawn `-90 dB` |
+| `Looper X` `PLAYBACK LEVEL` | -60 to 0 | decimals | `OFF` | -59.9 drawn `-60.0 dB` |
+| `Send 1` `LEVEL` | -40 to 0 | decimals | `OFF` | - |
 
-**Five laws were driven on 2026-09-11, and the session removed more than it added.**
-It set out to measure the 189 parameters carrying a `min_string` with no measured
-floor, biggest law first. The three biggest cover 161 of them:
+Three facts, none of which needed measuring once they were looked for:
 
-| law | parameters | at wire 0.000001 | outcome |
-|---|---|---|---|
-| -60..12 dB, skew 3.8018 | 125 | `-58.1 dB` | no detent: `OFF` is wire 0.0 alone |
-| -60..0 dB, skew 1, `-Inf` | 20 | never moves | `type="grMeter"` - a readout, not a knob |
-| 20..800 Hz, skew 0.6 | 16 | `OFF` | real detent, numbers resume at `minimum` |
+1. **The entry box states exactly the catalog's `min`..`max`** - eight for eight.
+2. **`showAsInteger` says whether it takes whole numbers** - ten for ten.
+3. **Typing the minimum gives the word**, on every knob tried. One UI step above it is
+   the lowest real number: `+1` on an integer knob, `+0.01` on a decimal one.
 
-That also corrects the size of the queue. 189 parameters on 14 laws carried a
-`min_string` and no `FLOOR_WIRE` entry, but 20 of those are the gain-reduction meters,
-which leaves **169 knobs on 13 laws**. Of those 169, this session drove 141 to an
-answer and they still carry no entry, because the answer was "no detent to record" -
-so "no entry" and "nobody looked" are not the same set, and the 28 genuinely untouched
-knobs are what remains to drive. `type` distinguishes them and always
-did - `grMeter` is 39 parameters across 39 models, every one named `GAIN REDUCTION`,
-beside 8 more of `type="meter"`. The owner confirmed it at the unit (it sits at 0.0
-with no audio and flickers while something plays) and a host write of wire 0.5 moved
-nothing on screen, though the value round-tripped through the preset - storage, not
-control. Reading `type` first would have skipped that third of the session.
+So `Parameter.floor` is derived, and `units.OFF_STEP_INTEGER` / `OFF_STEP_DECIMAL` are
+the only numbers left. The decimal step is confirmed on three knobs that accepted two
+decimal places and contradicted nowhere; the Gate and the Looper were only taken to one.
 
-None of the three produced an entry. The amp has no detent to record; the meters are
-not knobs; and the IR loader's numbers resume at 20 Hz, which is its own `minimum`, so
-an entry would change `floor` from 20 Hz to 20 Hz.
+**Why the screen could not settle this, which is the part worth remembering.** The
+display rounds and the entry box does not. A lane output prints `-40.0 dB` at its
+lowest real position AND `OFF` one step below, so reading the screen cannot separate
+them at any wire value. That is why `to_normalized` refuses a conversion landing below
+`floor_wire`: that band displays as the minimum and is not it.
 
-### The encoder cannot reach the bottom, and one recorded floor was wrong
+It is also why three earlier attempts went wrong. The first measured by turning the
+knob, and a knob with no `steps` moves in hundredths - so all three recorded floors
+read exactly wire 0.01, which is where a *player* bottoms out and not where the numbers
+stop. The second wrote finer wire values and read the screen, which rounds. Only typing
+works.
 
-**The three floors already in the table were read by turning the unit's knob, and that
-is a different measurement from the one the table describes.** A knob the catalog
-gives no `steps` moves in hundredths when turned, so wire 0.01 is the first position a
-*player* reaches - which is why all three said exactly 0.01. A host write goes lower.
-Driven that way the three families disagreed with each other:
+**What that cost.** The cab entry said `OFF` below wire 0.01 and called -21.8 dB the
+quietest position, so `Db(-30.0)` on a cab raised for two releases. It was wrong by
+16 dB: the screen prints -37.2 dB at wire 0.000001, the cab is audibly passing signal
+at wire 0.009 with its second microphone fully Off, and 0.009 against 0.011 - 0.7 dB
+apart across the claimed boundary - sound the same rather than silence against a tone.
+The record that built the table had misread its own evidence: a caller asking for
+-30 dB got -30 dB, which on one microphone is close to inaudible.
 
-| family | at wire 0.000001 | verdict |
+**One vendor inconsistency is left, and it is recorded rather than patched.** 14 cab
+LEVELs - the PCOM variants and Parallax - omit `min_string` while the other 160 carry
+it, for the identical control with identical bounds and taper. So the library believes
+-40.0 dB exists on those and is the Off position on the rest. Unioning by law was
+considered and rejected: 559 parameters share a law with a labelled one without being
+labelled, and 474 of those are ordinary 0-100% controls where 0% is a real value. The
+device's per-parameter statement wins, and the omission is a question about the
+catalog.
+
+#### Three laws were driven looking for floors, and found none
+
+| law | parameters | result |
 |---|---|---|
-| cab LEVEL, -40..6 skew 4.9594844 | `-37.2 dB` | no detent - **entry removed** |
-| lane / mixer / splitter, -40..12 | `OFF` | detent real - floor kept |
-| FX send, -40..0 | `OFF`, and `-39.8 dB` at wire 0.005 | detent real - floor lowered to 0.005 |
+| -60..12 dB, skew 3.8018 | 125 | numbers to -58.1 dB at wire 0.000001 |
+| -60..0 dB, skew 1, `-Inf` | 20 | `type="grMeter"` - readouts, not knobs |
+| 20..800 Hz, skew 0.6 | 16 | an integer knob; its floor is 21 Hz |
 
-There is no rule underneath this, and one was looked for. "A stepless knob has no
-detent" fits the cab and the amp and is false for the lane and the send, which are
-stepless and stop at a word.
+The `-Inf` law is 20 gain-reduction meters and the catalog said so all along -
+`grMeter` is 39 parameters across 39 models, every one named `GAIN REDUCTION`, beside
+8 more of `type="meter"` which are all Neural Capture wizard internals. The owner
+confirmed it at the unit (it sits at 0.0 with no audio and flickers while something
+plays) and a host write of wire 0.5 moved nothing on screen, though the value
+round-tripped through the preset - storage, not control.
 
-**The cab entry was removed on three readings, not on doubt.** Through a `412 CA Stand
-OS A V30 01 (M)`: the screen prints -37.2 dB at wire 0.000001; with the second
-microphone fully Off the cab is audibly passing signal at wire 0.009, below the claimed
-floor; and wire 0.009 against 0.011 - 0.7 dB apart, straddling the claimed boundary -
-sound the same, where a real cliff would be silence against a tone.
-
-Which means the record that built this table misread its own evidence. A caller asking
-a cab for -30 dB got wire 0.000516 and **-30 dB on one microphone is close to
-inaudible**, so "MUTED the microphone" was the level asked for, arriving correctly. The
-library was doing as it was told, and the guard written to stop it cost callers 16 dB
-of a real range for two releases. Removing it is the behaviour change in this work.
+The amp readings are also the first hardware confirmation of skew 3.8018, over four
+decades of wire: 0.01/0.005/0.000001 read -38.6/-42.1/-58.1 dB against a law
+rendering -38.558/-42.132/-58.098.
 
 **Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on -40..+12.
 Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on every one
