@@ -2519,9 +2519,17 @@ how a duplicate gets cleaned up.
 `{parameter_index, value}` pairs, sparse by index on write. Band N's controls sit at
 `(N - 1) * 5 + offset`:
 
+> The table below is READ BY A TEST. `test_the_band_offsets_match_the_protocol_record`
+> in `tests/test_client.py` anchors on this paragraph, parses the offsets, and holds
+> them against `QuadCortex`'s `GLOBAL_EQ_BAND_GAIN`, `_FREQUENCY`, `_Q`, `_TYPE` and
+> `_ENABLED`. Correct a row here and the offline suite fails until the constants
+> agree - which is the point, since the unit accepts a write to the wrong index
+> without complaining. Reword this paragraph or reshape the table and the test says
+> what it could not find.
+
 | offset | control | notes |
 |---|---|---|
-| 0 | GAIN | 0.5 is 0 dB, 0.75 is +6 dB on the manual's -12..+12 dB |
+| 0 | GAIN | -12..+12 dB, linear. Measured on screen 2026-09-11: wire 0.0/0.25/0.75/1.0 display -12.0/-6.0/+6.0/+12.0 dB |
 | 1 | FREQUENCY | |
 | 2 | Q | |
 | 3 | TYPE | a five-option list, so `index / 4` - see below |
@@ -2777,10 +2785,15 @@ See `protocol/proto/Preset.proto` for the full structure.
 
 ## Operation coverage
 
-Every operation the library exposes has been exercised live on hardware
-(firmware `d14e`, CorOS 4.0.1). "Verified by" means: **read-back** = device state
-re-read over the protocol and asserted; **on-unit** = the change was confirmed
-visually on the device's own screen.
+Every operation the library exposes has been exercised live on the profile
+named in its row, and on **Quad Cortex, CorOS 4.0.1** where the row names none
+(ADR-0020, and the note at the top of this file). A row naming another profile
+records an observation beside the 4.0.1 record, never in its place, so an
+operation measured only elsewhere says so rather than reading as the baseline.
+
+"Verified by" means: **read-back** = device state re-read over the protocol and
+asserted; **on-unit** = the change was confirmed visually on the device's own
+screen; **captured only** = seen on the wire, with no independent read-back.
 
 | Operation | Wire shape (brief) | Verified by | Notes |
 |---|---|---|---|
@@ -2839,7 +2852,8 @@ visually on the device's own screen.
 | `set_master_volume_assignment` | `GeneralSettings{UPDATE, master_volume_assignment{...}}` | read-back | which outputs the knob governs. Read-merge-write, because a submessage is replaced wholesale |
 | `set_master_volume` | `MasterVolume{UPDATE, volume}` | read-back + on-unit + by ear | normalized 0..1, displayed as `round(v * 100)`. Travels alone. The earlier "accepted and ignored" was a stale read. Never add `calibrate` - it opens the calibration dialog |
 | `set_global_bypass` | `GeneralSettings{UPDATE, global_bypass_cab` / `_ir{row1..row4}}` | read-back | global Cab / IR bypass per row |
-| `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index; which index is which band control is unestablished, so it takes `Encoded` only - `set_global_eq` knows the offsets and takes `Db` for a band's GAIN |
+| `set_global_eq_band` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back | sparse by index. The raw door: an index alone names no control, so it takes `Encoded` only - the LAYOUT is established (see the table above), and `set_global_eq` addresses a band by number and takes `Db` for a GAIN |
+| `set_global_eq` | `GlobalEQ{UPDATE, parameters{parameter_index, value}}` | read-back + on unit's screen | band 1-5 by number rather than wire index, `(band - 1) * 5 + offset`. GAIN takes `Db` over -12..+12, measured on the Global EQ page 2026-09-11 (CorOS 4.0.1) - see the layout table above. FREQUENCY, Q and the OUT level take `Encoded`; nothing ties them to a reading |
 | `set_mode_cycle` | `Mode{UPDATE, available_modes{modes}}` | read-back | the mode cycle order; the whole list is replaced |
 | `settings` / `update_settings` | `GeneralSettings{READ}` / `{UPDATE, <fields>}` | read-back | the Device Settings and System menus; sparse. `power_option` and `reset_wifi_networks` are refused as commands rather than settings |
 | `set_scene_bypass_behavior` | `GeneralSettings{UPDATE, scene_block_bypass}` | read-back | global, and it decides what `set_bypass` persists |
@@ -3178,6 +3192,42 @@ decimals: two catalog facts and one wire reading pin both ends.
 
 The recorder's bound stays unknown on purpose. `Parameter.minimum` and `.maximum` are
 `None` there, and converting refuses rather than answering against a made-up number.
+
+#### A labelled-end control draws a span the catalog does not state
+
+Measured on Quad Cortex, CorOS 4.0.1, 2026-09-11. 36 parameters carry
+`min_string`, `mid_string` and `max_string` together. They are pan-style
+controls, and the unit draws every one of them the same way:
+
+| wire | screen |
+|---|---|
+| 0.0 | `50 L` |
+| 0.5 | `C` |
+| 0.75 | `25 R` |
+| 1.0 | `50 R` |
+
+So the display is `(wire - 0.5) * 100`, with the sign shown as the side letter,
+and the middle is the `mid_string` label rather than a number.
+
+The catalog does not say that, and it does not say it four different ways: the
+same drawn control is declared `-1..1` on 22 parameters, `0..10` on 10, `0..1`
+on 3, and `-50..50` on exactly one, `Micro Processor (ST)`'s `A/B PITCH MIX`,
+which also carries `steps="101"` - integers across the drawn span. Three of the
+four declared spans were read off the screen and the fourth states the drawn
+span already.
+
+The readings were taken by writing wire values through `set_param` and looking
+at the unit: a mono cab's `PAN` through a `Plini Cab (M)`, a stereo cab's
+`BALANCE` through a `412 CA Stand OS S V30 90s (ST)`, and a `Minivoicer`'s two
+`PAN` controls directly. The Minivoicer's `V1 PAN` needed no write at all: its
+untouched default of 0.6 reads `10 R`, which is the same line.
+
+The consequence is not cosmetic. Before this was measured, reaching hard left
+meant `Real(0.0)` on a mono cab and `Real(-1.0)` on a stereo one, for the same
+physical knob, because the two entries declare different numbers.
+`units.LABELLED_END_SPAN` holds the drawn span and the parser applies it to any
+parameter carrying all three labels. Every reading is in
+`tests/test_scales.py`.
 
 #### The bottom of a scale is sometimes a word
 

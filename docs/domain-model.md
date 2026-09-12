@@ -1425,6 +1425,23 @@ visibility. Three Mono Synth self-references remain unexplained.
 zero times in 4.0.1. Its meaning and relationship, if any, to preset
 `scene_mode` are unknown, so it is recorded here and not exposed as shared API.
 
+### `mid_string` is the label at the middle of the wire
+
+This sat in the table above because the catalog never says which middle position
+it labels. It is wire 0.5, measured 2026-09-11 on CorOS 4.0.1: a mono cab's
+`PAN` and a stereo cab's `BALANCE` both read `C` there.
+
+All 36 parameters carrying it carry `min_string` and `max_string` too, and that
+triple is the device marking a bipolar control. 35 spell the three labels
+`L`/`C`/`R`; the odd one out is `A/B PITCH MIX`, which spells them `A`/`A/B`/`B`.
+
+Reading them settled something bigger, and it is a defect rather than a gap: the
+span these controls DRAW is 50 on one side through the middle label to 50 on the
+other, and the catalog declares that span four different ways, none of which is
+what the screen shows. `Parameter.mid_label` now carries the label and
+`units.LABELLED_END_SPAN` carries the drawn span, with the readings in
+`tests/test_scales.py`.
+
 On `<Model>`, `blob` is also unexplained: a same-length string of letters that
 **changes between fetches**. Two dumps of one unit taken minutes apart differed
 on 338 models and on nothing else. A per-fetch token of some kind, not content.
