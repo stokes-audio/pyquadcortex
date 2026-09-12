@@ -18,6 +18,7 @@ for why the fixture holds distilled parameters instead of the whole ModelRepo.
 import gzip
 import io
 import json
+import math
 import pathlib
 import tarfile
 
@@ -197,6 +198,26 @@ READINGS = [
     # about the NAME as well as the law, on a model that names it otherwise.
     (12000, 2, 0.339665, -3.0, 1),
 
+    # -- the pan family, 2026-09-11 ------------------------------------------
+    # A labelled-end control draws 50 on one side, through the middle label, to
+    # 50 on the other, and the catalog declares that span four different ways.
+    # Recorded against the LAYOUT the way the cab LEVEL above is: the mono
+    # readings were taken through a `Plini Cab (M)` (12053), which inherits
+    # 12100's PAN, and 12000/12100 declare that parameter identically. The
+    # stereo readings came through a `412 CA Stand OS S V30 90s (ST)` (32001),
+    # which inherits 32000's BALANCE. The Minivoicer was driven directly.
+    #
+    # Wire 0.5 is deliberately absent: the screen shows the `mid_string` letter
+    # "C" there rather than a number, so asserting 0.0 would be asserting a
+    # number the unit did not print. See the test below it.
+    (12000, 3, 0.0, -50.0, 0),          # screen: 50 L
+    (12000, 3, 1.0, 50.0, 0),           # screen: 50 R
+    (32000, 3, 0.0, -50.0, 0),          # screen: 50 L, declared -1..1
+    (32000, 3, 0.75, 25.0, 0),          # screen: 25 R
+    (32000, 3, 1.0, 50.0, 0),           # screen: 50 R
+    (18007, 8, 0.6, 10.0, 0),           # screen: 10 R, at its untouched default
+    (18007, 12, 0.0, -50.0, 0),         # screen: 50 L, declared 0..1
+
     # -- the Splitter Crossover, 2026-08-26 ----------------------------------
     # Not read off the screen. The catalog states defaultValue="400.0" and the
     # unit was holding this wire value for that knob, which is what pins the
@@ -286,6 +307,39 @@ def test_asking_a_cab_for_a_level_it_cannot_reach_refuses():
     assert cab.floor == pytest.approx(-21.8, abs=0.05)
     with pytest.raises(ValueError, match="does not exist there"):
         cab.to_normalized(-30.0)
+
+
+def test_a_labelled_end_control_shows_a_letter_at_its_middle():
+    """`mid_string` is the label at wire 0.5, which nobody had pinned before.
+
+    Measured 2026-09-11: a mono cab's `PAN` and a stereo cab's `BALANCE` both
+    read "C" at wire 0.5, and the appendix in `docs/domain-model.md` had this
+    attribute listed as seen-but-unexplained because the catalog never says
+    WHICH middle position it labels. It is the center of the wire.
+
+    The law still answers 0.0 there, and that is the honest number to convert
+    against; the letter is what the screen prints instead.
+    """
+    for key in ((12000, 3), (32000, 3)):
+        spec = SCALES[key]
+        assert spec.mid_label == "C", spec.name
+        assert (spec.min_label, spec.max_label) == ("L", "R")
+        assert spec.to_real(0.5) == pytest.approx(0.0)
+
+
+def test_a_pans_default_is_the_position_the_screen_showed():
+    """The Minivoicer's `V1 PAN` was read at its UNTOUCHED default.
+
+    It declares 0.6 of 0..1 and the screen showed `10 R`, so the default has to
+    move onto the drawn span with everything else. This is the one reading that
+    needed no write at all, which is what makes it a check on the conversion
+    rather than on the write path.
+    """
+    assert SCALES[(18007, 8)].default == pytest.approx(10.0)
+    assert SCALES[(18007, 12)].default == pytest.approx(-10.0)
+    # the cab pans declare their centre differently and both land on it
+    assert SCALES[(12000, 3)].default == pytest.approx(0.0)
+    assert SCALES[(32000, 3)].default == pytest.approx(0.0)
 
 
 def test_a_knob_with_no_off_detent_converts_at_its_minimum():
@@ -482,14 +536,17 @@ SETTING_READINGS = [
     ("INPUT_GAIN_DB", 0.40556, 17.2, 1),
     ("INPUT_GAIN_DB", 0.50009, 24.0, 1),
 
-    # -- a Global EQ band's GAIN ---------------------------------------------
-    # NOT a screen reading in the sense above, and listed apart on purpose: the
-    # span is the MANUAL's, and these two points are what the library was told
-    # rather than what anyone measured. They are 6 dB apart on a span claimed to
-    # be 24 dB wide, so they cannot distinguish it from a wider one - exactly
-    # the trap that put -100..+30 in this file for two releases. Driving the
-    # ENDS on screen is what would settle it.
-    ("GLOBAL_EQ_GAIN_DB", 0.5, 0.0, 1),
+    # -- a Global EQ band's GAIN, 2026-09-11 ---------------------------------
+    # Band 1's GAIN driven over the wire and the Global EQ page read each time,
+    # on CorOS 4.0.1. The first two are the ENDS, which is what this run was
+    # for: the span used to be the MANUAL's on two interior points 6 dB apart
+    # on a range claimed to be 24 dB wide, and two close points cannot tell one
+    # span from a wider one - the trap that put -100..+30 in this file for two
+    # releases. The quartiles rule out a taper as well; see
+    # `test_the_global_eq_gain_quartiles_rule_out_a_taper` below.
+    ("GLOBAL_EQ_GAIN_DB", 0.0, -12.0, 1),
+    ("GLOBAL_EQ_GAIN_DB", 1.0, 12.0, 1),
+    ("GLOBAL_EQ_GAIN_DB", 0.25, -6.0, 1),
     ("GLOBAL_EQ_GAIN_DB", 0.75, 6.0, 1),
 ]
 
@@ -507,6 +564,76 @@ def test_a_setting_span_reproduces_what_was_read(span_key, wire, screen, digits)
         screen, abs=0), (
         f"{span_key} at wire {wire} was read as {screen}, and the span says "
         f"{round(low + (high - low) * wire, digits)}")
+
+
+#: How far the exponent may sit from 1.0 and still be called linear. Set by what
+#: the SCREEN could have shown, not by what the readings happen to give: a skew
+#: this far from unity moves the display by 0.088 dB at worst anywhere on this
+#: control, which is under one 0.1 dB step. So a law this test admits is one the
+#: screen could not have told from a straight line at any point on the travel.
+#: The 2026-09-11 readings pin 0.994..1.006 and clear it with about 40% to
+#: spare - deliberately, so the gate is not fitted to them. A COARSER future
+#: reading widens its band and can push past this, which is the failure this
+#: guards; a finer one moves further inside.
+LINEAR_SKEW_TOLERANCE = 0.01
+
+
+def test_the_global_eq_gain_quartiles_rule_out_a_taper():
+    """What the two quartile readings buy beyond the two ends.
+
+    The ends settle the SPAN. They say nothing about the shape between them, and
+    a cab LEVEL is the standing proof that shape hides: three well-separated
+    points fitted it beautifully and it is a power law with skew 0.202 (see
+    `docs/protocol.md`). So this checks the readings actually discriminate,
+    rather than trusting that four points must be enough.
+
+    Under ADR-0015's one law a taper is `wire ** (1 / skew)`. Each interior
+    reading admits a band of skews - the display rounds, so the true dB lies
+    within half a step of what was read - and the readings together admit only
+    the INTERSECTION of those bands. That intersection is what is asserted here,
+    so the bound quoted in `units.SETTING_SPANS` and `docs/STEERING.md` is the
+    one this test computes rather than a looser stand-in for it.
+    """
+    low, high = units.SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]
+    interior = [(w, s, d) for k, w, s, d in SETTING_READINGS
+                if k == "GLOBAL_EQ_GAIN_DB" and 0.0 < w < 1.0]
+    assert len(interior) >= 2, (
+        "this rests on readings taken BETWEEN the ends - the ends themselves "
+        "fit any skew, since 0 and 1 are fixed points of every power law")
+
+    bands = []
+    for wire, screen, digits in interior:
+        # The screen rounds to `digits`, so the true dB lies within half a step
+        # of what was read; turn that into the exponents that could have
+        # produced it. Taken from the reading rather than hard-coded, so each
+        # band is tied to the precision actually recorded: a reading taken to
+        # fewer digits widens its band and stops constraining the answer, which
+        # is correct, where a hard-coded half-step would credit it with
+        # precision it does not have. The opposite error - recording MORE digits
+        # than the screen shows - narrows the band and overclaims, and no test
+        # here can catch that; it is a discipline about writing readings down.
+        half = 0.5 * 10 ** -digits
+        bounds = [(screen + d - low) / (high - low) for d in (-half, half)]
+        # A reading whose rounding band reaches a span END has no exponent to
+        # solve for - 0 and 1 are fixed points of every power law - and one
+        # sitting outside the span is not a reading of this control at all.
+        # Both are `math.log` crashes rather than failures, so say which.
+        assert all(0.0 < b < 1.0 for b in bounds), (
+            f"the reading {screen} at wire {wire} rounds to within {half} of a "
+            f"span end, so it constrains no exponent; drop it from this test "
+            f"or record it to more digits")
+        bands.append(sorted(math.log(wire) / math.log(b) for b in bounds))
+
+    lowest, highest = max(b[0] for b in bands), min(b[1] for b in bands)
+    assert lowest < 1.0 < highest, (
+        f"the readings admit skews {lowest:.4f}..{highest:.4f}, which excludes "
+        f"the linear law the span is converted with")
+    assert abs(lowest - 1.0) < LINEAR_SKEW_TOLERANCE, (
+        f"the readings only pin the skew to {lowest:.4f}..{highest:.4f}; that "
+        f"is too loose to call the law linear rather than a taper close to it")
+    assert abs(highest - 1.0) < LINEAR_SKEW_TOLERANCE, (
+        f"the readings only pin the skew to {lowest:.4f}..{highest:.4f}; that "
+        f"is too loose to call the law linear rather than a taper close to it")
 
 
 def test_the_setting_spans_and_the_parameters_built_from_them_agree():

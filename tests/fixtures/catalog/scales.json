@@ -375,6 +375,33 @@
   {
     "model_id": 12000,
     "model": "Default Cabsim",
+    "index": 3,
+    "name": "PAN",
+    "raw": {
+      "defaultValue": "5",
+      "displayPos": "3",
+      "max": "10",
+      "max_string": "R",
+      "mid_string": "C",
+      "min": "0",
+      "min_string": "L",
+      "name": "PAN",
+      "type": "float",
+      "units": ""
+    },
+    "minimum": -50.0,
+    "maximum": 50.0,
+    "units": "",
+    "type": "float",
+    "steps": null,
+    "skew": 1.0,
+    "floor_wire": 0.0,
+    "floor_display": null,
+    "why": "Default Cabsim PAN - a labelled-end control declaring 0..10, measured as 50 L .. C .. 50 R"
+  },
+  {
+    "model_id": 12000,
+    "model": "Default Cabsim",
     "index": 10,
     "name": "LEVEL",
     "raw": {
@@ -518,6 +545,60 @@
     "floor_wire": 0.01,
     "floor_display": -39.5,
     "why": "Return 2 LEVEL - and the return family likewise"
+  },
+  {
+    "model_id": 18007,
+    "model": "Minivoicer",
+    "index": 8,
+    "name": "V1 PAN",
+    "raw": {
+      "defaultValue": "0.6",
+      "displayPos": "4",
+      "max": "1",
+      "max_string": "R",
+      "mid_string": "C",
+      "min": "0",
+      "min_string": "L",
+      "name": "V1 PAN",
+      "type": "float",
+      "units": ""
+    },
+    "minimum": -50.0,
+    "maximum": 50.0,
+    "units": "",
+    "type": "float",
+    "steps": null,
+    "skew": 1.0,
+    "floor_wire": 0.0,
+    "floor_display": null,
+    "why": "Minivoicer V1 PAN - the third declared span, 0..1, and its untouched default reads 10 R with no write at all"
+  },
+  {
+    "model_id": 18007,
+    "model": "Minivoicer",
+    "index": 12,
+    "name": "V2 PAN",
+    "raw": {
+      "defaultValue": "0.4",
+      "displayPos": "9",
+      "max": "1",
+      "max_string": "R",
+      "mid_string": "C",
+      "min": "0",
+      "min_string": "L",
+      "name": "V2 PAN",
+      "type": "float",
+      "units": ""
+    },
+    "minimum": -50.0,
+    "maximum": 50.0,
+    "units": "",
+    "type": "float",
+    "steps": null,
+    "skew": 1.0,
+    "floor_wire": 0.0,
+    "floor_display": null,
+    "why": "Minivoicer V2 PAN - the same law driven to the bottom of the wire"
   },
   {
     "model_id": 20000,
@@ -667,5 +748,34 @@
     "floor_wire": 0.01,
     "floor_display": -21.8,
     "why": "Default Cabsim (ST) LEVEL - a STEREO cab, because all three screen-measured blocks are mono and 86 of 174 cabs are not"
+  },
+  {
+    "model_id": 32000,
+    "model": "Default Cabsim (ST)",
+    "index": 3,
+    "name": "BALANCE",
+    "raw": {
+      "defaultValue": "0",
+      "displayPos": "3",
+      "max": "1",
+      "max_string": "R",
+      "mid_string": "C",
+      "min": "-1",
+      "min_string": "L",
+      "name": "BALANCE",
+      "skew": "1",
+      "steps": "360",
+      "type": "float",
+      "units": ""
+    },
+    "minimum": -50.0,
+    "maximum": 50.0,
+    "units": "",
+    "type": "float",
+    "steps": 360,
+    "skew": 1.0,
+    "floor_wire": 0.0,
+    "floor_display": null,
+    "why": "Default Cabsim (ST) BALANCE - the same drawn control declaring -1..1, which is why the declared span cannot key the family"
   }
 ]
