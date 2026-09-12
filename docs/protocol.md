@@ -2949,8 +2949,10 @@ category aliasing cannot reach a Bass Overdrive.
 It was long recorded as sharing the lane VOLUME's STRUCTURE - a numeric floor at
 wire 0.01 with the Off detent below it. It does not: driven below the encoder's
 reach on 2026-09-11 the cab has no detent at all, and -21.8 dB is simply what it
-reads at wire 0.01, not the bottom of its travel. The lane's -39.5 dB at the same
-wire position IS a floor. See "The encoder cannot reach the bottom" below.
+reads at wire 0.01, not the bottom of its travel - and neither is the lane's
+-39.5 dB at that same wire position, which was recorded as a floor for the same
+reason and is simply a reading. See "The bottom of a scale is sometimes a word"
+below.
 
 Note what this rules out. Cab LEVEL sits in the same dB family
 as the lane and mixer levels and is **not** their -40..+12 scale - unity
@@ -3250,16 +3252,27 @@ and 2026-09-12:
 | lane output `VOLUME` | -40 to 12 | decimals | `OFF` | -39.99, drawn `-40.0 dB` |
 | cab `OUTPUT VOLUME` | -96 to 12 | decimals | `OFF` | -95.99, drawn `-96.0 dB` |
 | `Digital Flanger` `DRIVE` | 0 to 100 | decimals | `OFF` | 0.01, drawn `0%` |
-| `Utility Gate` `RANGE` | -90 to -6 | decimals | `OFF` | -89.9 drawn `-90 dB` |
-| `Looper X` `PLAYBACK LEVEL` | -60 to 0 | decimals | `OFF` | -59.9 drawn `-60.0 dB` |
-| `Send 1` `LEVEL` | -40 to 0 | decimals | `OFF` | - |
+| `Utility Gate` `RANGE` | -90 to -6 | decimals | `OFF` | -89.9 drawn `-90 dB` (*) |
+| `Looper X` `PLAYBACK LEVEL` | -60 to 0 | decimals | `OFF` | -59.9 drawn `-60.0 dB` (*) |
+| `Send 1` `LEVEL` | -40 to 0 | decimals | `OFF` | - (*) |
+
+(*) taken to one decimal place, or to the minimum only - so the lowest value shown is
+what was tried rather than the lowest that exists.
 
 Three facts, none of which needed measuring once they were looked for:
 
-1. **The entry box states exactly the catalog's `min`..`max`** - eight for eight.
-2. **`showAsInteger` says whether it takes whole numbers** - ten for ten.
-3. **Typing the minimum gives the word**, on every knob tried. One UI step above it is
-   the lowest real number: `+1` on an integer knob, `+0.01` on a decimal one.
+1. **The entry box states exactly the catalog's `min`..`max`** - 9 of the 9 knobs
+   whose entry box was read.
+2. **`showAsInteger` says whether it takes whole numbers** - 9 of 9.
+3. **Typing the minimum gives the word** - 9 of 9, across 9 different laws.
+4. **One UI step above the minimum is the lowest real number** - 6 of 6, three integer
+   knobs and three decimal ones. The other three were taken to the minimum and no
+   further, so they are consistent with the step rather than evidence for it.
+
+Point 3 is what the refusal rests on and point 4 only sets how wide a sliver just above
+the minimum is refused, so being wrong about the step costs a hundredth of a unit. The
+table this replaced was wrong by 16 dB. That asymmetry is the argument for deriving a
+rule here at all, in a codebase that has been burned by rules about parameters before.
 
 So `Parameter.floor` is derived, and `units.OFF_STEP_INTEGER` / `OFF_STEP_DECIMAL` are
 the only numbers left. The decimal step is confirmed on three knobs that accepted two
@@ -3268,8 +3281,10 @@ decimal places and contradicted nowhere; the Gate and the Looper were only taken
 **Why the screen could not settle this, which is the part worth remembering.** The
 display rounds and the entry box does not. A lane output prints `-40.0 dB` at its
 lowest real position AND `OFF` one step below, so reading the screen cannot separate
-them at any wire value. That is why `to_normalized` refuses a conversion landing below
-`floor_wire`: that band displays as the minimum and is not it.
+them at any wire value. So the refusal is written against the displayed floor: asking
+for -40.0 dB raises, and -39.99 converts. A second check against `floor_wire` was
+written and then removed, because it could not fire - refusing everything below
+`floor_display` already covers every value that would land below it.
 
 It is also why three earlier attempts went wrong. The first measured by turning the
 knob, and a knob with no `steps` moves in hundredths - so all three recorded floors

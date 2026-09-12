@@ -55,7 +55,7 @@ def lane_level_db(value: float) -> float:
     (10/13). Delegates to :func:`pyquadcortex.protocol.lane_level_db`.
 
     The bottom of the knob is a detent, not a dB value: wire 0.0 reads "Off" on
-    screen and -39.5 dB (wire 0.01) is the lowest numeric step. This converts the
+    screen and -39.99 dB is the lowest value its entry accepts. This converts the
     scale; it does not model the Off position.
     """
     return protocol.lane_level_db(_a_number(value, "a lane level"))
@@ -67,9 +67,9 @@ def db_to_lane_level(db: float) -> float:
     Refuses anything outside -40..+12 dB.
 
     **-40.0 dB is silence, not the bottom of the knob.** It converts to wire
-    0.0, which is the Off detent: the lowest NUMERIC step on the unit is -39.5
+    0.0, which is the Off detent: the lowest value the unit accepts is -39.99
     dB, and the screen reads "Off" below it. So asking for -40 dB mutes the
-    lane, and anything between -40.0 and -39.5 is a reading the screen has no
+    lane, and -40.0 itself is a reading the screen has no
     way to show. For silence, write the wire's 0.0 directly and mean it.
     """
     return protocol.db_to_lane_level(_a_number(db, "a lane level in dB"))

@@ -40,7 +40,7 @@ it tried to hold turned out to be in the device's own catalog.
   mean.
 * **The lowest real value on such a knob is one step above its minimum**: `+1`
   on a whole-number knob, `+0.01` on a decimal one. So a lane VOLUME reaches
-  -39.99 dB, a cab HPF reaches 21 Hz, and the library now knows that for all 254
+  -39.99 dB, a cab HPF reaches 21 Hz, and the library now knows that for all 218
   of them rather than the three somebody had measured.
 
 **How it was settled**, since three previous attempts got it wrong: by typing
@@ -49,6 +49,12 @@ screen ROUNDS - a lane output prints `-40.0 dB` at its lowest real position and
 `OFF` one step below, so no amount of reading the display separates them. The
 numeric entry box does, and it states exactly the catalog's own `min`..`max`
 every time.
+
+**If you read expression sweeps**, one end of a sweep reads as `Off` when it
+sits below the knob's floor - and that floor moved, so the band did too. On a
+lane VOLUME it was the bottom 1% of the wire and is now the bottom 0.02%. A
+sweep heel at wire 0.005 used to report `Off` and now reports -39.74 dB, which
+is what the unit shows there.
 
 One consequence worth knowing about: `Db(-40.0)` is refused on most cabs and
 accepted on 14 of them (the PCOM variants and Parallax), which omit the `OFF`

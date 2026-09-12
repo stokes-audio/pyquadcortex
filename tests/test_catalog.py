@@ -450,7 +450,7 @@ def test_a_bound_this_build_has_never_heard_of_is_loud():
         catalog.parse_model_repo(make_payload(xml))
 
 
-def test_a_measured_family_carries_its_floor_from_the_units_table():
+def test_a_family_with_an_off_detent_carries_a_derived_floor():
     """min_string="OFF" says the bottom is a word; only measurement says where
     the numbers resume."""
     xml = ('<Models><Category id="12" name="Cabsim Guitar (M)">'

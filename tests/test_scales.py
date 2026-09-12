@@ -166,8 +166,8 @@ READINGS = [
     # The lane VOLUME came first and the rest INHERITED its claim for several
     # releases before anyone measured them. They were measured, and it held.
     (23000, 0, 0.01, -39.5, 1),
-    # 2026-09-12: driven below the encoder's reach, which moved this family's
-    # floor down from that 0.01 exactly as it did the send's. OFF at 0.000001.
+    # 2026-09-12: OFF at wire 0.000001, and typed to -39.99 as its first real
+    # value - so the 0.01 above is a reading on the scale, not a floor.
     (23000, 0, 0.005, -39.7, 1),
     (23000, 0, 0.71, -3.1, 1),
     (23000, 0, 1.00, 12.0, 1),
@@ -515,13 +515,25 @@ def test_the_floor_is_derived_from_the_device_rather_than_a_table():
     """
     assert not hasattr(units, "FLOOR_WIRE")
     assert (units.OFF_STEP_INTEGER, units.OFF_STEP_DECIMAL) == (1.0, 0.01)
-    # Derived, so it reaches every knob rather than the few anybody drove.
-    for key in ((12000, 2), (1001, 6), (23000, 0), (13000, 0), (12000, 16),
-                (12000, 18), (4006, 0), (4002, 0), (16002, 4), (27000, 8)):
+    # Derived, so it reaches every knob rather than the few anybody drove -
+    # which is the point and also the exposure. Six of these were typed to their
+    # first real value; `Utility Gate` RANGE and `Looper X` PLAYBACK LEVEL were
+    # taken to one decimal place and no further, so their floors here are the
+    # RULE's answer rather than a reading, and this test says so rather than
+    # letting the assertion imply otherwise.
+    typed = {(23000, 0): -39.99, (12000, 18): -95.99,
+             (12000, 16): 21.0, (4006, 0): 20.0, (4002, 0): 20.0}
+    derived_only = {(12000, 2), (1001, 6), (13000, 0), (16002, 4), (27000, 8)}
+    for key in set(typed) | derived_only:
         spec = SCALES[key]
         step = units.OFF_STEP_INTEGER if spec.show_as_integer else units.OFF_STEP_DECIMAL
         assert float(spec.floor) == pytest.approx(spec.minimum + step), spec.name
         assert spec.floor_wire > 0.0, spec.name
+    # The five that were typed to their first real value on the unit agree with
+    # what the rule computes. That is the evidence; the other five are the rule
+    # being applied, and are listed separately so the difference stays visible.
+    for key, first in typed.items():
+        assert float(SCALES[key].floor) == pytest.approx(first), SCALES[key].name
 
 
 def test_one_cab_knob_is_labelled_on_some_models_and_not_others():
@@ -649,9 +661,11 @@ def test_parallax_carries_the_cab_law_itself():
         spec = SCALES[(3008, index)]
         assert (spec.minimum, spec.maximum) == (-40.0, 6.0)
         assert spec.skew == pytest.approx(4.9594844)
-        # No floor since 2026-09-11: the cab law has no detent. What matters
-        # here is that Parallax tracks that law rather than keeping an old copy.
-        assert spec.floor_wire == 0.0
+        # No floor, and NOT because the law has none: a labelled cab on this
+        # same law does get one. Parallax omits `min_string`, which is measured
+        # - typing -40 into it displays -40.0 dB. What matters here is that it
+        # tracks the law rather than keeping a private copy of it.
+        assert spec.floor_wire == 0.0 and spec.min_label == ""
 
 
 def test_the_fx_families_are_more_than_one_model_each():
@@ -713,10 +727,14 @@ def test_a_refusal_mentions_the_off_position_only_where_there_is_one():
 
 def test_asking_for_the_bottom_of_the_scale_is_refused_where_it_is_a_detent():
     """`minimum` and `floor` diverge most sharply exactly here."""
-    with pytest.raises(ValueError, match="does not exist there"):
+    with pytest.raises(ValueError, match="Off position") as refused:
         SCALES[(23000, 0)].to_normalized(-40.0)
-    # ...and the number the refusal prints is one it would itself accept.
-    assert SCALES[(23000, 0)].to_normalized(-39.5) == pytest.approx(0.01, abs=5e-4)
+    # ...and the bound the refusal prints is one it would itself accept, which
+    # a rounded floor made false once: the message named a number the check
+    # then rejected, which is a dead end for whoever reads it.
+    printed = -39.99
+    assert f"{printed:g}" in str(refused.value)
+    assert SCALES[(23000, 0)].to_normalized(printed) > 0.0
 
 
 def test_reading_a_wire_value_the_wire_cannot_carry_is_refused():
