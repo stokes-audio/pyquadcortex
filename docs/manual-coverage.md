@@ -20,10 +20,10 @@ or a field in `BinaryPreset`. A named candidate is a lead, not a claim that it w
 
 ## Summary
 
-Of 105 features audited: **65 yes**, **8 partly**, **21 no**, **11 n/a**.
+Of 105 features audited: **66 yes**, **7 partly**, **21 no**, **11 n/a**.
 
 Of the 93 features a host could plausibly drive - everything above except the 11 marked
-n/a - **65 are fully covered** and 8 more are partly covered, which here means the state
+n/a - **66 are fully covered** and 7 more are partly covered, which here means the state
 is readable and at least one field of it is confirmed writable, with the neighbours the
 same shape but not individually exercised. Only 20 remain untouched.
 
@@ -39,10 +39,11 @@ reference pitch, creating a setlist, the expression-bypass numbering, the Looper
 the master volume scale, how pinning is written, the Global EQ's whole 28-index layout,
 every option of the metronome's four lists, and the per-beat accent cells.
 
-What is left is of two kinds. A few writes are **confirmed no-ops** with no route found:
-preset tags, and duplicating a setlist as a device operation (the library does it by
-recall-and-save instead). And two whole features remain unexplored because they need the
-physical world: Neural Capture, and loading from the factory Captures Library.
+What is left is of two kinds. Preset tags are a **confirmed no-op** with no route
+found. Two whole features remain unexplored because they need the physical world:
+Neural Capture, and loading from the factory Captures Library. Firmware-native
+setlist duplication is measured only on CorOS 4.1; 4.0.1 retains the explicit
+recall-and-save composition instead of inheriting that wire command.
 
 The Tempo menu's MODE was the last feature with no wire path found. It closed on
 2026-08-12: the device never broadcasts it, which three tests established correctly and
@@ -133,7 +134,7 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. CC#32's 'User folders' 2-12 are created, not built in |
 | Create a folder, nested navigation | yes | `create_setlist(name)`. The earlier failure was the path: setlists are siblings under `/media/p4/Presets`, not children of My Presets |
 | Favorites and Recents | yes | `recents()` and `favorites()` read the two lists - the request's `is_favorites` flag selects which, though the REPLY never sets it, so correlate on `request_id`. `add_favorite()`/`remove_favorite()` write, one entry at a time, confirmed by the device's echo of the changed entry. Entries feed straight into `find_preset()`/`recall_preset()`. Only presets can be favourited |
-| Bulk actions | partly | there is no host-drivable bulk copy - `BulkOperation` only narrates progress - but `copy_preset()` and `duplicate_setlist()` achieve it by recall + save, at a few seconds per preset |
+| Bulk actions | yes | On the measured CorOS 4.1 profile, `duplicate_setlist()` sends Cortex Control's single firmware-side folder COPY, then verifies the asynchronously created destination without replaying the write; the CorOS 4.0.1 profile refuses and points to `copy_preset()`. `BulkOperation` only narrates progress |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
 | Neural Captures: list | yes | `captures()` browses the library - over 2000 entries, shown on the unit as Factory Captures V1/V2 and My Captures. NOT the catalog, which does not grow when a capture is saved |

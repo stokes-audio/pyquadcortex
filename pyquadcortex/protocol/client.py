@@ -735,12 +735,15 @@ class QuadCortex:
         device push a folder listing per setlist, so this sends that READ and
         waits for the listing whose key matches ``setlist``.
 
-        A listing that arrives is COMPLETE - five READs against an 18-preset setlist
-        each produced a full listing, and no short one has been observed. But a READ
-        does not reliably produce one promptly: two of those five saw nothing for
-        that setlist within 8 s, delivery being lazy. So treat a timeout as "ask
-        again", which is what :meth:`wait_for_listing` does, rather than as an
-        answer about the setlist's contents.
+        On CorOS 4.0.1, five READs against an 18-preset setlist each produced a
+        complete listing, although two produced nothing within 8 s. A contributed
+        CorOS 4.1.0 run on 2026-09-11 also observed transient one-slot and blank
+        generations before the eventual 256-slot user-setlist listing. This returns the first
+        matching non-empty broadcast, so a workflow that needs an authoritative
+        user-setlist inventory must require and stabilize all 256 slot indices, as
+        :meth:`duplicate_setlist` does. Treat a timeout as "ask again", which is
+        what :meth:`wait_for_listing` does, rather than as an answer about the
+        setlist's contents.
 
         Note the trailing-slash asymmetry the match has to absorb: recalls need
         the factory path WITH its trailing slash (Cortex Control sends it that
@@ -3463,36 +3466,174 @@ class QuadCortex:
                                         name or source_name or "copy",
                                         instrument=instrument, confirm=True)
 
-    def duplicate_setlist(self, source_name: str, dest_name: str,
-                          limit: int | None = None):
-        """Copy a whole setlist into a new one, preset by preset.
+    def duplicate_setlist(self, source_name: str, *, confirm: bool = True,
+                          timeout: float | None = None,
+                          interval: float = 2.0):
+        """Refuse firmware-native duplication on the CorOS 4.0.1 profile."""
+        raise ControlNotDrivable(
+            "duplicate_setlist",
+            "firmware-native File COPY was measured on CorOS 4.1.0, not on "
+            "the CorOS 4.0.1 base profile",
+            "copy presets individually with copy_preset(), or use a measured "
+            "CorOS 4.1 profile",
+        )
 
-        Also a composition rather than a device operation. The unit's own
-        duplicate action broadcasts a ``BulkOperation`` narrating its progress -
-        ``"Duplicating, please wait."``, then a progress fraction, then
-        ``finished`` - but that is the device REPORTING: replaying it copies
-        nothing, and no host-drivable duplicate exists. So this creates the
-        destination and copies each preset with :meth:`copy_preset`.
+    def _duplicate_setlist_41(self, source_name: str, *, confirm: bool = True,
+                              timeout: float | None = None,
+                              interval: float = 2.0):
+        """Ask firmware to duplicate a complete user setlist exactly once.
 
-        Which means it is SLOW - a recall and a save per preset, several seconds
-        each - and it recalls every one of them on the unit as it goes. ``limit``
-        caps how many are copied, for trying it out on a large setlist.
+        Cortex Control sends one sparse ``File{COPY}`` containing only the
+        source folder key and explicit ``is_factory: false``. Firmware chooses
+        the collision-safe destination name and key and copies the inventory
+        asynchronously; no destination identity or per-preset writes belong on
+        the wire.
 
-        Returns the list of names stored in the destination.
+        With ``confirm=True`` (the default), this takes a fresh folder and source
+        inventory baseline before the write, then performs read-only polling
+        until exactly one new folder has the source's complete
+        position/name/instrument inventory. The COPY is never replayed. Firmware
+        has taken more than 80 seconds for 74 presets, so the default deadline is
+        ``90 + 2 * occupied_presets`` seconds, capped at ten minutes. A 2026-09-11
+        CorOS 4.1.0 run confirmed a disposable two-preset copy in 49.878 seconds.
+        That run also received partial ``File`` broadcasts before complete ones,
+        so both inventories require two identical generations containing every
+        user-setlist slot index before they are trusted.
+
+        Returns the device-created :class:`Folder` when confirmed. With
+        ``confirm=False``, returns the immediate File reply if one arrives,
+        otherwise ``None``; that mode does not prove completion.
         """
-        dest_key = self.create_setlist(dest_name)
-        time.sleep(3.0)
         source_key = (source_name if source_name.startswith("/")
                       else f"{USER_SETLIST_ROOT}/{source_name}")
-        entries = self.list_presets(source_key)
-        if limit is not None:
-            entries = entries[:limit]
-        stored = []
-        for i, entry in enumerate(entries):
-            stored.append(self.copy_preset(source_key, entry.index, dest_key,
-                                           to_position=i, name=entry.name,
-                                           instrument=entry.instrument))
-        return stored
+        if not _is_user_setlist_key(source_key):
+            raise ValueError(
+                f"source {source_key!r} is not a direct user setlist")
+        if confirm:
+            before = self._stable_folder_listing(timeout=120.0,
+                                                  interval=interval)
+            before_keys = {folder.key for folder in before}
+            if source_key not in before_keys:
+                raise ValueError(f"source setlist {source_key!r} is not in the fresh catalog")
+            expected = self._stable_complete_user_setlist(
+                source_key, timeout=120.0, interval=interval
+            )
+            if timeout is None:
+                timeout = _setlist_copy_timeout(len(expected))
+
+        msg = pa.FileMessage(action=pa.MessageAction.COPY, type=0)
+        msg.folder.key = source_key
+        msg.folder.is_factory = False
+        reply = self._file_operation(msg)
+        if not confirm:
+            return reply
+
+        assert timeout is not None
+        deadline = time.monotonic() + timeout
+        previous_destination = None
+        previous_folders = None
+        while True:
+            remaining = max(0.1, deadline - time.monotonic())
+            folders = self.list_folders(seconds=min(20.0, remaining))
+            folder_generation = tuple(
+                (f.key, f.name, f.slots, f.occupied, f.is_factory)
+                for f in folders)
+            if folder_generation != previous_folders:
+                previous_folders = folder_generation
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"setlist COPY was sent once but did not publish a complete "
+                        f"matching destination within {timeout}s; it was not replayed")
+                time.sleep(interval)
+                continue
+            created = [
+                folder for folder in folders
+                if folder.key not in before_keys
+                and _is_user_setlist_key(folder.key)
+            ]
+            if len(created) > 1:
+                raise RuntimeError(
+                    "more than one folder appeared during duplicate verification; "
+                    "the device-created destination is ambiguous"
+                )
+            if created:
+                destination = created[0]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"setlist COPY was sent once but did not publish a complete "
+                        f"matching destination within {timeout}s; it was not replayed")
+                try:
+                    listing = self.list_presets(
+                        destination.key,
+                        timeout=min(25.0, remaining),
+                        include_empty=True,
+                    )
+                except TimeoutError:
+                    listing = []
+                actual = _complete_user_setlist_inventory(listing)
+                if actual == expected:
+                    if previous_destination == actual:
+                        return destination
+                    previous_destination = actual
+                else:
+                    previous_destination = None
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"setlist COPY was sent once but did not publish a complete "
+                    f"matching destination within {timeout}s; it was not replayed"
+                )
+            time.sleep(interval)
+
+    def _stable_folder_listing(self, *, timeout: float,
+                               interval: float) -> list:
+        """Return two identical folder generations inside one deadline."""
+        deadline = time.monotonic() + timeout
+        previous_identity = None
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"no stable folder listing arrived within {timeout}s")
+            folders = self.list_folders(seconds=min(20.0, remaining))
+            identity = tuple(
+                (f.key, f.name, f.slots, f.occupied, f.is_factory)
+                for f in folders)
+            if identity == previous_identity:
+                return folders
+            previous_identity = identity
+            time.sleep(interval)
+
+    def _stable_complete_user_setlist(self, key: str, *, timeout: float,
+                                      interval: float) -> tuple:
+        """Return two identical complete 256-slot generations for ``key``."""
+        deadline = time.monotonic() + timeout
+        previous = None
+        listings_seen = 0
+        while True:
+            remaining = max(0.1, deadline - time.monotonic())
+            try:
+                listing = self.list_presets(
+                    key,
+                    timeout=min(25.0, remaining),
+                    include_empty=True,
+                )
+            except TimeoutError:
+                listing = []
+            actual = _complete_user_setlist_inventory(listing)
+            if actual is not None:
+                listings_seen += 1
+                if previous == actual:
+                    return actual
+                previous = actual
+            else:
+                previous = None
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"no stable complete 256-slot listing arrived for {key!r} "
+                    f"within {timeout}s ({listings_seen} complete generation(s) seen)"
+                )
+            time.sleep(interval)
 
     #: How many parameters each Global EQ band occupies, and the offset of each
     #: control within a band. See :meth:`set_global_eq`.
@@ -4058,6 +4199,38 @@ def field_present(message, field: str) -> bool:
         return message.HasField(field)
     except ValueError:
         return False
+
+
+def _preset_inventory(entries) -> tuple:
+    """Stable occupied-inventory identity used for setlist COPY verification."""
+    return tuple(sorted(
+        (
+            entry.index,
+            entry.name,
+            entry.instrument if field_present(entry, "instrument") else 0,
+        )
+        for entry in entries
+        if field_present(entry, "name") and entry.name
+    ))
+
+
+def _complete_user_setlist_inventory(entries) -> tuple | None:
+    """Occupied identity only when a user-setlist generation has all 256 slots."""
+    positions = [entry.index for entry in entries if field_present(entry, "index")]
+    if len(entries) != 256 or set(positions) != set(range(256)):
+        return None
+    return _preset_inventory(entries)
+
+
+def _is_user_setlist_key(key: str) -> bool:
+    """Whether ``key`` is a direct setlist child of the user preset root."""
+    prefix = f"{USER_SETLIST_ROOT}/"
+    return key.startswith(prefix) and "/" not in key[len(prefix):]
+
+
+def _setlist_copy_timeout(occupied_presets: int) -> float:
+    """Measured 4.1 COPY allowance, capped at ten minutes."""
+    return min(600.0, 90.0 + 2.0 * occupied_presets)
 
 
 def blocks(p: preset.BinaryPreset) -> list:

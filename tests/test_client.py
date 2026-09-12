@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from pyquadcortex.protocol import catalog, client
+from pyquadcortex.protocol import catalog, client, profiles
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
                                 Output, SceneBypassBehavior, Setlist, TempoMode)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
@@ -31,6 +31,7 @@ class FakeTransport:
         self.canned = canned or {}
         self.broadcast = None
         self.last_match = None  # the predicate the last type-matched read passed (read_preset, version)
+        self.last_timeout = None
         self.listeners = []
         self._ids = itertools.count(1)
 
@@ -46,6 +47,7 @@ class FakeTransport:
 
     def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
         self.last_match = match
+        self.last_timeout = timeout
         trigger()
         return self.broadcast
 
@@ -144,6 +146,23 @@ def test_list_presets_omits_empty_slots_by_default():
     full = qc.list_presets(Setlist.USER, include_empty=True)
     assert len(full) == 4
     assert [pd.index for pd in full] == [0, 1, 2, 3]
+
+
+def test_list_presets_exposes_the_complete_256_slot_generation_on_request():
+    listing = pa.FileMessage()
+    listing.folder.key = str(Setlist.USER)
+    for index in range(256):
+        listing.folder.files.add().index = index
+    listing.folder.files[17].name = "Occupied without relying on key"
+    fake = FakeTransport()
+    fake.broadcast = listing
+
+    entries = client.QuadCortex(fake).list_presets(
+        Setlist.USER, timeout=3.0, include_empty=True)
+
+    assert len(entries) == 256
+    assert [entry.index for entry in entries] == list(range(256))
+    assert fake.last_timeout == 3.0
 
 
 def test_list_presets_matches_the_factory_listing_despite_the_trailing_slash():
@@ -2987,6 +3006,181 @@ def test_copy_preset_does_recall_the_source_which_changes_the_grid():
                    to_position=0)
     assert "RecallPresetMessage" in t.calls
     assert any(isinstance(m, pa.SetlistPositionMessage) for m in qc._t.sent)
+
+
+def test_duplicate_setlist_sends_the_exact_cortex_folder_copy():
+    qc = profiles.QuadCortex41(FakeTransport())
+    qc.duplicate_setlist("Live", confirm=False)
+    sent = qc._t.sent[-1]
+    assert sent.SerializeToString() == bytes.fromhex(
+        "08 05 18 00 22 1a 0a 16 2f 6d 65 64 69 61 2f 70 34 2f 50 72 65 73 "
+        "65 74 73 2f 4c 69 76 65 20 00"
+    )
+    assert not sent.HasField("request_id")  # Transport.request assigns it later.
+    assert not sent.HasField("to_folder")
+    assert len(sent.folder.files) == 0
+
+
+def test_duplicate_setlist_sends_once_and_waits_for_matching_inventory(monkeypatch):
+    root = "/media/p4/Presets"
+    source_key = f"{root}/Live"
+    destination_key = f"{root}/Live 2"
+    before = [client.Folder(source_key, "Live", 256, 2, False)]
+    after = before + [client.Folder(destination_key, "Live 2", 256, 2, False)]
+
+    def complete(first_name="One", second_name="Two"):
+        entries = [pa.ProductData(index=index) for index in range(256)]
+        entries[1].name = first_name
+        entries[1].key = "key-one"
+        entries[1].instrument = 1
+        entries[7].name = second_name
+        entries[7].key = "key-two"
+        entries[7].instrument = 2
+        return entries
+
+    source = complete()
+    destination_partial = [source[1]]
+    destination_wrong = complete(second_name="Still copying")
+    destination_complete = complete()
+
+    fake = FakeTransport()
+    qc = profiles.QuadCortex41(fake)
+    folder_generations = iter((before, before, after, after, after, after, after))
+    source_generations = iter((source, source))
+    destination_generations = iter((
+        destination_partial,
+        destination_wrong,
+        destination_complete,
+        destination_complete,
+    ))
+    qc.list_folders = lambda seconds=20.0: next(folder_generations)
+
+    def list_presets(key, *args, **kwargs):
+        if key == source_key:
+            return next(source_generations)
+        assert key == destination_key
+        return next(destination_generations)
+
+    qc.list_presets = list_presets
+    monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
+
+    created = qc.duplicate_setlist("Live", timeout=5.0, interval=0.0)
+
+    assert created.key == destination_key
+    copies = [
+        message for message in fake.sent
+        if isinstance(message, pa.FileMessage)
+        and message.action == pa.MessageAction.COPY
+    ]
+    assert len(copies) == 1, "polling must never replay a persistent COPY"
+
+
+def test_duplicate_setlist_never_baselines_a_partial_source_listing(monkeypatch):
+    root = "/media/p4/Presets"
+    source_key = f"{root}/Live"
+    folders = [client.Folder(source_key, "Live", 256, 1, False)]
+    partial = [pa.ProductData(index=0, name="Only", key="one", instrument=1)]
+    complete = [pa.ProductData(index=index) for index in range(256)]
+    complete[0].name = "Only"
+    complete[0].key = "one"
+    complete[0].instrument = 1
+
+    fake = FakeTransport()
+    qc = profiles.QuadCortex41(fake)
+    qc.list_folders = lambda seconds=20.0: folders
+    generations = iter((partial, complete, complete))
+    qc.list_presets = lambda *args, **kwargs: next(generations)
+    monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
+
+    # Exercise the authoritative preflight directly so the test cannot create a
+    # persistent COPY merely to prove that a partial generation was rejected.
+    inventory = qc._stable_complete_user_setlist(
+        source_key, timeout=5.0, interval=0.0
+    )
+    assert inventory == ((0, "Only", 1),)
+    assert fake.sent == []
+
+
+def test_coros_4_0_1_refuses_unmeasured_native_setlist_copy():
+    fake = FakeTransport()
+    qc = client.QuadCortex(fake)
+    with pytest.raises(ControlNotDrivable) as caught:
+        qc.duplicate_setlist("Live", confirm=False)
+    assert caught.value.control == "duplicate_setlist"
+    assert "4.1.0" in caught.value.evidence
+    assert "copy_preset" in caught.value.workaround
+    assert fake.sent == []
+
+
+def test_duplicate_setlist_rejects_a_factory_source_before_sending():
+    fake = FakeTransport()
+    qc = profiles.QuadCortex41(fake)
+    with pytest.raises(ValueError, match="direct user setlist"):
+        qc.duplicate_setlist(str(Setlist.FACTORY), confirm=False)
+    assert fake.sent == []
+
+
+def test_duplicate_setlist_confirm_false_returns_the_immediate_reply():
+    reply = pa.FileMessage(action=pa.MessageAction.UPDATE)
+    fake = FakeTransport({"FileMessage": reply})
+    qc = profiles.QuadCortex41(fake)
+    assert qc.duplicate_setlist("Live", confirm=False) is reply
+
+
+def test_duplicate_setlist_preflight_rejects_a_missing_source_before_copy(
+        monkeypatch):
+    folders = [client.Folder("/media/p4/Presets/Other", "Other", 256, 0, False)]
+    fake = FakeTransport()
+    qc = profiles.QuadCortex41(fake)
+    qc.list_folders = lambda **kwargs: folders
+    monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
+    with pytest.raises(ValueError, match="not in the fresh catalog"):
+        qc.duplicate_setlist("Missing")
+    assert fake.sent == []
+
+
+def test_duplicate_setlist_rejects_an_ambiguous_new_folder(monkeypatch):
+    root = "/media/p4/Presets"
+    source_key = f"{root}/Live"
+    before = [client.Folder(source_key, "Live", 256, 1, False)]
+    after = before + [
+        client.Folder(f"{root}/Live 2", "Live 2", 256, 1, False),
+        client.Folder(f"{root}/Other", "Other", 256, 0, False),
+    ]
+    full = [pa.ProductData(index=index) for index in range(256)]
+    full[0].name = "One"
+    fake = FakeTransport()
+    qc = profiles.QuadCortex41(fake)
+    folders = iter((before, before, after, after))
+    qc.list_folders = lambda **kwargs: next(folders)
+    qc.list_presets = lambda *args, **kwargs: full
+    monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
+    with pytest.raises(RuntimeError, match="more than one folder"):
+        qc.duplicate_setlist("Live", timeout=5.0, interval=0.0)
+    assert sum(isinstance(m, pa.FileMessage) and
+               m.action == pa.MessageAction.COPY for m in fake.sent) == 1
+
+
+def test_duplicate_setlist_timeout_never_replays_copy(monkeypatch):
+    root = "/media/p4/Presets"
+    source_key = f"{root}/Live"
+    before = [client.Folder(source_key, "Live", 256, 1, False)]
+    full = [pa.ProductData(index=index) for index in range(256)]
+    full[0].name = "One"
+    fake = FakeTransport()
+    qc = profiles.QuadCortex41(fake)
+    qc.list_folders = lambda **kwargs: before
+    qc.list_presets = lambda *args, **kwargs: full
+    monkeypatch.setattr(client.time, "sleep", lambda seconds: None)
+    with pytest.raises(TimeoutError, match="was not replayed"):
+        qc.duplicate_setlist("Live", timeout=0.0, interval=0.0)
+    assert sum(isinstance(m, pa.FileMessage) and
+               m.action == pa.MessageAction.COPY for m in fake.sent) == 1
+
+
+def test_duplicate_setlist_default_deadline_scales_and_caps():
+    assert client._setlist_copy_timeout(2) == 94.0
+    assert client._setlist_copy_timeout(256) == 600.0
 
 
 # -- Global EQ by band, not by wire index --------------------------------------

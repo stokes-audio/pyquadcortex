@@ -2435,19 +2435,31 @@ not fixed setlists.
 setlist's own key - the folder leaves the listing, subject to the usual eventual
 consistency.
 
-**There is no host-drivable copy, and none is needed.** The unit's duplicate action
-sends a `File` CREATE for the destination and then narrates itself through
-`BulkOperation` - `"Duplicating, please wait."`, a progress fraction, then `finished` -
-and doing the same from the host creates an EMPTY destination. Everything in that window
-is the device REPORTING, not a command.
+On CorOS 4.0.1, the unit's own duplicate action was captured sending a `File`
+CREATE and narrating progress through `BulkOperation`; replaying that CREATE
+from the host produced an empty destination. Separately, a save was confirmed
+to accept any folder key, which is the measured basis of `copy_preset()`'s
+recall-and-save fallback. No firmware-native COPY has been measured on 4.0.1.
 
-The unit's per-preset copy/paste gives the way in: pasting broadcasts
-`File{CREATE, folder{key, files{key, index, name, ...}}}`, which is the same shape as a
-Save As pointed at a different folder. And a save DOES accept any folder key (confirmed:
-recalling a factory preset and saving it into `/media/p4/Presets/probe` put it there). So
-copying a preset is recall-then-save, and duplicating a setlist is that per preset -
-which is what `copy_preset()` and `duplicate_setlist()` do. The cost is inherent: each
-one recalls the source on the unit.
+**On CorOS 4.1, setlist duplication is one host-drivable folder COPY.** Cortex Control sends
+`File{COPY, type: 0, folder{key: <source>, is_factory: false}}` with no destination
+folder, name, index, or per-preset entries. Firmware chooses the collision-safe
+destination identity and performs the copy asynchronously. `BulkOperation` only
+narrates progress; it is not the command.
+
+The destination can remain visibly empty for more than 45 seconds and later publish
+the complete source inventory without a second write. `duplicate_setlist()` therefore
+takes a fresh catalog baseline, sends COPY exactly once, and uses read-only polling to
+verify that exactly one new folder eventually matches every occupied source position,
+name, and instrument. A timeout never replays COPY or falls back to recall-and-save.
+
+On 2026-09-11 a contributed CorOS 4.1.0 run sent that sparse COPY once against a
+disposable two-preset setlist. Firmware created its collision-named destination and
+published the matching position/name/instrument inventory 49.878 seconds later. The
+same mutation campaign also observed one-slot and transient blank `File` broadcasts
+before later 256-slot user-setlist listings. A matching short generation is therefore
+not completion evidence: duplication stabilizes two identical generations, each with
+every slot index 0 through 255, for both its source baseline and destination proof.
 
 ### 7.7b3 Looper X, master volume, pinning, and the Global EQ
 
@@ -2837,6 +2849,7 @@ screen; **captured only** = seen on the wire, with no independent read-back.
 | `pin_model` / `unpin_model` / `pinned_models` | `PinnedModels{models}` with NO action / `{DELETE, models}` | read-back + on-unit | pinning APPENDS and can duplicate; DELETE removes every entry for an id |
 | `delete_setlist` | `File{DELETE, folder{key, name}}` | read-back | removes the setlist and its contents |
 | `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root, not children of My Presets |
+| `duplicate_setlist` (CorOS 4.1) | `File{COPY, folder{key: <source>, is_factory: false}}` | Cortex Control 4.1 binary + contributed hardware read-back | sends once, then stabilizes folder and complete 256-slot preset listings; CorOS 4.0.1 refuses because this shape has not been measured there |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | the single splitter/mixer MUTE; reported back in `mixBypass`, and one write sets all eight scenes |
 | `set_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence; an UPDATE alone leaves the old assignment |
 | `set_stomp_momentary` | `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}` | read-back + on-unit | keyed by footswitch, not column. **Only lands on a switch driving exactly one block** - the device refuses multi-block switches silently, as its own toggle does |

@@ -43,10 +43,17 @@ class QuadCortex41(QuadCortex):
 
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
-    VERIFIED = frozenset()
+    VERIFIED = frozenset({"duplicate_setlist"})
     models = NoSnapshot("coros_4_1_0")
     params = NoSnapshot("coros_4_1_0")
     options = NoSnapshot("coros_4_1_0")
+
+    def duplicate_setlist(self, source_name: str, *, confirm: bool = True,
+                          timeout: float | None = None,
+                          interval: float = 2.0):
+        """Duplicate a setlist with the CorOS 4.1 firmware-side COPY."""
+        return self._duplicate_setlist_41(
+            source_name, confirm=confirm, timeout=timeout, interval=interval)
 
 
 class QuadCortexMini(QuadCortex):
