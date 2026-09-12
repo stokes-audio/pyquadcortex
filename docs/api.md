@@ -46,6 +46,7 @@ already read and need no connection; calling them as methods raises
 | **Connect** | `protocol.connect(profile=, support=)` resolves the unit's own device profile before the handshake (ADR-0020) and returns it, already connected; an unrecognised `(device_type, zenos_git_hash)` raises `UnsupportedDevice`. `Support.VERIFIED` (default) refuses an operation its profile has not verified; `Support.EXPERIMENTAL` runs it with one warning. `qc.models`, `qc.params`, `qc.options` are that connection's own constants snapshot |
 | **Inspect** | `version()`, `list_presets(setlist)`, `find_preset(name, setlist)`, `read_preset(setlist, slot)` |
 | **Navigate** | `recall_preset(setlist, slot)`, `switch_scene(scene)` |
+| **Drive and capture the unit's screen (`QuadCortex41`, CorOS 4.1.0)** | `tap_screen(x, y, timeout=)` taps one raw pixel coordinate; `capture_screen()` returns a PNG of the QC's current display (observed at 800 x 480). The 4.0.1 base exposes but refuses both operations pending measurement |
 | **Edit the grid** | `set_chain_input(row, input)`, `reroute_grid_input(preset, input)`, `set_param(target, param, value)`, `set_bypass(Block(row, column), bypassed)` |
 | **Add and remove blocks** | `set_block(Block(row, column, model_id))`, `remove_block(cell)`, `move_block(source, destination)`, `catalog` |
 | **Parallel lanes** | `set_split(row, split_column, mix_column)`, `clear_split(row)`, `set_split_mute(row)`, `protocol.splits(preset)` |

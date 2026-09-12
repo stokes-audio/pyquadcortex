@@ -17,18 +17,20 @@ _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
 
 
 class QuadCortex41(QuadCortex):
-    """Quad Cortex on CorOS 4.1 - connects, and verifies nothing yet.
+    """Quad Cortex on CorOS 4.1, with contributed per-operation evidence.
 
     PR #42's description (2026-09-03) reports ``pytest --hardware``: 2742
     passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
     d14e, by tony-xmelon. That is a contributor's report and the maintainer has
     not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
     connection is therefore known to work with this handshake and announce
-    string. Which operations behave as on 4.0.1 is not known per name, so every
-    inherited operation refuses under ``Support.VERIFIED`` and runs with a
-    warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
-    binding the 4.0.1 constants would hand a 4.1 user names their unit does not
-    use.
+    string. ``capture_screen`` has a dated 4.1.0 hardware-test result;
+    ``tap_screen`` was manually verified by tony-xmelon on 2026-09-04 at
+    (184, 147), where it opened the intended Grid block and a following capture
+    showed its editor. Both are VERIFIED; other inherited operations refuse
+    under ``Support.VERIFIED`` and run with a warning under
+    ``Support.EXPERIMENTAL``. The snapshot is deliberately absent: binding the
+    4.0.1 constants would hand a 4.1 user names their unit does not use.
 
     To finish this profile, on a 4.1 unit:
 
@@ -43,10 +45,18 @@ class QuadCortex41(QuadCortex):
 
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
-    VERIFIED = frozenset()
+    VERIFIED = frozenset({"capture_screen", "tap_screen"})
     models = NoSnapshot("coros_4_1_0")
     params = NoSnapshot("coros_4_1_0")
     options = NoSnapshot("coros_4_1_0")
+
+    def capture_screen(self, timeout: float = 10.0) -> bytes:
+        """Return the CorOS 4.1 physical-display PNG."""
+        return self._capture_screen(timeout=timeout)
+
+    def tap_screen(self, x: float, y: float, timeout: float = 10.0) -> None:
+        """Tap a CorOS 4.1 physical-screen pixel coordinate."""
+        self._tap_screen(x, y, timeout=timeout)
 
 
 class QuadCortexMini(QuadCortex):

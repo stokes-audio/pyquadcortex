@@ -99,6 +99,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0018 | A parameter constant carries its unit, and CI runs a type checker |
 | ADR-0019 | The frame trailer's flags are read and reported; an encrypted payload is labelled, not decrypted |
 | ADR-0020 | Connect resolves a device profile, and nothing else branches on firmware or model |
+| ADR-0021 | A timed device gesture is one atomic transport sequence |
 
 ## 8. Open Questions
 
@@ -241,6 +242,31 @@ verifies and prints, per profile, which passed.
 
 **What did NOT change, on purpose:** `protocol.models` still means 4.0.1;
 `CC_VERSION` still announces 4.0.1 on every profile; no 4.1 snapshot ships.
+
+### 2026-09-04 - Physical screen capture and touchscreen input (ADR-0021)
+
+**What changed:** The recovered CorOS 4.1 schema now includes `ModelPreset`
+(not yet observed or used here) and message type 72, `RemoteControl`, with
+regenerated bindings and stubs. `QuadCortex41.capture_screen()` reads the
+current 800 x 480 display as PNG, and
+`tap_screen(x, y)` sends the measured touchscreen gesture after lazily priming
+the remote-control surface. The client chooses the observed 300 ms initial
+settle and 20 ms gesture interval; `Transport.send_sequence()` applies them and
+owns atomicity against concurrent writes.
+
+**Why:** Live tests on QC CorOS 4.1.0 established the complete path. Screenshot
+answers are asynchronous UPDATEs without request IDs. The retained probe record
+shows an unprimed failure and success after one screenshot plus a conservative
+300 ms wait; 250 ms and the minimum threshold were not measured. The observed
+bytes use value 1 to begin the touch and omit the default-valued type field in
+the ending message; interpreting those as RELEASE then PRESS matches the
+recovered enum. The pair at `(184, 147)` opened the intended block and the
+following framebuffer showed its parameter editor.
+
+**Scope of impact:** `protocol/proto/ProductionAutomation.proto`, generated
+bindings/stubs, protocol client and transport, offline tests, API/protocol/manual
+docs, changelog, CLAUDE.md, ADR.md, and this file. The model layer is unchanged:
+raw screen coordinates are a protocol-layer escape hatch, not a domain control.
 
 ### 2026-09-03 - One baseline becomes a registry of device profiles (ADR-0020)
 

@@ -33,7 +33,8 @@ def test_quadcortex_declares_the_4_0_1_profile():
     assert qc.MEASURED_ON == ("4.0.1",)
     assert qc.CC_VERSION == "4.0.1"
     assert qc.EVIDENCE is support.Evidence.MAINTAINER
-    assert qc.HARDWARE == support.Hardware(footswitches=8, expression_ports=2)
+    assert qc.HARDWARE == support.Hardware(
+        footswitches=8, expression_ports=2, display_size=(800, 480))
     assert qc.VERIFIED is support.EVERYTHING
     assert qc.models is coros_4_0_1.models
     assert qc.params is coros_4_0_1.params
@@ -248,17 +249,19 @@ def test_support_defaults_to_verified_and_is_readable():
     assert qc.support is support.Support.EXPERIMENTAL
 
 
-def test_the_4_1_stub_connects_but_verifies_nothing_and_has_no_snapshot():
+def test_the_4_1_profile_exposes_only_operations_with_contributed_evidence():
     cls = profiles.QuadCortex41
     assert issubclass(cls, client.QuadCortex)
     assert cls.MEASURED_ON == ("4.1.0",)
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
-    assert cls.VERIFIED == frozenset()
+    assert cls.VERIFIED == frozenset({"capture_screen", "tap_screen"})
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
     assert isinstance(cls.models, support.NoSnapshot)
     with pytest.raises(AttributeError, match="coros_4_1_0"):
         cls.models.Delay
-    assert len(cls(FakeTransport()).unverified_operations) == len(client.QuadCortex.operations())
+    assert cls(FakeTransport()).unverified_operations == (
+        client.QuadCortex.operations() - {"capture_screen", "tap_screen"}
+    )
 
 
 def test_the_mini_stub_is_recognised_but_cannot_connect():
