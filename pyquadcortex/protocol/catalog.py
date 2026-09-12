@@ -209,17 +209,22 @@ class Parameter:
         """The lowest value this parameter is KNOWN to reach, as a typed value.
 
         Usually :attr:`minimum`, but not where the bottom of the scale is an Off
-        detent: a cab LEVEL's law runs to -40 dB and its quietest real position
-        is -21.8 dB.
+        detent: a lane output's VOLUME runs to -40 dB and its quietest real
+        position is -39.5 dB.
 
         **Check :attr:`floor_is_measured` before trusting this as the knob's own
         bottom.** 254 parameters carry a :attr:`min_label` - the device saying
-        the bottom of the range shows a word rather than a number - and only
-        three laws have been driven to find where the numbers resume. For the
-        other 187 this returns :attr:`minimum`, the bottom of the SCALE, which
-        may sit below the bottom of the TRAVEL. The library does not refuse
-        there: refusing on a detent nobody has measured would be its own guess.
+        the bottom of the range shows a word rather than a number - and five
+        laws have been driven to find where the numbers resume. For the rest
+        this returns :attr:`minimum`, the bottom of the SCALE, which may sit
+        below the bottom of the TRAVEL. The library does not refuse there:
+        refusing on a detent nobody has measured would be its own guess.
         Driving one is what moves it.
+
+        Driving one can also REMOVE a floor, and has. A cab LEVEL carried
+        (0.01, -21.8 dB) until 2026-09-11, when it was written below the
+        position the unit's own encoder can reach and turned out to have no
+        detent at all - see :data:`~pyquadcortex.protocol.units.FLOOR_WIRE`.
         """
         if self.minimum is None or self.maximum is None:
             return None
@@ -326,9 +331,14 @@ class Parameter:
         nudge to the nearest one.
 
         The bottom of the range is :attr:`floor`, not :attr:`minimum`, and the
-        difference is the whole reason this is here: a cab LEVEL's law runs to
-        -40 dB while its quietest real position is -21.8 dB, so -30 dB converts
-        to wire 0.0005 and MUTES the microphone.
+        difference is the whole reason this is here: a lane output's VOLUME law
+        runs to -40 dB while its quietest real position is -39.5 dB, and the
+        screen says OFF below that rather than showing a number.
+
+        The example used to be a cab LEVEL refusing -30 dB. That floor was
+        measured with the unit's encoder, which cannot reach below wire 0.01,
+        and the knob turned out to have no detent - so a cab converts -30 dB
+        like any other value now.
         """
         bottom, top = self.floor, self.maximum
         if bottom is None or top is None:
@@ -363,7 +373,10 @@ class Parameter:
         2026-08-26 over three unrelated blocks in two different units: a cab
         LEVEL at skew 4.9594844 (wire 0.01/0.50/1.00 read -21.8/0.0/6.0 dB), a
         Low-High Cut HPF FREQ at skew 0.3 (wire 0.25 read 217 Hz), and the same
-        block's OUTPUT with no skew (wire 0.25 read -10.0 dB).
+        block's OUTPUT with no skew (wire 0.25 read -10.0 dB). Extended
+        2026-09-11 to an amp OUTPUT at skew 3.8018, which holds over four
+        decades of wire (0.01/0.005/0.000001 read -38.6/-42.1/-58.1 dB) and is
+        the taper 125 knobs carry.
 
         Raises ``ValueError`` for a parameter whose bounds the catalog names and
         nobody has measured - see :meth:`_reject_unmeasured`.

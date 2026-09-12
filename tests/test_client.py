@@ -3853,13 +3853,23 @@ def test_set_param_real_applies_the_taper():
 
 
 def test_set_param_real_refuses_below_the_floor():
-    """The blocking bug, reached the way a caller reaches it.
+    """A floor is enforced where the knob actually has one, reached as a caller does.
 
-    Without the floor this converts to wire 0.0005 and mutes the microphone.
+    This used to be the cab, on the belief that -30 dB there muted the
+    microphone. It does not: the cab was driven below the encoder's reach on
+    2026-09-11, prints -37.2 dB at wire 0.000001 and is audibly passing signal
+    below its old floor, so that entry is gone and -30 dB on a cab is now
+    allowed. The lane family's detent IS real, and is what this guards now.
     """
     qc = _scale_client()
     with pytest.raises(ValueError, match="does not exist there"):
-        qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", Real(-30.0))
+        qc.set_param(LaneOutput(0), "VOLUME", Real(-39.9))
+
+
+def test_set_param_real_no_longer_refuses_a_cab_level_it_can_reach():
+    """The counterpart: the removed floor cost a caller 16 dB of a real range."""
+    qc = _scale_client()
+    qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", Real(-30.0))
 
 
 def test_set_param_real_refuses_a_value_off_the_top():

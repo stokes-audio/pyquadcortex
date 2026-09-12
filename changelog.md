@@ -20,37 +20,42 @@ correction.
 
 ## Unreleased
 
-### Three Off-detent families were driven, and none of them had a floor to add
+### A cab's LEVEL no longer refuses values it can actually reach
+
+**This is a behaviour change, and it is the point of the release note.**
+`set_param(block, "MIC 1 LEVEL", Db(-30.0))` on a cab used to raise. It now
+converts and writes, as do all values down to the bottom of the knob's -40 dB
+range. If you were catching that error, you can stop.
+
+The library believed a cab's quietest real position was -21.8 dB and that
+anything below it read `OFF` on screen and muted the microphone. Driving the
+knob below the point the unit's own encoder can reach shows otherwise: the
+screen prints -37.2 dB near the bottom of the wire, and with the cab's second
+microphone fully Off it is audibly passing signal below the old floor - with no
+cliff where the floor claimed one. -30 dB on one microphone is simply very
+quiet, which is what "muted" had been.
+
+The other two floors stand. A lane, mixer or splitter LEVEL really does read
+`OFF` below its floor and still refuses values under -39.5 dB. The FX loop's
+send side really does too, and its floor moved *down* from -39.6 dB to -39.8 dB,
+so a 0.2 dB sliver that used to raise now converts.
+
+### Three more Off-detent families were driven, and none needed a floor
 
 254 parameters tell you the bottom of their range shows a WORD instead of a
-number, and the library has only ever known where the numbers resume on three
-families. The three largest unmeasured ones were driven on the unit. Each
-answered differently and none produced a new guard:
+number. The three largest families nobody had driven were driven, and none of
+them needed a guard:
 
 * **Every amp's OUTPUT** (125 knobs, -60..12 dB) has no detent at all. `OFF` is
-  the single wire position 0.0; a hair above it the screen reads -58.1 dB. The
-  whole declared range is yours.
+  the single wire position 0.0; a hair above it the screen reads -58.1 dB.
 * **`GAIN REDUCTION`** (20 parameters) is not a control. The catalog calls it
   `type="grMeter"` and the unit draws a moving readout. Writing it stores a
   value and changes nothing.
 * **The IR loader's `HI PASS`** (16 knobs, 20..800 Hz) does have a real detent,
-  and the numbers resume at 20 Hz - the bottom of its own range. Nothing you
+  and the numbers resume at 20 Hz - the bottom of its own range - so nothing you
   could ask for was unreachable.
 
-**Nothing you wrote needs to change, and no call that worked now fails.** No
-`FLOOR_WIRE` entry was added or removed, so every conversion behaves exactly as
-it did. This entry is here because the opposite was expected: measuring a floor
-normally makes `to_normalized` start refusing values below it, and on these
-three families there was nothing to refuse.
-
-One thing did come out of it that a user may care about. The three floors the
-library already enforces were measured by turning the unit's knob, and a knob
-the catalog gives no step size moves in hundredths - so those floors are where
-a *player* bottoms out, not where the numbers stop. Driving a cab below that
-point from the host prints -37.2 dB on screen, while the library still refuses
--30 dB on that knob. The refusal stays for now: the record behind it cites a
-muted microphone, and a number on screen does not prove the mic is audible.
-`docs/protocol.md` has the detail and says what would settle it.
+Nothing you wrote needs to change for any of those three.
 
 ### The Global EQ gain span is measured, not taken from the manual
 

@@ -131,37 +131,55 @@ UNMEASURED_BOUNDS = {
 #: the very bottom. For the cab it prevents an 18 dB silent mute. That trade is
 #: the right way round.
 #:
-#: **Every value in here was read with the unit's own encoder, and that is not
-#: the same measurement as the one described above.** A knob the catalog gives
-#: no ``steps`` moves in hundredths when it is turned, so 0.01 is the first
-#: position a PLAYER can reach - which is why all three entries say 0.01. A
-#: host write goes lower. Driven that way on 2026-09-11, a `Brit 2203` OUTPUT
-#: on the -60..12 dB skew 3.8018 law showed -58.1 dB at wire 0.000001, where
-#: the word stops only at wire 0.0; and a `412 CA Stand OS A V30 01 (M)` on
-#: the cab law below showed -37.2 dB at that same wire, four decades under the
-#: 0.01 this table calls its floor and 16 dB under the -21.8 it calls its
-#: quietest position.
+#: **Every value in here was first read with the unit's own encoder, and that is
+#: not the same measurement as the one described above.** A knob the catalog
+#: gives no ``steps`` moves in hundredths when it is TURNED, so wire 0.01 is the
+#: first position a player can reach - which is why all three original entries
+#: said 0.01. A host write goes lower, and driving each family that way on
+#: 2026-09-11 found the three families did not agree with each other:
 #:
-#: So the cab entry says OFF where the screen prints a number, and the other
-#: two were taken the same way. They are LEFT ALONE rather than corrected,
-#: because the record behind the cab cites muted AUDIO and a screen reading
-#: does not speak to that: -37.2 dB on a microphone may well be inaudible in a
-#: mix and still print. What settles it is listening to a cab at wire 0.000001,
-#: which nobody has done. Until then the guard costs a caller the bottom 16 dB
-#: of a range and protects against a silent mute, and that trade is still the
-#: right way round - but it is now known to rest on the wrong measurement.
-#: `tests/test_scales.py` holds both halves so neither can be quietly lost.
+#: | family | at wire 0.000001 | verdict |
+#: |---|---|---|
+#: | cab LEVEL | `-37.2 dB` | no detent - ENTRY REMOVED |
+#: | lane / mixer / splitter | `OFF` | detent real, floor kept |
+#: | FX send | `OFF`, but `-39.8 dB` at 0.005 | detent real, floor lowered |
+#:
+#: So there is no rule here, and one was looked for. "A stepless knob has no
+#: detent" fits the cab and the amp OUTPUT family and is FALSE for the lane and
+#: the send, which are stepless and stop at a word. The only way to know a
+#: family is to drive it, which is what this table has always said.
+#:
+#: **The cab entry was removed on evidence, not on doubt.** It claimed `OFF`
+#: below wire 0.01 and called -21.8 dB the quietest position, costing a caller
+#: 16 dB of a real range. Three independent readings say otherwise, all on
+#: CorOS 4.0.1 through a `412 CA Stand OS A V30 01 (M)`: the screen prints
+#: -37.2 dB at wire 0.000001; with the second microphone fully Off the cab is
+#: audibly passing signal at wire 0.009, below the claimed floor; and 0.009
+#: against 0.011 - 0.7 dB apart across the claimed boundary - sound the same,
+#: where a real cliff would be silence against a tone.
+#:
+#: Which means the record that built this table misread its own evidence. A
+#: caller asking a cab for -30 dB got wire 0.000516, and -30 dB on one
+#: microphone is close to inaudible - so "MUTED the microphone" was the level
+#: that was asked for, arriving correctly. The library was doing as it was told.
+#: What the table legitimately prevents is a value below a REAL detent, and the
+#: two families that have one keep their guards.
 FLOOR_WIRE = {
-    # The cab section's per-mic LEVEL. -21.8 dB at wire 0.01, OFF below it.
-    # Measured 2026-08-26 on a 212 Darkglass Neo (M); the same law covers the
-    # PCOM cabs and Parallax's cab section.
-    (-40.0, 6.0, 4.9594844): (0.01, -21.8),
+    # The cab section's per-mic LEVEL is NOT here, and the gap is deliberate.
+    # It read (0.01, -21.8) from 2026-08-26 until 2026-09-11, when the knob was
+    # driven below the encoder's reach and turned out to have no detent at all.
+    # See the note above; `tests/test_scales.py` holds the readings that removed
+    # it, so re-adding it has to argue with them.
     # The lane, mixer, splitter and FX-return LEVEL family. -39.5 dB at wire
     # 0.01 on the lane VOLUME, confirmed on the splitter's LEVEL TO A, which
     # reads OFF at wire 0.0. Measured 2026-08-25.
     (-40.0, 12.0, 1.0): (0.01, -39.5),
-    # The FX loop's send side. -39.6 dB at wire 0.01. Measured 2026-08-26.
-    (-40.0, 0.0, 1.0): (0.01, -39.6),
+    # The FX loop's send side. -39.8 dB at wire 0.005, with OFF at 0.000001, so
+    # the detent is real and the floor is LOWER than the 0.01 / -39.6 dB read
+    # off the encoder on 2026-08-26. Lowered 2026-09-11. Not bisected: the
+    # boundary is somewhere in (0.000001, 0.005], and this is the lowest
+    # position anybody has actually seen a number at.
+    (-40.0, 0.0, 1.0): (0.005, -39.8),
 }
 
 #: The span a LABELLED-END control actually draws, whatever it declares.

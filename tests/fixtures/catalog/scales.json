@@ -46,8 +46,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 0.0,
+    "floor_display": null,
     "why": "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so it cannot borrow the layout and must carry the law itself"
   },
   {
@@ -71,8 +71,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 0.0,
+    "floor_display": null,
     "why": "Parallax cab LEVEL, mic 2"
   },
   {
@@ -419,8 +419,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 0.0,
+    "floor_display": null,
     "why": "cab MIC 1 LEVEL - the taper, skew 4.9594844"
   },
   {
@@ -472,8 +472,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 0.0,
+    "floor_display": null,
     "why": "cab MIC 2 LEVEL - proves both mics share the layout"
   },
   {
@@ -497,8 +497,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 0.0,
+    "floor_display": null,
     "why": "PCOM Core Cabsim LEVEL - the same knob with LITERAL bounds, which is what the floor's law-keying exists for"
   },
   {
@@ -521,8 +521,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.6,
+    "floor_wire": 0.005,
+    "floor_display": -39.8,
     "why": "Send LEVEL - MIN_FXLOOP_OUT_GAIN_DB, which tops out at unity"
   },
   {
@@ -545,8 +545,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.6,
+    "floor_wire": 0.005,
+    "floor_display": -39.8,
     "why": "Send 2 LEVEL - proves the send family is more than one model"
   },
   {
@@ -823,8 +823,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 0.0,
+    "floor_display": null,
     "why": "Default Cabsim (ST) LEVEL - a STEREO cab, because all three screen-measured blocks are mono and 86 of 174 cabs are not"
   },
   {

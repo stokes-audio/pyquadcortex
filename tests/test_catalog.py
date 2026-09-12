@@ -460,8 +460,23 @@ def test_a_measured_family_carries_its_floor_from_the_units_table():
            ' min_string="OFF"/>'
            '</Model></Category></Models>')
     p = catalog.parse_model_repo(make_payload(xml))[12000].parameters[0]
-    assert p.floor_wire == 0.01
-    assert p.floor == pytest.approx(-21.8, abs=0.05)
+    # The cab's own law carries NO floor since 2026-09-11 - it was driven below
+    # the encoder's reach and has no detent - so this reads the table through a
+    # family that does. What is under test is the lookup, not the cab.
+    assert p.floor_wire == 0.0 and p.floor_is_measured is False
+    lane = _lane_level_parameter()
+    assert lane.floor_wire == 0.01
+    assert lane.floor == pytest.approx(-39.5, abs=0.05)
+
+
+def _lane_level_parameter():
+    """A parameter on the lane/mixer/splitter law, which does carry a floor."""
+    xml = ('<Models><Category id="23" name="Utility">'
+           '<Model id="23000" name="Lane Output">'
+           '<Parameter name="VOLUME" type="float" units="dB" defaultValue="0.5"'
+           ' min="MIN_MIXER_DB" max="MAX_MIXER_DB" min_string="OFF"/>'
+           '</Model></Category></Models>')
+    return catalog.parse_model_repo(make_payload(xml))[23000].parameters[0]
 
 
 def test_the_placeholder_concept_is_gone():
@@ -595,6 +610,9 @@ def _knob(minimum, maximum, skew, units=""):
     (1.0, 10.0, 0.3, 0.75, 4.45, 0.005),
     # A cab LEVEL, whose taper took three days to fit and one attribute to read.
     (-40.0, 6.0, 4.9594844, 0.01, -21.8, 0.05),
+    # The same law four decades lower, read 2026-09-11 - which is what showed
+    # the knob has no Off detent and removed its FLOOR_WIRE entry.
+    (-40.0, 6.0, 4.9594844, 0.000001, -37.2, 0.05),
     (-40.0, 6.0, 4.9594844, 0.50, 0.0, 0.05),
     (-40.0, 6.0, 4.9594844, 1.00, 6.0, 0.05),
 ])

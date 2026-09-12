@@ -3233,16 +3233,15 @@ That gap is not cosmetic. Without a floor, asking a cab for -30 dB converts to w
 something else. `units.FLOOR_WIRE` holds the measured floors, keyed by the same
 family names, and a value below one is refused. For silence, write the wire's `0.0`.
 
-**Three of those laws were driven on 2026-09-11, and none produced a new floor.** The
-session set out to measure the 189 parameters carrying a `min_string` with no measured
-floor, biggest law first. The three biggest covered 161 of them, and each answered
-differently:
+**Five laws were driven on 2026-09-11, and the session removed more than it added.**
+It set out to measure the 189 parameters carrying a `min_string` with no measured
+floor, biggest law first. The three biggest cover 161 of them:
 
-| law | parameters | what the screen showed | outcome |
+| law | parameters | at wire 0.000001 | outcome |
 |---|---|---|---|
-| -60..12 dB, skew 3.8018 | 125 | `-58.1 dB` at wire 0.000001 | no detent: `OFF` is wire 0.0 alone |
+| -60..12 dB, skew 3.8018 | 125 | `-58.1 dB` | no detent: `OFF` is wire 0.0 alone |
 | -60..0 dB, skew 1, `-Inf` | 20 | never moves | `type="grMeter"` - a readout, not a knob |
-| 20..800 Hz, skew 0.6 | 16 | `OFF` at 0.000001, `20 Hz` at 0.003 | a real detent, resuming at `minimum` |
+| 20..800 Hz, skew 0.6 | 16 | `OFF` | real detent, numbers resume at `minimum` |
 
 So the count of knobs with an unmeasured Off detent is **169 on 13 laws**, not 189 on
 14: the `-Inf` law is 20 gain-reduction meters. `type` distinguishes them and always
@@ -3250,23 +3249,41 @@ did - `grMeter` is 39 parameters across 39 models, every one named `GAIN REDUCTI
 beside 8 more of `type="meter"`. The owner confirmed it at the unit (it sits at 0.0
 with no audio and flickers while something plays) and a host write of wire 0.5 moved
 nothing on screen, though the value round-tripped through the preset - storage, not
-control. Reading `type` first would have skipped the hardware session entirely.
+control. Reading `type` first would have skipped that third of the session.
 
-**The measurement method matters more than the numbers here, and the three floors
-already recorded used the wrong one.** They were read by turning the unit's encoder.
-A knob the catalog gives no `steps` moves in hundredths when turned, so wire 0.01 is
-the first position a player reaches - which is why all three say exactly 0.01. A host
-write goes lower, and when the amp OUTPUT was driven that way the word stopped only at
-wire 0.0, 18 dB below where the encoder bottoms out.
+None of the three produced an entry. The amp has no detent to record; the meters are
+not knobs; and the IR loader's numbers resume at 20 Hz, which is its own `minimum`, so
+an entry would change `floor` from 20 Hz to 20 Hz.
 
-Driving the cab the same way contradicts its record outright: a `412 CA Stand OS A V30
-01 (M)` at wire 0.000001 read **-37.2 dB**, where `FLOOR_WIRE` says `OFF` below 0.01
-and calls -21.8 dB the quietest position. The guard is deliberately left in place. Its
-own evidence is muted **audio**, and a screen printing -37.2 says nothing about whether
-a microphone at that level is audible; only listening does, and nobody has. Until then
-the guard costs the bottom 16 dB of a cab's range and prevents a silent mute, which is
-still the trade worth having - on a measurement now known to be the wrong one.
-`tests/test_scales.py` asserts both halves so the contradiction cannot be lost.
+### The encoder cannot reach the bottom, and one recorded floor was wrong
+
+**The three floors already in the table were read by turning the unit's knob, and that
+is a different measurement from the one the table describes.** A knob the catalog
+gives no `steps` moves in hundredths when turned, so wire 0.01 is the first position a
+*player* reaches - which is why all three said exactly 0.01. A host write goes lower.
+Driven that way the three families disagreed with each other:
+
+| family | at wire 0.000001 | verdict |
+|---|---|---|
+| cab LEVEL, -40..6 skew 4.9594844 | `-37.2 dB` | no detent - **entry removed** |
+| lane / mixer / splitter, -40..12 | `OFF` | detent real - floor kept |
+| FX send, -40..0 | `OFF`, and `-39.8 dB` at wire 0.005 | detent real - floor lowered to 0.005 |
+
+There is no rule underneath this, and one was looked for. "A stepless knob has no
+detent" fits the cab and the amp and is false for the lane and the send, which are
+stepless and stop at a word.
+
+**The cab entry was removed on three readings, not on doubt.** Through a `412 CA Stand
+OS A V30 01 (M)`: the screen prints -37.2 dB at wire 0.000001; with the second
+microphone fully Off the cab is audibly passing signal at wire 0.009, below the claimed
+floor; and wire 0.009 against 0.011 - 0.7 dB apart, straddling the claimed boundary -
+sound the same, where a real cliff would be silence against a tone.
+
+Which means the record that built this table misread its own evidence. A caller asking
+a cab for -30 dB got wire 0.000516 and **-30 dB on one microphone is close to
+inaudible**, so "MUTED the microphone" was the level asked for, arriving correctly. The
+library was doing as it was told, and the guard written to stop it cost callers 16 dB
+of a real range for two releases. Removing it is the behaviour change in this work.
 
 **Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on -40..+12.
 Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on every one
