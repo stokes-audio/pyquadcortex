@@ -20,6 +20,14 @@ correction.
 
 ## Unreleased
 
+### Live-preset reads tolerate the device's lazy two-message reply
+
+`read_current_preset()` and `read_current_preset_push()` now make a second
+attempt when the first keyed reply times out. CorOS 4.1.0 sends an uncorrelated
+current-preset update before the request-id-correlated answer; the state cache
+models both as one normal read and no longer schedules an unnecessary reread.
+Version messages that only answer the Cortex Control compatibility announcement
+are likewise kept out of the device-identity cache.
 ### The Global EQ band offsets have names
 
 `QuadCortex` already named the Global EQ's stride, its band count and the three

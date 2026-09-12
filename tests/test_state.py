@@ -494,6 +494,20 @@ def test_the_unit_asking_a_question_back_is_not_a_push_that_landed(link):
     assert cache.needs_read("identity") is False
 
 
+def test_the_cortex_control_answer_is_not_device_identity(link):
+    """The Version response to our host announce carries no device fact."""
+    transport, cache = link
+    assert cache.value("identity", "app_fw_version") == "d14e"
+
+    transport.push(pa.VersionMessage(
+        action=pa.MessageAction.UPDATE, request_id=0,
+        cortex_control_version_valid=True))
+
+    assert cache.value("identity", "app_fw_version") == "d14e"
+    assert cache.needs_read("identity") is False
+    assert transport.reads["VersionMessage"] == 1
+
+
 def test_a_recall_landing_during_a_read_of_the_dirty_flag_is_not_lost(link):
     """The same window, reached by a path the arrival count cannot see.
 
@@ -1364,6 +1378,43 @@ def test_the_preset_entry_can_read_back_every_field_it_keeps(link):
     cache.mark_for_reread("preset", "this test")
     assert cache.value("preset", "reason") is not None
     assert cache.value("preset", "preset").name == "Structural Fixture"
+
+
+def test_two_normal_preset_pushes_still_settle_one_read(link):
+    """An exact uncorrelated restatement cannot make the cache stale."""
+    transport, cache = link
+
+    def uncorrelated_then_keyed(triggering):
+        transport.push(recall_push())
+        return recall_push(triggering)
+
+    transport.broadcasts["RecallPresetMessage"] = uncorrelated_then_keyed
+    cache.mark_for_reread("preset", "exercise the measured two-push reply")
+
+    assert cache.value("preset", "preset").name == "Structural Fixture"
+    assert cache.needs_read("preset") is False
+    assert transport.reads["RecallPresetMessage"] == 1
+
+
+def test_a_different_recall_after_the_read_answer_keeps_the_mark(link):
+    """A real recall must not be mistaken for CorOS 4.1's duplicate answer."""
+    transport, cache = link
+
+    answer = recall_push()
+
+    class RecallDuringRead:
+        def read_current_preset_push(self):
+            transport.push(answer)
+            recalled = recall_push()
+            recalled.preset.name = "newer preset"
+            transport.push(recalled)
+            return answer
+
+    cache.bind(RecallDuringRead())
+    cache.mark_for_reread("preset", "exercise a concurrent genuine recall")
+
+    assert cache.value("preset", "preset").name == "Structural Fixture"
+    assert cache.needs_read("preset") is True
 
 
 def test_a_recall_push_does_not_invalidate_the_preset_it_delivers():
