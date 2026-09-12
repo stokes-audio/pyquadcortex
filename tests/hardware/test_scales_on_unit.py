@@ -34,9 +34,16 @@ def live_xml(qc):
     return ET.fromstring(catalog._extract_xml(qc._fetch_model_repo()))
 
 
-def _raw_attrs(qc, model_id: int, index: int) -> dict:
-    """One parameter's XML attributes, straight off the unit."""
-    root = ET.fromstring(catalog._extract_xml(qc._fetch_model_repo()))
+def _raw_attrs(root, model_id: int, index: int) -> dict:
+    """One parameter's XML attributes, straight off the unit.
+
+    Takes the PARSED root rather than the client, because it used to fetch the
+    whole ModelRepo again per row - ~47 KB over USB, 40 times, for one payload
+    that a module-scoped fixture already holds. Harmless in isolation and not
+    in a full run: the traffic lands in front of the connect-burst tests, which
+    time how quickly the handshake fills the cache, and two of them began
+    failing in a full run while passing alone as the fixture grew.
+    """
     for category in root.findall("Category"):
         for element in category.findall("Model"):
             if int(element.get("id", -1)) == model_id:
@@ -46,7 +53,7 @@ def _raw_attrs(qc, model_id: int, index: int) -> dict:
 
 @pytest.mark.parametrize("row", json.loads(FIXTURE.read_text()),
                          ids=lambda r: f"{r['model_id']}.{r['index']}")
-def test_the_fixture_still_matches_this_unit(qc, live_catalog, row):
+def test_the_fixture_still_matches_this_unit(qc, live_catalog, live_xml, row):
     """Read-only: nothing is written to the unit, so no restore is needed."""
     model = live_catalog[row["model_id"]]
     p = model.parameters[row["index"]]
@@ -57,7 +64,7 @@ def test_the_fixture_still_matches_this_unit(qc, live_catalog, row):
     # They are checked in the offline suite, where the fixture's raw attributes
     # are re-parsed; here what matters is that the device still says the same
     # thing.
-    raw = _raw_attrs(qc, row["model_id"], row["index"])
+    raw = _raw_attrs(live_xml, row["model_id"], row["index"])
     assert raw == row["raw"], (
         f"{model.name!r} {p.name!r}: this unit's catalog no longer matches the "
         f"committed fixture.\n  fixture: {row['raw']}\n  this unit: {raw}\n"
