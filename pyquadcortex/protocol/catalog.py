@@ -178,9 +178,25 @@ class Parameter:
     #: from ``min_string``. Five distinct values across 254 parameters: "OFF"
     #: 191, "L" 35, "-Inf" 20, "Off" 7, "A" 1. Says THAT the bottom is a word,
     #: not where the numbers resume - see :attr:`floor_wire` for that.
+    #:
+    #: The 36 that also carry a :attr:`mid_label` are the exception, and the
+    #: distinction matters: "L" and "A" there are the SIDE, not a word standing
+    #: in for a number. A pan reads "50 L" at the bottom, so there is no Off
+    #: detent and no gap to measure. :attr:`floor_is_measured` still reports
+    #: False for them, because nothing has been written to
+    #: :attr:`floor_display`; that was true before the drawn span was measured
+    #: too, and it is a question about the floor machinery rather than this
+    #: family.
     min_label: str = ""
     #: The same at the top, from ``max_string``.
     max_label: str = ""
+    #: What the screen shows at the MIDDLE of the range, from ``mid_string``.
+    #: 36 parameters carry one, and all 36 carry the other two labels as well.
+    #: Confirmed 2026-09-11: the label sits at wire 0.5, which is what "middle"
+    #: had never been pinned to - a stereo cab's `BALANCE` and a mono cab's
+    #: `PAN` both read "C" there. A parameter carrying all three labels is a
+    #: bipolar control whose drawn span is :data:`units.LABELLED_END_SPAN`.
+    mid_label: str = ""
     #: Whether the device declares that an expression pedal can be assigned
     #: here. False on 14 parameters, none of them yet tested against hardware -
     #: see ``docs/domain-model.md``.
@@ -606,6 +622,32 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
     minimum = _as_bound(p.get("min"), 0.0, where)
     maximum = _as_bound(p.get("max"), 1.0, where)
     skew = parse_skew(p.get("skew"))
+    default = _as_float(p.get("defaultValue"))
+    min_label = p.get("min_string", "")
+    mid_label = p.get("mid_string", "")
+    max_label = p.get("max_string", "")
+    if (min_label and mid_label and max_label
+            and skew == LIN_SKEW
+            and minimum is not None and maximum is not None
+            and maximum != minimum):
+        # A labelled-end control draws a span the catalog does not state. All
+        # three labels together are the discriminator: 267 parameters carry one
+        # or two - almost always `min_string="OFF"` - and exactly 36 carry all
+        # three. See :data:`units.LABELLED_END_SPAN` for the readings.
+        #
+        # The DEFAULT moves with the span, or it would keep meaning a position
+        # on the scale that was just replaced: a mono cab's PAN declares 5 of
+        # 0..10, which is the centre, and left alone it would read as 5 R. The
+        # conversion is checked against a reading - a Minivoicer's `V1 PAN`
+        # declares 0.6 of 0..1 and its untouched default shows `10 R`.
+        #
+        # Linear only, on purpose. Every one of the 36 declares no skew or
+        # skew=1, so the measured straight line and the declared taper agree,
+        # and a member that ever declares a taper is left alone rather than
+        # converted through a mapping nobody measured for it.
+        wire = (default - minimum) / (maximum - minimum)
+        minimum, maximum = units.LABELLED_END_SPAN
+        default = minimum + (maximum - minimum) * wire
     # The floor is keyed by the LAW, not by how the vendor spelled the bound.
     # Keying it by the symbolic name protected most cabs and not the PCOM ones,
     # which write `min="-40" max="6"` for the identical control - so asking one
@@ -618,7 +660,7 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         name=p.get("name", ""),
         minimum=minimum,
         maximum=maximum,
-        default=_as_float(p.get("defaultValue")),
+        default=default,
         units=p.get("units", ""),
         type=p.get("type", ""),
         steps=_as_int(p.get("steps")),
@@ -627,8 +669,9 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         floor_display=floor_display,
         options=parse_options(p.get("stepNames")),
         dynamic=p.get("dynamic") == "true",
-        min_label=p.get("min_string", ""),
-        max_label=p.get("max_string", ""),
+        min_label=min_label,
+        mid_label=mid_label,
+        max_label=max_label,
         exp_assignable=p.get("expAssignable") != "false",
         show_as_integer=p.get("showAsInteger") == "true",
     )
