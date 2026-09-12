@@ -7,6 +7,8 @@ client can be exercised without a device.
 """
 
 import itertools
+import pathlib
+import re
 
 import pytest
 
@@ -4192,6 +4194,76 @@ def test_a_bare_number_is_refused_by_every_settings_write(call):
     with pytest.raises(TypeError, match="which scale it is on"):
         call(qc)
     assert qc._t.sent == []
+
+
+#: The protocol record's own Global EQ layout table. Read rather than restated,
+#: because restating it here would be the fourth copy of the same five numbers.
+PROTOCOL_DOC = (pathlib.Path(__file__).resolve().parent.parent
+                / "docs" / "protocol.md")
+
+#: How the record spells each control, against the constant that carries it. The
+#: record's words are the DEVICE's; the constants are this library's names for
+#: them, so the mapping between the two is the one thing written twice.
+_BAND_CONTROL_NAMES = {
+    "GAIN": "GLOBAL_EQ_BAND_GAIN",
+    "FREQUENCY": "GLOBAL_EQ_BAND_FREQUENCY",
+    "Q": "GLOBAL_EQ_BAND_Q",
+    "TYPE": "GLOBAL_EQ_BAND_TYPE",
+    "band ENABLE": "GLOBAL_EQ_BAND_ENABLED",
+}
+
+
+@pytest.mark.skipif(not PROTOCOL_DOC.exists(), reason="docs/protocol.md not present")
+def test_the_band_offsets_match_the_protocol_record():
+    """The constants and `docs/protocol.md`'s layout table say the same thing.
+
+    The offsets used to be bare digits inside `set_global_eq`, with the same
+    mapping restated in that method's docstring and a third time as a table in
+    the protocol record. Three copies, one of which the code read - so a
+    correction to the record could leave the code addressing the old layout and
+    nothing would notice, because no test read the prose.
+
+    This is the test that makes the record load-bearing. It is deliberately
+    narrow: it checks the five offsets, not the whole document.
+    """
+    lines = PROTOCOL_DOC.read_text().splitlines()
+    # Anchored on the paragraph rather than on the first offset/control header
+    # in a 2,500-line document, so a second block's layout table added later
+    # cannot quietly rebind this test to itself.
+    heading = next((i for i, line in enumerate(lines)
+                    if line.startswith("**Global EQ parameter layout:")), None)
+    assert heading is not None, (
+        "docs/protocol.md no longer has a paragraph starting '**Global EQ "
+        "parameter layout:' - this test reads the table under it, so say where "
+        "the layout moved to rather than deleting the anchor")
+    start = next((i for i, line in enumerate(lines[heading:], heading)
+                  if line.startswith("| offset | control |")), None)
+    assert start is not None, (
+        "docs/protocol.md's Global EQ layout paragraph is no longer followed by "
+        "a table with the header '| offset | control |'; if the table was "
+        "reformatted, teach this test the new shape - the constants in "
+        "QuadCortex are checked against it")
+    table = {}
+    for line in lines[start + 2:]:
+        if not line.startswith("|"):
+            break
+        fields = [f.strip() for f in line.strip().strip("|").split("|")]
+        table[fields[1]] = int(fields[0])
+
+    assert set(table) == set(_BAND_CONTROL_NAMES), (
+        f"the record's layout table lists {sorted(table)}, and this test knows "
+        f"{sorted(_BAND_CONTROL_NAMES)} - one of them moved without the other")
+    for control, offset in table.items():
+        constant = _BAND_CONTROL_NAMES[control]
+        assert getattr(client.QuadCortex, constant) == offset, (
+            f"docs/protocol.md puts {control} at offset {offset}, and "
+            f"QuadCortex.{constant} is "
+            f"{getattr(client.QuadCortex, constant)}")
+
+    assert len(table) == client.QuadCortex.GLOBAL_EQ_BAND_STRIDE, (
+        "the stride is how many offsets there are; the record lists "
+        f"{len(table)} and the stride is "
+        f"{client.QuadCortex.GLOBAL_EQ_BAND_STRIDE}")
 
 
 def test_a_global_eq_gain_takes_db_on_the_measured_span():

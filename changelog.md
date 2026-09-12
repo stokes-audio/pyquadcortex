@@ -56,6 +56,22 @@ what is the same knob. So `Db(-40.0)` is refused on most cabs and accepted on
 those. That is the catalog's inconsistency, recorded in `docs/protocol.md`
 rather than papered over.
 
+### The Global EQ band offsets have names
+
+`QuadCortex` already named the Global EQ's stride, its band count and the three
+OUT tab indices. The five offsets WITHIN a band were bare digits inside
+`set_global_eq`. They are now `GLOBAL_EQ_BAND_GAIN`, `_FREQUENCY`, `_Q`, `_TYPE`
+and `_ENABLED`.
+
+**Nothing you wrote needs to change**, and there is no new thing to call: every
+one of those five controls is already reachable through
+`set_global_eq(band, gain=..., frequency=..., q=..., filter_type=...,
+enabled=...)`, which validates the band and does the arithmetic. The constants
+are for reading a wire index the unit reported, or checking one you are about to
+pass to `set_global_eq_band`'s raw-index door - they say which control within a
+band you are looking at without counting in fives. (Slots 25 to 27 are the OUT
+tab and have their own absolute constants.)
+
 ### The Global EQ gain span is measured, not taken from the manual
 
 `set_global_eq(band, gain=Db(...))` converts over -12..+12 dB, which is what it

@@ -2519,6 +2519,14 @@ how a duplicate gets cleaned up.
 `{parameter_index, value}` pairs, sparse by index on write. Band N's controls sit at
 `(N - 1) * 5 + offset`:
 
+> The table below is READ BY A TEST. `test_the_band_offsets_match_the_protocol_record`
+> in `tests/test_client.py` anchors on this paragraph, parses the offsets, and holds
+> them against `QuadCortex`'s `GLOBAL_EQ_BAND_GAIN`, `_FREQUENCY`, `_Q`, `_TYPE` and
+> `_ENABLED`. Correct a row here and the offline suite fails until the constants
+> agree - which is the point, since the unit accepts a write to the wrong index
+> without complaining. Reword this paragraph or reshape the table and the test says
+> what it could not find.
+
 | offset | control | notes |
 |---|---|---|
 | 0 | GAIN | -12..+12 dB, linear. Measured on screen 2026-09-11: wire 0.0/0.25/0.75/1.0 display -12.0/-6.0/+6.0/+12.0 dB |
