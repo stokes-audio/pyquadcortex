@@ -101,47 +101,65 @@ UNMEASURED_BOUNDS = {
     "MAX_INPUT_TRIM": "NC_Recorder OUT LEVEL - see DO_NOT_PROBE",
 }
 
-#: Where a knob's numbers actually start, for the families whose bottom is an
-#: OFF detent rather than the bottom of the scale.
+#: How far above the bottom of a range the numbers start, on a knob whose
+#: bottom is an Off detent.
 #:
-#: Keyed by the LAW - ``(minimum, maximum, skew)`` after the bounds are resolved
-#: - and NOT by the catalog's constant name, which was the first attempt and was
-#: wrong. The device spells one knob two ways: most cabs say
-#: ``min="MIN_CABSIM_DB"`` while the PCOM variants write ``min="-40" max="6"``
-#: for the identical control, same taper and all. Keyed by spelling, the guard
-#: protected one and not the other, so asking a PCOM cab for -30 dB returned
-#: wire 0.000516 and MUTED the microphone - the exact bug this table exists to
-#: prevent, surviving inside the fix for it.
+#: ``min_string`` says the bottom of the range shows a WORD rather than a
+#: number, and 254 parameters carry it. What the numbers resume AT used to be a
+#: hand-measured table keyed by law, :data:`FLOOR_WIRE`, which was wrong twice
+#: and is gone: it held a cab floor 16 dB above the knob's real bottom, and two
+#: more that were simply points somebody had happened to measure.
 #:
-#: The law is the physical control, so the law is the honest key.
+#: The device describes all of it and always did. Typed into on CorOS 4.0.1,
+#: 2026-09-11 and 2026-09-12, with the counts stated because this generalises
+#: from a handful of knobs to 218 and the counts are the argument:
 #:
-#: Each value is ``(floor_wire, displayed)``: the lowest wire position with a
-#: NUMERIC display, and what the unit SHOWS there. Both are measured. The second
-#: matters because the law does not reproduce it exactly - the lane family's
-#: fitted value at wire 0.01 is -39.48 while the screen says -39.5 - and a
-#: refusal that quotes a number it would itself reject is a dead end for whoever
-#: reads it.
+#: * the unit's numeric entry states EXACTLY the catalog's ``min``..``max`` -
+#:   **9 of 9** knobs whose entry box was read;
+#: * ``showAsInteger`` says whether it takes whole numbers - **9 of 9**;
+#: * typing the MINIMUM shows the word - **9 of 9**, across 9 different laws;
+#: * one UI step above the minimum is the lowest real number - **6 of 6**,
+#:   three integer knobs and three decimal ones. The other three were taken to
+#:   the minimum and no further.
 #:
-#: ``min_string="OFF"`` says the bottom of a range shows a word rather than a
-#: number, and 254 parameters carry it. It does NOT say where the numbers
-#: resume, so it cannot key this table; only measurement knows that. The
-#: consequence is deliberate and worth stating: parameters on a listed law
-#: inherit its floor even where nobody drove that particular knob. For the two
-#: linear families that costs at most a loud refusal across a 0.5 dB sliver at
-#: the very bottom. For the cab it prevents an 18 dB silent mute. That trade is
-#: the right way round.
-FLOOR_WIRE = {
-    # The cab section's per-mic LEVEL. -21.8 dB at wire 0.01, OFF below it.
-    # Measured 2026-08-26 on a 212 Darkglass Neo (M); the same law covers the
-    # PCOM cabs and Parallax's cab section.
-    (-40.0, 6.0, 4.9594844): (0.01, -21.8),
-    # The lane, mixer, splitter and FX-return LEVEL family. -39.5 dB at wire
-    # 0.01 on the lane VOLUME, confirmed on the splitter's LEVEL TO A, which
-    # reads OFF at wire 0.0. Measured 2026-08-25.
-    (-40.0, 12.0, 1.0): (0.01, -39.5),
-    # The FX loop's send side. -39.6 dB at wire 0.01. Measured 2026-08-26.
-    (-40.0, 0.0, 1.0): (0.01, -39.6),
-}
+#: **This is a rule about parameters, which this codebase has been burned by
+#: before** (``LANE_OUTPUT_UNASSIGNABLE`` had three plausible rules and all
+#: three were false). Two things make it a different bet. It is derived from
+#: what the device DECLARES rather than from a pattern somebody noticed, so a
+#: knob that disagrees is a catalog error rather than a gap in the rule - and
+#: one candidate for that was chased down and turned out to be a genuine
+#: difference (see the cab LEVELs below). And its failure mode is small: the
+#: refusal at the minimum rests on the 9-of-9 claim, while the step size only
+#: sets how wide a sliver just above the minimum is refused or allowed. Being
+#: wrong there costs a hundredth of a unit. The table it replaced was wrong by
+#: 16 dB.
+#:
+#: | knob | min | entry | lowest number |
+#: |---|---|---|---|
+#: | cab `HPF` | 20 | integer | 21 Hz |
+#: | `Plugin Graphic-9` `HPF` | 19 | integer | 20 Hz |
+#: | `Graphic-9` (4002) `HPF` | 19 | integer | 20 Hz |
+#: | lane output `VOLUME` | -40 | decimal | -39.99, drawn "-40.0 dB" |
+#: | cab `OUTPUT VOLUME` | -96 | decimal | -95.99, drawn "-96.0 dB" |
+#: | `Digital Flanger` `DRIVE` | 0 | decimal | 0.01, drawn "0%" |
+#:
+#: **The screen rounds and the entry does not**, which is the trap that made
+#: this look like a measurement problem for three sessions. A lane output reads
+#: "-40.0 dB" at its lowest real position AND shows OFF one step below, so no
+#: amount of reading the display can separate them - only typing can. That is
+#: also why the refusal is written against the DISPLAYED floor rather than the
+#: wire: a wire-side check was tried and turned out to be unreachable, because
+#: refusing everything below ``floor_display`` already refuses everything that
+#: could land below ``floor_wire``.
+#:
+#: The decimal step is confirmed on three knobs - the lane output VOLUME, a cab
+#: OUTPUT VOLUME and a `Digital Flanger` DRIVE, all of which accepted two
+#: decimal places - and contradicted nowhere. A `Utility Gate` RANGE and a
+#: `Looper X` PLAYBACK LEVEL were only taken to ONE decimal place, so they are
+#: consistent with 0.01 rather than evidence for it, and nothing here should be
+#: read as claiming their floors were measured.
+OFF_STEP_INTEGER = 1.0
+OFF_STEP_DECIMAL = 0.01
 
 #: The span a LABELLED-END control actually draws, whatever it declares.
 #:
@@ -205,10 +223,13 @@ FLOOR_WIRE = {
 #: move the screen will show.
 LABELLED_END_SPAN = (-50.0, 50.0)
 
-#: What a caller wanting silence should write instead of the bottom of a dB
-#: scale. Shared by every family in :data:`FLOOR_WIRE`.
-OFF_HINT = ("for silence write the wire value 0.0, the Off position - the "
-            "bottom of the dB scale is a different thing")
+#: What a caller wanting the Off position should write instead of the bottom of
+#: a range. Kept for callers who imported it; the refusals in
+#: :mod:`~pyquadcortex.protocol.catalog` now build a line naming that knob's own
+#: word and minimum, because "silence" was only ever right for the dB families
+#: and this reaches filter frequencies too.
+OFF_HINT = ("for the Off position write the wire value 0.0 - the bottom of the "
+            "range is a different thing")
 
 #: Models that must never be placed on the grid, and why.
 #:
@@ -299,11 +320,12 @@ def lane_level_db(value: float) -> float:
     which is where the span and its evidence live. The family is linear, so
     ``dB = -40 + 52 * value``, with 0 dB at :data:`UNITY_LEVEL`.
 
-    The bottom of the knob is special: -39.5 dB (wire 0.01) is the lowest NUMERIC
-    step, and below it the screen reads "Off" - so wire 0.0 is an Off position,
-    not -40 dB. This function still maps 0.0 to -40.0 because it converts the
-    scale; it does not model the Off detent. :data:`FLOOR_WIRE` does, and
-    ``Parameter.to_normalized`` enforces it.
+    The bottom of the knob is special: wire 0.0 is an Off position showing the
+    word "OFF", not -40 dB, and -39.99 is the lowest value the unit's numeric
+    entry accepts. This function still maps 0.0 to -40.0 because it converts the
+    SCALE and the unit really does report that wire for a knob sitting in its
+    detent; naming the detent is :attr:`Parameter.floor`'s job. Going the other
+    way is different, and :func:`db_to_lane_level` refuses -40.0 outright.
 
     Prefer ``qc.set_param(..., Db(...))``, which reads the span from the catalog
     and applies any taper. This helper exists for the ``device/translate``
@@ -317,14 +339,29 @@ def db_to_lane_level(db: float) -> float:
     """Convert displayed dB to the wire value a lane/mixer/splitter LEVEL takes.
 
     Inverse of :func:`lane_level_db`. Values outside the span do not exist on the
-    unit and are refused rather than silently clamped. The knob's numeric floor
-    is -39.5 dB; for silence write 0.0 directly, the Off position, instead of
-    converting a dB value.
+    unit and are refused rather than silently clamped, and so is the span's own
+    BOTTOM: -40.0 dB converts to wire 0.0, which is the Off position rather than
+    that value, so it is refused the way
+    :meth:`~pyquadcortex.protocol.catalog.Parameter.to_normalized` refuses it.
+    The lowest real value is -39.99 dB. For the Off position write 0.0 directly.
+
+    Kept in step with the catalog path on purpose: this helper and
+    ``set_param(..., Db(...))`` address the same knob, and until 2026-09-12 they
+    disagreed about -40.0 - one refused it and the other wrote the detent.
     """
     low, high = _level_span()
-    if not low <= db <= high:
+    floor = low + OFF_STEP_DECIMAL
+    if not floor <= db <= high:
+        if low <= db < floor:
+            raise ValueError(
+                f"{db:g} dB is the Off position on a lane or mixer level, which "
+                f"shows 'OFF' rather than a number, so writing it sets the "
+                f"detent rather than that value. Ask for {floor:g} dB or above, "
+                f"or write the wire value 0.0 if the Off position is what you "
+                f"want."
+            )
         raise ValueError(
-            f"lane and mixer levels run {low:g}..{high:+g} dB on the unit; "
+            f"lane and mixer levels run {floor:g}..{high:+g} dB on the unit; "
             f"{db} dB does not exist ({OFF_HINT})"
         )
     return (db - low) / (high - low)

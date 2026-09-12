@@ -149,15 +149,14 @@ class Parameter:
     #: (1 / skew)``. 1.0 is a straight line, which is what an absent attribute
     #: means; 615 parameters carry something else. See :func:`parse_skew`.
     skew: float = LIN_SKEW
-    #: The lowest wire position with a NUMERIC display, where the bottom of the
-    #: range is an OFF detent instead. 0.0 where every position is a number, and
-    #: also where nobody has looked - see :attr:`floor_is_measured`.
+    #: The lowest wire position that shows a NUMBER, where the bottom of the
+    #: range is an Off detent instead. 0.0 where every position is a number.
+    #: Derived from :attr:`floor_display`, so the two always agree.
     floor_wire: float = 0.0
-    #: What the unit SHOWS at :attr:`floor_wire`, or ``None`` if unmeasured.
-    #: Carried rather than derived, because the law does not reproduce it
-    #: exactly: the lane family's fitted value at wire 0.01 is -39.48 while the
-    #: screen says -39.5, and a refusal quoting a number it would itself reject
-    #: is a dead end for whoever reads it.
+    #: The lowest value this knob will accept as a number, or ``None`` where
+    #: every position is one. One step of the unit's numeric entry above
+    #: :attr:`minimum` - see
+    #: :data:`~pyquadcortex.protocol.units.OFF_STEP_DECIMAL`.
     floor_display: float | None = None
     #: This list parameter's option names, in wire order, exactly as the device
     #: spells them - typos included. Empty for a parameter that is not a list.
@@ -209,17 +208,20 @@ class Parameter:
         """The lowest value this parameter is KNOWN to reach, as a typed value.
 
         Usually :attr:`minimum`, but not where the bottom of the scale is an Off
-        detent: a cab LEVEL's law runs to -40 dB and its quietest real position
-        is -21.8 dB.
+        detent: a lane output's VOLUME runs to -40 dB and the lowest numeric
+        lowest value its numeric entry accepts is -39.99 dB, one hundredth
+        above. -40.0 itself shows the word.
 
-        **Check :attr:`floor_is_measured` before trusting this as the knob's own
-        bottom.** 254 parameters carry a :attr:`min_label` - the device saying
-        the bottom of the range shows a word rather than a number - and only
-        three laws have been driven to find where the numbers resume. For the
-        other 187 this returns :attr:`minimum`, the bottom of the SCALE, which
-        may sit below the bottom of the TRAVEL. The library does not refuse
-        there: refusing on a detent nobody has measured would be its own guess.
-        Driving one is what moves it.
+        **Every knob whose bottom is a word has one**, because the floor is
+        derived from the device's own description rather than measured per
+        family: 218 parameters carry a :attr:`min_label` without the
+        :attr:`mid_label` that marks a pan, and each gets a floor one step of
+        the unit's numeric entry above its minimum. See
+        :data:`~pyquadcortex.protocol.units.OFF_STEP_DECIMAL`.
+
+        The hand-measured table this replaced was wrong twice, most expensively
+        on a cab LEVEL, which carried a floor of -21.8 dB until 2026-09-11 -
+        16 dB above the knob's real bottom.
         """
         if self.minimum is None or self.maximum is None:
             return None
@@ -229,8 +231,35 @@ class Parameter:
 
     @property
     def floor_is_measured(self) -> bool:
-        """Whether somebody has actually driven this knob to its bottom."""
+        """Whether :attr:`floor` is the bottom of the TRAVEL, not of the SCALE.
+
+        True exactly where the device declares an Off position, which is what
+        the floor is derived from - so this is :attr:`has_an_off_position` seen
+        from the caller's side, and the name is kept because that is the
+        question a caller asks. It does NOT mean somebody drove this knob:
+        nobody drove 218 of them, and the device described all 218.
+        """
         return self.floor_display is not None
+
+    @property
+    def has_an_off_position(self) -> bool:
+        """Whether wire 0.0 shows a word on this knob instead of a number.
+
+        :attr:`min_label` is the device saying so, which is why this needs no
+        measurement. The exception is the pan family, which carries a
+        :attr:`mid_label` as well: there the bottom label is the SIDE - a pan
+        reads "50 L" at wire 0.0 - and :data:`units.LABELLED_END_SPAN` makes
+        -50.0 the correct real value for that position.
+
+        The 20 ``grMeter`` GAIN REDUCTION readouts carry ``min_string="-Inf"``
+        and so answer True here. That is harmless and deliberately not special
+        cased: they are not controls at all (see ``docs/domain-model.md``), so
+        the only effect is that a `Real` write to one is refused at its bottom
+        as well as ignored by the unit. Whether ``set_param`` should refuse all
+        47 meters outright is open, and is an ADR-0010 question rather than a
+        floor question.
+        """
+        return bool(self.min_label) and not self.mid_label
 
     @property
     def option_count(self) -> int | None:
@@ -326,9 +355,14 @@ class Parameter:
         nudge to the nearest one.
 
         The bottom of the range is :attr:`floor`, not :attr:`minimum`, and the
-        difference is the whole reason this is here: a cab LEVEL's law runs to
-        -40 dB while its quietest real position is -21.8 dB, so -30 dB converts
-        to wire 0.0005 and MUTES the microphone.
+        difference is the whole reason this is here: a lane output's VOLUME law
+        runs to -40 dB while its lowest real value is -39.99 dB, and -40.0
+        itself shows OFF rather than a number.
+
+        The example used to be a cab LEVEL refusing -30 dB. That floor was
+        measured with the unit's encoder, which cannot reach below wire 0.01,
+        and the knob turned out to have no detent - so a cab converts -30 dB
+        like any other value now.
         """
         bottom, top = self.floor, self.maximum
         if bottom is None or top is None:
@@ -345,13 +379,17 @@ class Parameter:
         if low <= real <= high:
             return
         unit = f" {self.units}" if self.units else ""
-        hint = f" ({units.OFF_HINT})" if self.floor_wire > 0.0 else ""
+        hint = ""
+        if self.has_an_off_position and self.minimum is not None:
+            hint = (f" ({self.minimum:g}{unit} is the Off position, which shows "
+                    f"{self.min_label!r} rather than a number - say Encoded(0.0) "
+                    f"if that is what you want)")
         raise ValueError(
             # The bound printed is the bound COMPARED. Rounding only the message
             # produced a dead end: the lane family's fitted floor is -39.48, the
-            # message said -39.5, and -39.5 was then refused - while -39.5 is
-            # precisely the value measured on the unit's screen at that wire
-            # position. `floor` reports the measured display where there is one.
+            # message named a rounded floor the check would then refuse. The
+            # floor is now exact - one step of the unit's numeric entry above
+            # the minimum - so the printed bound is the accepted bound.
             f"{self.name!r} runs {low:g}..{high:g}{unit} on the unit; "
             f"{real:g}{unit} does not exist there.{hint}"
         )
@@ -363,7 +401,10 @@ class Parameter:
         2026-08-26 over three unrelated blocks in two different units: a cab
         LEVEL at skew 4.9594844 (wire 0.01/0.50/1.00 read -21.8/0.0/6.0 dB), a
         Low-High Cut HPF FREQ at skew 0.3 (wire 0.25 read 217 Hz), and the same
-        block's OUTPUT with no skew (wire 0.25 read -10.0 dB).
+        block's OUTPUT with no skew (wire 0.25 read -10.0 dB). Extended
+        2026-09-11 to an amp OUTPUT at skew 3.8018, which holds over four
+        decades of wire (0.01/0.005/0.000001 read -38.6/-42.1/-58.1 dB) and is
+        the taper 125 knobs carry.
 
         Raises ``ValueError`` for a parameter whose bounds the catalog names and
         nobody has measured - see :meth:`_reject_unmeasured`.
@@ -648,13 +689,23 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         wire = (default - minimum) / (maximum - minimum)
         minimum, maximum = units.LABELLED_END_SPAN
         default = minimum + (maximum - minimum) * wire
-    # The floor is keyed by the LAW, not by how the vendor spelled the bound.
-    # Keying it by the symbolic name protected most cabs and not the PCOM ones,
-    # which write `min="-40" max="6"` for the identical control - so asking one
-    # of those for -30 dB returned wire 0.000516 and muted the microphone, which
-    # is the exact bug the floor exists to prevent.
-    floor_wire, floor_display = units.FLOOR_WIRE.get((minimum, maximum, skew),
-                                                     (0.0, None))
+    # The floor is DERIVED from the device's own description, not measured into
+    # a table. `min_string` says the bottom of the range is a word; `min`/`max`
+    # are the range the unit's numeric entry states; `showAsInteger` says
+    # whether it takes whole numbers. Typing the minimum gives the word, and one
+    # UI step up is the lowest real number. units.OFF_STEP_DECIMAL carries
+    # the readings and says how far they reach.
+    #
+    # A parameter carrying `mid_string` is exempt: there the bottom label is a
+    # SIDE, not a stand-in for a number, and units.LABELLED_END_SPAN governs.
+    show_as_integer = p.get("showAsInteger") == "true"
+    floor_wire, floor_display = 0.0, None
+    if (min_label and not mid_label
+            and minimum is not None and maximum is not None
+            and maximum != minimum):
+        floor_display = minimum + (units.OFF_STEP_INTEGER if show_as_integer
+                                   else units.OFF_STEP_DECIMAL)
+        floor_wire = ((floor_display - minimum) / (maximum - minimum)) ** skew
     return Parameter(
         index=index,
         name=p.get("name", ""),
@@ -673,7 +724,7 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         mid_label=mid_label,
         max_label=max_label,
         exp_assignable=p.get("expAssignable") != "false",
-        show_as_integer=p.get("showAsInteger") == "true",
+        show_as_integer=show_as_integer,
     )
 
 

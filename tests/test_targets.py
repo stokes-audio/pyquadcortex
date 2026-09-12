@@ -298,21 +298,29 @@ def test_a_value_the_unit_has_no_position_for_is_refused(target, index, real):
 
 
 def test_a_value_below_the_knobs_floor_is_refused_not_silently_muted():
-    """The blocking bug this floor exists to prevent.
+    """A floor is refused through a target, on a family that has one.
 
-    A cab LEVEL's law runs to -40 dB but its quietest real position is -21.8 dB.
-    Without the floor, asking for -30 dB converts to wire 0.0005 and MUTES the
-    microphone: a write that looks like it worked and did something else.
+    This used to address a cab, on the belief that -30 dB there muted the
+    microphone. Driven below the encoder's reach on 2026-09-11 the cab turned
+    out to have no detent - it prints -37.2 dB at wire 0.000001 and is audibly
+    passing signal below the old floor - so that entry is gone. The lane
+    family's detent is real and is what a target refuses against now.
     """
-    with pytest.raises(ValueError, match="does not exist there"):
-        Block(0, 5, 12000).normalize(2, -30.0, _scale_catalog())
+    with pytest.raises(ValueError, match="Off position"):
+        LaneOutput(0).normalize(0, -40.0, _scale_catalog())
+
+
+def test_a_cab_level_below_its_old_floor_now_converts():
+    """The 16 dB the removed entry was costing, reached the way a caller does."""
+    wire = Block(0, 5, 12000).normalize(2, -30.0, _scale_catalog())
+    assert float(wire) == pytest.approx(0.000516, abs=1e-5)
 
 
 def test_a_refusal_names_the_parameters_own_floor_and_the_way_out():
     with pytest.raises(ValueError) as excinfo:
-        LaneOutput(0).normalize(0, -39.9, _scale_catalog())
+        LaneOutput(0).normalize(0, -40.0, _scale_catalog())
     message = str(excinfo.value)
-    assert "-39.5" in message and "dB" in message
+    assert "-39.99" in message and "dB" in message
     assert "the Off position" in message
 
 

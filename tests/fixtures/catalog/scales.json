@@ -1,5 +1,31 @@
 [
   {
+    "model_id": 1001,
+    "model": "Brit 2203",
+    "index": 6,
+    "name": "OUTPUT",
+    "raw": {
+      "defaultValue": "0.0",
+      "displayPos": "6",
+      "max": "12",
+      "min": "-60",
+      "min_string": "OFF",
+      "name": "OUTPUT",
+      "skew": "3.8018",
+      "type": "float",
+      "units": "dB"
+    },
+    "minimum": -60.0,
+    "maximum": 12.0,
+    "units": "dB",
+    "type": "float",
+    "steps": null,
+    "skew": 3.8018,
+    "floor_wire": 2.1636814167829986e-15,
+    "floor_display": -59.99,
+    "why": "Brit 2203 OUTPUT - the -60..12 dB skew 3.8018 family, 125 knobs carrying min_label, and the first of them ever driven"
+  },
+  {
     "model_id": 3008,
     "model": "Parallax",
     "index": 16,
@@ -20,9 +46,9 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
-    "why": "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so it cannot borrow the layout and must carry the law itself"
+    "floor_wire": 0.0,
+    "floor_display": null,
+    "why": "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so it cannot borrow the layout and must carry the law itself. Also the cab law WITHOUT a min_string: typed to -40 on the unit it displays -40.0 dB where a labelled cab shows OFF at that wire"
   },
   {
     "model_id": 3008,
@@ -45,8 +71,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 0.0,
+    "floor_display": null,
     "why": "Parallax cab LEVEL, mic 2"
   },
   {
@@ -72,6 +98,32 @@
     "floor_wire": 0.0,
     "floor_display": null,
     "why": "Parametric-8 band 1 GAIN - the EQ family, steps=241"
+  },
+  {
+    "model_id": 4002,
+    "model": "Graphic-9",
+    "index": 0,
+    "name": "HPF",
+    "raw": {
+      "defaultValue": "19",
+      "max": "250",
+      "min": "19",
+      "min_string": "OFF",
+      "name": "HPF",
+      "showAsInteger": "true",
+      "steps": "232",
+      "type": "float",
+      "units": "Hz"
+    },
+    "minimum": 19.0,
+    "maximum": 250.0,
+    "units": "Hz",
+    "type": "float",
+    "steps": 232,
+    "skew": 1.0,
+    "floor_wire": 0.004329004329004329,
+    "floor_display": 20.0,
+    "why": "Graphic-9 HPF - the superseded model, alone on the 19..250 law"
   },
   {
     "model_id": 4003,
@@ -148,6 +200,58 @@
     "why": "Low-High Cut OUTPUT - no skew, the linear control case"
   },
   {
+    "model_id": 4006,
+    "model": "Plugin Graphic-9",
+    "index": 0,
+    "name": "HPF",
+    "raw": {
+      "defaultValue": "19",
+      "max": "500",
+      "min": "19",
+      "min_string": "OFF",
+      "name": "HPF",
+      "showAsInteger": "true",
+      "skew": "0.6",
+      "steps": "482",
+      "type": "float",
+      "units": "Hz"
+    },
+    "minimum": 19.0,
+    "maximum": 500.0,
+    "units": "Hz",
+    "type": "float",
+    "steps": 482,
+    "skew": 0.6,
+    "floor_wire": 0.02458741967777233,
+    "floor_display": 20.0,
+    "why": "Plugin Graphic-9 HPF - an integer knob whose minimum 19 is the Off position, so 20 Hz is the floor and 19 Hz does not exist"
+  },
+  {
+    "model_id": 6005,
+    "model": "Digital Delay (M)",
+    "index": 17,
+    "name": "GAIN REDUCTION",
+    "raw": {
+      "defaultValue": "0",
+      "max": "0",
+      "min": "-60",
+      "min_string": "-Inf",
+      "name": "GAIN REDUCTION",
+      "steps": "180",
+      "type": "grMeter",
+      "units": "dB"
+    },
+    "minimum": -60.0,
+    "maximum": 0.0,
+    "units": "dB",
+    "type": "grMeter",
+    "steps": 180,
+    "skew": 1.0,
+    "floor_wire": 0.0001666666666666335,
+    "floor_display": -59.99,
+    "why": "Digital Delay (M) GAIN REDUCTION - a METER, not a knob. Here so that claim is checkable against the catalog it came from"
+  },
+  {
     "model_id": 10000,
     "model": "Splitter AB",
     "index": 0,
@@ -167,8 +271,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "legacy Splitter AB view - must share the unified splitter's span"
   },
   {
@@ -191,8 +295,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "legacy Splitter AB view, the B side"
   },
   {
@@ -217,8 +321,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "splitter LEVEL TO A - the same family again"
   },
   {
@@ -243,8 +347,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "splitter LEVEL TO B"
   },
   {
@@ -294,8 +398,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "Mixer LEVEL A - scene-following, and briefly mistaken for undrivable"
   },
   {
@@ -318,8 +422,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "Mixer LEVEL B - the other half of that pair"
   },
   {
@@ -342,8 +446,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "MIXER LEVEL - the same family, measured separately"
   },
   {
@@ -368,8 +472,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 6.83297249895445e-19,
+    "floor_display": -39.99,
     "why": "cab MIC 1 LEVEL - the taper, skew 4.9594844"
   },
   {
@@ -421,9 +525,61 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 6.83297249895445e-19,
+    "floor_display": -39.99,
     "why": "cab MIC 2 LEVEL - proves both mics share the layout"
+  },
+  {
+    "model_id": 12000,
+    "model": "Default Cabsim",
+    "index": 16,
+    "name": "HPF",
+    "raw": {
+      "defaultValue": "20.0",
+      "max": "500",
+      "min": "20",
+      "min_string": "OFF",
+      "name": "HPF",
+      "showAsInteger": "true",
+      "skew": "0.3",
+      "type": "float",
+      "units": "Hz"
+    },
+    "minimum": 20.0,
+    "maximum": 500.0,
+    "units": "Hz",
+    "type": "float",
+    "steps": null,
+    "skew": 0.3,
+    "floor_wire": 0.15690169265771636,
+    "floor_display": 21.0,
+    "why": "cab HPF - typed into on the unit: states 20 to 500, whole numbers only, 20 reads OFF and 21 Hz is the lowest number"
+  },
+  {
+    "model_id": 12000,
+    "model": "Default Cabsim",
+    "index": 18,
+    "name": "OUTPUT VOLUME",
+    "raw": {
+      "defaultValue": "0.0",
+      "max": "12",
+      "min": "-96",
+      "min_string": "OFF",
+      "name": "OUTPUT VOLUME",
+      "skew": "4.93",
+      "steps": "360",
+      "type": "float",
+      "units": "dB"
+    },
+    "minimum": -96.0,
+    "maximum": 12.0,
+    "units": "dB",
+    "type": "float",
+    "steps": 360,
+    "skew": 4.93,
+    "floor_wire": 1.3038297474900099e-20,
+    "floor_display": -95.99,
+    "why": "cab OUTPUT VOLUME - the decimal twin of the above, -96 reads OFF and -95.99 is accepted and drawn as -96.0 dB"
   },
   {
     "model_id": 12114,
@@ -446,8 +602,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 0.0,
+    "floor_display": null,
     "why": "PCOM Core Cabsim LEVEL - the same knob with LITERAL bounds, which is what the floor's law-keying exists for"
   },
   {
@@ -470,8 +626,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.6,
+    "floor_wire": 0.00024999999999995024,
+    "floor_display": -39.99,
     "why": "Send LEVEL - MIN_FXLOOP_OUT_GAIN_DB, which tops out at unity"
   },
   {
@@ -494,8 +650,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.6,
+    "floor_wire": 0.00024999999999995024,
+    "floor_display": -39.99,
     "why": "Send 2 LEVEL - proves the send family is more than one model"
   },
   {
@@ -518,8 +674,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "FX Loop LEVEL - MIN_FXLOOP_IN_GAIN_DB, which can boost"
   },
   {
@@ -542,9 +698,35 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "Return 2 LEVEL - and the return family likewise"
+  },
+  {
+    "model_id": 16002,
+    "model": "Utility Gate",
+    "index": 4,
+    "name": "RANGE",
+    "raw": {
+      "defaultValue": "-90",
+      "max": "-6",
+      "min": "-90",
+      "min_string": "OFF",
+      "name": "RANGE",
+      "skew": "0.6",
+      "steps": "168",
+      "type": "float",
+      "units": "dB"
+    },
+    "minimum": -90.0,
+    "maximum": -6.0,
+    "units": "dB",
+    "type": "float",
+    "steps": 168,
+    "skew": 0.6,
+    "floor_wire": 0.004420103393822744,
+    "floor_display": -89.99,
+    "why": "Utility Gate RANGE - a decimal knob, -90 reads OFF"
   },
   {
     "model_id": 18007,
@@ -644,8 +826,8 @@
     "type": "float",
     "steps": null,
     "skew": 1.0,
-    "floor_wire": 0.01,
-    "floor_display": -39.5,
+    "floor_wire": 0.00019230769230765404,
+    "floor_display": -39.99,
     "why": "lane output VOLUME - the MIN_MIXER_DB family"
   },
   {
@@ -724,6 +906,59 @@
     "why": "TEMPO - MIN_TEMPO, steps=201"
   },
   {
+    "model_id": 27000,
+    "model": "Looper X",
+    "index": 8,
+    "name": "PLAYBACK LEVEL",
+    "raw": {
+      "defaultValue": "0",
+      "max": "0",
+      "min": "-60",
+      "min_string": "OFF",
+      "name": "PLAYBACK LEVEL",
+      "skew": "3.8018",
+      "steps": "201",
+      "type": "float",
+      "units": "dB"
+    },
+    "minimum": -60.0,
+    "maximum": 0.0,
+    "units": "dB",
+    "type": "float",
+    "steps": 201,
+    "skew": 3.8018,
+    "floor_wire": 4.327375443776328e-15,
+    "floor_display": -59.99,
+    "why": "Looper X PLAYBACK LEVEL - a decimal knob, -60 reads OFF"
+  },
+  {
+    "model_id": 29001,
+    "model": "Single (M)",
+    "index": 4,
+    "name": "HI PASS",
+    "raw": {
+      "defaultValue": "20",
+      "max": "800",
+      "min": "20",
+      "min_string": "OFF",
+      "name": "HI PASS",
+      "showAsInteger": "true",
+      "skew": "0.6",
+      "steps": "200",
+      "type": "float",
+      "units": "Hz"
+    },
+    "minimum": 20.0,
+    "maximum": 800.0,
+    "units": "Hz",
+    "type": "float",
+    "steps": 200,
+    "skew": 0.6,
+    "floor_wire": 0.018396840302376035,
+    "floor_display": 21.0,
+    "why": "Single (M) HI PASS - the IR loader family, steps=200, and the one Off detent of the three that turned out to be real"
+  },
+  {
     "model_id": 32000,
     "model": "Default Cabsim (ST)",
     "index": 2,
@@ -745,8 +980,8 @@
     "type": "float",
     "steps": null,
     "skew": 4.9594844,
-    "floor_wire": 0.01,
-    "floor_display": -21.8,
+    "floor_wire": 6.83297249895445e-19,
+    "floor_display": -39.99,
     "why": "Default Cabsim (ST) LEVEL - a STEREO cab, because all three screen-measured blocks are mono and 86 of 174 cabs are not"
   },
   {

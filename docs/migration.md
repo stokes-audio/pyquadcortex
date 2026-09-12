@@ -210,8 +210,20 @@ measured-span path refused - and unifying them on the catalog meant picking one.
 A clamped write looks like it worked and lands somewhere else.
 
 The bottom of the range is the knob's FLOOR, not its minimum, where those
-differ. A cab LEVEL's law runs to -40 dB and its quietest real position is -21.8
-dB; asking for -30 dB used to convert to wire 0.0005 and mute the microphone.
+differ - and on any knob whose screen shows a word at the bottom they differ by
+one step of the unit's own numeric entry. A lane output's VOLUME states -40 to
+12 and its lowest real value is -39.99 dB; a cab HPF states 20 to 500 in whole
+numbers and its lowest is 21 Hz.
+
+Reading an expression sweep changed with it: an end reads as `Off` below the
+knob's floor, and on a lane VOLUME that band went from the bottom 1% of the wire
+to the bottom 0.02%. A heel at wire 0.005 used to read `Off` and now reads
+-39.74 dB.
+
+So the minimum itself is refused on those knobs: `Db(-40.0)` on a cab or a lane
+VOLUME, `Db(-60.0)` on an amp OUTPUT, `Hertz(20.0)` on a cab HPF. Each converts
+to wire 0.0, which is the Off position rather than the value asked for. Write
+`Encoded(0.0)` if the Off position is what you want.
 
 ### Converting real units now needs a catalog
 
