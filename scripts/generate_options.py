@@ -224,6 +224,14 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     lists = collect(cat)
     names = name_lists(lists)
     total = sum(len(v) for v in lists.values())
+    boolean_parameters = sum(
+        1 for model in cat for p in model.parameters
+        if p.options and not p.dynamic
+        and tuple(o.lower() for o in p.options) in BOOLEAN_LISTS)
+    dynamic_parameters = sum(
+        1 for model in cat for p in model.parameters if p.dynamic)
+    dynamic_count = ("Twelve" if dynamic_parameters == 12
+                     else str(dynamic_parameters))
 
     lines = [
         '"""The choices a list-valued parameter offers, as enums.',
@@ -239,12 +247,12 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
         "the same thing wherever it appears - the note-length list is shared by",
         "``SYNC NOTE``, ``SYNC NOTE L``, ``SYNC NOTE R`` and two more.",
         "",
-        "**A two-option Off/On parameter gets no enum.** 247 parameters offer",
+        f"**A two-option Off/On parameter gets no enum.** {boolean_parameters} parameters offer",
         "exactly those, and ``True`` says everything ``OffOn.ON`` would::",
         "",
         "    qc.set_param(block, 'SYNC', True)",
         "",
-        "**A dynamic list gets no enum either.** Twelve parameters build their",
+        f"**A dynamic list gets no enum either.** {dynamic_count} parameters build their",
         "list from the preset - it includes one entry per upstream block - so",
         "read those with :func:`~pyquadcortex.protocol.client.param_options`.",
         "",

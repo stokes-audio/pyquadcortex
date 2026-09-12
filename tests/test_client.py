@@ -12,7 +12,8 @@ import re
 
 import pytest
 
-from pyquadcortex.protocol import catalog, client
+from pyquadcortex.protocol import catalog, client, params
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import models as models_4_1
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
                                 Output, SceneBypassBehavior, Setlist, TempoMode)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
@@ -1525,6 +1526,15 @@ def test_set_block_can_skip_verification_for_fire_and_forget_placement():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     qc.set_block(Block(1, 4, 19000), verify=False)   # must not raise
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 19000
+
+
+def test_a_coros_4_1_model_constant_is_refused_when_the_unit_lacks_it():
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.ModelCatalog()
+
+    with pytest.raises(client.ControlNotDrivable, match="not in this unit's catalog"):
+        qc.set_block(Block(1, 4, 6031), verify=False)
+    assert qc._t.sent == []
 
 
 def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():
@@ -4472,10 +4482,11 @@ def test_set_block_refuses_a_model_the_unit_does_not_have_before_sending():
     fake = FakeTransport()
     qc = client.QuadCortex(fake)
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
-    missing = 6026  # Crystal Delay, CorOS 4.1.0 only; not in the sample payload either
+    missing = models_4_1.Delay.ARPEGGIO_DELAY
     assert qc.catalog.get(missing) is None
     with pytest.raises(ControlNotDrivable) as caught:
         qc.set_block(Block(0, 3, missing), verify=False)
-    assert caught.value.control == "model 6026"
+    assert caught.value.control == f"model {missing}"
     assert "not in this unit's catalog" in caught.value.evidence
+    assert "4.0.1" in caught.value.evidence
     assert fake.sent == []

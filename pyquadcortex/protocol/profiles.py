@@ -2,7 +2,7 @@
 
 A profile is a client class (ADR-0020). ``QuadCortex`` in ``client.py`` is the
 Quad Cortex on CorOS 4.0.1 and the base of every other profile. This module
-holds the two profiles we know are coming and have not measured, and the
+holds the measured CorOS 4.1 profile, the unmeasured Mini profile, and the
 registry ``connect()`` resolves through. Adding a profile is: subclass
 ``QuadCortex``, declare the class attributes, and the registry sees it.
 """
@@ -11,42 +11,61 @@ from __future__ import annotations
 from pyquadcortex.protocol.client import QuadCortex
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.support import Evidence, Hardware, NoSnapshot
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import models as models_4_1
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import options as options_4_1
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import params as params_4_1
 
 _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
                  pa.VersionMessage.ATMA: "Quad Cortex Mini"}
 
 
 class QuadCortex41(QuadCortex):
-    """Quad Cortex on CorOS 4.1 - connects, and verifies nothing yet.
+    """Quad Cortex on CorOS 4.1 - connects with 16 measured operations.
 
-    PR #42's description (2026-09-03) reports ``pytest --hardware``: 2742
-    passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
-    d14e, by tony-xmelon. That is a contributor's report and the maintainer has
-    not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
-    connection is therefore known to work with this handshake and announce
-    string. Which operations behave as on 4.0.1 is not known per name, so every
-    inherited operation refuses under ``Support.VERIFIED`` and runs with a
-    warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
-    binding the 4.0.1 constants would hand a 4.1 user names their unit does not
-    use.
+    Contributor hardware run 99a5cd5 on 2026-09-11, combining this profile with
+    PR #62's live-preset fix, passed 95 tests with 4 fixture-dependent skips and
+    all 16 claimed operations green on CorOS 4.1.0 / app firmware d14e. The
+    maintainer has not reproduced that run, which is what
+    ``Evidence.CONTRIBUTED`` says here. Profile-aware runs measured the
+    operations in ``VERIFIED`` below; this PR's isolated final-head run follows
+    after #62 merges. Every other inherited operation refuses under
+    ``Support.VERIFIED`` and runs with a warning under
+    ``Support.EXPERIMENTAL``. Its generated constants are bound to the
+    contributed CorOS 4.1.0 snapshot rather than the 4.0.1 compatibility
+    imports.
 
     To finish this profile, on a 4.1 unit:
 
-    1. ``scripts/generate_models.py --snapshot coros_4_1_0`` and the params and
-       options generators; bind the three modules below.
-    2. ``pytest tests/hardware --hardware --profile QuadCortex41``; the report
+    1. ``pytest tests/hardware --hardware --profile QuadCortex41``; the report
        at the end lists the operations whose tests passed. Put those names in
        ``VERIFIED``.
-    3. Record any operation that behaved differently in ``docs/protocol.md``
+    2. Record any operation that behaved differently in ``docs/protocol.md``
        beside the 4.0.1 record, dated and named, and override it here.
     """
 
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
-    VERIFIED = frozenset()
-    models = NoSnapshot("coros_4_1_0")
-    params = NoSnapshot("coros_4_1_0")
-    options = NoSnapshot("coros_4_1_0")
+    VERIFIED = frozenset({
+        "active_scene",
+        "clear_expression",
+        "read_current_preset",
+        "set_bypass",
+        "set_chain_input",
+        "set_expression",
+        "set_global_eq",
+        "set_hold_timing",
+        "set_input_port",
+        "set_param",
+        "set_scene_color",
+        "set_scene_label",
+        "set_tempo_mode",
+        "switch_scene",
+        "tempo_mode",
+        "update_settings",
+    })
+    models = models_4_1
+    params = params_4_1
+    options = options_4_1
 
 
 class QuadCortexMini(QuadCortex):

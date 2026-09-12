@@ -1022,7 +1022,6 @@ class QuadCortex:
         appears in all eight.
         """
         index, spec = target.index_of(param, self._get_catalog)
-
         if value is None:
             raise TypeError(
                 "set_param needs a value that says which scale it is on. See "

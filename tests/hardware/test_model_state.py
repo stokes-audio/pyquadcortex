@@ -174,9 +174,8 @@ def test_nothing_the_burst_delivered_is_read_again_on_first_access(
         "again, which is the round trip the cache exists to avoid")
 
 
-def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
-                                                                handshake_burst,
-                                                                record_property):
+def test_the_burst_warms_identity_from_connects_own_version_read(
+        burst_warmed, handshake_burst, record_property):
     """Identity reaches the cache through the ONE Version READ connect() makes.
 
     The unit never volunteers its identity, so the model reads it (section 9's
@@ -187,7 +186,9 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
     its burst - the full reply to connect's READ (15 fields, +0.71 s), the
     unit's own ``Version{READ}`` about 1 ms behind it (the question it asks Cortex
     Control, section 4.4), and the ``UPDATE`` carrying
-    ``cortex_control_version_valid`` that answers our announce (+0.73 s).
+    ``cortex_control_version_valid`` that answers our announce (+0.73 s). The
+    same three shapes were captured on CorOS 4.1.0 on 2026-09-11; that exact
+    trace corrects four earlier connection windows that missed the last shape.
     ``_hello`` itself still sends no READ; the 2026-08-27 measurement of one
     inbound ``Version`` stands for ``_hello`` alone.
 
@@ -210,7 +211,7 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
     announce = [s for s in shapes if "cortex_control_version_valid" in s[1]]
     record_property("identity_reads", len(full))
     assert len(announce) == 1, (
-        f"{len(announce)} answers to our version announce; one is measured. "
+        f"the profile sent {len(announce)} announce answers, not the measured one. "
         f"Shapes seen: {shapes}")
     assert full, (
         f"no full Version reply reached the listener: connect() stopped reading "
@@ -229,7 +230,8 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
         f"that is a finding for protocol.md, not a reason to loosen this.")
 
 
-def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
+def test_a_version_read_is_answered_and_then_questioned(
+        qc, profile, record_property):
     """The two-message answer the entry below is built around, on the unit.
 
     The protocol is symmetric, so a host ``Version{READ}`` gets the unit's answer
@@ -245,7 +247,10 @@ def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
     anywhere else, because a question that says nothing leaves no other trace.
 
     Timing is deliberately not asserted. The gap is recorded in the docs as
-    measured; what the code depends on is the SHAPE.
+    measured; what the code depends on is the SHAPE. The listener can also
+    catch the connect handshake's delayed compatibility answer, so that one
+    separately identified shape is allowed but never counted as this read's
+    answer.
     """
     versions = Pushes("VersionMessage")
     qc.add_listener(versions)
@@ -265,8 +270,33 @@ def test_a_version_read_is_answered_and_then_questioned(qc, record_property):
         {"action": pa.MessageAction.Enum.Name(m.action),
          "fields": sorted(f.name for f, _ in m.ListFields())} for m in seen])
 
-    assert len(seen) == 2, f"one Version READ brought back {len(seen)} messages"
-    answer, question = seen
+    reads = [m for m in seen if m.action == pa.MessageAction.READ]
+    answers = [m for m in seen if m.action == pa.MessageAction.UPDATE
+               and (m.app_fw_version or m.device_serial_number)]
+    announce_answers = [
+        m for m in seen
+        if m.action == pa.MessageAction.UPDATE
+        and "cortex_control_version_valid" in {
+            field.name for field, _ in m.ListFields()
+        }
+    ]
+    known = reads + answers + announce_answers
+    unknown = [m for m in seen if not any(m is item for item in known)]
+
+    assert len(answers) == 1, (
+        f"one Version READ brought back {len(answers)} identity answers: {seen}")
+    assert len(reads) == 1, (
+        f"one Version READ brought back {len(reads)} unit questions: {seen}")
+    if profile.__name__ == "QuadCortex41":
+        assert len(announce_answers) <= 1, (
+            "the earlier 4.1 connect announce was answered "
+            f"{len(announce_answers)} times")
+    else:
+        assert not announce_answers, (
+            "the CorOS 4.0.1 announce answer arrived long after its measured "
+            f"+0.73 s window: {announce_answers}")
+    assert not unknown, f"one Version READ window contained unknown shapes: {unknown}"
+    answer, question = answers[0], reads[0]
     assert answer.action == pa.MessageAction.UPDATE, (
         f"the unit answered with action {answer.action}, not an UPDATE")
     assert answer.app_fw_version and answer.device_serial_number, (

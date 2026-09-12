@@ -248,17 +248,25 @@ def test_support_defaults_to_verified_and_is_readable():
     assert qc.support is support.Support.EXPERIMENTAL
 
 
-def test_the_4_1_stub_connects_but_verifies_nothing_and_has_no_snapshot():
+def test_the_4_1_profile_connects_with_its_snapshot_and_measured_operations():
     cls = profiles.QuadCortex41
     assert issubclass(cls, client.QuadCortex)
     assert cls.MEASURED_ON == ("4.1.0",)
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
-    assert cls.VERIFIED == frozenset()
+    assert cls.VERIFIED == frozenset({
+        "active_scene", "clear_expression", "read_current_preset", "set_bypass",
+        "set_chain_input", "set_expression", "set_global_eq", "set_hold_timing",
+        "set_input_port", "set_param", "set_scene_color", "set_scene_label", "set_tempo_mode",
+        "switch_scene", "tempo_mode", "update_settings",
+    })
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
-    assert isinstance(cls.models, support.NoSnapshot)
-    with pytest.raises(AttributeError, match="coros_4_1_0"):
-        cls.models.Delay
-    assert len(cls(FakeTransport()).unverified_operations) == len(client.QuadCortex.operations())
+    assert cls.models.__name__.endswith("catalogs.coros_4_1_0.models")
+    assert cls.params.__name__.endswith("catalogs.coros_4_1_0.params")
+    assert cls.options.__name__.endswith("catalogs.coros_4_1_0.options")
+    assert len(cls.models.ALL) == 420
+    assert len(cls(FakeTransport()).unverified_operations) == (
+        len(client.QuadCortex.operations()) - len(cls.VERIFIED)
+    )
 
 
 def test_the_mini_stub_is_recognised_but_cannot_connect():
