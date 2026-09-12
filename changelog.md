@@ -52,10 +52,17 @@ them needed a guard:
   `type="grMeter"` and the unit draws a moving readout. Writing it stores a
   value and changes nothing.
 * **The IR loader's `HI PASS`** (16 knobs, 20..800 Hz) does have a real detent,
-  and the numbers resume at 20 Hz - the bottom of its own range - so nothing you
-  could ask for was unreachable.
+  and the numbers resume at 20 Hz - the bottom of its own range - so no interior
+  value was out of reach.
 
-Nothing you wrote needs to change for any of those three.
+One thing did change for all three, and for every other knob whose screen shows
+a word at the bottom. **Asking for the exact bottom of the range is now
+refused.** `Db(-60.0)` on an amp OUTPUT, `Db(-40.0)` on a cab and `Hertz(20.0)`
+on an IR loader's HI PASS all used to convert to wire 0.0 - which is the Off
+position, not the value asked for - and looked like successful writes. They now
+raise and tell you to write `Encoded(0.0)` if the Off position is what you
+meant. This affected 141 knobs and predates the work above; it came to light
+because removing the cab's floor exposed the same hole one knob wider.
 
 ### The Global EQ gain span is measured, not taken from the manual
 

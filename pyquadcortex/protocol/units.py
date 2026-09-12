@@ -109,9 +109,14 @@ UNMEASURED_BOUNDS = {
 #: wrong. The device spells one knob two ways: most cabs say
 #: ``min="MIN_CABSIM_DB"`` while the PCOM variants write ``min="-40" max="6"``
 #: for the identical control, same taper and all. Keyed by spelling, the guard
-#: protected one and not the other, so asking a PCOM cab for -30 dB returned
-#: wire 0.000516 and MUTED the microphone - the exact bug this table exists to
-#: prevent, surviving inside the fix for it.
+#: protected one and not the other: a PCOM cab converted -30 dB to wire 0.000516
+#: while the symbolic spelling of the same knob refused it. One control cannot
+#: have two answers, and that is the defect, whichever answer is right.
+#:
+#: Which one WAS right is now settled and it was the PCOM one - the cab has no
+#: detent, see below - so this entry is gone and the keying outlived it. The
+#: lesson did not depend on the entry: key by the physical control, because the
+#: vendor spells one control more than one way.
 #:
 #: The law is the physical control, so the law is the honest key.
 #:
@@ -173,6 +178,13 @@ FLOOR_WIRE = {
     # The lane, mixer, splitter and FX-return LEVEL family. -39.5 dB at wire
     # 0.01 on the lane VOLUME, confirmed on the splitter's LEVEL TO A, which
     # reads OFF at wire 0.0. Measured 2026-08-25.
+    #
+    # Its DETENT was re-confirmed 2026-09-11 from the host - a lane output
+    # VOLUME reads OFF at wire 0.000001 - and its 0.01 was NOT. So this number
+    # is still the encoder's position, the same footing that turned out wrong on
+    # the cab and half a percent too high on the send. It is kept because the
+    # detent is real and the cost of being high here is the 0.5 dB sliver the
+    # note above describes; driving it down is the obvious next measurement.
     (-40.0, 12.0, 1.0): (0.01, -39.5),
     # The FX loop's send side. -39.8 dB at wire 0.005, with OFF at 0.000001, so
     # the detent is real and the floor is LOWER than the 0.01 / -39.6 dB read

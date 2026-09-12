@@ -176,6 +176,11 @@ def test_a_floor_is_typed_whether_it_was_measured_or_derived():
         index=0, name="LEVEL", minimum=-40.0, maximum=6.0, default=0.0,
         units="dB", type="float", skew=4.9594844, floor_wire=0.01,
         floor_display=-21.8)
+    # These numbers were a real cab's floor until 2026-09-11, when the knob was
+    # driven below the encoder's reach and turned out to have no detent - see
+    # units.FLOOR_WIRE. Kept as a hand-built parameter because what is under
+    # test is the typed-floor branch, which needs A floor and does not care
+    # whose. Do not read them back as a record of the device.
     assert isinstance(measured.floor, values.Db)
     assert float(measured.floor) == pytest.approx(-21.8)
 

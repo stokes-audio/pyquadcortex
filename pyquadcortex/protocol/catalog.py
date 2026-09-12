@@ -209,8 +209,10 @@ class Parameter:
         """The lowest value this parameter is KNOWN to reach, as a typed value.
 
         Usually :attr:`minimum`, but not where the bottom of the scale is an Off
-        detent: a lane output's VOLUME runs to -40 dB and its quietest real
-        position is -39.5 dB.
+        detent: a lane output's VOLUME runs to -40 dB and the lowest numeric
+        position anybody has SEEN on it is -39.5 dB. Read that literally - the
+        floors in this table are the lowest positions measured, not proven
+        minima, and one of them was measured too high and one was simply wrong.
 
         **Check :attr:`floor_is_measured` before trusting this as the knob's own
         bottom.** 254 parameters carry a :attr:`min_label` - the device saying
@@ -234,8 +236,31 @@ class Parameter:
 
     @property
     def floor_is_measured(self) -> bool:
-        """Whether somebody has actually driven this knob to its bottom."""
+        """Whether a DETENT has been measured on this knob, and where it ends.
+
+        Not "whether anybody looked": a family can be driven to a conclusion of
+        *no detent* and still report False, because there is nothing to record.
+        Five laws were driven on 2026-09-11 and three of them ended that way -
+        see :data:`~pyquadcortex.protocol.units.FLOOR_WIRE`. What this answers
+        is whether :attr:`floor` is the bottom of the TRAVEL (True) or the
+        bottom of the SCALE (False), which is what a caller needs from it.
+        """
         return self.floor_display is not None
+
+    @property
+    def bottom_is_a_word(self) -> bool:
+        """Whether wire 0.0 shows a word on this knob instead of a number.
+
+        :attr:`min_label` is the device saying so, which is why this needs no
+        measurement. The exception is the pan family, which carries a
+        :attr:`mid_label` as well: there the bottom label is the SIDE - a pan
+        reads "50 L" at wire 0.0 - and :data:`units.LABELLED_END_SPAN` makes
+        -50.0 the correct real value for that position, so it is not refused.
+
+        False once a detent has been measured, because then :attr:`floor` is
+        already above wire 0.0 and the ordinary range check covers it.
+        """
+        return bool(self.min_label) and not self.mid_label and not self.floor_is_measured
 
     @property
     def option_count(self) -> int | None:
@@ -353,6 +378,23 @@ class Parameter:
         # including both of its own endpoints.
         low, high = sorted((float(bottom), float(top)))
         if low <= real <= high:
+            if real == low and self.bottom_is_a_word:
+                # The bottom of the LAW converts to wire 0.0, and on a knob
+                # carrying a `min_label` the device has told us wire 0.0 shows a
+                # word. So this value is reachable and does not mean what it
+                # says: asking a cab for -40 dB wrote the Off position, looking
+                # exactly like it worked. That is the failure this whole family
+                # of checks exists for, at the one point the range check lets
+                # through, and it reached every knob with an unmeasured detent -
+                # 141 of them at the last count, including all 125 amp OUTPUTs.
+                unit = f" {self.units}" if self.units else ""
+                raise ValueError(
+                    f"{self.name!r} shows {self.min_label!r} at "
+                    f"{real:g}{unit}, not a number, so writing it sets the Off "
+                    f"position rather than that value. Ask for a value above "
+                    f"{low:g}{unit}, or say Encoded(0.0) if the Off position is "
+                    f"what you want."
+                )
             return
         unit = f" {self.units}" if self.units else ""
         hint = f" ({units.OFF_HINT})" if self.floor_wire > 0.0 else ""
@@ -663,9 +705,11 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         default = minimum + (maximum - minimum) * wire
     # The floor is keyed by the LAW, not by how the vendor spelled the bound.
     # Keying it by the symbolic name protected most cabs and not the PCOM ones,
-    # which write `min="-40" max="6"` for the identical control - so asking one
-    # of those for -30 dB returned wire 0.000516 and muted the microphone, which
-    # is the exact bug the floor exists to prevent.
+    # which write `min="-40" max="6"` for the identical control - so one
+    # spelling refused -30 dB and the other converted it, for one knob. The cab
+    # has carried no floor since 2026-09-11, so that entry is not here to be got
+    # wrong any more; the keying stays because the vendor still spells single
+    # controls more than one way.
     floor_wire, floor_display = units.FLOOR_WIRE.get((minimum, maximum, skew),
                                                      (0.0, None))
     return Parameter(

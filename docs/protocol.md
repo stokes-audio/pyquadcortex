@@ -2938,9 +2938,11 @@ inside **Parallax**, a Bass Overdrive carrying its own two-mic cab section:
 it appears**, not to cab models, and Parallax is keyed explicitly because the
 category aliasing cannot reach a Bass Overdrive.
 
-It shares the lane VOLUME's STRUCTURE - a numeric floor at wire 0.01 with the Off
-detent below it - but not its values: -21.8 dB here against the lane's -39.5 dB
-at the same wire position.
+It was long recorded as sharing the lane VOLUME's STRUCTURE - a numeric floor at
+wire 0.01 with the Off detent below it. It does not: driven below the encoder's
+reach on 2026-09-11 the cab has no detent at all, and -21.8 dB is simply what it
+reads at wire 0.01, not the bottom of its travel. The lane's -39.5 dB at the same
+wire position IS a floor. See "The encoder cannot reach the bottom" below.
 
 Note what this rules out. Cab LEVEL sits in the same dB family
 as the lane and mixer levels and is **not** their -40..+12 scale - unity
@@ -3225,13 +3227,20 @@ parameter carrying all three labels. Every reading is in
 
 `min_string` is set on 254 parameters - `OFF` on 191, and also `-Inf` and `L`. It says
 the bottom of the range shows a word rather than a number. It does **not** say where
-the numbers resume, and only measurement knows that: a cab LEVEL's law runs to -40 dB
-while its quietest real position is **-21.8 dB at wire 0.01**, with OFF below.
+the numbers resume, and only measurement knows that: a lane output's VOLUME law runs
+to -40 dB while its quietest real position is **-39.5 dB at wire 0.01**, with OFF
+below.
 
-That gap is not cosmetic. Without a floor, asking a cab for -30 dB converts to wire
-0.0005 and **mutes the microphone** - a write that looks like it worked and did
-something else. `units.FLOOR_WIRE` holds the measured floors, keyed by the same
-family names, and a value below one is refused. For silence, write the wire's `0.0`.
+That gap is not cosmetic, where there is one. `units.FLOOR_WIRE` holds the measured
+floors, keyed by the law, and a value below one is refused. Two families are in it and
+a third was removed - see below, because which families have a gap turned out to be
+the harder question.
+
+What `min_string` DOES settle without measurement is the endpoint: wire 0.0 shows the
+word, so the bottom of the law is not a number on these knobs and asking for it is
+refused whether or not a detent has been measured. `Db(-40.0)` on a cab wrote the Off
+position and looked like a successful write until 2026-09-11. For the Off position,
+say `Encoded(0.0)` and mean it.
 
 **Five laws were driven on 2026-09-11, and the session removed more than it added.**
 It set out to measure the 189 parameters carrying a `min_string` with no measured
@@ -3243,8 +3252,12 @@ floor, biggest law first. The three biggest cover 161 of them:
 | -60..0 dB, skew 1, `-Inf` | 20 | never moves | `type="grMeter"` - a readout, not a knob |
 | 20..800 Hz, skew 0.6 | 16 | `OFF` | real detent, numbers resume at `minimum` |
 
-So the count of knobs with an unmeasured Off detent is **169 on 13 laws**, not 189 on
-14: the `-Inf` law is 20 gain-reduction meters. `type` distinguishes them and always
+That also corrects the size of the queue. 189 parameters on 14 laws carried a
+`min_string` and no `FLOOR_WIRE` entry, but 20 of those are the gain-reduction meters,
+which leaves **169 knobs on 13 laws**. Of those 169, this session drove 141 to an
+answer and they still carry no entry, because the answer was "no detent to record" -
+so "no entry" and "nobody looked" are not the same set, and the 28 genuinely untouched
+knobs are what remains to drive. `type` distinguishes them and always
 did - `grMeter` is 39 parameters across 39 models, every one named `GAIN REDUCTION`,
 beside 8 more of `type="meter"`. The owner confirmed it at the unit (it sits at 0.0
 with no audio and flickers while something plays) and a host write of wire 0.5 moved

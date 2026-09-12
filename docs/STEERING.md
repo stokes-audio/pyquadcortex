@@ -150,7 +150,10 @@ where the numbers resume on the 189 parameters carrying a `min_string` and no
 measured floor. The three biggest laws cover 161 of them and none needed an
 entry: the amp OUTPUT family (125 knobs) has no detent, the `-Inf` family (20)
 is `type="grMeter"` readouts rather than knobs, and the IR loader's HI PASS (16)
-resumes at its own `minimum`. The real count is 169 knobs on 13 laws.
+resumes at its own `minimum`. Dropping the meters leaves 169 knobs on 13 laws,
+of which 141 are now driven and 28 are untouched - "carries no entry" stopped
+meaning "nobody looked" here, which is why `floor_is_measured` says what it
+measures in as many words now.
 
 **The finding that mattered was about method.** All three existing floors read
 exactly 0.01, and all three were taken by turning the unit's encoder - which on
