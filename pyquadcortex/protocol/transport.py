@@ -370,7 +370,10 @@ class Transport:
             while time.monotonic() < deadline:
                 if until is not None:
                     newest = got[checked:]
-                    checked = len(got)
+                    # Advance only by the snapshot we just inspected. The RX
+                    # thread may append between the slice and this update; a
+                    # fresh len(got) here would skip that arrival forever.
+                    checked += len(newest)
                     if any(until(message) for message in newest):
                         break
                 if self._device_lost is not None:
