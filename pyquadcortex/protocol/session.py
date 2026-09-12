@@ -155,6 +155,7 @@ def _read_identity(transport, timeout: float) -> pa.VersionMessage:
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
             handshake_patience: float = 30.0,
+            initial_file_listing: bool = True,
             before_handshake=None,
             profile: type[QuadCortex] | None = None,
             support: Support = Support.VERIFIED) -> QuadCortex:
@@ -188,6 +189,12 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
             Each attempt restarts fully (safe: the identity read is a bare READ,
             and the handshake begins with a fresh session id). Set to 0 for the
             old single-attempt behaviour.
+        initial_file_listing: whether the handshake should immediately ask the
+            unit to enumerate its full folder tree. Keep the default for the
+            usual eager state burst; set this false when startup traffic matters
+            more than preloading listings. Explicit calls such as
+            :meth:`~pyquadcortex.protocol.client.QuadCortex.list_folders` still
+            work and fetch the listing on demand.
         before_handshake: optional ``callable(transport)``, called once with the
             started :class:`~pyquadcortex.protocol.transport.Transport` after it
             starts and before the handshake runs. This is the only way to
@@ -257,8 +264,13 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
                     f"{pa.VersionMessage.DeviceType.Name(cls.DEVICE_TYPE)}, and the unit "
                     f"says {pa.VersionMessage.DeviceType.Name(identity.device_type)}")
         qc = cls(transport, _owned_resources=owned, support=support)
-        _retry_until_patient(lambda: qc._hello(timeout=timeout, settle=settle),
-                             deadline, handshake_patience)
+        def hello():
+            return qc._hello(
+                timeout=timeout, settle=settle,
+                initial_file_listing=initial_file_listing,
+            )
+
+        _retry_until_patient(hello, deadline, handshake_patience)
         # Say goodbye BEFORE the transport and handle go away, since the send needs
         # a live transport. close() pops this list, so appending last runs it first.
         owned.append(qc.disconnect)
