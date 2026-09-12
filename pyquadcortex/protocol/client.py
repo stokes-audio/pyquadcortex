@@ -28,8 +28,11 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 ``docs/protocol.md`` for the per-operation coverage table.
 """
 
+import base64
 import functools
+import json
 import logging
+import re
 import time
 import types
 import typing
@@ -51,7 +54,8 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
 from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
-                                          ControlNotDrivable)
+                                          ControlNotDrivable,
+                                          MalformedLocalBackup)
 from pyquadcortex.protocol.support import (EVERYTHING, Evidence, Hardware,
                                            Support, measured_firmware,
                                            unverified_text)
@@ -116,6 +120,10 @@ USER_SETLIST_ROOT = "/media/p4/Presets"
 #: string. So ``label.strip()`` detects a blank scene and ``label == ""`` does not.
 #: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
 SCENE_UNLABELLED = " "
+
+# Observed backups are around 1.7 MB. 32 MiB is a deliberately chosen safety
+# ceiling, not a measured device limit, so an unrelated stream is not accepted.
+_MAX_LOCAL_BACKUP_BYTES = 32 * 1024 * 1024
 
 
 # -- typed values for the SETTINGS writes -------------------------------------
@@ -639,6 +647,125 @@ class QuadCortex:
             match=lambda m: (m.HasField("device_serial_number")
                              or m.HasField("app_fw_version")),
         )
+
+    def create_local_backup(self, timeout: float = 60.0) -> dict[str, typing.Any]:
+        """Create and return the device's portable local-backup document.
+
+        The device answers one ``LocalBackup`` CREATE with an uncorrelated
+        stream of JSON fragments; the final UPDATE carries ``is_last_chunk``.
+        The fragments are joined in arrival order and the portable wrapper is
+        structurally validated before it is returned as a dictionary. Its
+        opaque Base64 payload is deliberately not interpreted, and the native
+        integrity identifier is checked for shape rather than recomputed.
+
+        This does not restore a backup or write a file. The caller can serialize
+        the returned dictionary wherever it keeps backups.
+
+        Confirmed on CorOS 4.1.0: the unit emits 150,000-character chunks and a
+        marked final chunk. Those replies carry no ``request_id``, even when the
+        CREATE does, so only one backup operation should be in flight on a
+        connection. A contributed 4.1.0 capture also showed
+        ``can_apply_backup=false`` refusing CREATE; whether the field is shared
+        with restore remains to be checked on the baseline profile.
+        """
+        def is_chunk(message):
+            return (
+                message.action == pa.MessageAction.UPDATE
+                and (message.HasField("backup_json")
+                     or message.HasField("is_last_chunk")
+                     or message.HasField("can_apply_backup"))
+            )
+
+        def is_final(message):
+            return message.HasField("is_last_chunk") and message.is_last_chunk
+
+        def is_refusal(message):
+            return (
+                message.HasField("can_apply_backup")
+                and not message.can_apply_backup
+            )
+
+        chunks = self._t.collect(
+            pa.LocalBackupMessage,
+            lambda: self._t.send(
+                pa.LocalBackupMessage(action=pa.MessageAction.CREATE)
+            ),
+            seconds=timeout,
+            match=is_chunk,
+            until=lambda message: is_final(message) or is_refusal(message),
+        )
+        if any(is_refusal(message) for message in chunks):
+            raise ControlNotDrivable(
+                "create_local_backup",
+                "the CorOS 4.1.0 unit replied can_apply_backup=false to CREATE.",
+                "Create the backup in Cortex Control and retain the stream for comparison."
+            )
+        finals = [message for message in chunks if is_final(message)]
+        if not chunks or not finals:
+            raise TimeoutError(
+                f"the Quad Cortex did not finish a local backup within "
+                f"{timeout:g} seconds"
+            )
+        if len(finals) != 1:
+            raise MalformedLocalBackup(
+                f"the Quad Cortex marked {len(finals)} local-backup chunks final"
+            )
+        if chunks[-1] is not finals[0]:
+            raise MalformedLocalBackup(
+                "the Quad Cortex sent local-backup messages after the final chunk"
+            )
+
+        backup_json = "".join(
+            message.backup_json
+            for message in chunks
+            if message.HasField("backup_json")
+        )
+        size = len(backup_json.encode("utf-8"))
+        if not backup_json or size > _MAX_LOCAL_BACKUP_BYTES:
+            raise MalformedLocalBackup(
+                f"the Quad Cortex returned an empty or oversized local backup "
+                f"({size} bytes)"
+            )
+        try:
+            document = json.loads(backup_json)
+        except json.JSONDecodeError as error:
+            raise MalformedLocalBackup(
+                f"the Quad Cortex returned malformed local-backup JSON: "
+                f"{error.msg}"
+            ) from error
+        if (
+            not isinstance(document, dict)
+            or document.get("type") != "backup"
+            or document.get("creator") != "quad"
+            or not isinstance(document.get("name"), str)
+            or not document["name"]
+        ):
+            raise MalformedLocalBackup(
+                "the Quad Cortex returned an unsupported local-backup document"
+            )
+
+        payload = document.get("payload")
+        payload_hash = document.get("payload_hash")
+        if (
+            not isinstance(payload, str)
+            or not isinstance(payload_hash, str)
+            or re.fullmatch(r"[0-9a-fA-F]{64}", payload_hash) is None
+        ):
+            raise MalformedLocalBackup(
+                "the Quad Cortex backup is missing its native payload or "
+                "integrity identifier"
+            )
+        try:
+            decoded = base64.b64decode(payload, validate=True)
+        except (ValueError, TypeError) as error:
+            raise MalformedLocalBackup(
+                "the Quad Cortex backup payload is not valid Base64"
+            ) from error
+        if not decoded:
+            raise MalformedLocalBackup(
+                "the Quad Cortex backup payload decodes to no data"
+            )
+        return document
 
     def find_preset(self, name: str, setlist: str = Setlist.USER,
                     timeout: float = 25.0):

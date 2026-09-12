@@ -228,8 +228,9 @@ one that lives in the template and the contributor guide is not.
 **What changed:** `connect()` reads the unit's `Version` before the handshake,
 resolves `(device_type, zenos_git_hash)` in a registry of profile classes, and
 refuses an unknown pair with `UnsupportedDevice`. `QuadCortex` declares itself
-as the 4.0.1 profile; `QuadCortex41` connects and verifies nothing until a 4.1
-unit's suite run fills its `VERIFIED` set; `QuadCortexMini` is recognised and
+as the 4.0.1 profile; `QuadCortex41` connects and verifies only operations with
+recorded 4.1 evidence; a unit's suite run fills its `VERIFIED` set;
+`QuadCortexMini` is recognised and
 refused. An operation a profile has not verified refuses under the default
 `Support.VERIFIED` and runs with one warning under `Support.EXPERIMENTAL`.
 Generated constants live in `pyquadcortex/protocol/catalogs/coros_4_0_1/`;

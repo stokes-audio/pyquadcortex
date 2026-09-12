@@ -32,6 +32,14 @@ class BlockRefused(RuntimeError):
     """
 
 
+class MalformedLocalBackup(RuntimeError):
+    """A completed local-backup stream is not a usable native document.
+
+    This distinguishes framing or payload corruption from a timeout and from
+    an explicit refusal by the device.
+    """
+
+
 class ControlNotDrivable(ValueError):
     """A request the library will not answer, because answering means guessing.
 
