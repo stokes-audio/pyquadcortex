@@ -661,12 +661,23 @@ class QuadCortex:
         This does not restore a backup or write a file. The caller can serialize
         the returned dictionary wherever it keeps backups.
 
-        Confirmed on CorOS 4.1.0: the unit emits 150,000-character chunks and a
-        marked final chunk. Those replies carry no ``request_id``, even when the
-        CREATE does, so only one backup operation should be in flight on a
-        connection. A contributed 4.1.0 capture also showed
-        ``can_apply_backup=false`` refusing CREATE; whether the field is shared
-        with restore remains to be checked on the baseline profile.
+        How many pushes arrive depends on how big the backup is, and 150,000
+        characters is the MOST one push carries rather than the size it always
+        is. Measured 2026-09-09 on CorOS 4.0.1 / d14e: a 130,178-character
+        document arrived in ONE push with the final marker set. Contributed
+        measurement 2026-09-08 on CorOS 4.1.0: 1,794,890 characters arrived as
+        12 pushes, eleven of 150,000 and a final 144,890. So join whatever
+        arrives and stop at the marker, which is what this does.
+
+        The replies carry no ``request_id``, even when the CREATE does, so only
+        one backup should be in flight on a connection at a time. Calling it
+        again afterwards is fine: three back-to-back calls on one connection
+        all returned on 4.0.1, the first taking 9.1 s and the rest about 2.9 s.
+
+        A contributed 4.1.0 capture showed ``can_apply_backup=false`` refusing
+        CREATE. That field never appeared in four runs on 4.0.1, so what it
+        means is inferred from the schema here, not measured. It sits beside
+        ``applied_backup``, so it may belong to restore instead.
         """
         def is_chunk(message):
             return (
