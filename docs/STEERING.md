@@ -138,6 +138,29 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-14 - The connect burst is waited for as a group, not a head message
+
+**What changed:** the hardware suite's burst recorder waits for every message in
+`HandshakeBurst.BURST_TAIL` - `RecallPreset`, `SetlistPosition`, `PresetDirty`,
+`Scene` - rather than for `RecallPreset` alone. The connection fixture registers
+the model cache BEFORE the recorder, so "the recorder has all four" implies "the
+cache has applied all four" rather than merely nearly. `unfinished()` names what
+never arrived, and prints once in the run's own report as well as in the three
+tests that guard on it. A new cache entry now has to come through `BURST_TAIL`,
+`OUTSIDE_THE_BURST` or `NOT_WARMED_BY_THE_BURST` in
+`tests/test_handshake_burst_recorder.py`, each with its reason - the same shape
+as `UNMARKED_OPERATIONS` and `BOUNDARY_MODULES`.
+
+**Why:** `RecallPreset` is the FIRST of those four on the wire and the other three
+follow within 3.6 to 6.0 ms, against a 100 ms poll. Two hardware tests failed
+together on 2026-09-11 and passed on a re-run of the same commit; simulating the
+poll's phase puts it at a few runs in a hundred. A gate that fails intermittently for reasons unrelated to
+the change teaches people to re-run until green, which is how a real regression
+gets waved through.
+
+**Scope of impact:**
+- **Updated:** tests/hardware/conftest.py, tests/hardware/test_model_state.py, tests/hardware/test_preset_surface.py, tests/hardware/test_broadcast_listener.py, tests/hardware/readme.md, tests/test_handshake_burst_recorder.py, docs/protocol.md "Connect burst, measured", CLAUDE.md, STEERING.md section 10
+- **Not updated (intentionally):** ADR.md - the stop condition is a bug fix in the suite, not an architectural choice; nothing under `pyquadcortex/` - the library never had this bug; `BURST_TAIL` stays off the profile class (ADR-0020) until a second profile has measured its own burst, and the timeout names the message it never saw, which is the evidence that would move it
 ### 2026-09-12 - The Off-detent table is deleted; the floor is derived (ADR-0015)
 
 **What changed:** `units.FLOOR_WIRE` is gone. `Parameter.floor` is derived from

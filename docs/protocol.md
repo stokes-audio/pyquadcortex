@@ -2095,6 +2095,31 @@ the order `RecallPreset`, `SetlistPosition`, `PresetDirty`, `Scene` - and with n
 pushes, because nothing changed. The seed `RecallPreset` sets `action`, `preset` and
 `reason`.
 
+Re-measured 2026-09-14 on 4.0.1 / d14e over three consecutive connections, timestamped from
+before the handshake by a `connect(before_handshake=...)` listener, so these are seconds
+after connect on the same clock as the 4.9 s / 5.1 s figures above. The four landed at
+11.21 s, 11.08 s and 11.07 s, spread over 6.0 ms, 3.6 ms and 5.8 ms, in that same order
+every time. The arrival time varies session to session - 9 s to 11.2 s observed - so it is
+the ORDER and the SPREAD that are stable enough to build on, not the moment.
+
+**`RecallPreset` is the FIRST of the four, not the last.** That matters to anything
+treating it as the signal that the burst is over: the other three are still a few
+milliseconds out. The hardware suite's burst recorder did exactly that, and it polls at
+100 ms, so its stop landed at a uniformly random point in the 100 ms after `RecallPreset`
+and falls inside the group a few times in a hundred. `Scene` is lost most often, because it
+arrives last - and losing `Scene` alone is already enough to fail a test.
+
+Two kinds of evidence, and they are worth keeping apart. **Observed:** it failed a real run
+on 2026-09-11 and passed on a re-run of the same commit. **Simulated:** driving the real
+recorder with the four messages at their measured spacing and the poll's phase drawn
+uniformly from its 100 ms interval - which is what a connection does to it - loses one or
+more of the three over 300 runs, and 0 of 300 after the change. Two independent runs of
+that simulation put the rate between 6% and 10% per message, differing by how the 3.6-6.0 ms
+spacing is modelled, so the order of magnitude is the finding and the digits are not. The
+recorder now waits for all four (`BURST_TAIL` in `tests/hardware/conftest.py`), and
+`tests/test_handshake_burst_recorder.py` holds the mechanism offline with a gap staged wide
+enough that it needs no simulation. Wait for the group, not for its head.
+
 **`read_preset()` RECALLS the slot it reads** - that was already documented - and the
 recall **resets the active scene to the preset's default, discards unsaved edits, and
 interrupts the audio**.
