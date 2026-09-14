@@ -20,6 +20,12 @@ correction.
 
 ## Unreleased
 
+### Initial file enumeration can be deferred
+
+Both connect layers accept `initial_file_listing=False`, omitting only the
+handshake's eager `File` READ. The default remains eager, and listing operations
+still fetch explicitly when called on a profile that verifies them.
+
 ### Where a knob's numbers start comes from the device now, not a table
 
 The Quad Cortex has knobs whose bottom position shows a word - usually `OFF` -
@@ -104,7 +110,6 @@ across three of the four declared spans, and `Parameter.mid_label` carries the
 middle label. A declared default moves onto the drawn span with everything
 else, so a pan's default reports the position the screen shows. `mid_string` leaves the unexplained list in
 [docs/domain-model.md](docs/domain-model.md): it is the label at wire 0.5.
-
 
 ### The first hardware run of the profile seam, and what it corrected
 
