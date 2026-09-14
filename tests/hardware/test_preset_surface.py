@@ -206,8 +206,8 @@ def test_the_burst_delivered_every_entry_the_preset_surface_reads(burst_warmed,
     delivered nothing at all.
 
     The snapshot is read only once the recording it came from is known to be
-    whole: a burst cut off early leaves exactly the absence a unit that stopped
-    sending would, and only one of those two is a finding about the unit."""
+    whole: a burst cut off by the fixture's patience leaves exactly the absence
+    a unit that stopped sending would, and the two want opposite responses."""
     unfinished = handshake_burst.unfinished()
     assert unfinished is None, unfinished
     for name in ("preset", "scene", "dirty", "loaded"):

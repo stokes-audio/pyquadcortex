@@ -105,20 +105,23 @@ the burst, whatever order the tests run in. The metronome's tempo stream never
 stops, so a recorder left running would hold the whole run's traffic and a test
 asserting on it would really be asserting on whatever other tests provoked first.
 
-The wait costs about 8 seconds once per run and buys more than it costs.
+The wait costs about 9 seconds once per run and buys more than it costs.
 `connect()` returns roughly 3 seconds before the unit starts streaming several
 hundred messages, so without it every latency measurement below would be taken on
 a link still busy answering the handshake.
 
-The burst test's `assert handshake_burst.closed` and `settled_in is not None` are
+The burst test's `assert handshake_burst.closed` and `unfinished() is None` are
 what hold that up. They are not belt-and-braces: they are the only things that
 fail if the fixture stops waiting for the burst, since every other assertion in
 that test is a floor and contamination satisfies a floor. Do not delete them as
-redundant.
+redundant. `unfinished()` also prints once in the run's own report, so a cut-off
+burst is named even on a run that deselects all three tests that guard on it.
 
 What they cannot see is a recorder that sets its flag and keeps recording anyway,
-or one that stops recording but stays attached to the transport. Both read like a
-working recorder from the outside, so both are pinned offline in
+one that stops recording but stays attached to the transport, or one that stops
+on the FIRST message of the burst's closing group instead of the whole of it.
+All three read like a working recorder from the outside - the last of them about
+nine runs in ten - so all three are pinned offline in
 `tests/test_handshake_burst_recorder.py`.
 
 ## The model's cache rides the same connection
