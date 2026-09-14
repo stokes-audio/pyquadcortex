@@ -254,6 +254,12 @@ the remote-control surface. The client chooses the observed 300 ms initial
 settle and 20 ms gesture interval; `Transport.send_sequence()` applies them and
 owns atomicity against concurrent writes.
 
+The same profile now exposes the rest of the locally exercised schema surface:
+`swipe_screen()` sends the complete three-frame drag with both endpoints, and
+`graphics_tree()` reads bounded nonblank zenUI diagnostic text. Neither is
+attributed to Cortex Control: the retained desktop binary contains the schema
+but no sender construction for message type 72.
+
 **Why:** Live tests on QC CorOS 4.1.0 established the complete path. Screenshot
 answers are asynchronous UPDATEs without request IDs. The retained probe record
 shows an unprimed failure and success after one screenshot plus a conservative

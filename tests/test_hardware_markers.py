@@ -14,6 +14,7 @@ HARDWARE = pathlib.Path(__file__).parent / "hardware"
 #: has to come through this dict or through a marker; there is no third way.
 UNMARKED_OPERATIONS = {
     "tap_screen": "manually verified by tony-xmelon on 2026-09-04 at Grid coordinate (184, 147): it opened the intended block and a following capture showed its editor; automated live coverage would change the owner's screen with no reliable protocol restore",
+    "swipe_screen": "observed during physical screen sweeps on a retail CorOS 4.1.0 unit on 2026-09-08; an automated exact-head swipe changes the owner's screen and has no protocol acknowledgement",
     # -- read back by a marked test, but never the subject of one --------------
     # These are how another test observes a write. That makes them exercised,
     # not verified: nothing asserts what the READ itself should return, so a

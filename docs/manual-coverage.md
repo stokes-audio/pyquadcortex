@@ -78,7 +78,7 @@ which this document had over-read as unreachable, and it answers a READ perfectl
 | I/O: USB LEVEL, HP SOURCE, DRY/WET | yes | `set_usb_port()`, all three confirmed writable. Like the other I/O ports they must travel one field per message, which the method now does for you. The headphone output's own level is NOT writable |
 | Global EQ: bypass, 5 bands (type/gain/freq/Q/bypass), output assignment | yes | `set_global_eq(band, gain=, frequency=, q=, filter_type=, enabled=)`, `set_global_eq_output(level=, out12=, out34=)` and `set_global_eq_bypassed()`. Every control is reachable. `gain` takes `Db` over -12..+12, measured on screen at both ends (2026-09-11, CorOS 4.0.1), while `frequency`, `q` and the OUT level take `Encoded`, their mappings being unknown |
 | Power off, reboot, Be Right Back, screen lock | n/a | physical, via the unit's power button |
-| Footswitch presses, touch gestures, encoders | partly | On `QuadCortex41`, `tap_screen(x, y)` reproduces a touchscreen tap at a raw 800 x 480 pixel coordinate using the observed value-1/default-0 pair; `capture_screen()` reads the current display back as PNG. The 4.0.1 profile refuses both pending measurement; footswitches and encoders remain physical controls |
+| Footswitch presses, touch gestures, encoders | partly | On `QuadCortex41`, `tap_screen(x, y)` reproduces a touchscreen tap and `swipe_screen(x, y, to_x, to_y)` sends the bounded three-frame drag sequence in the raw 800 x 480 coordinate space. `capture_screen()` reads the display as PNG and `graphics_tree()` reads its zenUI hierarchy. The 4.0.1 profile refuses all four pending measurement; footswitches and encoders remain physical controls |
 
 ## 04 The Grid
 

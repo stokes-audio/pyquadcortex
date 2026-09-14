@@ -2446,6 +2446,53 @@ def test_capture_screen_warns_and_rejects_non_full_framebuffer(caplog, screensho
     assert "payload_bytes=" in caplog.text
 
 
+def test_graphics_tree_waits_for_the_uncorrelated_nonblank_update():
+    push = pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        graphics_tree=pa.RemoteControlGraphicsTree(
+            payload="zenUI::RootGraphicsItem\n  zenUI::Grid"),
+    )
+    transport = StateTransport(push)
+    qc = profiles.QuadCortex41(transport)
+
+    assert qc.graphics_tree(timeout=2.5) == push.graphics_tree.payload
+    sent = transport.sent[-1]
+    assert sent.SerializeToString().hex() == "08032a00"
+    assert sent.action == pa.MessageAction.READ
+    assert sent.HasField("graphics_tree")
+    assert not sent.graphics_tree.HasField("payload")
+    assert not sent.HasField("request_id")
+
+
+@pytest.mark.parametrize("candidate", [
+    pa.RemoteControlMessage(
+        action=pa.MessageAction.READ,
+        graphics_tree=pa.RemoteControlGraphicsTree(payload="zenUI::Root")),
+    pa.RemoteControlMessage(action=pa.MessageAction.UPDATE),
+    pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        graphics_tree=pa.RemoteControlGraphicsTree(payload="  \n")),
+    pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        graphics_tree=pa.RemoteControlGraphicsTree(payload="zenUI\x00Root")),
+    pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        graphics_tree=pa.RemoteControlGraphicsTree(payload="x" * (1024 * 1024 + 1))),
+])
+def test_graphics_tree_warns_and_rejects_invalid_candidates(caplog, candidate):
+    transport = StateTransport(pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        graphics_tree=pa.RemoteControlGraphicsTree(payload="zenUI::Root"),
+    ))
+    qc = profiles.QuadCortex41(transport)
+    qc.graphics_tree()
+
+    with caplog.at_level("WARNING", logger="pyquadcortex.protocol.client"):
+        assert transport.matches[-1](candidate) is False
+    assert "waiting for a graphics tree" in caplog.text
+    assert "payload_bytes=" in caplog.text
+
+
 def test_tap_screen_primes_then_sends_the_verified_inverted_pair(monkeypatch):
     transport = StateTransport(pa.RemoteControlMessage(
         action=pa.MessageAction.UPDATE,
@@ -2532,8 +2579,62 @@ def test_tap_screen_rejects_invalid_coordinates(x, y, exception):
     assert qc._t.sent == []
 
 
+def test_swipe_screen_primes_then_sends_the_atomic_three_frame_gesture(monkeypatch):
+    transport = StateTransport(pa.RemoteControlMessage(
+        action=pa.MessageAction.UPDATE,
+        screenshot=pa.RemoteControlScreenshot(payload=_screen_png()),
+    ))
+    times = iter((10.0, 10.0, 10.3))
+    monkeypatch.setattr(client.time, "monotonic", lambda: next(times))
+    qc = profiles.QuadCortex41(transport)
+
+    qc.swipe_screen(10, 20, 30, 40)
+
+    prime, begin, drag, end = transport.sent
+    assert prime.SerializeToString().hex() == "08032200"
+    assert [message.SerializeToString().hex() for message in (begin, drag, end)] == [
+        "08011a0c0d00002041150000a0411801",
+        "08011a160d00002041150000a0411804250000f0412d00002042",
+        "08011a0a0d0000f0411500002042",
+    ]
+    assert (drag.mouse.x, drag.mouse.y, drag.mouse.type,
+            drag.mouse.to_x, drag.mouse.to_y) == pytest.approx(
+                (10, 20, pa.RemoteControlMouse.DRAG, 30, 40))
+    assert transport.sequence_timing == (0.3, 0.02)
+
+
+@pytest.mark.parametrize("values,exception", [
+    ((0.5, 0, 1, 1), TypeError),
+    ((True, 0, 1, 1), TypeError),
+    ((0, 0, 799.0, 479), TypeError),
+    ((-1, 0, 1, 1), ValueError),
+    ((0, 480, 1, 1), ValueError),
+    ((0, 0, 800, 1), ValueError),
+    ((12, 34, 12, 34), ValueError),
+])
+def test_swipe_screen_rejects_invalid_coordinates(values, exception):
+    qc = profiles.QuadCortex41(FakeTransport())
+    with pytest.raises(exception):
+        qc.swipe_screen(*values)
+    assert qc._t.sent == []
+
+
+def test_swipe_screen_contextualizes_a_priming_timeout():
+    class NoScreenshot(FakeTransport):
+        def await_broadcast(self, expected_class, trigger, timeout=40.0, match=None):
+            trigger()
+            raise TimeoutError(
+                f"no {expected_class.__name__} broadcast within {timeout}s")
+
+    qc = profiles.QuadCortex41(NoScreenshot())
+    with pytest.raises(TimeoutError, match="swipe_screen could not prime.*2.5s"):
+        qc.swipe_screen(10, 20, 30, 40, timeout=2.5)
+
+
 @pytest.mark.parametrize("operation,args", [
     ("capture_screen", ()),
+    ("graphics_tree", ()),
+    ("swipe_screen", (10, 20, 30, 40)),
     ("tap_screen", (184, 147)),
 ])
 def test_remote_screen_operations_refuse_on_the_unmeasured_base(operation, args):

@@ -20,6 +20,15 @@ correction.
 
 ## Unreleased
 
+### The CorOS 4.1 remote-screen surface includes swipes and its widget tree
+
+`QuadCortex41.swipe_screen(x, y, to_x, to_y)` sends the complete measured
+three-frame touch-down / DRAG / touch-up gesture after a fresh framebuffer read.
+`QuadCortex41.graphics_tree()` reads the current zenUI hierarchy as bounded,
+nonblank diagnostic text. Both operations use the `RemoteControl` schema already
+introduced by this pull request; the CorOS 4.0.1 base profile refuses them until
+that firmware is measured.
+
 ### The Global EQ band offsets have names
 
 `QuadCortex` already named the Global EQ's stride, its band count and the three

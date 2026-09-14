@@ -2903,6 +2903,62 @@ class QuadCortex:
         self._remote_control_last_capture_at = time.monotonic()
         return bytes(reply.screenshot.payload)
 
+    def graphics_tree(self, timeout: float = 5.0) -> str:
+        """Refuse physical-screen tree reads on the CorOS 4.0.1 base profile."""
+        raise ControlNotDrivable(
+            "graphics_tree",
+            "not measured on QuadCortex (CorOS 4.0.1).",
+            "Use QuadCortex41 for a CorOS 4.1.0 unit.",
+        )
+
+    def _graphics_tree(self, timeout: float = 5.0) -> str:
+        """Return the unit's current zenUI widget tree as diagnostic text.
+
+        CorOS 4.1.0 has been observed answering an uncorrelated
+        ``RemoteControl{READ, graphics_tree:{}}`` with an ``UPDATE`` carrying
+        non-empty UTF-8 text. The reply has no proven request-id convention,
+        so the waiter is installed before the read and matches the nested
+        field rather than claiming correlation the wire does not provide.
+        """
+        limit = 1024 * 1024
+
+        def complete_tree(message) -> bool:
+            reason = None
+            tree = (message.graphics_tree.payload
+                    if message.HasField("graphics_tree")
+                    and message.graphics_tree.HasField("payload") else "")
+            encoded = tree.encode("utf-8")
+            if message.action != pa.MessageAction.UPDATE:
+                reason = "action is not UPDATE"
+            elif not tree.strip():
+                reason = "no non-blank graphics_tree payload"
+            elif "\x00" in tree:
+                reason = "graphics_tree payload contains NUL"
+            elif len(encoded) > limit:
+                reason = f"graphics_tree payload exceeds {limit} UTF-8 bytes"
+            if reason is None:
+                return True
+            log.warning(
+                "Ignoring RemoteControl while waiting for a graphics tree: "
+                "%s (action=%s, fields=%s, payload_bytes=%d)",
+                reason,
+                message.action,
+                [field.name for field, _ in message.ListFields()],
+                len(encoded),
+            )
+            return False
+
+        reply = self._t.await_broadcast(
+            pa.RemoteControlMessage,
+            lambda: self._t.send(pa.RemoteControlMessage(
+                action=pa.MessageAction.READ,
+                graphics_tree=pa.RemoteControlGraphicsTree(),
+            )),
+            timeout=timeout,
+            match=complete_tree,
+        )
+        return reply.graphics_tree.payload
+
     def tap_screen(self, x: float, y: float, timeout: float = 10.0) -> None:
         """Refuse physical-screen input on the CorOS 4.0.1 base profile."""
         raise ControlNotDrivable(
@@ -2953,6 +3009,68 @@ class QuadCortex:
                     action=pa.MessageAction.UPDATE,
                     mouse=pa.RemoteControlMouse(
                         x=x, y=y, type=pa.RemoteControlMouse.PRESS)),
+            ),
+            delay=prime_delay,
+            interval=0.02,
+        )
+
+    def swipe_screen(
+            self, x: int, y: int, to_x: int, to_y: int,
+            timeout: float = 10.0) -> None:
+        """Refuse physical-screen swipes on the CorOS 4.0.1 base profile."""
+        raise ControlNotDrivable(
+            "swipe_screen",
+            "not measured on QuadCortex (CorOS 4.0.1).",
+            "Use QuadCortex41 for a CorOS 4.1.0 unit.",
+        )
+
+    def _swipe_screen(
+            self, x: int, y: int, to_x: int, to_y: int,
+            timeout: float = 10.0) -> None:
+        """Swipe between two integer pixels on the unit's touchscreen.
+
+        The CorOS 4.1.0 device-extension sequence is touch-down, one atomic
+        ``DRAG`` carrying both endpoints, then touch-up. A fresh framebuffer
+        read primes the remote surface and proves it still answers before any
+        fire-and-forget gesture frame is written. The sequence is atomic so a
+        keepalive cannot split it and interruption cannot strand touch-down.
+        """
+        display_size = self.HARDWARE.display_size
+        assert display_size is not None
+        values = (("x", x, display_size[0]), ("y", y, display_size[1]),
+                  ("to_x", to_x, display_size[0]),
+                  ("to_y", to_y, display_size[1]))
+        for name, value, upper in values:
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{name} must be an integer pixel coordinate")
+            if not 0 <= value < upper:
+                raise ValueError(f"{name} must be in the range 0 <= {name} < {upper}")
+        if (x, y) == (to_x, to_y):
+            raise ValueError("a screen swipe must end at a different pixel")
+
+        try:
+            self._capture_screen(timeout=timeout)
+        except TimeoutError as exc:
+            raise TimeoutError(
+                f"swipe_screen could not prime remote control: {exc}") from exc
+        captured_at = self._remote_control_last_capture_at
+        assert captured_at is not None
+        prime_delay = max(0.0, 0.3 - (time.monotonic() - captured_at))
+        self._t.send_sequence(
+            (
+                pa.RemoteControlMessage(
+                    action=pa.MessageAction.UPDATE,
+                    mouse=pa.RemoteControlMouse(
+                        x=x, y=y, type=pa.RemoteControlMouse.RELEASE)),
+                pa.RemoteControlMessage(
+                    action=pa.MessageAction.UPDATE,
+                    mouse=pa.RemoteControlMouse(
+                        x=x, y=y, type=pa.RemoteControlMouse.DRAG,
+                        to_x=to_x, to_y=to_y)),
+                pa.RemoteControlMessage(
+                    action=pa.MessageAction.UPDATE,
+                    mouse=pa.RemoteControlMouse(
+                        x=to_x, y=to_y, type=pa.RemoteControlMouse.PRESS)),
             ),
             delay=prime_delay,
             interval=0.02,

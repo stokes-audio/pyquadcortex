@@ -16,3 +16,16 @@ def test_capture_screen_returns_the_observed_complete_framebuffer(qc, profile):
     assert png[12:16] == b"IHDR"
     assert struct.unpack(">II", png[16:24]) == profile.HARDWARE.display_size
     assert png[-12:] == b"\x00\x00\x00\x00IEND\xaeB`\x82"
+
+
+@pytest.mark.verifies("graphics_tree")
+def test_graphics_tree_returns_nonblank_zenui_text(qc, profile):
+    """The diagnostic read does not tap or otherwise mutate the device UI."""
+    if "graphics_tree" not in profile.VERIFIED:
+        pytest.skip(f"graphics_tree is not VERIFIED on {profile.__name__}")
+    tree = qc.graphics_tree()
+
+    assert tree.strip()
+    assert "\x00" not in tree
+    assert len(tree.encode("utf-8")) <= 1024 * 1024
+    assert "zenUI" in tree

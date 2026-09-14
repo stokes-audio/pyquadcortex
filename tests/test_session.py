@@ -491,7 +491,8 @@ def test_connect_hands_back_the_4_1_class_for_a_4_1_unit(fake_stack):
     qc = session.connect()
     assert type(qc) is profiles.QuadCortex41
     assert qc.unverified_operations == (
-        client.QuadCortex.operations() - {"capture_screen", "tap_screen"}
+        client.QuadCortex.operations()
+        - {"capture_screen", "graphics_tree", "swipe_screen", "tap_screen"}
     )
     with pytest.raises(errors.ControlNotDrivable):
         qc.switch_scene(1)

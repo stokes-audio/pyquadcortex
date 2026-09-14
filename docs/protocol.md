@@ -719,6 +719,13 @@ The device acknowledges neither mouse message. `tap_screen(x, y, timeout=)`
 therefore sends the observed pair and returns after transmission; the timeout
 belongs to the priming capture and any failure is reported in tap context.
 
+The same schema carries both endpoints of a drag in one `DRAG=4` message.
+`swipe_screen(x, y, to_x, to_y, timeout=)` first performs a fresh full-screen
+read, then atomically sends value 1 at the start, the DRAG with `to_x` and
+`to_y`, and the default-valued zero at the destination, 20 ms apart. Inputs are
+integer pixels inside the 800 x 480 display and the endpoints must differ. The
+gesture has no acknowledgement and is never replayed after a partial write.
+
 The readback half, measured by tony-xmelon on 2026-09-08, is asynchronous:
 `RemoteControl{READ, screenshot:{}}` produces an uncorrelated
 `RemoteControl{UPDATE, screenshot:{payload:<PNG>}}`. On CorOS 4.1.0 the payload
@@ -726,6 +733,12 @@ is a complete 800 x 480 PNG in one reassembled protocol message. It carries no
 `request_id`, so a normal request waiter misses it; `capture_screen()` installs
 a type waiter first and accepts only a full-profile PNG with IHDR and terminal
 IEND, rejecting region metadata.
+
+`RemoteControl{READ, graphics_tree:{}}` uses the same uncorrelated reply path.
+CorOS 4.1.0 has returned `UPDATE` messages carrying a nonblank zenUI widget
+hierarchy. `graphics_tree()` installs its waiter before sending, rejects absent,
+blank, NUL-containing or over-1-MiB UTF-8 text, and makes no claim that the
+grammar, reply action or request-id behaviour is stable on other firmware.
 
 The older `Screenshot = 25` message carries a preset folder/index and returns a
 preset PNG; it was exercised as the preset-thumbnail path, not as a live
