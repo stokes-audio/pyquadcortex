@@ -196,8 +196,9 @@ def test_an_inactive_scene_refuses_writes_and_reads_fine(device):
 
 def test_the_burst_delivered_every_entry_the_preset_surface_reads(burst_warmed,
                                                                  handshake_burst):
-    """Measured 2026-08-15: the burst carries RecallPreset, SetlistPosition,
-    PresetDirty and Scene at about 10 s, inside ten milliseconds. The unit never
+    """The burst carries RecallPreset, SetlistPosition, PresetDirty and Scene as
+    one group - about 11.1 s in, spread over 3.6 to 6.0 ms, re-measured
+    2026-09-14 on 4.0.1 / d14e (``docs/protocol.md``). The unit never
     announces its own firmware; identity is in the cache anyway since ADR-0020,
     because ``connect()`` reads ``Version`` before the handshake and the state
     layer is listening by then (measured 2026-09-07 on 4.0.1 / d14e). Asserted

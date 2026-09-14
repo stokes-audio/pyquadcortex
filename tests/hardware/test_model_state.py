@@ -212,8 +212,6 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
     entry stays marked and the first read of ``device.firmware`` still goes to
     the unit (see ``identity`` in device/entries.py).
     """
-    unfinished = handshake_burst.unfinished()
-    assert unfinished is None, unfinished
     shapes = handshake_burst.versions()
     full = [s for s in shapes if "device_serial_number" in s[1]]
     own_reads = [s for s in shapes

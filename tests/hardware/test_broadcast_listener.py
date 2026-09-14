@@ -78,8 +78,9 @@ def test_a_listener_registered_before_connecting_sees_the_handshake_burst(
     """
     names = handshake_burst.names()
     counted = {name: names.count(name) for name in sorted(set(names))}
-    report = (f"recorded {len(names)} message(s), settled in "
-              f"{handshake_burst.settled_in}s: {counted}")
+    settled = ("" if handshake_burst.settled_in is None
+               else f", settled in {handshake_burst.settled_in:.1f}s")
+    report = f"recorded {len(names)} message(s){settled}: {counted}"
 
     assert handshake_burst.closed, "the recorder was still running - see conftest"
     unfinished = handshake_burst.unfinished()

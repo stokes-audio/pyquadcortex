@@ -233,6 +233,11 @@ class HandshakeBurst:
         #: that only counts cannot tell a retried identity read from a changed
         #: handshake. Shapes only - the values are not this recorder's business.
         self._versions = []
+        #: Type names seen, kept alongside ``_names`` so :meth:`missing` is a set
+        #: difference rather than a walk of the whole recording. The recording
+        #: reaches several hundred names and is polled while the RX thread is
+        #: delivering ~1490 reports/s and wants this same lock to append.
+        self._seen_types = set()
         self._detach = None
         self._sentinels = frozenset()
         self._patience = None
@@ -249,7 +254,9 @@ class HandshakeBurst:
                 # The RX thread notifies from a snapshot, so a message can still
                 # arrive after removal. It must not reopen the recording.
                 return
-            self._names.append(type(message).__name__)
+            name = type(message).__name__
+            self._names.append(name)
+            self._seen_types.add(name)
             if isinstance(message, pa.VersionMessage):
                 self._versions.append(
                     (message.action, frozenset(f.name for f, _ in message.ListFields())))
@@ -276,35 +283,49 @@ class HandshakeBurst:
         Stops on ``patience`` seconds regardless, so a unit that never sends one
         cannot hang the run. ``settled_in`` says which of the two happened, and
         :meth:`unfinished` says it in words for a failure message.
+
+        Both refusals below close the recorder on the way out, which is what the
+        ``finally`` is for: this runs with the listener already attached, so a
+        raise that skipped it would leave the recording on the transport for the
+        whole session with nothing left to stop it.
         """
-        if isinstance(sentinels, str):
-            raise TypeError(
-                "record_until takes a collection of type names, not one name - "
-                "the burst is over when all of them have arrived, and a single "
-                "name is the bug this signature replaced. A str is a collection "
-                "of letters, so this would otherwise wait for message types "
-                "called 'R', 'e' and 'c' and never settle.")
-        self._sentinels = frozenset(sentinels)
-        self._patience = patience
-        started = time.monotonic()
-        deadline = started + patience
-        while time.monotonic() < deadline:
-            if not self.missing():
-                self.settled_in = time.monotonic() - started
-                break
-            time.sleep(0.1)
-        self.close()
+        try:
+            if isinstance(sentinels, str):
+                raise TypeError(
+                    "record_until takes a collection of type names, not one "
+                    "name - the burst is over when all of them have arrived, "
+                    "and a single name is the bug this signature replaced. A "
+                    "str is a collection of letters, so this would otherwise "
+                    "wait for message types called 'R', 'e' and 'c' and never "
+                    "settle.")
+            self._sentinels = frozenset(sentinels)
+            if not self._sentinels:
+                raise ValueError(
+                    "record_until needs at least one type name. An empty "
+                    "collection is satisfied by the first poll, so the recorder "
+                    "would come off the transport before the burst began and "
+                    "then report it as finished - which is the misattribution "
+                    "this whole method exists to prevent.")
+            self._patience = patience
+            started = time.monotonic()
+            deadline = started + patience
+            while time.monotonic() < deadline:
+                if not self.missing():
+                    self.settled_in = time.monotonic() - started
+                    break
+                time.sleep(0.1)
+        finally:
+            self.close()
 
     def missing(self):
         """The sentinel types :meth:`record_until` has not seen yet.
 
-        Builds a set of the recording each time rather than scanning it once per
-        sentinel: the recording runs to several hundred names by the time the
-        burst closes, and this is polled ten times a second at the busiest
-        moment the link has.
+        Reads the set :meth:`__call__` maintains rather than walking the
+        recording: this is polled ten times a second at the busiest moment the
+        link has, under the lock the RX thread needs to append.
         """
         with self._lock:
-            return self._sentinels - set(self._names)
+            return self._sentinels - self._seen_types
 
     def unfinished(self):
         """Why the recording is short of the whole burst, or ``None`` if it is not.

@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+from pyquadcortex.device import entries
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 
 _HARDWARE_CONFTEST = (
@@ -129,7 +130,11 @@ def test_record_until_stops_when_the_whole_tail_has_arrived(recorder_class):
     assert took < 5.0, "it waited out its patience instead of noticing the tail"
     assert burst.settled_in is not None
     assert burst.closed
-    assert burst.names() == ["FileMessage"] * 3 + list(recorder_class.BURST_TAIL)
+    # Against the order _tail() pushes, not the order BURST_TAIL declares:
+    # record_until turns that tuple into a frozenset, so its order is a record
+    # of what the unit does and nothing here may fail when it is corrected.
+    assert burst.names() == ["FileMessage"] * 3 + [
+        type(m).__name__ for m in _tail()]
 
 
 def test_record_until_gives_up_rather_than_hanging_on_a_silent_unit(recorder_class):
@@ -252,7 +257,89 @@ def test_record_until_refuses_a_single_name(recorder_class):
     ``e``, ``c`` and never settle - a thirty-second timeout per run and a
     recording of nothing, arriving as a puzzle rather than as a mistake.
     """
+    transport = FakeTransport()
     burst = recorder_class()
-    burst.attach(FakeTransport())
+    burst.attach(transport)
     with pytest.raises(TypeError, match="collection"):
         burst.record_until("RecallPresetMessage", patience=0.1)
+    assert transport.listeners == [], (
+        "a refused call left the recorder on the transport, where it would "
+        "record the whole session with nothing left to stop it")
+
+
+#: Cache entries the connect burst does NOT warm, and why. A new ``StateEntry``
+#: comes through here or through ``BURST_TAIL``, and there is no third way -
+#: which is the point of the test below.
+NOT_WARMED_BY_THE_BURST = {
+    "identity": "the unit never announces its identity. It reaches the cache "
+                "because connect() READs Version before the handshake and the "
+                "state layer is already listening (ADR-0020), which is not the "
+                "burst and does not arrive with it",
+}
+
+
+def test_burst_tail_names_every_entry_the_burst_is_expected_to_warm(
+        recorder_class):
+    """The drift that would re-open the race, caught offline.
+
+    ``BURST_TAIL`` decides when the fixture stops recording and snapshots
+    ``burst_warmed``; ``entries.ENTRIES`` decides what that snapshot contains.
+    They are two hand-written lists about one moment on the wire, and nothing
+    held them together - so an entry added with a new burst message would be
+    snapshotted before its message had arrived, exactly the way ``dirty`` and
+    ``scene`` were. It would fail one run in however-many, with a message
+    blaming the unit.
+
+    So: every entry is either fed by something in ``BURST_TAIL``, or named above
+    with the reason it is not. Deciding which is a judgement about the wire, and
+    this test is where a new entry has to state it.
+    """
+    tail = set(recorder_class.BURST_TAIL)
+    for entry in entries.ENTRIES:
+        fed_by_the_burst = {t.__name__ for t in entry.feeds} & tail
+        excused = NOT_WARMED_BY_THE_BURST.get(entry.name)
+        assert bool(fed_by_the_burst) != bool(excused), (
+            f"entry {entry.name!r} is fed by {sorted(fed_by_the_burst)} and "
+            f"excused with {excused!r} - it must be one or the other. If the "
+            f"burst warms it, the message that does so belongs in BURST_TAIL "
+            f"so the recorder waits for it; if it does not, say why in "
+            f"NOT_WARMED_BY_THE_BURST.")
+
+
+def test_every_burst_tail_message_actually_feeds_an_entry(recorder_class):
+    """The other direction: a name in ``BURST_TAIL`` nothing reads is a wait
+    the fixture pays on every run for no reason, and it would hold the whole
+    suite for the full patience if the unit ever stopped sending it."""
+    fed = {t.__name__ for entry in entries.ENTRIES for t in entry.feeds}
+    assert set(recorder_class.BURST_TAIL) <= fed, (
+        f"BURST_TAIL waits for {sorted(set(recorder_class.BURST_TAIL) - fed)}, "
+        f"which feeds no cache entry")
+
+
+def test_a_recorder_that_never_recorded_says_so(recorder_class):
+    """The branch that tells "never started" apart from "timed out".
+
+    Unreachable from the fixture, which always calls ``record_until`` - so
+    without this the one line that would name a fixture that stopped calling it
+    is itself unverified.
+    """
+    burst = recorder_class()
+    burst.attach(FakeTransport())
+    assert burst.unfinished() == (
+        "the burst was never recorded: record_until was not called")
+
+
+def test_record_until_refuses_an_empty_collection(recorder_class):
+    """Nothing to wait for is satisfied immediately, which reads as success.
+
+    The recorder would come off the transport before the burst began and report
+    a finished burst, and every guard added for this race would pass while the
+    snapshot held nothing.
+    """
+    transport = FakeTransport()
+    burst = recorder_class()
+    burst.attach(transport)
+    with pytest.raises(ValueError, match="at least one type name"):
+        burst.record_until((), patience=5.0)
+    assert burst.settled_in is None, "it settled on an empty condition"
+    assert transport.listeners == [], "a refused call left the recorder attached"
