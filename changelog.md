@@ -20,6 +20,48 @@ correction.
 
 ## Unreleased
 
+### Where a knob's numbers start comes from the device now, not a table
+
+The Quad Cortex has knobs whose bottom position shows a word - usually `OFF` -
+instead of a number. The library kept a hand-measured table of where the numbers
+started on such knobs. **That table is gone.** It was wrong twice, and everything
+it tried to hold turned out to be in the device's own catalog.
+
+**What changed for you, concretely:**
+
+* **`Db(-30.0)` on a cab used to raise. It now writes.** That guard was wrong by
+  16 dB - the knob reaches far below where the table claimed, and is audibly
+  passing signal there.
+* **Asking for the exact bottom of a range now raises**, on any knob whose
+  screen shows a word there. `Db(-60.0)` on an amp OUTPUT, `Db(-40.0)` on a cab
+  or a lane VOLUME, `Hertz(20.0)` on a cab HPF. Every one of those used to
+  convert to wire 0.0 - the Off position, not the value you named - and look
+  like a successful write. Write `Encoded(0.0)` if the Off position is what you
+  mean.
+* **The lowest real value on such a knob is one step above its minimum**: `+1`
+  on a whole-number knob, `+0.01` on a decimal one. So a lane VOLUME reaches
+  -39.99 dB, a cab HPF reaches 21 Hz, and the library now knows that for all 218
+  of them rather than the three somebody had measured.
+
+**How it was settled**, since three previous attempts got it wrong: by typing
+values into the unit. Turning the knob cannot reach below 1% of travel, and the
+screen ROUNDS - a lane output prints `-40.0 dB` at its lowest real position and
+`OFF` one step below, so no amount of reading the display separates them. The
+numeric entry box does, and it states exactly the catalog's own `min`..`max`
+every time.
+
+**If you read expression sweeps**, one end of a sweep reads as `Off` when it
+sits below the knob's floor - and that floor moved, so the band did too. On a
+lane VOLUME it was the bottom 1% of the wire and is now the bottom 0.02%. A
+sweep heel at wire 0.005 used to report `Off` and now reports -39.74 dB, which
+is what the unit shows there.
+
+One consequence worth knowing about: `Db(-40.0)` is refused on most cabs and
+accepted on 14 of them (the PCOM variants and Parallax), which omit the `OFF`
+label the other 160 carry. That is not a bug in the library or the catalog - a
+Parallax cab LEVEL really does display -40.0 dB where a labelled cab shows
+`OFF`, measured on the unit. Same law, different controls.
+
 ### The Global EQ band offsets have names
 
 `QuadCortex` already named the Global EQ's stride, its band count and the three
@@ -432,11 +474,15 @@ Two findings from it are worth keeping in their own right, because the catalog
 does NOT supply them:
 
 **Wire 0.0 is an OFF detent, not the bottom of the scale.** `min_string="OFF"`
-says the bottom shows a word; only measurement says where the numbers resume. A
-cab LEVEL's law runs to -40 dB and its quietest real position is -21.8 dB, so
-asking for -30 dB would return a wire value the unit reads as OFF and mute the
-microphone. `units.FLOOR_WIRE` holds the measured floors and `real=` refuses
-below them.
+says the bottom shows a word, so asking for the very bottom of such a range
+returns a wire value the unit reads as OFF rather than the value you named, and
+that is refused. Where the numbers RESUME above the detent only measurement
+says, and `units.FLOOR_WIRE` holds the two families where a gap has been found.
+
+The cab LEVEL used to be the example here and is no longer one of them: it was
+driven below the encoder's reach later in this same release cycle and turned out
+to have no gap at all. See "A cab's LEVEL no longer refuses values it can
+actually reach" above, which supersedes this paragraph's original claim.
 
 **One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable
 only by placing the internal Neural Capture recorder on the grid, and that
