@@ -138,6 +138,46 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-12 - The Off-detent table is deleted; the floor is derived (ADR-0015)
+
+**What changed:** `units.FLOOR_WIRE` is gone. `Parameter.floor` is derived from
+the catalog - `min_string` that the bottom is a word, `min`/`max` the range, and
+`showAsInteger` the step - leaving `units.OFF_STEP_INTEGER` and
+`OFF_STEP_DECIMAL` as the only numbers. Two behaviour changes: a cab accepts
+`Db(-30.0)` again, and the exact bottom of any such range is refused everywhere
+rather than silently writing the Off position.
+
+**What the session was for and what it found.** The task was to measure where
+the numbers resume on 189 parameters across 14 laws. Three laws covering 161 of
+them were driven and produced no entry: the amp OUTPUT family reaches nearly to
+its own bottom, the `-Inf` family is 20 `type="grMeter"` readouts rather than
+knobs, and the IR loader's HI PASS is an integer knob. Driving the rest showed
+the table was the wrong shape entirely.
+
+**The instrument was the finding.** Three attempts had gone wrong three ways.
+Turning the knob cannot reach below 1% of travel, which is why all three
+recorded floors read exactly wire 0.01 - a player's floor, not the knob's.
+Writing finer wire values and reading the screen fails too, because the display
+ROUNDS: a lane output prints "-40.0 dB" at its lowest real position and "OFF"
+one step below. Only the unit's numeric ENTRY separates them, and it states
+exactly the catalog's `min`..`max`, eight for eight, with `showAsInteger`
+predicting whole-number entry ten for ten.
+
+**The cost of the old table, stated because it is the argument for deriving.**
+The cab entry was wrong by 16 dB and had refused `Db(-30.0)` for two releases,
+on a record that misread its own evidence - "muted the microphone" was the level
+the caller asked for, arriving correctly. The other two were points somebody
+happened to measure rather than floors.
+
+**Why `min_string` is trusted per parameter rather than per law.** 14 cab LEVELs
+omit it where the other 160 carry it, on the same law - which looked like a
+catalog defect and is not: a `Parallax` cab LEVEL accepts -40 and displays
+-40.0 dB where a labelled cab shows `OFF` at the same wire 0.0, measured
+2026-09-12. Unioning by law was the tempting repair and would have been wrong
+twice over: 559 parameters share a law with a labelled one without being
+labelled, and 474 of those are ordinary 0-100% controls whose 0% is a real
+value.
+
 ### 2026-09-11 - The Global EQ gain span is measured at its ends (ADR-0017)
 
 **What changed:** `units.SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]` is still

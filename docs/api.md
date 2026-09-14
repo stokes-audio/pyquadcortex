@@ -287,7 +287,7 @@ the question to ask.
 
 **An end can be the OFF detent rather than a number.** On the level family wire
 `0.0` is a word on the screen, not the bottom of the dB scale: a lane VOLUME's
-law runs to -40 dB while its lowest numeric step is -39.5, and `set_param`
+law runs to -40 dB while its lowest real value is -39.99, and `set_param`
 refuses `Db(-40)` there. So a sweep starting at the heel reports
 `minimum_is_off` and prints `Off`, rather than a value the library would reject
 if you handed it back.
@@ -380,7 +380,7 @@ qc.set_expression(LaneOutput(0), params.LaneOutputParam.VOLUME, pedal=1,
                   minimum=Encoded(0.0), maximum=Db(3.2))
 ```
 
-The span is **-40 to +12 dB**. The knob's lowest numeric step is -39.5 dB; below it
+The span is **-40 to +12 dB**. The knob's lowest real value is -39.99 dB; at -40.0
 the unit shows "Off", which is wire `0.0` - so for silence write `Encoded(0.0)`
 rather than the bottom of the dB scale.
 
