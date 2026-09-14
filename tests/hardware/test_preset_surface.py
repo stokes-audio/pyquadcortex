@@ -194,16 +194,24 @@ def test_an_inactive_scene_refuses_writes_and_reads_fine(device):
 # -- the connect burst leaves the cache warm ----------------------------------
 
 
-def test_the_burst_delivered_every_entry_the_preset_surface_reads(burst_warmed):
+def test_the_burst_delivered_every_entry_the_preset_surface_reads(burst_warmed,
+                                                                 handshake_burst):
     """Measured 2026-08-15: the burst carries RecallPreset, SetlistPosition,
     PresetDirty and Scene at about 10 s, inside ten milliseconds. The unit never
     announces its own firmware; identity is in the cache anyway since ADR-0020,
     because ``connect()`` reads ``Version`` before the handshake and the state
     layer is listening by then (measured 2026-09-07 on 4.0.1 / d14e). Asserted
     with its two kept fields, to keep this from passing on a run where the burst
-    delivered nothing at all."""
+    delivered nothing at all.
+
+    The snapshot is read only once the recording it came from is known to be
+    whole: a burst cut off early leaves exactly the absence a unit that stopped
+    sending would, and only one of those two is a finding about the unit."""
+    unfinished = handshake_burst.unfinished()
+    assert unfinished is None, unfinished
     for name in ("preset", "scene", "dirty", "loaded"):
-        assert burst_warmed[name], f"the burst delivered nothing for {name}"
+        assert burst_warmed[name], (
+            f"the burst ran to completion and delivered nothing for {name}")
     assert set(burst_warmed["identity"]) == {"device_serial_number", "app_fw_version"}, (
         f"connect's own Version read should have warmed identity with its two "
         f"kept fields; the cache held {burst_warmed['identity']}. If the unit's "

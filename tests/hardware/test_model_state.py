@@ -152,14 +152,23 @@ def test_the_connect_burst_warms_the_cache(burst_warmed, handshake_burst,
 
     Read from a snapshot the connection fixture took the moment the burst
     finished, so this says the BURST filled it rather than some earlier test.
+
+    ``unfinished`` comes first because the snapshot is only evidence if the
+    recording it came from is whole. A burst that was cut off leaves the same
+    absence as a unit that never sent the message, and the two want opposite
+    responses - so the cut-off case says so in its own words rather than being
+    reported as a finding about the unit.
     """
+    unfinished = handshake_burst.unfinished()
+    assert unfinished is None, unfinished
+    record_property("burst_settled_in_s", round(handshake_burst.settled_in, 3))
     record_property("burst_warmed", {name: sorted(fields)
                                      for name, fields in burst_warmed.items()})
     counted = collections.Counter(handshake_burst.names())
 
     assert counted.get("PresetDirtyMessage"), (
-        f"the burst carried no PresetDirty, so there was nothing to warm the "
-        f"cache with - it recorded {dict(counted)}")
+        f"the burst ran to completion and carried no PresetDirty, so there was "
+        f"nothing to warm the cache with - it recorded {dict(counted)}")
     assert "is_dirty" in burst_warmed["dirty"], (
         f"the unit announced its unsaved-changes state during the burst and the "
         f"model did not keep it - the cache held {burst_warmed}")
@@ -203,6 +212,8 @@ def test_the_burst_warms_identity_from_connects_own_version_read(burst_warmed,
     entry stays marked and the first read of ``device.firmware`` still goes to
     the unit (see ``identity`` in device/entries.py).
     """
+    unfinished = handshake_burst.unfinished()
+    assert unfinished is None, unfinished
     shapes = handshake_burst.versions()
     full = [s for s in shapes if "device_serial_number" in s[1]]
     own_reads = [s for s in shapes

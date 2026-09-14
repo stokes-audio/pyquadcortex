@@ -82,9 +82,8 @@ def test_a_listener_registered_before_connecting_sees_the_handshake_burst(
               f"{handshake_burst.settled_in}s: {counted}")
 
     assert handshake_burst.closed, "the recorder was still running - see conftest"
-    assert handshake_burst.settled_in is not None, (
-        f"the seed preset never arrived, so the burst was cut off by the "
-        f"fixture's patience rather than by finishing - {report}")
+    unfinished = handshake_burst.unfinished()
+    assert unfinished is None, f"{unfinished} - {report}"
     assert len(names) >= 100, report
     assert len(counted) >= 15, f"too few distinct state types in the burst - {report}"
     # Nothing in the handshake REQUESTS these. The subscription is a burst of

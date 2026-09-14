@@ -2095,6 +2095,16 @@ the order `RecallPreset`, `SetlistPosition`, `PresetDirty`, `Scene` - and with n
 pushes, because nothing changed. The seed `RecallPreset` sets `action`, `preset` and
 `reason`.
 
+Re-measured 2026-09-14 on 4.0.1 / d14e over three consecutive connections: the four landed
+at 11.21 s, 11.08 s and 11.07 s, spread over 6.0 ms, 3.6 ms and 5.8 ms, in that same order
+every time. **`RecallPreset` is the FIRST of the four, not the last**, which matters to
+anything that treats it as the signal the burst is over: the other three are still a few
+milliseconds out. The hardware suite's burst recorder did exactly that and lost
+`PresetDirty` in roughly one run in fifteen - it polls at 100 ms, so its stop landed at a
+uniformly random point inside the 100 ms after `RecallPreset`, and about 6 ms of that
+window is before the group has finished arriving. It now waits for all four
+(`BURST_TAIL` in `tests/hardware/conftest.py`). Wait for the group, not for its head.
+
 **`read_preset()` RECALLS the slot it reads** - that was already documented - and the
 recall **resets the active scene to the preset's default, discards unsaved edits, and
 interrupts the audio**.
