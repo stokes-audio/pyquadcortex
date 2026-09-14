@@ -2100,6 +2100,31 @@ the order `RecallPreset`, `SetlistPosition`, `PresetDirty`, `Scene` - and with n
 pushes, because nothing changed. The seed `RecallPreset` sets `action`, `preset` and
 `reason`.
 
+Re-measured 2026-09-14 on 4.0.1 / d14e over three consecutive connections, timestamped from
+before the handshake by a `connect(before_handshake=...)` listener, so these are seconds
+after connect on the same clock as the 4.9 s / 5.1 s figures above. The four landed at
+11.21 s, 11.08 s and 11.07 s, spread over 6.0 ms, 3.6 ms and 5.8 ms, in that same order
+every time. The arrival time varies session to session - 9 s to 11.2 s observed - so it is
+the ORDER and the SPREAD that are stable enough to build on, not the moment.
+
+**`RecallPreset` is the FIRST of the four, not the last.** That matters to anything
+treating it as the signal that the burst is over: the other three are still a few
+milliseconds out. The hardware suite's burst recorder did exactly that, and it polls at
+100 ms, so its stop landed at a uniformly random point in the 100 ms after `RecallPreset`
+and falls inside the group a few times in a hundred. `Scene` is lost most often, because it
+arrives last - and losing `Scene` alone is already enough to fail a test.
+
+Two kinds of evidence, and they are worth keeping apart. **Observed:** it failed a real run
+on 2026-09-11 and passed on a re-run of the same commit. **Simulated:** driving the real
+recorder with the four messages at their measured spacing and the poll's phase drawn
+uniformly from its 100 ms interval - which is what a connection does to it - loses one or
+more of the three over 300 runs, and 0 of 300 after the change. Two independent runs of
+that simulation put the rate between 6% and 10% per message, differing by how the 3.6-6.0 ms
+spacing is modelled, so the order of magnitude is the finding and the digits are not. The
+recorder now waits for all four (`BURST_TAIL` in `tests/hardware/conftest.py`), and
+`tests/test_handshake_burst_recorder.py` holds the mechanism offline with a gap staged wide
+enough that it needs no simulation. Wait for the group, not for its head.
+
 **`read_preset()` RECALLS the slot it reads** - that was already documented - and the
 recall **resets the active scene to the preset's default, discards unsaved edits, and
 interrupts the audio**.
@@ -2804,6 +2829,7 @@ screen; **captured only** = seen on the wire, with no independent read-back.
 |---|---|---|---|
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
 | version read | `Version{action: READ}` | read-back | serial and firmware returned. TWO messages come back: the `UPDATE` with fifteen fields, then the device's own `Version{READ}` 0.5-0.8 ms later. `version()` accepts only a `Version` carrying `device_serial_number` or `app_fw_version`, so the second one is never returned as the answer; five back-to-back calls after that change all returned the full reply (2026-09-03) - see "A `Version` READ is answered twice" |
+| `create_local_backup` | `LocalBackup{CREATE}` then one or more `LocalBackup{UPDATE, backup_json}` pushes, the last carrying `is_last_chunk` | captured only | Measured 2026-09-09 on Quad Cortex, CorOS 4.0.1 / d14e: a 130,178-character document arrived as ONE push, final marker set, nothing after it; no request id on the reply; the 10-field wrapper and its 64-hex `payload_hash` validated, and the Base64 payload decoded. 9.1 s on a cold connection, about 2.9 s after, and three back-to-back calls on one connection all succeeded. `can_apply_backup` never appeared, so the refusal path is unverified here. Contributed measurement 2026-09-08 on CorOS 4.1.0: 12 chunks (11 x 150,000 characters plus final 144,890), one final marker. Taken together, 150,000 is a MAXIMUM per push and not a fixed chunk size: a document under it arrives whole |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply, which carries `reason` beside the preset |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured. A READ names no slot - an UPDATE that did would recall it |
@@ -2951,9 +2977,13 @@ inside **Parallax**, a Bass Overdrive carrying its own two-mic cab section:
 it appears**, not to cab models, and Parallax is keyed explicitly because the
 category aliasing cannot reach a Bass Overdrive.
 
-It shares the lane VOLUME's STRUCTURE - a numeric floor at wire 0.01 with the Off
-detent below it - but not its values: -21.8 dB here against the lane's -39.5 dB
-at the same wire position.
+It was long recorded as sharing the lane VOLUME's STRUCTURE - a numeric floor at
+wire 0.01 with the Off detent below it. It does not: driven below the encoder's
+reach on 2026-09-11 the cab has no detent at all, and -21.8 dB is simply what it
+reads at wire 0.01, not the bottom of its travel - and neither is the lane's
+-39.5 dB at that same wire position, which was recorded as a floor for the same
+reason and is simply a reading. See "The bottom of a scale is sometimes a word"
+below.
 
 Note what this rules out. Cab LEVEL sits in the same dB family
 as the lane and mixer levels and is **not** their -40..+12 scale - unity
@@ -3234,17 +3264,105 @@ physical knob, because the two entries declare different numbers.
 parameter carrying all three labels. Every reading is in
 `tests/test_scales.py`.
 
-#### The bottom of a scale is sometimes a word
+#### The bottom of a scale is sometimes a word, and the catalog says where numbers start
 
 `min_string` is set on 254 parameters - `OFF` on 191, and also `-Inf` and `L`. It says
-the bottom of the range shows a word rather than a number. It does **not** say where
-the numbers resume, and only measurement knows that: a cab LEVEL's law runs to -40 dB
-while its quietest real position is **-21.8 dB at wire 0.01**, with OFF below.
+the bottom of the range shows a word rather than a number. For three releases the
+library held a hand-measured table of where the numbers resumed, keyed by law. **That
+table is gone, and this is the session that removed it.**
 
-That gap is not cosmetic. Without a floor, asking a cab for -30 dB converts to wire
-0.0005 and **mutes the microphone** - a write that looks like it worked and did
-something else. `units.FLOOR_WIRE` holds the measured floors, keyed by the same
-family names, and a value below one is refused. For silence, write the wire's `0.0`.
+The device describes all of it, and the instrument that showed so was the unit's own
+NUMERIC ENTRY rather than its knob or its screen. Typed into on CorOS 4.0.1, 2026-09-11
+and 2026-09-12:
+
+| knob | entry box says | takes | minimum typed | lowest number |
+|---|---|---|---|---|
+| cab `HPF` | 20 to 500 | integers | `OFF` | 21 Hz |
+| `Plugin Graphic-9` `HPF` | 19 to 500 | integers | `OFF` | 20 Hz |
+| `Graphic-9` (4002) `HPF` | 19 to 250 | integers | `OFF` | 20 Hz |
+| lane output `VOLUME` | -40 to 12 | decimals | `OFF` | -39.99, drawn `-40.0 dB` |
+| cab `OUTPUT VOLUME` | -96 to 12 | decimals | `OFF` | -95.99, drawn `-96.0 dB` |
+| `Digital Flanger` `DRIVE` | 0 to 100 | decimals | `OFF` | 0.01, drawn `0%` |
+| `Utility Gate` `RANGE` | -90 to -6 | decimals | `OFF` | -89.9 drawn `-90 dB` (*) |
+| `Looper X` `PLAYBACK LEVEL` | -60 to 0 | decimals | `OFF` | -59.9 drawn `-60.0 dB` (*) |
+| `Send 1` `LEVEL` | -40 to 0 | decimals | `OFF` | - (*) |
+
+(*) taken to one decimal place, or to the minimum only - so the lowest value shown is
+what was tried rather than the lowest that exists.
+
+Three facts, none of which needed measuring once they were looked for:
+
+1. **The entry box states exactly the catalog's `min`..`max`** - 9 of the 9 knobs
+   whose entry box was read.
+2. **`showAsInteger` says whether it takes whole numbers** - 9 of 9.
+3. **Typing the minimum gives the word** - 9 of 9, across 9 different laws.
+4. **One UI step above the minimum is the lowest real number** - 6 of 6, three integer
+   knobs and three decimal ones. The other three were taken to the minimum and no
+   further, so they are consistent with the step rather than evidence for it.
+
+Point 3 is what the refusal rests on and point 4 only sets how wide a sliver just above
+the minimum is refused, so being wrong about the step costs a hundredth of a unit. The
+table this replaced was wrong by 16 dB. That asymmetry is the argument for deriving a
+rule here at all, in a codebase that has been burned by rules about parameters before.
+
+So `Parameter.floor` is derived, and `units.OFF_STEP_INTEGER` / `OFF_STEP_DECIMAL` are
+the only numbers left. The decimal step is confirmed on three knobs that accepted two
+decimal places and contradicted nowhere; the Gate and the Looper were only taken to one.
+
+**Why the screen could not settle this, which is the part worth remembering.** The
+display rounds and the entry box does not. A lane output prints `-40.0 dB` at its
+lowest real position AND `OFF` one step below, so reading the screen cannot separate
+them at any wire value. So the refusal is written against the displayed floor: asking
+for -40.0 dB raises, and -39.99 converts. A second check against `floor_wire` was
+written and then removed, because it could not fire - refusing everything below
+`floor_display` already covers every value that would land below it.
+
+It is also why three earlier attempts went wrong. The first measured by turning the
+knob, and a knob with no `steps` moves in hundredths - so all three recorded floors
+read exactly wire 0.01, which is where a *player* bottoms out and not where the numbers
+stop. The second wrote finer wire values and read the screen, which rounds. Only typing
+works.
+
+**What that cost.** The cab entry said `OFF` below wire 0.01 and called -21.8 dB the
+quietest position, so `Db(-30.0)` on a cab raised for two releases. It was wrong by
+16 dB: the screen prints -37.2 dB at wire 0.000001, the cab is audibly passing signal
+at wire 0.009 with its second microphone fully Off, and 0.009 against 0.011 - 0.7 dB
+apart across the claimed boundary - sound the same rather than silence against a tone.
+The record that built the table had misread its own evidence: a caller asking for
+-30 dB got -30 dB, which on one microphone is close to inaudible.
+
+**What looked like a vendor inconsistency is a real difference, and measuring it is
+what proves `min_string` is trustworthy per parameter.** 14 cab LEVELs - the PCOM
+variants and Parallax - omit `min_string` while the other 160 carry it, for what is
+otherwise the identical control: same bounds, same taper, same borrowed layout. Typed
+into on 2026-09-12, a `Parallax` cab LEVEL states "-40 to 6", accepts -40 and
+**displays -40.0 dB**, where a labelled cab shows `OFF` at that same wire 0.0.
+
+So the device means what it says, knob by knob, and the old law-keyed table had been
+papering over a genuine difference rather than fixing a data defect. It is also the
+disproof of the repair that suggests itself: 559 parameters share a law with a
+labelled one without carrying the label, 474 of them ordinary 0-100% controls whose 0%
+is a real value, and unioning by law would have invented an Off position for every one
+of them.
+
+#### Three laws were driven looking for floors, and found none
+
+| law | parameters | result |
+|---|---|---|
+| -60..12 dB, skew 3.8018 | 125 | numbers to -58.1 dB at wire 0.000001 |
+| -60..0 dB, skew 1, `-Inf` | 20 | `type="grMeter"` - readouts, not knobs |
+| 20..800 Hz, skew 0.6 | 16 | an integer knob; its floor is 21 Hz |
+
+The `-Inf` law is 20 gain-reduction meters and the catalog said so all along -
+`grMeter` is 39 parameters across 39 models, every one named `GAIN REDUCTION`, beside
+8 more of `type="meter"` which are all Neural Capture wizard internals. The owner
+confirmed it at the unit (it sits at 0.0 with no audio and flickers while something
+plays) and a host write of wire 0.5 moved nothing on screen, though the value
+round-tripped through the preset - storage, not control.
+
+The amp readings are also the first hardware confirmation of skew 3.8018, over four
+decades of wire: 0.01/0.005/0.000001 read -38.6/-42.1/-58.1 dB against a law
+rendering -38.558/-42.132/-58.098.
 
 **Unity for the level parameters is `0.76923077`** - 10/13, i.e. 0 dB on -40..+12.
 Measured: `MIXER LEVEL` and `LEVEL TO A`/`LEVEL TO B` read exactly that on every one

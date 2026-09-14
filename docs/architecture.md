@@ -639,7 +639,7 @@ next, roughly in order of how well the ground is prepared:
 - **Types not in the registry at all.** The schema declares 71 message types.
   Whole feature areas are untouched: `Tuner` / `ShowTuner`, `Looper`,
   `MIDISettings`, `NeuralCapture` / `NeuralCapture2`, `Screenshot`,
-  `Diagnostics`, `LocalBackup` / `CloudBackup`, `Confirmation`,
+  `Diagnostics`, `CloudBackup`, `Confirmation`,
   `GigViewButton`, `SuspendConnection`, `GenericError`, the `*Forward` transport
   wrappers, and the production/test-farm messages. Nothing about these has been
   observed on the wire by this project, so treat the schema as a starting

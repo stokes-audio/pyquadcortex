@@ -212,6 +212,26 @@ class HandshakeBurst:
     Runs on the RX thread, so it does the least it can: append and return.
     """
 
+    #: The four state messages that CLOSE the connect burst, in the order the
+    #: unit sends them. The recording is complete when all four have arrived.
+    #:
+    #: They are one group, not a sequence with a last member to watch for:
+    #: re-measured 2026-09-14 on d14e over three sessions, they land at about
+    #: 11.1 s inside 3.6, 5.8 and 6.0 ms respectively, always in this order
+    #: (``docs/protocol.md``, "Connect burst, measured"). ``RecallPreset`` is
+    #: the FIRST of them. Waiting for that one alone is what this used to do,
+    #: and it cost two hardware tests a few runs in a hundred - most often by
+    #: losing ``Scene``, which arrives last. See
+    #: ``tests/test_handshake_burst_recorder.py``.
+    #:
+    #: Measured on ONE profile. ADR-0020 puts what differs by firmware or model
+    #: on the profile class, and this has not earned that yet because there is
+    #: one measurement of it; a ``--profile`` run against a Mini or a 4.1 that
+    #: closes its burst differently will time out and name the message it never
+    #: saw, which is the evidence that would move it.
+    BURST_TAIL = ("RecallPresetMessage", "SetlistPositionMessage",
+                  "PresetDirtyMessage", "SceneMessage")
+
     def __init__(self):
         self._lock = threading.Lock()
         self._names = []
@@ -220,7 +240,17 @@ class HandshakeBurst:
         #: that only counts cannot tell a retried identity read from a changed
         #: handshake. Shapes only - the values are not this recorder's business.
         self._versions = []
+        #: Type names seen, kept alongside ``_names`` so :meth:`missing` is a set
+        #: difference rather than a walk of the whole recording. The recording
+        #: reaches several hundred names and is polled while the RX thread is
+        #: delivering ~1490 reports/s and wants this same lock to append.
+        self._seen_types = set()
         self._detach = None
+        self._sentinels = frozenset()
+        self._missing_at_giveup = frozenset()
+        self._patience = None
+        self._called = False
+        self._gave_up = False
         self.closed = False
         self.settled_in = None  # seconds the burst took, or None if it timed out
 
@@ -234,7 +264,9 @@ class HandshakeBurst:
                 # The RX thread notifies from a snapshot, so a message can still
                 # arrive after removal. It must not reopen the recording.
                 return
-            self._names.append(type(message).__name__)
+            name = type(message).__name__
+            self._names.append(name)
+            self._seen_types.add(name)
             if isinstance(message, pa.VersionMessage):
                 self._versions.append(
                     (message.action, frozenset(f.name for f, _ in message.ListFields())))
@@ -244,25 +276,157 @@ class HandshakeBurst:
         with self._lock:
             return list(self._versions)
 
-    def record_until(self, sentinel, patience):
-        """Record until a ``sentinel``-typed message arrives, then stop.
+    def record_until(self, sentinels, patience):
+        """Record until EVERY type in ``sentinels`` has arrived, then stop.
 
-        The seed ``RecallPresetMessage`` is the tail of the burst - measured
-        2026-08-12 on d14e: ModelRepo at 4.9 s, the folder listings and settings
-        at 5.1 s, the current preset at 10.1 s - so waiting for it means the whole
-        burst has been recorded, however long the unit takes about it.
+        :data:`BURST_TAIL` is what the fixture passes. All four of them, not the
+        first: the burst's shape is ModelRepo at 4.9 s, the folder listings and
+        settings at 5.1 s, then those four together at about 11 s, and they are a
+        group six milliseconds wide rather than a sequence. This loop polls at
+        100 ms, so a stop condition naming only the first of the group stops at
+        a uniformly random point in the 100 ms after it, and lands inside the
+        group a few times in a hundred. When that happened the recorder came off the
+        transport and the fixture snapshotted ``burst_warmed`` before the other
+        three reached the cache, and the two tests reading that snapshot failed
+        together while every test reading the live cache passed.
 
-        Stops on ``patience`` seconds regardless, so a unit that never sends it
-        cannot hang the run. ``settled_in`` says which of the two happened.
+        Stops on ``patience`` seconds regardless, so a unit that never sends one
+        cannot hang the run. ``settled_in`` says which of the two happened, and
+        :meth:`unfinished` says it in words for a failure message.
+
+        Both refusals below close the recorder on the way out, which is what the
+        ``finally`` is for: this runs with the listener already attached, so a
+        raise that skipped it would leave the recording on the transport for the
+        whole session with nothing left to stop it.
         """
-        started = time.monotonic()
-        deadline = started + patience
-        while time.monotonic() < deadline:
-            if self._recorded(sentinel):
-                self.settled_in = time.monotonic() - started
-                break
-            time.sleep(0.1)
-        self.close()
+        self._called = True
+        try:
+            if isinstance(sentinels, str):
+                raise TypeError(
+                    "record_until takes a collection of type names, not one "
+                    "name - the burst is over when all of them have arrived, "
+                    "and a single name is the bug this signature replaced. A "
+                    "str is a collection of its letters, so this would "
+                    "otherwise wait for message types called 'R', 'e' and 'c' "
+                    "and never settle.")
+            # Materialized BEFORE the scan below: `sentinels` may be a
+            # generator, and scanning it first would leave frozenset() an
+            # exhausted one - refused as empty, for a non-empty argument.
+            self._sentinels = frozenset(sentinels)
+            wrong = sorted(repr(s) for s in self._sentinels
+                           if not isinstance(s, str))
+            if wrong:
+                raise TypeError(
+                    f"record_until matches NAMES against what the recorder "
+                    f"stores, which is type(message).__name__; it was handed "
+                    f"{', '.join(wrong)}. A message class never equals its own "
+                    f"name, so the wait would burn the whole patience and then "
+                    f"name that class as something the unit never sent.")
+            if not self._sentinels:
+                raise ValueError(
+                    "record_until needs at least one type name. An empty "
+                    "collection is satisfied by the first poll, so the recorder "
+                    "would come off the transport before the burst began and "
+                    "then report it as finished - which is the misattribution "
+                    "this whole method exists to prevent.")
+            self._patience = patience
+            started = time.monotonic()
+            deadline = started + patience
+            while True:
+                # ONE read of the condition per pass, used for both the settle
+                # and the give-up. Reading it again after the deadline would let
+                # the RX thread empty it in between, and :meth:`unfinished`
+                # would then name nothing at all - a sentence with a blank where
+                # the missing types belong, on a recording that is in fact
+                # whole. Checking it BEFORE the deadline is what credits a tail
+                # that lands during the last sleep.
+                outstanding = self.missing()
+                if not outstanding:
+                    self.settled_in = time.monotonic() - started
+                    break
+                if time.monotonic() >= deadline:
+                    # One last look, and this read decides BOTH branches. The
+                    # RX thread can have emptied it since the read above, and
+                    # freezing that stale set would name a message the recording
+                    # holds. Whatever this read says is what gets reported.
+                    outstanding = self.missing()
+                    if not outstanding:
+                        self.settled_in = time.monotonic() - started
+                    else:
+                        self._missing_at_giveup = outstanding
+                        self._gave_up = True
+                    break
+                time.sleep(0.1)
+        finally:
+            self.close()
+
+    def missing(self):
+        """The sentinel types :meth:`record_until` has not seen yet.
+
+        Reads the set :meth:`__call__` maintains rather than walking the
+        recording: this is polled ten times a second at the busiest moment the
+        link has, under the lock the RX thread needs to append.
+        """
+        with self._lock:
+            return self._sentinels - self._seen_types
+
+    def unfinished(self):
+        """Why the recording is short of the whole burst, or ``None`` if it is not.
+
+        The two tests that read ``burst_warmed`` for entries the burst delivers
+        put this in front of their own assertions. Without it, "the cache never
+        got ``PresetDirty``" and "the recorder stopped before ``PresetDirty``
+        arrived" read identically from the snapshot, and they want opposite
+        responses.
+
+        Which of the two this sentence describes changed with the stop
+        condition, and the wording follows it. The recorder now waits for every
+        message in :data:`BURST_TAIL`, so it can no longer stop early - which
+        leaves the unit as the only thing that can make this non-``None``.
+        """
+        if not self._called:
+            return "the burst was never recorded: record_until was not called"
+        if self.settled_in is not None:
+            return None
+        if not self._sentinels:
+            return ("the burst was never recorded: record_until was called and "
+                    "refused its argument - see the error it raised")
+        if not self._gave_up:
+            # Neither settled nor timed out, so the wait did not finish: a
+            # KeyboardInterrupt during the burst is the way this happens. Said
+            # plainly, because the branch below would otherwise name nothing at
+            # all and blame the unit for it.
+            return (f"the wait for the connect burst did not run to an end - "
+                    f"interrupted, most likely. The recording holds what had "
+                    f"arrived by then and is still short of "
+                    f"{', '.join(sorted(self.missing())) or 'nothing'}; it says "
+                    f"nothing about the unit either way.")
+        return (
+            f"the connect burst did not finish within {self._patience}s: "
+            f"{', '.join(sorted(self._missing_at_giveup))} never arrived, of "
+            f"the {len(self._sentinels)} messages that close it. The recorder "
+            f"waits for all of them, so it did not stop early - what is absent "
+            f"from the recording is absent from the unit's burst. Read it as a "
+            f"finding about the unit or the link.")
+
+    def tail_positions(self):
+        """How far from the END of the recording each sentinel first appeared.
+
+        The stop condition proves the four ARRIVED. It cannot prove they are the
+        LAST four, which is what the fixture's snapshot on the next line
+        actually rests on - and a firmware that appended a fifth closing message
+        would re-open this bug with nothing to catch it. Recorded rather than
+        asserted, because the number that would be asserted is one this project
+        has measured on one profile: a sentinel sitting well back from the end
+        shows up in the run's report before it shows up as a flake.
+        """
+        with self._lock:
+            total = len(self._names)
+            first = {}
+            for index, name in enumerate(self._names):
+                if name in self._sentinels and name not in first:
+                    first[name] = total - index
+            return first
 
     def close(self):
         """Stop recording and come off the transport. Idempotent.
@@ -278,16 +442,6 @@ class HandshakeBurst:
             self.closed = True
         if not already and self._detach is not None:
             self._detach()
-
-    def _recorded(self, name):
-        """Whether a message of type ``name`` has been recorded.
-
-        Scans in place rather than going through :meth:`names`, which would copy
-        the whole recording on every poll, briefly contending with the RX thread
-        at the busiest moment it has.
-        """
-        with self._lock:
-            return name in self._names
 
     def names(self):
         """A snapshot of what has been recorded, in arrival order."""
@@ -336,17 +490,18 @@ def _connection(request):
     Two things are attached before the handshake, and neither can be attached
     later on demand, because the burst happens during ``connect``:
 
-    * the burst recorder, for every run rather than only the tests that read it;
-    * the model's state layer, which is what ``pyquadcortex.connect()`` does at
+    * the model's state layer FIRST - see ``subscribe`` below, where the order
+      is load-bearing - which is what ``pyquadcortex.connect()`` does at
       exactly this point. It stays attached for the whole run, which costs the
       RX thread one small message copy per ``Version`` or ``PresetDirty`` push
       and nothing at all for anything else - orders of magnitude under the
       hundred-millisecond latencies ``test_write_echo.py`` measures. Its own
-      tests are in ``test_model_state.py``.
+      tests are in ``test_model_state.py``;
+    * the burst recorder, for every run rather than only the tests that read it.
 
     The fixture then waits for the burst to finish before handing the connection
     over, so the recording is exactly the burst whatever order the tests run in.
-    It costs about 8 s once per run and buys more than it costs: `connect()`
+    It costs about 9 s once per run and buys more than it costs: `connect()`
     returns roughly 3 s before the unit starts streaming several hundred messages,
     so without the wait every latency measurement in this suite would be taken on
     a link that is still busy answering the handshake.
@@ -359,8 +514,16 @@ def _connection(request):
     cache = DeviceState()
 
     def subscribe(transport):
-        burst.attach(transport)
+        # The CACHE first, and the order is load-bearing. Listeners run in
+        # registration order (``Transport._notify_listeners``), and the
+        # recorder's stop condition is read one line below as "the cache has
+        # these too". Registered the other way round the poll can see the
+        # fourth tail message recorded and take the ``warmed`` snapshot before
+        # ``DeviceState.apply_push`` has run for that same message - the stale
+        # snapshot this file was just fixed for, one ``__call__`` wide instead
+        # of six milliseconds. This way round the implication is real.
         cache.listen_on(transport)
+        burst.attach(transport)
 
     # `--profile CLASSNAME` connects as that class instead of the one the unit's
     # identity resolves to, which is how a unit the registry would refuse - an
@@ -376,7 +539,11 @@ def _connection(request):
         cache.bind(client)
         # Read by pytest_terminal_summary, which has a config and no fixtures.
         request.config._profile = type(client)
-        burst.record_until("RecallPresetMessage", patience=30.0)
+        # Read by pytest_terminal_summary: a cut-off burst is otherwise reported
+        # only by the three tests that guard on it, and --verifies or a
+        # single-file run deselects all three while the fixture still waits.
+        request.config._burst = burst
+        burst.record_until(HandshakeBurst.BURST_TAIL, patience=30.0)
         # Taken here, before any test can read through the cache, so "the burst
         # warmed this" cannot later be confused with "some test read it".
         warmed = {entry.name: cache.cached(entry.name) for entry in entries.ENTRIES}
@@ -661,6 +828,11 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         tr.line("the hardware session never connected, so no operation was measured; "
                 "see the setup errors above")
         return
+    burst = getattr(config, "_burst", None)
+    unfinished = None if burst is None else burst.unfinished()
+    if unfinished is not None:
+        tr.section("connect burst: cut off")
+        tr.line(unfinished)
     claimed = _claimed(_VERIFIES, _RAN)
     lines = _report_lines(cls, _OUTCOMES, claimed)
     width = max(len(label) for label, _names, _note in lines)

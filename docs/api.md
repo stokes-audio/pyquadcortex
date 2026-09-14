@@ -76,6 +76,7 @@ already read and need no connection; calling them as methods raises
 | **Neural Captures** | `captures()`, `list_irs()` to browse the library, `set_capture(cell, entry)` to place one. Creating a capture is the unit's own wizard - disconnect first, since a connected client suppresses it |
 | **Discovery** | `list_folders()` - every folder the device knows, including the factory Captures Library and plugin artist presets; `recents()`, `favorites()`, `add_favorite()`, `remove_favorite()` |
 | **Manage presets** | `save_current_preset(setlist, slot, name)`, `delete_preset(setlist, name)`, `move_preset(setlist, name, to_slot)` |
+| **Local backups** | `create_local_backup()` returns the device's structurally validated portable backup document; serialize it to JSON wherever you keep backups |
 
 **Rows and columns are zero-based, and the unit displays rows 1 to 4.** `row=0` is
 the top row on screen and `row=2` is the one labelled 3. This matters more than it
@@ -293,7 +294,7 @@ the question to ask.
 
 **An end can be the OFF detent rather than a number.** On the level family wire
 `0.0` is a word on the screen, not the bottom of the dB scale: a lane VOLUME's
-law runs to -40 dB while its lowest numeric step is -39.5, and `set_param`
+law runs to -40 dB while its lowest real value is -39.99, and `set_param`
 refuses `Db(-40)` there. So a sweep starting at the heel reports
 `minimum_is_off` and prints `Off`, rather than a value the library would reject
 if you handed it back.
@@ -386,7 +387,7 @@ qc.set_expression(LaneOutput(0), params.LaneOutputParam.VOLUME, pedal=1,
                   minimum=Encoded(0.0), maximum=Db(3.2))
 ```
 
-The span is **-40 to +12 dB**. The knob's lowest numeric step is -39.5 dB; below it
+The span is **-40 to +12 dB**. The knob's lowest real value is -39.99 dB; at -40.0
 the unit shows "Off", which is wire `0.0` - so for silence write `Encoded(0.0)`
 rather than the bottom of the dB scale.
 
