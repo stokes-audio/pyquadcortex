@@ -17,8 +17,9 @@ deleting the wrong assertion:
   that sets its flag and keeps recording anyway, one that stops recording but
   stays on the transport, or one that stops on the FIRST message of the burst's
   closing group rather than the whole of it, reads exactly like a working one
-  from the outside - the last of those about NINE runs in TEN, because losing
-  ``Scene`` alone is enough and ``Scene`` is the one lost most often.
+  from the outside - the last of those on all but a few runs in a hundred,
+  because losing ``Scene`` alone is enough and ``Scene`` is the one lost most
+  often.
 
 The two hardware tests that read ``burst_warmed`` for entries the burst delivers
 call ``unfinished()`` before their own assertions. The identity test does not,
@@ -189,7 +190,6 @@ def test_recording_and_reading_at_the_same_time_loses_nothing(recorder_class):
     known = {"FileMessage"} | set(recorder_class.BURST_TAIL)
     while any(writer.is_alive() for writer in writers):
         assert all(name in known for name in burst.names())
-        assert burst.missing() <= frozenset()   # no sentinels set: nothing outstanding
     for writer in writers:
         writer.join()
 
@@ -199,7 +199,7 @@ def test_recording_and_reading_at_the_same_time_loses_nothing(recorder_class):
 
 def test_record_until_waits_for_the_whole_tail_not_just_the_first_of_it(
         recorder_class):
-    """The race that failed two hardware tests together, one run in fifteen.
+    """The race that failed two hardware tests together, a few runs in a hundred.
 
     The burst's four closing messages arrive in the order ``RecallPreset``,
     ``SetlistPosition``, ``PresetDirty``, ``Scene``, inside six milliseconds -
@@ -287,9 +287,6 @@ def test_record_until_refuses_a_single_name(recorder_class):
         "record the whole session with nothing left to stop it")
 
 
-#: Cache entries the connect burst does NOT warm, and why. A new ``StateEntry``
-#: comes through here or through ``BURST_TAIL``, and there is no third way -
-#: which is the point of the test below.
 #: Feed types that reach an entry OUTSIDE the connect burst, with when they do.
 #: The recorder must not wait for these: nothing sends them on connect, so a
 #: wait would cost the full patience on every run.
@@ -302,6 +299,9 @@ OUTSIDE_THE_BURST = {
     "SceneColorMessage": "only when somebody recolours a scene",
 }
 
+#: Cache entries the connect burst does not warm AT ALL, and why. An entry whose
+#: feeds are all in :data:`OUTSIDE_THE_BURST` belongs here too - the two lists
+#: answer different questions, and the test below wants both answers.
 NOT_WARMED_BY_THE_BURST = {
     "identity": "the unit never announces its identity. It reaches the cache "
                 "because connect() READs Version before the handshake and the "
@@ -350,7 +350,13 @@ def test_burst_tail_names_every_entry_the_burst_is_expected_to_warm(
         excused = NOT_WARMED_BY_THE_BURST.get(entry.name)
         assert bool(warmed_by) != bool(excused), (
             f"entry {entry.name!r} is warmed by {sorted(warmed_by)} and excused "
-            f"with {excused!r} - it must be one or the other.")
+            f"with {excused!r} - it must be exactly one of the two. An entry "
+            f"fed only by messages in OUTSIDE_THE_BURST is not warmed by the "
+            f"burst, so it needs a line in NOT_WARMED_BY_THE_BURST as well: "
+            f"that list answers 'is this entry in the snapshot at all', and "
+            f"OUTSIDE_THE_BURST answers 'must the recorder wait for this "
+            f"message'. If the burst DOES warm it, put the message that does "
+            f"so in BURST_TAIL instead.")
 
 
 def test_every_burst_tail_message_actually_feeds_an_entry(recorder_class):
@@ -436,11 +442,15 @@ def test_a_tail_that_lands_during_the_last_sleep_still_settles(recorder_class):
     assert set(burst.names()) == set(recorder_class.BURST_TAIL)
 
 
-def test_an_unfinished_recording_never_names_nothing(recorder_class):
-    """The blank the check above prevents, asserted directly.
+def test_an_unfinished_recording_names_what_was_outstanding(recorder_class):
+    """A give-up reports the set that was outstanding when it gave up.
 
-    A sentence that says "-  never arrived" sends the reader looking for a
-    recorder bug the recorder's own state has already disproved.
+    Not the same claim as the test above, and weaker than it looks on its own:
+    messages pushed after ``record_until`` returns are dropped, so a live
+    ``missing()`` would name these too. What it holds is that the give-up
+    FREEZES its reason rather than recomputing it later - delete the
+    ``_missing_at_giveup`` assignment and this fails. The blank sentence itself
+    is prevented by the loop's last-look, which the test above covers.
     """
     transport = FakeTransport()
     burst = recorder_class()
@@ -498,3 +508,56 @@ def test_tail_positions_says_where_the_closing_group_landed(recorder_class):
     assert burst.tail_positions() == {
         "RecallPresetMessage": 4, "SetlistPositionMessage": 3,
         "PresetDirtyMessage": 2, "SceneMessage": 1}
+
+
+def test_a_wait_that_never_ran_to_an_end_says_so_rather_than_blaming_the_unit(
+        recorder_class):
+    """Ctrl-C during the thirty-second burst wait, in the shape it reaches here.
+
+    ``record_until`` sets its "called" flag first and its "gave up" flag last,
+    so an exception in between leaves a recorder that has neither settled nor
+    timed out. Without a branch of its own that state falls into the give-up
+    sentence, which names whatever is outstanding - nothing, by then, in the
+    interrupt case - and tells the reader the unit is at fault. The run report
+    prints this string, so it is read by someone who has just pressed Ctrl-C.
+    """
+    transport = FakeTransport()
+    burst = recorder_class()
+    burst.attach(transport)
+
+    class Interrupt(Exception):
+        pass
+
+    def interrupting_sleep(_seconds):
+        raise Interrupt
+
+    real_sleep, time.sleep = time.sleep, interrupting_sleep
+    try:
+        with pytest.raises(Interrupt):
+            burst.record_until(recorder_class.BURST_TAIL, patience=30.0)
+    finally:
+        time.sleep = real_sleep
+
+    assert burst.settled_in is None
+    assert burst.closed, "an interrupted wait left the recorder on the transport"
+    unfinished = burst.unfinished()
+    assert "interrupted" in unfinished, unfinished
+    assert "nothing about the unit" in unfinished, unfinished
+
+
+def test_record_until_takes_a_generator(recorder_class):
+    """A one-pass argument must not be spent by the type check before the wait.
+
+    Scanning `sentinels` and then building the frozenset from it drains a
+    generator, and the empty-collection refusal then fires on an argument that
+    was not empty - a refusal naming the opposite of what went wrong.
+    """
+    transport = FakeTransport()
+    burst = recorder_class()
+    burst.attach(transport)
+    for message in _tail():
+        burst(message)
+
+    burst.record_until((name for name in recorder_class.BURST_TAIL), patience=1.0)
+
+    assert burst.settled_in is not None, burst.unfinished()

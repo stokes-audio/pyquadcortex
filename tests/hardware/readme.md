@@ -120,8 +120,8 @@ burst is named even on a run that deselects all three tests that guard on it.
 What they cannot see is a recorder that sets its flag and keeps recording anyway,
 one that stops recording but stays attached to the transport, or one that stops
 on the FIRST message of the burst's closing group instead of the whole of it.
-All three read like a working recorder from the outside - the last of them about
-nine runs in ten - so all three are pinned offline in
+All three read like a working recorder from the outside - the last of them on
+all but a few runs in a hundred - so all three are pinned offline in
 `tests/test_handshake_burst_recorder.py`.
 
 ## The model's cache rides the same connection

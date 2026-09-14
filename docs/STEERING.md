@@ -153,8 +153,8 @@ as `UNMARKED_OPERATIONS` and `BOUNDARY_MODULES`.
 
 **Why:** `RecallPreset` is the FIRST of those four on the wire and the other three
 follow within 3.6 to 6.0 ms, against a 100 ms poll. Two hardware tests failed
-together on 2026-09-11 and passed on a re-run of the same commit; measured at
-6.7% and 10.0% of runs. A gate that fails intermittently for reasons unrelated to
+together on 2026-09-11 and passed on a re-run of the same commit; simulating the
+poll's phase puts it at a few runs in a hundred. A gate that fails intermittently for reasons unrelated to
 the change teaches people to re-run until green, which is how a real regression
 gets waved through.
 

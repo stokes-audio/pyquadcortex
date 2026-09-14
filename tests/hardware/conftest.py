@@ -220,7 +220,8 @@ class HandshakeBurst:
     #: 11.1 s inside 3.6, 5.8 and 6.0 ms respectively, always in this order
     #: (``docs/protocol.md``, "Connect burst, measured"). ``RecallPreset`` is
     #: the FIRST of them. Waiting for that one alone is what this used to do,
-    #: and it cost two hardware tests about nine runs in ten - see
+    #: and it cost two hardware tests a few runs in a hundred - most often by
+    #: losing ``Scene``, which arrives last. See
     #: ``tests/test_handshake_burst_recorder.py``.
     #:
     #: Measured on ONE profile. ADR-0020 puts what differs by firmware or model
@@ -249,6 +250,7 @@ class HandshakeBurst:
         self._missing_at_giveup = frozenset()
         self._patience = None
         self._called = False
+        self._gave_up = False
         self.closed = False
         self.settled_in = None  # seconds the burst took, or None if it timed out
 
@@ -282,8 +284,8 @@ class HandshakeBurst:
         settings at 5.1 s, then those four together at about 11 s, and they are a
         group six milliseconds wide rather than a sequence. This loop polls at
         100 ms, so a stop condition naming only the first of the group stops at
-        a uniformly random point in the 100 ms after it - inside the group about
-        one time in fifteen. When that happened the recorder came off the
+        a uniformly random point in the 100 ms after it, and lands inside the
+        group a few times in a hundred. When that happened the recorder came off the
         transport and the fixture snapshotted ``burst_warmed`` before the other
         three reached the cache, and the two tests reading that snapshot failed
         together while every test reading the live cache passed.
@@ -307,7 +309,12 @@ class HandshakeBurst:
                     "str is a collection of its letters, so this would "
                     "otherwise wait for message types called 'R', 'e' and 'c' "
                     "and never settle.")
-            wrong = sorted(repr(s) for s in sentinels if not isinstance(s, str))
+            # Materialized BEFORE the scan below: `sentinels` may be a
+            # generator, and scanning it first would leave frozenset() an
+            # exhausted one - refused as empty, for a non-empty argument.
+            self._sentinels = frozenset(sentinels)
+            wrong = sorted(repr(s) for s in self._sentinels
+                           if not isinstance(s, str))
             if wrong:
                 raise TypeError(
                     f"record_until matches NAMES against what the recorder "
@@ -315,7 +322,6 @@ class HandshakeBurst:
                     f"{', '.join(wrong)}. A message class never equals its own "
                     f"name, so the wait would burn the whole patience and then "
                     f"name that class as something the unit never sent.")
-            self._sentinels = frozenset(sentinels)
             if not self._sentinels:
                 raise ValueError(
                     "record_until needs at least one type name. An empty "
@@ -339,7 +345,16 @@ class HandshakeBurst:
                     self.settled_in = time.monotonic() - started
                     break
                 if time.monotonic() >= deadline:
-                    self._missing_at_giveup = outstanding
+                    # One last look, and this read decides BOTH branches. The
+                    # RX thread can have emptied it since the read above, and
+                    # freezing that stale set would name a message the recording
+                    # holds. Whatever this read says is what gets reported.
+                    outstanding = self.missing()
+                    if not outstanding:
+                        self.settled_in = time.monotonic() - started
+                    else:
+                        self._missing_at_giveup = outstanding
+                        self._gave_up = True
                     break
                 time.sleep(0.1)
         finally:
@@ -376,6 +391,16 @@ class HandshakeBurst:
         if not self._sentinels:
             return ("the burst was never recorded: record_until was called and "
                     "refused its argument - see the error it raised")
+        if not self._gave_up:
+            # Neither settled nor timed out, so the wait did not finish: a
+            # KeyboardInterrupt during the burst is the way this happens. Said
+            # plainly, because the branch below would otherwise name nothing at
+            # all and blame the unit for it.
+            return (f"the wait for the connect burst did not run to an end - "
+                    f"interrupted, most likely. The recording holds what had "
+                    f"arrived by then and is still short of "
+                    f"{', '.join(sorted(self.missing())) or 'nothing'}; it says "
+                    f"nothing about the unit either way.")
         return (
             f"the connect burst did not finish within {self._patience}s: "
             f"{', '.join(sorted(self._missing_at_giveup))} never arrived, of "
@@ -465,17 +490,18 @@ def _connection(request):
     Two things are attached before the handshake, and neither can be attached
     later on demand, because the burst happens during ``connect``:
 
-    * the burst recorder, for every run rather than only the tests that read it;
-    * the model's state layer, which is what ``pyquadcortex.connect()`` does at
+    * the model's state layer FIRST - see ``subscribe`` below, where the order
+      is load-bearing - which is what ``pyquadcortex.connect()`` does at
       exactly this point. It stays attached for the whole run, which costs the
       RX thread one small message copy per ``Version`` or ``PresetDirty`` push
       and nothing at all for anything else - orders of magnitude under the
       hundred-millisecond latencies ``test_write_echo.py`` measures. Its own
-      tests are in ``test_model_state.py``.
+      tests are in ``test_model_state.py``;
+    * the burst recorder, for every run rather than only the tests that read it.
 
     The fixture then waits for the burst to finish before handing the connection
     over, so the recording is exactly the burst whatever order the tests run in.
-    It costs about 8 s once per run and buys more than it costs: `connect()`
+    It costs about 9 s once per run and buys more than it costs: `connect()`
     returns roughly 3 s before the unit starts streaming several hundred messages,
     so without the wait every latency measurement in this suite would be taken on
     a link that is still busy answering the handshake.

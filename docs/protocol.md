@@ -2106,16 +2106,19 @@ the ORDER and the SPREAD that are stable enough to build on, not the moment.
 treating it as the signal that the burst is over: the other three are still a few
 milliseconds out. The hardware suite's burst recorder did exactly that, and it polls at
 100 ms, so its stop landed at a uniformly random point in the 100 ms after `RecallPreset`
-and fell inside the group about one time in fifteen.
+and falls inside the group a few times in a hundred. `Scene` is lost most often, because it
+arrives last - and losing `Scene` alone is already enough to fail a test.
 
-Measured rather than derived, by driving the real recorder with the four messages at their
-measured spacing and the poll's phase drawn uniformly from its 100 ms interval - which is
-what a connection does to it - over 300 runs: it lost `PresetDirty` 20 times (6.7%) and
-`Scene` 30 times (10.0%). `Scene` is lost more often because it arrives last, and losing
-`Scene` alone is already enough to fail a test. After the change, 0 of 300 for both. The
+Two kinds of evidence, and they are worth keeping apart. **Observed:** it failed a real run
+on 2026-09-11 and passed on a re-run of the same commit. **Simulated:** driving the real
+recorder with the four messages at their measured spacing and the poll's phase drawn
+uniformly from its 100 ms interval - which is what a connection does to it - loses one or
+more of the three over 300 runs, and 0 of 300 after the change. Two independent runs of
+that simulation put the rate between 6% and 10% per message, differing by how the 3.6-6.0 ms
+spacing is modelled, so the order of magnitude is the finding and the digits are not. The
 recorder now waits for all four (`BURST_TAIL` in `tests/hardware/conftest.py`), and
-`tests/test_handshake_burst_recorder.py` holds the mechanism offline. Wait for the group,
-not for its head.
+`tests/test_handshake_burst_recorder.py` holds the mechanism offline with a gap staged wide
+enough that it needs no simulation. Wait for the group, not for its head.
 
 **`read_preset()` RECALLS the slot it reads** - that was already documented - and the
 recall **resets the active scene to the preset's default, discards unsaved edits, and
