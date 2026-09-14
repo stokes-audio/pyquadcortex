@@ -336,13 +336,19 @@ class Transport:
             self._check_lost()   # woken by _confirm_lost, not by a reply
         return slot[0]
 
-    def collect(self, expected_class, trigger, seconds, match=None):
-        """Fire ``trigger()`` and gather EVERY matching message for ``seconds``.
+    def collect(self, expected_class, trigger, seconds, match=None, until=None):
+        """Fire ``trigger()`` and gather matching messages for ``seconds``.
 
         The counterpart of :meth:`await_broadcast` for the case where one request
         provokes many pushes rather than one: a single ``File`` READ makes the
         device enumerate every folder it knows about, several hundred of them on
         the observed unit, arriving over ten to twenty seconds.
+
+        ``until``, if supplied, is a predicate that ends collection as soon as
+        it accepts any newly arrived matching message. This serves finite chunk streams
+        whose final message marks itself; without it the collector keeps the
+        original fixed-window behavior and gathers every matching message until
+        ``seconds`` expires.
 
         Returns the messages in arrival order. Unlike a waiter, a collector does
         not consume messages - they still reach any waiter or other collector.
@@ -360,7 +366,16 @@ class Transport:
         try:
             trigger()
             deadline = time.monotonic() + seconds
+            checked = 0
             while time.monotonic() < deadline:
+                if until is not None:
+                    newest = got[checked:]
+                    # Advance only by the snapshot we just inspected. The RX
+                    # thread may append between the slice and this update; a
+                    # fresh len(got) here would skip that arrival forever.
+                    checked += len(newest)
+                    if any(until(message) for message in newest):
+                        break
                 if self._device_lost is not None:
                     break        # nothing more is coming; return what arrived
                 time.sleep(0.1)
