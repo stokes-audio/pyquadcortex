@@ -19,7 +19,7 @@ shapes), see [`protocol.md`](protocol.md). This document covers the code.
 
 - [Layer map](#layer-map)
 - [What flows through the layers](#what-flows-through-the-layers)
-- [send vs request vs await_broadcast](#send-vs-request-vs-await_broadcast)
+- [send vs send_sequence vs request vs await_broadcast](#send-vs-send_sequence-vs-request-vs-await_broadcast)
 - [How to add a new operation](#how-to-add-a-new-operation)
 - [The generated protobuf bindings](#the-generated-protobuf-bindings)
 - [Capturing the device's traffic](#capturing-the-devices-traffic)
@@ -190,11 +190,12 @@ that type are dropped as undecodable.
 ### client.py
 
 `QuadCortex` is the public API. It builds protobuf messages and calls
-`send` / `request` / `await_broadcast` / `next_request_id` on whatever transport
-object was injected into its constructor. It deliberately imports no hidapi and
-never touches a report, a frame, or a byte offset.
+`send` / `send_sequence` / `request` / `await_broadcast` /
+`next_request_id` on whatever transport object was injected into its
+constructor. It deliberately imports no hidapi and never touches a report, a
+frame, or a byte offset.
 
-**Why this split matters:** because `QuadCortex` only depends on four transport
+**Why this split matters:** because `QuadCortex` only depends on five transport
 methods, the whole high-level API is testable with a ~20-line fake (see
 `tests/test_client.py`), with no device, no `hid` import, and no timing. Every
 wire concern (report size, fragment flags, the trailer, the write stall, thread
@@ -351,7 +352,7 @@ device.read() -> one 129-byte input report
      else a broadcast waiter, else dropped
 ```
 
-## send vs request vs await_broadcast
+## send vs send_sequence vs request vs await_broadcast
 
 Choosing correctly is most of the work of adding an operation. The first three
 rows serve ONE exchange, which is what an operation needs. The last one is not an
@@ -360,6 +361,7 @@ operation at all: it is how a long-lived caller watches the link.
 | Transport method | Use when | Blocking | Correlation |
 |---|---|---|---|
 | `send(msg)` | The device acts on the message and you do not need its answer: scene switch, grid edits, recall, keepalive. | No | None |
+| `send_sequence(messages, interval=, delay=)` | Several messages form one short timing-sensitive gesture and no concurrent write may split them. | During the caller-chosen delay and intervals | None; every message is framed first, then the transport holds its write lock through the sequence. |
 | `request(msg, timeout=)` | The device answers a message of the **same type**: `Version` READ, `ResetCommsBuffers`, the `File` mutations. | Yes | Fresh `request_id` is assigned and registered before the write. Reply is the first inbound message of the same type whose `request_id`, if present on both sides, matches. |
 | `await_broadcast(cls, trigger, timeout=, match=)` | The answer arrives as a **push of a different type**, or as an unsolicited broadcast the device emits in response to an action: the `RecallPreset` push that carries a full preset, the `File` folder listings. | Yes | By message class, plus your optional `match` predicate. A right-type message the predicate rejects is left undelivered so a later one can satisfy the waiter. |
 | `add_listener(fn)` | You want EVERY message for the life of the connection, not the answer to one call: a cache fed by the unit's own pushes, or a log of the link. | No, but `fn` runs on the RX thread | None. Every message, every type, whether or not a waiter also gets it. Removed with the returned callable or `remove_listener(fn)`. |
@@ -385,7 +387,7 @@ Worked example: suppose you want `set_global_tempo(bpm)`.
 `protocol/proto/ProductionAutomation.proto` (control messages, ~45 KB) and
 `protocol/proto/Preset.proto` (the `BinaryPreset` grid model). Start from the
 `CortexMessageType.Enum` block at the top of `ProductionAutomation.proto`: it
-lists all 71 message types with their wire integers. Find the type name
+lists all 73 message types with their wire integers. Find the type name
 (`GlobalTempo = 33`), then find `message GlobalTempoMessage` and read its
 fields. Note that nearly every scalar field is wrapped in a synthetic
 `oneof _field`, i.e. proto3 `optional`, so `HasField()` distinguishes "set to
@@ -636,7 +638,7 @@ next, roughly in order of how well the ground is prepared:
   match on a reply that actually carries parameters. Its parameter 1 is the Tempo
   menu's MODE switch - see `tempo_mode`. The per-preset tempo controls live in
   `tempoProgramData` instead - see the `Tempo` target.)
-- **Types not in the registry at all.** The schema declares 71 message types.
+- **Types not in the registry at all.** The schema declares 73 message types.
   Whole feature areas are untouched: `Tuner` / `ShowTuner`, `Looper`,
   `MIDISettings`, `NeuralCapture` / `NeuralCapture2`, `Screenshot`,
   `Diagnostics`, `LocalBackup` / `CloudBackup`, `Confirmation`,
