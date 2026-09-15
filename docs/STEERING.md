@@ -172,7 +172,8 @@ costing hardware time to confirm things a file already knew. Three experiments:
 
 **What that settles.** The catalog container is a single XML file with no
 icons, no string table and no localisation. It carries other strings - `tooltip`
-on 126 parameters, `units` on 1,494, the `min_string`/`mid_string`/`max_string`
+on 126 parameters, a non-empty `units` on 1,494 of the 3,468 carrying it, the
+`min_string`/`mid_string`/`max_string`
 triple this library already reads - but none of them is a rendered option label. On a 14-block preset the only parameters
 publishing `dynamic_steps`, `dynamic_icons` or `dynamic_metadata` were the three
 DYNAMIC ones it carried; nine of the catalog's twelve have never been observed. And the

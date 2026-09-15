@@ -1446,11 +1446,19 @@ knobs before anyone connected a cable. What the library does with the other 8
 `meter` parameters, and whether `set_param` should refuse all 47, is open -
 nothing has been driven, and ADR-0010 wants the capture before the refusal.
 
-### `displayPos` is the screen's order, and it is parsed now
+### `displayPos` is the catalog's PREDICTION of the screen's order
 
-It was already confirmed once - 2026-09-11, a cab's four visible controls reading
-POSITION, DISTANCE, LEVEL, PAN on screen against a different wire order - and sat
-in the table above as "still unused here". Confirmed again 2026-09-15 on a
+**Read twice, not proved, and not a structural fact.** Where a control is drawn
+is presentational by the rule in `CLAUDE.md`, so this is not something the
+library takes from the file on the file's word - it is the file's prediction,
+which has now been held against a screen twice and matched twice. Two models out
+of the 161 that place a visible control, with nothing re-driving it. A third
+reading that disagreed would unseat it, the way three disagreeing readings
+unseated the drawn order of an option list.
+
+The first was 2026-09-11 - a cab's four visible controls reading POSITION,
+DISTANCE, LEVEL, PAN on screen against a different wire order - after which it
+sat in the table above as "still unused here". The second was 2026-09-15 on a
 different model and a different kind of difference: a Solo 100 Lead was placed
 and its knobs read off the screen as GAIN, BASS, MID, TREBLE, PRESENCE, MASTER,
 OUTPUT. That is `displayPos` order; the wire lists MASTER before PRESENCE, so a
@@ -1459,15 +1467,20 @@ single adjacent swap rather than a wholesale reordering.
 Now `Parameter.display_pos`. Of the 501 models a user can place - not hidden,
 not internal, not in a hidden category - 161 place at least one VISIBLE control
 and **140 of those disagree with wire order**, so anything describing a block to
-a person should sort by it. 340 of the 501 place none of their visible controls: 338
+a person should sort by it rather than ignore it - which is why it is published
+despite resting on two readings. 340 of the 501 place none of their visible controls: 338
 carry the attribute nowhere at all, and two carry it only on a hidden parameter. Of the 161 that do place one, 23 place only SOME of their
 visible controls and one places two at the same number - so a sort is not a
 complete layout, and what the unit does with an unplaced control is unmeasured. These counts are from the 4.0.1 catalog. The
 whole `ModelRepo.xml` is not committed, so nothing OFFLINE can pin them -
 `tests/fixtures/catalog/scales.json` carries raw catalog attributes for a few
 dozen parameters and that is nowhere near enough to count 161 or 140.
-`tests/hardware/test_option_structure_on_unit.py` asserts them against the live
-catalog instead, which is where a firmware that changed them would show up. Addressing a parameter still uses the
+`tests/hardware/test_option_structure_on_unit.py` asserts the population figures
+against the live catalog instead - 533 models, 501 placeable, 161/140 on the
+visible basis, 163/142 counting hidden parameters, 331 carrying `<Padding>` -
+which is where a firmware that changed them would show up. The shape figures
+below (23 placing only some, one placing two at a number) are NOT pinned and are
+prose only. Addressing a parameter still uses the
 index - `displayPos` is where a control is DRAWN, not what selects it.
 
 ### `<Padding>` is what a block reserves, and we do not know the budget

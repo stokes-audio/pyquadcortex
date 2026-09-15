@@ -826,7 +826,8 @@ def test_a_parameter_reports_where_it_sits_on_the_blocks_page():
     whose knobs came back GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT
     where the wire lists MASTER before PRESENCE.
 
-    140 of the 161 models that place any control disagree with wire order, but
+    140 of the 161 models that place a VISIBLE control disagree with wire order
+    (163 and 142 counting hidden parameters too), but
     NOT in the same way: only 17 are a single adjacent swap like that one, and
     the other 123 are other reorderings. The shape below is synthetic.
     """
@@ -883,3 +884,28 @@ def test_a_padding_value_that_is_not_a_number_is_kept_rather_than_dropped():
                              '<Padding cpu="0.15" sw="unbounded"/>')
     model = catalog.parse_model_repo(make_payload(xml))[9001]
     assert dict(model.resources) == {"cpu": 0.15, "sw": "unbounded"}
+
+
+def test_the_sorting_recipe_the_changelog_publishes_actually_works():
+    """`changelog.md` hands users a key for laying out a block's controls.
+
+    Nothing was executing it. `tests/test_docs.py` covers the code blocks inside
+    docstrings, not `changelog.md`, so the one snippet a reader is most likely
+    to copy had no guard at all - and it is easy to get wrong, because
+    `display_pos` is `None` on controls the catalog does not place and `None`
+    does not compare against an int.
+    """
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
+
+    # Copied verbatim from changelog.md. If this stops matching, fix both.
+    ordered = sorted(model.parameters,
+                     key=lambda p: (p.display_pos is None, p.display_pos or 0))
+
+    assert [p.name for p in ordered] == ["GAIN", "PRESENCE", "MASTER", "OUTPUT"]
+    # The unplaced one goes last rather than being dropped, which is the half of
+    # the advice a reader is most likely to skip.
+    assert ordered[-1].name == "OUTPUT"
+    assert ordered[-1].display_pos is None
+    # And `display_pos == 0` must not be mistaken for missing: `0 or 0` is 0,
+    # so the key is safe, and 149 real models place a control at 0.
+    assert ordered[0].display_pos == 0 or ordered[0].name == "GAIN"

@@ -55,6 +55,19 @@ def _targets(preset, catalog):
     return found
 
 
+@pytest.fixture(scope="module")
+def live_catalog(qc):
+    """One ModelRepo fetch for this module.
+
+    It is ~47 KB over USB and a full XML parse. `test_scales_on_unit.py` records
+    why a redundant one matters: the traffic lands in front of the connect-burst
+    tests, which time how quickly the handshake fills the cache, and two of them
+    began failing in a full run while passing alone as that grew.
+    """
+    from pyquadcortex.protocol import catalog as catalog_module
+    return catalog_module.parse_model_repo(qc._fetch_model_repo())
+
+
 @pytest.fixture
 def restored(qc, restores):
     """Reload the preset afterwards, which undoes every write this made.
@@ -105,9 +118,16 @@ def restored(qc, restores):
 
 
 @pytest.mark.verifies("set_param", "read_current_preset")
-def test_every_option_position_lands_where_the_catalog_says(qc, restored):
-    """`index / (count - 1)`, driven on every fixed list this preset reaches."""
-    live = catalog_module.parse_model_repo(qc._fetch_model_repo())
+def test_every_option_position_lands_where_the_catalog_says(qc, restored, live_catalog):
+    """The position asked for is the position stored, on every list reachable.
+
+    Asserted as "the stored wire rounds back to the index asked for" rather than
+    as exact equality with ``index / (count - 1)``: the unit quantizes, and on a
+    two-option list that tolerance is half the range. What this establishes is
+    that the catalog's POSITION is the position you get, which is the claim the
+    rule makes - not that the float is bit-exact.
+    """
+    live = live_catalog
 
     preset = qc.read_current_preset()
     targets = _targets(preset, live)
@@ -142,7 +162,11 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored):
             # those rather than reporting a mismatch.
             slot = active if state.scene_mode else 0
             stored = state.values[slot] if slot < len(state.values) else None
-            if stored is None or stored != stored:
+            # `param_state` can hand back a string (a capture file name, an IR
+            # reference) as well as None and the NaN factory content leaves in
+            # unmaintained slots. All three are "nothing to compare", and
+            # float() would turn the last two into a traceback instead.
+            if stored is None or isinstance(stored, str) or stored != stored:
                 wrong.append(f"{model_name} {param_name}: scene slot {slot} "
                              f"holds {stored!r}, so nothing can be compared")
                 checked += 1
@@ -169,7 +193,7 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored):
           f"parameters, all landed where the catalog says")
 
 
-def test_the_displayPos_counts_the_docs_quote_still_hold(qc):
+def test_the_displayPos_counts_the_docs_quote_still_hold(live_catalog):
     """`display_pos` is published on two screen readings, so pin what is countable.
 
     The readings themselves cannot be re-taken without eyes. What CAN be checked
@@ -184,8 +208,7 @@ def test_the_displayPos_counts_the_docs_quote_still_hold(qc):
     numbers in `CLAUDE.md`, `docs/STEERING.md`, `docs/domain-model.md` and
     `changelog.md` need re-deriving before anything else is trusted.
     """
-    from pyquadcortex.protocol import catalog as catalog_module
-    live = catalog_module.parse_model_repo(qc._fetch_model_repo())
+    live = live_catalog
 
     placeable = [m for m in live
                  if not (m.hidden or m.internal or m.category_hidden)]
@@ -194,9 +217,13 @@ def test_the_displayPos_counts_the_docs_quote_still_hold(qc):
         return [p for p in params if p.display_pos is not None]
 
     def disagrees(params):
+        # By INDEX, not by name. Parameter names repeat inside a model - an IR
+        # loader's are why `scripts/generate_params.py` has a GROUPED table - so
+        # comparing names would read a swap of two identically named controls as
+        # agreement, and under-count the very figure this pins.
         put = placed(params)
-        return ([p.name for p in put]
-                != [p.name for p in sorted(put, key=lambda p: p.display_pos)])
+        return ([p.index for p in put]
+                != [p.index for p in sorted(put, key=lambda p: p.display_pos)])
 
     visible = {m.id: [p for p in m.parameters if not p.hidden]
                for m in placeable}
@@ -212,6 +239,13 @@ def test_the_displayPos_counts_the_docs_quote_still_hold(qc):
         "all_placing_any": sum(1 for v in every.values() if placed(v)),
         "all_disagreeing": sum(1 for v in every.values()
                                if placed(v) and disagrees(v)),
+        # These two are over the WHOLE catalog, not the placeable subset, which
+        # is the denominator the docs quote for them ("331 of 533 models").
+        # Pinning the total as well is the point: an earlier version pinned 331
+        # and left `len(live)` free, so a catalog that grew while still having
+        # 331 padded models would have passed green with 533 and the derived 202
+        # going stale in four documents.
+        "models": len(live),
         "with_resources": sum(1 for m in live if m.resources),
     }
     assert counts == {
@@ -220,6 +254,7 @@ def test_the_displayPos_counts_the_docs_quote_still_hold(qc):
         "visible_disagreeing": 140,
         "all_placing_any": 163,
         "all_disagreeing": 142,
+        "models": 533,
         "with_resources": 331,
     }, (f"this unit's catalog gives {counts}, and the docs quote the values in "
         f"the assertion. Re-derive every display_pos and Padding figure in "
