@@ -4679,9 +4679,28 @@ def option_value(options, option) -> float:
     the same choice. ``options`` comes from :func:`param_options`.
 
     ``option`` may be the name or the index.
+
+    A NAME the catalog gets wrong is refused here as well as in
+    :meth:`QuadCortex.set_param_option`, because this function is exported and a
+    caller reaching it directly would get the same silently wrong answer the
+    method exists to prevent: on a Mono Synth's waveform list the catalog calls
+    position 5 "Pink NS" and the unit draws WHT there.
     """
     if not options:
         raise ValueError("no options: read them with param_options() first")
+    if isinstance(option, str):
+        contested = options_module.OPTION_CONTESTED.get(tuple(options), {})
+        for position, label in contested.items():
+            if option == label:
+                raise ValueError(
+                    f"{option!r} is the catalog's name for position {position} "
+                    f"of this list, and the unit draws something else there - "
+                    f"the catalog has these positions swapped (read on the unit "
+                    f"2026-09-14, see docs/domain-model.md). Selecting by this "
+                    f"name would give you the other one. Use an enum member "
+                    f"from pyquadcortex.protocol.options, which follows the "
+                    f"screen, or pass the index."
+                )
     index = options.index(option) if isinstance(option, str) else int(option)
     if not 0 <= index < len(options):
         raise ValueError(f"option index {index} outside 0..{len(options) - 1}")

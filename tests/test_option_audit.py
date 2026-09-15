@@ -258,17 +258,31 @@ def test_a_list_was_read_the_way_the_rule_says_it_must_be(rows):
                 f"{labels} is stamped {status!r} off a list reading with "
                 f"{len(anchors)} driven anchor(s) ({sorted(anchors)}). Two are "
                 f"needed, one of them somewhere an error would show.")
-            # "somewhere an error would show" is a human's judgement and cannot
-            # be checked here. What CAN be: that the anchors are not all huddled
-            # together, which is the cheap way to satisfy a count while proving
-            # almost nothing. The waveform list was exactly that - anchored at 5
-            # and 6 only, adjacent and at one end, leaving positions 0 to 4 on a
-            # transcription alone, on the one list that produced a rename.
-            if len(labels) >= 4:
-                assert max(anchors) - min(anchors) >= len(labels) // 2, (
-                    f"{labels} is stamped {status!r} with its driven anchors at "
-                    f"{sorted(anchors)} - too close together to say the order "
-                    f"holds across the list. Drive one nearer the other end.")
+            # "somewhere an error would show" is a human's judgement and this
+            # test cannot make it - the reason belongs in the row's note. What
+            # CAN be checked is that the anchors are not huddled together, which
+            # is the cheap way to satisfy a count while proving almost nothing.
+            # The waveform list was exactly that: anchored at 5 and 6 only,
+            # adjacent and at one end, leaving positions 0 to 4 on a
+            # transcription alone - on the one list that produced a rename.
+            #
+            # `len(labels) // 2` is a floor, not a standard. It catches huddling
+            # and it does NOT prove the middle: REC. LENGTH passes it at 0 and
+            # 16 of 33 with nothing above the halfway point, and what actually
+            # covers that list is a separate confirmation, recorded in its note,
+            # that the entries run 1 to 32 with no gaps. A list whose order is
+            # less predictable than counting deserves more anchors than this
+            # allows, and the note is where a reader finds out whether it got
+            # them.
+            #
+            # No length guard: two anchors in a 3-entry list already span 1 or
+            # more, so the condition is free there rather than skipped - and an
+            # `if len(labels) >= 4` around it would read as though short lists
+            # were exempt, which they are not.
+            assert max(anchors) - min(anchors) >= len(labels) // 2, (
+                f"{labels} is stamped {status!r} with its driven anchors at "
+                f"{sorted(anchors)} - too close together to say the order holds "
+                f"across the list. Drive one nearer the other end.")
 
 
 def test_the_document_quotes_the_same_counts():
@@ -340,3 +354,44 @@ def test_a_correction_cannot_be_added_without_a_reading_behind_it(rows):
                 f"position {index} of {labels} is published as contested, but "
                 f"no driven reading in the fixture says what the screen shows "
                 f"there")
+
+
+def test_the_document_quotes_the_same_parameter_counts():
+    """The counts in prose that the status counts do not cover.
+
+    `docs/domain-model.md` states how many PARAMETERS each part of the audit
+    covers, and those are the numbers a reader cares about - 12 lists sounds
+    small and 287 parameters does not. They were wrong twice on this branch,
+    once as a silent regression, because nothing derived them.
+
+    Derived here from the generated enums' own docstrings, which state how many
+    parameters use each list, plus the three lists that get no enum. So this
+    fails if the document drifts OR if the snapshot changes underneath it.
+    """
+    import re
+
+    source = pathlib.Path(generated.__file__).read_text(encoding="utf-8")
+    uses = {}
+    for match in re.finditer(
+            r"class (\w+)\(IntEnum\):\n    \"\"\"(\d+) parameters? use this list",
+            source):
+        uses[tuple(options.OPTION_LABELS[getattr(options, match.group(1))])] = \
+            int(match.group(2))
+    # the three with no enum, whose parameter counts live nowhere else
+    uses[("Off", "On")] = 222
+    uses[("OFF", "ON")] = 25
+    uses[("OFF", "MUTE", "DOWN", "ON")] = 13
+
+    per_status = collections.defaultdict(int)
+    for labels, status in options.OPTION_AUDIT.items():
+        per_status[status] += uses[labels]
+    assert sum(per_status.values()) == 527
+
+    text = " ".join(
+        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+        .read_text(encoding="utf-8").split())
+    read = per_status["audited"] + per_status["drawn"]
+    for phrase in (f"cover {read} of the 527", f"unread cover {per_status[None]}"):
+        assert phrase in text, (
+            f"docs/domain-model.md does not say {phrase!r}. The parameter "
+            f"counts moved and the document did not.")

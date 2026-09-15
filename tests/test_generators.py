@@ -373,8 +373,13 @@ def test_a_list_the_unit_draws_is_stamped_drawn_rather_than_audited(monkeypatch,
     assert "'drawn'" in text
     assert "DRAWS them rather than naming them" in text
     assert "drawn as 'empty circle'" in text
-    # and a drawing must never be reported as a disagreement with the word
-    assert "DISAGREE" not in text
+    # A drawing must never be reported as disagreeing with the word. Asserted
+    # against the phrases the generator actually emits - the earlier version
+    # looked for "DISAGREE", a token this generator writes for no input at all,
+    # so it could not fail.
+    assert "The screen SPELLS" not in text
+    assert "The catalog is WRONG at" not in text
+    assert "screen: " not in text
 
 
 def test_a_missing_readings_file_stops_the_run_instead_of_erasing_the_audit(monkeypatch, tmp_path):
@@ -428,17 +433,6 @@ def test_a_rename_cannot_overrule_a_reading_that_agrees_with_the_catalog(monkeyp
     assert "nothing to correct" in str(caught.value)
 
 
-def test_a_rename_backed_by_a_contradicting_reading_is_accepted(monkeypatch, tmp_path):
-    """The real case: the screen says something else, so the member follows it."""
-    rows = [_reading(SHAPE, i, w) for i, w in enumerate(("Soft", "Firm", "Wild"))]
-    mod = _with_readings(monkeypatch, tmp_path, rows)
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "FIRM"}})
-    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
-    assert "FIRM = 1" in text
-    assert "OPTION_CONTESTED" in text
-    assert "{1: 'Hard'}" in text
-
-
 def test_a_rename_for_a_list_this_catalog_lacks_is_not_demanded(monkeypatch, tmp_path):
     """A correction is per snapshot; another firmware need not carry the list.
 
@@ -449,3 +443,46 @@ def test_a_rename_for_a_list_this_catalog_lacks_is_not_demanded(monkeypatch, tmp
     monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
                         {("nowhere", "at", "all"): {0: "NOWHERE"}})
     mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+
+
+def test_a_rename_to_a_name_the_list_does_not_contain_is_refused(monkeypatch, tmp_path):
+    """The check that actually gives the guard teeth.
+
+    The contradiction test is an exact string compare, so it is trivially
+    satisfied on any list whose screen text ABBREVIATES - and every position of
+    the one list this table governs does ("SIN" vs "Sine"). With only that test,
+    `{0: "HARD_SYNC"}` was accepted on a pure hunch and went on to stamp the
+    enum's docstring "the catalog is WRONG at 0".
+
+    What this table can express is "this position is the thing the catalog calls
+    ANOTHER position of this list" - a swap. Anything else is a new claim about
+    the device and belongs in a record.
+    """
+    rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 1, "Hrd"),
+            _reading(SHAPE, 2, "Wld")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: "INVENTED"}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "not what this list calls any of its positions" in str(caught.value)
+
+
+def test_a_rename_to_the_name_that_position_already_has_is_refused(monkeypatch, tmp_path):
+    rows = [_reading(SHAPE, 0, "Sft")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: "SOFT"}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "already that position's name" in str(caught.value)
+
+
+def test_a_swap_between_two_positions_of_the_list_is_accepted(monkeypatch, tmp_path):
+    """The shape the real finding has: two positions of one list, exchanged."""
+    rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {SHAPE: {1: "WILD", 2: "HARD"}})
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "WILD = 1" in text
+    assert "HARD = 2" in text
+    assert "The catalog is WRONG at 1, 2" in text

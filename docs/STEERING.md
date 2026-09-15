@@ -146,8 +146,10 @@ the 113 fixed option lists have been held against a real unit's screen, and
 `scripts/generate_options.py` stamps every generated enum from it. Thirteen lists
 covering 300 parameters were read on CorOS 4.0.1; 95 are unread, covering 191.
 One of the thirteen disagreed - a Mono Synth's oscillator waveforms, where the
-catalog has pink and white noise swapped. `Parameter.hidden` is published but
-nothing branches on it.
+catalog has pink and white noise swapped. `Parameter.hidden` is published but no
+library code branches on it; the only thing that reads it is a hardware test,
+which treats the flag being REMOVED as a reason for a human to look at the
+control again.
 
 **Why:** the names come from the catalog's `stepNames`, and the catalog is not the
 screen. The proof was already offline in the repo and nobody had looked: for the
@@ -164,6 +166,10 @@ only by hidden parameters really are not drawn, and the sixth is a Mono Synth's
 `OSC1 WAVE`, which is on a tab called Oscillator with its own icons. Both rules
 are now measurements instead: how a position was read is a field, and `absent` is
 an observation naming where somebody looked. ADR-0010 said this already.
+
+**Scope of impact:**
+- **Updated:** `scripts/generate_options.py`, `pyquadcortex/protocol/catalog.py` (new `Parameter.hidden`), `pyquadcortex/protocol/client.py` (`set_param_option` and `option_value` refuse two catalog names), the regenerated `pyquadcortex/protocol/catalogs/coros_4_0_1/options.py`, `pyquadcortex/protocol/options.py`, new `tests/fixtures/catalog/option_readings.json`, new `tests/test_option_audit.py`, new `tests/hardware/test_option_audit_on_unit.py`, `tests/test_generators.py`, `tests/test_catalog.py`, `tests/test_client.py`, `tests/test_options.py`, `docs/domain-model.md`, `docs/api.md`, `docs/manual-coverage.md`, `CLAUDE.md`, `changelog.md`, STEERING.md sections 5 and 10
+- **Not updated (intentionally):** `ADR.md` - the convention has been wrong three times in one session and corrected each time, which is a reason to let it cover more lists before it is written down as a decision, not to record it early. The READ path (`param_options`, `option_at`) still reports the catalog's name for the swapped positions: overruling the device's own string on a read is a wider decision than one finding should settle, and `docs/domain-model.md` records it rather than leaving it to be found. `docs/protocol.md` - nothing about the wire changed; this is about what the screen draws.
 
 ### 2026-09-14 - The connect burst is waited for as a group, not a head message
 

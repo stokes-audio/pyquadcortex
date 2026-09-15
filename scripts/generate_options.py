@@ -166,6 +166,36 @@ def check_corrections(readings: dict, present: dict) -> None:
                     f"{labels} to {member!r}, but the driven reading there says "
                     f"the screen shows {word!r} - which is what the catalog "
                     f"already calls it. There is nothing to correct.")
+            # And the new name must be one this list already contains. THAT is
+            # what gives the guard teeth: the contradiction check above is
+            # trivially satisfied on any list whose screen text ABBREVIATES, and
+            # every position of the one list this table governs does exactly
+            # that ("SIN" vs "Sine"). So a rename to anything at all passed -
+            # `{0: "HARD_SYNC"}` was accepted on a pure hunch, and went on to
+            # stamp the docstring "the catalog is WRONG at 0" and make
+            # `set_param_option(..., "Sine")` raise.
+            #
+            # A correction this table can express is always "this position is
+            # the thing the catalog calls a DIFFERENT position of this list" -
+            # which is what a swap is. Anything else is a new claim about the
+            # device and belongs in a record, not in a rename.
+            #
+            # Note the raw one-argument `member_name`: the three-argument form
+            # consults this very table, which would let an entry justify itself.
+            available = {member_name(other): i for i, other in enumerate(labels)}
+            if member not in available:
+                raise SystemExit(
+                    f"MEANING_DISAGREEMENTS renames position {index} of "
+                    f"{labels} to {member!r}, which is not what this list calls "
+                    f"any of its positions ({sorted(available)}). This table can "
+                    f"only say a position means what the catalog calls ANOTHER "
+                    f"position of the same list - a swap. A new claim about the "
+                    f"device needs a record, not a rename.")
+            if available[member] == index:
+                raise SystemExit(
+                    f"MEANING_DISAGREEMENTS renames position {index} of "
+                    f"{labels} to {member!r}, which is already that position's "
+                    f"name. Nothing changes.")
 
 
 #: Characters that must become a word rather than an underscore, because the

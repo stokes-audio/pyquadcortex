@@ -62,8 +62,7 @@ them, which until now you had no way to know.
 
 New `Parameter.hidden`, from the catalog's own `hidden` attribute. **Treat it as
 a hint, not a fact:** 649 parameters carry it, and at least one of them - a Mono
-Synth's `OSC1 WAVE` - is plainly on the screen. Nothing in the library makes a
-decision based on it.
+Synth's `OSC1 WAVE` - is plainly on the screen. No library code branches on it.
 
 ### Fixed: three places told you to use metronome names that do not exist
 

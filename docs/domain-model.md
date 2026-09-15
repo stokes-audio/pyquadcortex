@@ -1585,14 +1585,14 @@ overstatement in its purest form.
 | `OFF,ON` | 25 | the same block's VINTAGE MODE, each position driven |
 | `OFF,MUTE,DOWN,ON` | 13 | the metronome cells, re-driven as the control |
 | `Momentary,Toggle` | 3 | a Looper X RECORD MODE, each position driven |
-| `ROUTING MODE` (14) | 1 | the dial in order, anchored at 7 and 11 |
+| `ROUTING MODE` (14) | 1 | the dial in order, anchored at 2, 7 and 11 |
 | `REC. LENGTH` (33) | 1 | the dial, anchored at 0 and 16, gaps ruled out by asking |
 | `QUANTIZE` (10) | 1 | the dial in order, anchored at 0 and 9 |
 | `TAP PRESET` (9) | 1 | the dial in order, anchored at 0 and 4 |
 | `PRE ROLL` (4) | 1 | the dial in order, anchored at 0 and 2 |
 | `Linear,Log` | 1 | a Volume block's CURVE, each position driven |
 | `Free,Sync` | 1 | a Looper X DUPLICATE MODE, each position driven |
-| `OSC1 WAVE` (7) | 2 | a Mono Synth's two oscillators, positions 5 and 6 driven |
+| `OSC1 WAVE` (7) | 2 | the tab in order, anchored at 0, 3, 5 and 6 |
 
 Twelve of the thirteen matched the catalog exactly, including spellings that
 look like mistakes and are not: `In 1` carries a space and `Out1` does not, on

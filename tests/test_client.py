@@ -4748,3 +4748,28 @@ def test_an_index_still_reaches_a_contested_position():
     qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", 5)
     written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
     assert written.param_values[0].float_value == pytest.approx(5 / 6)
+
+
+def test_the_exported_helper_refuses_a_wrong_name_too():
+    """`protocol.option_value` is public and was the way around the refusal.
+
+    `set_param_option` guarded the name; this function, exported in `__all__`
+    and sitting beside it, still returned 5/6 for "Pink NS" - white noise, with
+    no signal. A door closed only where the caller is expected to push is not
+    closed.
+    """
+    names = ["Sine", "Triang", "Sawtooth", "Square", "Pulse",
+             "Pink NS", "White NS"]
+    with pytest.raises(ValueError) as caught:
+        client.option_value(names, "Pink NS")
+    assert "swapped" in str(caught.value)
+
+    # everything else about the function is unchanged
+    assert client.option_value(names, "Square") == pytest.approx(3 / 6)
+    assert client.option_value(names, 5) == pytest.approx(5 / 6)
+
+
+def test_a_list_with_no_recorded_error_is_unaffected():
+    """The refusal keys on the LIST, so nothing else changes shape."""
+    names = ["Flat", "-6", "-12"]
+    assert client.option_value(names, "-12") == pytest.approx(1.0)
