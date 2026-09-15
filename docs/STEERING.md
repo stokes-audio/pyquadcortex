@@ -61,6 +61,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
 | One translation boundary | Screen values become wire values in exactly one PACKAGE, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/`. The exemption covers a directory, so a test names the package's modules and a new one has to come through that list | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate/` | The protocol layer, which keeps its zero-based COORDINATES. Its scales come from the catalog, and quoting the device's own units is not translating - see ADR-0016 |
 | Model state goes through the cache | A model property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py`, not an attribute the property fills in itself | One account of what the model believes and how it learned it. A property with its own cached attribute answers from a copy nothing invalidates, and a closed connection cannot take it away (see ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry rather than read from the unit, which compute from `value()` rather than caching alongside it |
+| Catalog for structure, eyes for presentation | Structural facts about a control - option count, order, wire value, parameter index, on-screen position - come from the catalog with no hardware; anything about what a person SEES needs a reading | ~320 driven option positions found the structure right every time, and a 150s capture while a human redrew a control found the labels are never sent at all | `Parameter.display_pos` and `tests/hardware/test_option_structure_on_unit.py` | The one list where the catalog is wrong about its own MEANING - `Pink NS` names the position that draws WHT - which is a naming fact, not a structural one |
 | Evidence-stamped option lists | An option list's names carry a status saying whether a human has read them off the unit, generated from a per-position readings fixture | The catalog's `stepNames` is demonstrably not the screen's wording, so an unchecked list must not look like a checked one | `options.OPTION_AUDIT` plus `tests/fixtures/catalog/option_readings.json` | Lists the unit does not draw, which are `absent` by observation rather than unread |
 | Profile is the class | A connection resolves `(device_type, zenos_git_hash)` to a client class before the handshake; `QuadCortex` is 4.0.1 and the base, a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is the smell polymorphism removes; the decision is made once, by which class is instantiated (see ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
 
@@ -138,6 +139,41 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-09-15 - The catalog is trusted for structure and never for presentation
+
+**What changed:** the on-hardware rule is split by the kind of claim being made.
+Structural facts about a control now come from the catalog without a screen
+reading; anything about what a person sees still needs eyes. `Parameter.display_pos`
+and `Model.resources` are published, moving `displayPos` and `<Padding>` out of
+the "attributes we cannot explain" appendix.
+
+**Why, and what was measured.** The question was whether the audit rule was
+costing hardware time to confirm things a file already knew. Three experiments:
+
+- About 320 option positions were driven across every fixed list two presets
+  could reach, checking each stored `index / (count - 1)`. Zero mismatches. A
+  new hardware test re-drives everything the loaded preset reaches on each run,
+  so the claim keeps being tested rather than remembered.
+- A Solo 100 Lead was placed and its knobs read off the screen. They came back
+  in `displayPos` order, not wire order - and 140 placeable models differ that
+  way, so reading wire order would mislead on all of them.
+- A 150-second capture recorded everything the unit sent while a human opened a
+  Mono Synth's Oscillator tab and stepped through all seven waveforms. 600
+  messages, every one the metronome tempo stream. Not one waveform label, and
+  no notification that the value had changed at all.
+
+**What that settles.** The catalog container is a single XML file with no
+strings beyond `stepNames` and no icons. No fixed list publishes `dynamic_steps`,
+`dynamic_icons` or `dynamic_metadata` - only the twelve dynamic ones do. And the
+unit does not transmit what it draws. So presentation is not downloadable, and a
+metadata explanation of a display question is not going to be found by reading
+the file more carefully. The catalog cannot even be trusted about its own
+meaning: `Pink NS` names the position that draws WHT.
+
+**Scope of impact:**
+- **Updated:** `CLAUDE.md`, `pyquadcortex/protocol/catalog.py` (`Parameter.display_pos`, `Model.resources`), new `tests/hardware/test_option_structure_on_unit.py`, `tests/test_catalog.py`, `docs/domain-model.md` appendix, `changelog.md`, STEERING.md sections 5 and 10
+- **Not updated (intentionally):** `ADR.md` - this narrows how an existing rule is applied rather than deciding something new, and the option-audit convention it sits beside is still deliberately unrecorded. Nothing under `pyquadcortex/device/` - the model layer asks the protocol layer and is unaffected. `Model.resources` is deliberately NOT a capacity model: a ceiling was observed between 8.10 and 8.25 by the `cpu` column, but four of the fourteen blocks on the grid carry no `<Padding>` at all so the base is an undercount, and nothing establishes which column binds.
 
 ### 2026-09-14 - An option list now says whether anyone has checked its names
 

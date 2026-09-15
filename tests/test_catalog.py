@@ -797,3 +797,67 @@ def test_hidden_atma_is_not_hidden_on_a_quad_cortex():
     momentary = model.parameters[2]
     assert momentary.name == "MOMENTARY"
     assert momentary.hidden is False
+
+
+LAYOUT_XML = """<?xml version="1.0" ?><Models>
+<Category id="0" name="Guitar Amplifier">
+  <Model id="1150" name="Solo 100 Lead">
+    <Padding cpu="0.15" sw="512"/>
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" displayPos="1"/>
+    <Parameter defaultValue="5" max="10" min="0" name="MASTER" type="float" displayPos="6"/>
+    <Parameter defaultValue="5" max="10" min="0" name="PRESENCE" type="float" displayPos="5"/>
+    <Parameter defaultValue="5" max="10" min="0" name="OUTPUT" type="float"/>
+  </Model>
+  <Model id="9999" name="No Padding">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+</Models>"""
+
+
+def test_a_parameter_reports_where_it_sits_on_the_blocks_page():
+    """`displayPos` is the SCREEN's order, and the wire's order is different.
+
+    Confirmed on the unit 2026-09-15: a Solo 100 Lead was placed and its knobs
+    read off the screen as GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT -
+    `displayPos` order exactly, where the wire lists MASTER before PRESENCE.
+    140 placeable models disagree the same way.
+    """
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[1150]
+    by_wire = [p.name for p in model.parameters]
+    assert by_wire == ["GAIN", "MASTER", "PRESENCE", "OUTPUT"]
+
+    placed = [p for p in model.parameters if p.display_pos is not None]
+    by_screen = [p.name for p in sorted(placed, key=lambda p: p.display_pos)]
+    assert by_screen == ["GAIN", "PRESENCE", "MASTER"]
+
+
+def test_a_parameter_the_catalog_does_not_place_says_so():
+    """`None`, not 0 - a missing position is not the first position."""
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[1150]
+    assert model.parameters[3].name == "OUTPUT"
+    assert model.parameters[3].display_pos is None
+
+
+def test_a_model_reports_what_it_reserves_under_the_catalogs_own_names():
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[1150]
+    assert dict(model.resources) == {"cpu": 0.15, "sw": 512.0}
+
+
+def test_resources_are_pairs_so_a_model_stays_hashable():
+    """`Model` is frozen and gets hashed; a dict field made it unhashable."""
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[1150]
+    assert isinstance(model.resources, tuple)
+    assert hash(model) == hash(model)
+    assert len({model, model}) == 1
+
+
+def test_a_model_with_no_padding_reserves_nothing_rather_than_guessing():
+    """331 of 533 carry `<Padding>`; the rest say nothing and must not imply 0.
+
+    The Mono Synth is the case that matters - it has no `<Padding>` and the unit
+    still refused to place it on a full grid, so an absent element is not a free
+    block.
+    """
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9999]
+    assert model.resources == ()

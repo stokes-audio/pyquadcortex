@@ -20,6 +20,29 @@ correction.
 
 ## Unreleased
 
+### `catalog.Parameter` now tells you the order the unit draws its controls
+
+New `Parameter.display_pos`. The parameters a model gives you are in WIRE order,
+and that is not always the order the unit puts them on screen - on 140 of the
+510 placeable models it differs. A Solo 100 Lead draws GAIN, BASS, MID, TREBLE,
+PRESENCE, MASTER, OUTPUT; the wire lists MASTER before PRESENCE.
+
+If you are showing a block's controls to a person, sort by `display_pos` and skip
+the ones where it is `None`. If you are addressing a parameter, keep using the
+index - this says where a control is drawn, not what selects it.
+
+### `catalog.Model` now tells you what a block reserves
+
+New `Model.resources`, from the catalog's `<Padding>`: `cpu`, `dm_heap`,
+`pm_heap`, `sw` and a few rarer ones, under the device's own names, as pairs
+(`dict(model.resources)` for a mapping). 331 of 533 models carry them.
+
+**It is not a capacity model and cannot tell you whether a block will fit.** A
+ceiling clearly exists - filling a preset's free row with a 0.15-`cpu` amp fitted
+two and was refused a third - but a third of the blocks on that grid publish no
+`<Padding>` at all, so nothing here adds up to a budget. Keep trying the block
+and handling the refusal.
+
 ### Breaking: `Osc1Wave.PINK_NS` and `.WHITE_NS` were swapped, and are now fixed
 
 A Mono Synth's oscillator waveform list is the first place the audit below found

@@ -202,6 +202,20 @@ class Parameter:
     exp_assignable: bool = True
     #: Whether the screen shows this without a decimal point.
     show_as_integer: bool = False
+    #: Where this control sits on the block's page, from the XML's
+    #: ``displayPos``, or ``None`` where the catalog does not say.
+    #:
+    #: **It is the screen's order and the wire's order is not** - which matters
+    #: because the wire order is the one a caller gets from
+    #: ``model.parameters``. 161 placeable models carry it on their visible
+    #: parameters, and on 140 of those it disagrees with the wire.
+    #:
+    #: Confirmed on the unit 2026-09-15. A Solo 100 Lead was placed and its
+    #: knobs read off the screen: GAIN, BASS, MID, TREBLE, PRESENCE, MASTER,
+    #: OUTPUT. That is ``displayPos`` order exactly; the wire lists MASTER
+    #: before PRESENCE. So anything describing a block to a person should sort
+    #: by this, and anything addressing a parameter must keep using the index.
+    display_pos: int | None = None
     #: Whether the unit keeps this parameter OFF the screen, from the XML's
     #: ``hidden``. It matters to anything that compares the catalog against what
     #: a person can see: a hidden parameter's option names are never drawn, so
@@ -516,6 +530,29 @@ class Model:
     category_hidden: bool = False
     #: Ids of older models this one supersedes (the XML ``replaces`` attribute).
     replaces: tuple[int, ...] = ()
+    #: What this block reserves, from the XML's ``<Padding>`` child, keyed by
+    #: the catalog's OWN attribute names: ``cpu``, ``dm_heap``, ``pm_heap``,
+    #: ``sw``, and more rarely ``dm``, ``pm``, ``sd_heap``, ``nw``, ``dm_hp``.
+    #: Empty for a model that carries no ``<Padding>`` - 331 of 533 do.
+    #:
+    #: **The names are the device's and the meaning is not measured.** They read
+    #: as DSP resource reservations and they behave like one: a grid that
+    #: refuses a block is a grid with no room left, and on 2026-09-15 filling
+    #: the loaded preset's free row with a 0.15-``cpu`` amp fitted two and was
+    #: refused the third, putting a ceiling between 8.10 and 8.25 by that
+    #: column. That is NOT a budget this library can publish - four of the
+    #: fourteen blocks already on the grid carry no ``<Padding>`` at all, so the
+    #: base is an undercount, and nothing has established that ``cpu`` is the
+    #: column that binds rather than one of the heaps.
+    #:
+    #: So this is published as numbers to look at, not as a capacity model. A
+    #: caller wanting to know whether a block will fit must still try it and
+    #: handle the refusal - :meth:`QuadCortex.set_block` says so and names this
+    #: as one of the two causes.
+    #:
+    #: Held as PAIRS rather than a dict because ``Model`` is frozen and gets
+    #: hashed; ``dict(model.resources)`` when a mapping is wanted.
+    resources: tuple[tuple[str, float | str], ...] = ()
     #: True if a NEWER model replaces this one. Superseded models stay in the
     #: catalog - old presets still reference them - but the replacement is the
     #: one you want when building a new chain, and it is the one that earns the
@@ -697,6 +734,27 @@ def _extract_xml(payload: bytes) -> bytes:
         return extracted.read()
 
 
+def _parse_padding(element) -> tuple:
+    """A model's ``<Padding>`` attributes, as numbers, keyed by the XML's names.
+
+    Returns ``()`` where there is no such child. Values parse as float because
+    ``cpu`` is fractional and the heaps are whole; a value that will not parse
+    is kept as the string rather than dropped, since this is published for
+    inspection and losing an unexpected shape silently is what the rest of this
+    parser exists not to do.
+    """
+    pad = element.find("Padding")
+    if pad is None:
+        return ()
+    out: list[tuple[str, float | str]] = []
+    for key, raw in sorted(pad.attrib.items()):
+        try:
+            out.append((key, float(raw)))
+        except (TypeError, ValueError):
+            out.append((key, raw))
+    return tuple(out)
+
+
 def _parameter(index: int, p, model_name: str) -> Parameter:
     """Build one :class:`Parameter` from its XML element."""
     where = f"{model_name!r} {p.get('name')!r}"
@@ -765,6 +823,7 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         max_label=max_label,
         exp_assignable=p.get("expAssignable") != "false",
         show_as_integer=show_as_integer,
+        display_pos=_as_int(p.get("displayPos")),
         hidden=p.get("hidden") == "true",
     )
 
@@ -794,6 +853,7 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 parameters=parameters,
                 sku=element.get("sku"),
                 plugin_id=element.get("plugin_id"),
+                resources=_parse_padding(element),
                 hidden=element.get("hidden") is not None,
                 internal=element.get("internal") is not None,
                 category_hidden=category_hidden,
