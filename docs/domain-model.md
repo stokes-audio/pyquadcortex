@@ -1471,10 +1471,13 @@ a person should sort by it rather than ignore it - which is why it is published
 despite resting on two readings. 340 of the 503 place none of their visible controls: 338
 carry the attribute nowhere at all, and two carry it only on a hidden parameter. Of the 163 that do place one, 23 place only SOME of their
 visible controls and one places two at the same number - so a sort is not a
-complete layout, and what the unit does with an unplaced control is unmeasured. These counts are from the 4.0.1 catalog. The
-whole `ModelRepo.xml` is not committed, so nothing OFFLINE can pin them -
-`tests/fixtures/catalog/scales.json` carries raw catalog attributes for a few
-dozen parameters and that is nowhere near enough to count 163 or 142.
+complete layout, and what the unit does with an unplaced control is unmeasured. These counts are from the 4.0.1 catalog. The whole
+`ModelRepo.xml` is not committed, so the offline suite has no catalog to count -
+`tests/fixtures/catalog/scales.json` carries raw attributes for a few dozen
+parameters, nowhere near enough for 163 or 142. A distilled counts fixture could
+pin them offline the way `scales.json` pins bounds, and deliberately does not:
+the numbers are only interesting as a description of the unit, so a committed
+copy would agree with itself forever while the device moved.
 `tests/hardware/test_option_structure_on_unit.py` asserts the population figures
 against the live catalog instead - 533 models, 503 placeable, 163/142 on the
 visible basis, 165/144 counting hidden parameters, 331 carrying `<Padding>` -

@@ -1036,6 +1036,36 @@ def test_a_model_marked_internal_false_is_not_internal():
 PRESENCE_IS_RIGHT: dict[str, str] = {}
 
 
+def _presence_reads(source: str) -> list[str]:
+    """Catalog attributes ``source`` reads by PRESENCE, as ``name (line N)``.
+
+    Split out from the test so the test below can feed it spellings on purpose.
+    A detector nobody probes is a detector that can quietly stop detecting -
+    which is the same failure as a guard whose assertion cannot fire.
+    """
+    import ast
+
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+            continue
+        if not isinstance(node.ops[0], (ast.IsNot, ast.NotEq)):
+            continue
+        # Either side may hold the None, so check both orders.
+        for call, other in ((node.left, node.comparators[0]),
+                            (node.comparators[0], node.left)):
+            if not (isinstance(other, ast.Constant) and other.value is None):
+                continue
+            if (isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "get"
+                    and call.args
+                    and isinstance(call.args[0], ast.Constant)
+                    and isinstance(call.args[0].value, str)):
+                found.append(f"{call.args[0].value} (line {node.lineno})")
+    return found
+
+
 def test_no_catalog_attribute_is_read_by_presence_any_more():
     """A source check, because this bug arrived three times in one file.
 
@@ -1043,42 +1073,63 @@ def test_no_catalog_attribute_is_read_by_presence_any_more():
     "the attribute is there", and the catalog does not use them that way - two
     amps carry `hidden="false"`, which cost both their generated constants.
 
-    **Where this stops seeing**, stated rather than implied. It walks the parsed
-    SOURCE rather than matching text, so spacing, line breaks and quote style do
-    not hide anything - an earlier regex version missed `get('hidden')` in single
-    quotes, which `catalog.py` already uses elsewhere. What it still cannot see:
-    a presence test spelled some other way entirely - `bool(el.get("x"))`,
-    `"x" in el.attrib`, `el.get("x", None) is not None` - and any read that
-    reaches the attributes through a variable rather than a literal.
+    **Where this stops seeing**, stated rather than implied, and each one probed
+    in the test below rather than asserted here. It walks the parsed SOURCE, so
+    quote style, spacing, line breaks, a default argument and a reversed
+    comparison are all caught. What it does NOT catch: a presence test spelled
+    another way (`bool(el.get("x"))`, `"x" in el.attrib`, `not (... is None)`),
+    the result taken through a local first, an attribute name held in a
+    variable, and anything outside `catalog.py` - it reads that file only, which
+    is adequate while it is the one module parsing the catalog XML.
     """
-    import ast
     import pathlib
 
     source = pathlib.Path(catalog.__file__).read_text(encoding="utf-8")
-    offenders = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
-            continue
-        if not isinstance(node.ops[0], (ast.IsNot, ast.NotEq)):
-            continue
-        right = node.comparators[0]
-        if not (isinstance(right, ast.Constant) and right.value is None):
-            continue
-        call = node.left
-        if not (isinstance(call, ast.Call)
-                and isinstance(call.func, ast.Attribute)
-                and call.func.attr == "get"
-                and call.args
-                and isinstance(call.args[0], ast.Constant)
-                and isinstance(call.args[0].value, str)):
-            continue
-        name = call.args[0].value
-        if name not in PRESENCE_IS_RIGHT:
-            offenders.append(f"{name} (line {node.lineno})")
-
+    offenders = [o for o in _presence_reads(source)
+                 if o.split(" ")[0] not in PRESENCE_IS_RIGHT]
     assert not offenders, (
         f"these catalog attributes are read by presence: {offenders}. The "
         f"device ships 'false' as a VALUE - two amps carry hidden=\"false\" and "
         f"reading presence cost them their constants. Compare against \"true\", "
         f"or add the attribute to PRESENCE_IS_RIGHT above with the reason "
         f"presence is the right question for that one.")
+
+
+def test_the_presence_detector_catches_what_its_docstring_claims():
+    """Probed, because a detector that stops detecting stays green.
+
+    The spellings below are the ones `catalog.py` could plausibly acquire - it
+    already writes `p.get('name')` in single quotes elsewhere, so quote style is
+    not hypothetical. An earlier regex version of this check saw exactly one of
+    them.
+    """
+    caught = [
+        'x = el.get("hidden") is not None',
+        "x = el.get('hidden') is not None",
+        'x = el.get("hidden")   is  not  None',
+        'x = el.get("hidden") != None',
+        'x = el.get("hidden", None) is not None',
+        'x = None is not el.get("hidden")',
+    ]
+    for spelling in caught:
+        assert _presence_reads(spelling), f"not caught: {spelling}"
+
+
+def test_the_presence_detector_admits_what_it_cannot_catch():
+    """The other half, so the docstring's blind-spot list stays honest.
+
+    One of these was NAMED as a blind spot while actually being caught, which
+    would send the next contributor to write a weaker check or to claim an
+    exemption they do not need.
+    """
+    missed = [
+        'x = bool(el.get("hidden"))',
+        'x = "hidden" in el.attrib',
+        'x = not (el.get("hidden") is None)',
+        'raw = el.get("hidden")\nx = raw is not None',
+        'name = "hidden"\nx = el.get(name) is not None',
+    ]
+    for spelling in missed:
+        assert not _presence_reads(spelling), (
+            f"this IS caught, so the docstring must stop calling it a blind "
+            f"spot: {spelling!r}")

@@ -565,11 +565,11 @@ class Model:
     #: Ids of older models this one supersedes (the XML ``replaces`` attribute).
     replaces: tuple[int, ...] = ()
     #: What this block reserves, from the XML's ``<Padding>`` child, keyed by
-    #: the catalog's OWN attribute names: ``cpu``, ``dm_heap``, ``pm_heap``,
-    #: ``sw``, then ``dm`` on 126, and rarely ``sd_heap`` (19), ``pm``, ``nw``
-    #: and ``dm_hp`` (1 each) - that is FREQUENCY order, and ``sw`` (330) leads
-    #: it, ahead of ``cpu`` (307). 331 of 533 models carry a ``<Padding>``; this
-    #: is empty for the 202 that do not.
+    #: the catalog's OWN attribute names. How many of the 331 padded models
+    #: carry each: ``sw`` 330, ``cpu`` 307, ``dm_heap`` 286, ``pm_heap`` 219,
+    #: ``dm`` 126, ``sd_heap`` 19, and ``pm``, ``nw`` and ``dm_hp`` on one model
+    #: each. 331 of 533 models carry a ``<Padding>``; this is empty for the 202
+    #: that do not.
     #:
     #: **The names are the device's and the meaning is not measured.** They read
     #: as DSP resource reservations and they behave like one: a grid that
@@ -588,9 +588,10 @@ class Model:
     #:
     #: Held as PAIRS rather than a dict because ``Model`` is frozen and gets
     #: hashed; ``dict(model.resources)`` when a mapping is wanted. The pairs come
-    #: back in ALPHABETICAL key order, which is not the order listed above and
-    #: is not source order either - a model carrying ``dm`` returns it second,
-    #: between ``cpu`` and ``dm_heap``. Read them by name, never by position.
+    #: back in ALPHABETICAL key order - not the frequency order listed above, and
+    #: not the order the XML writes them. A model carrying ``dm`` returns it
+    #: second, between ``cpu`` and ``dm_heap``. Read them by name, never by
+    #: position.
     resources: tuple[tuple[str, float | str], ...] = ()
     #: True if a NEWER model replaces this one. Superseded models stay in the
     #: catalog - old presets still reference them - but the replacement is the
