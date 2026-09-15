@@ -3533,7 +3533,7 @@ Attributes that classify a model:
 | Attribute | Meaning |
 |---|---|
 | `sku`, `plugin_id` | purchasable plugin content (the Archetype models); a given unit may not have it |
-| `hidden`, `internal` | not user-facing; `hidden` also appears on whole categories |
+| `hidden`, `internal` | not user-facing; `hidden` also appears on whole categories. **Read the VALUE, not the presence** - two ordinary amps ship `hidden="false"` (Bogna Uber Clean 1130, Bogna Uber Lead 1131), and treating the attribute as a flag hid both from the generated constants until 2026-09-15 |
 | `replaces` | this model supersedes the listed id(s). Both stay in the catalog and they can share a display name - there are two "Graphic-9" equalizers, 4005 replacing 4002 |
 
 Because the catalog comes FROM the device it also covers Neural Captures

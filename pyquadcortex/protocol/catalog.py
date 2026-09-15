@@ -223,10 +223,11 @@ class Parameter:
     #: a caller showing ``model.parameters`` in the order it gets them is
     #: usually showing the wrong order. But it is not a complete layout - 23
     #: models place only SOME of their visible controls and one places two at
-    #: the same number, shapes no screen can literally have - so sort by it,
-    #: put the unplaced last, and do not drop them. Those two figures are on the
-    #: VISIBLE basis; sorting ``model.parameters``, which is what the advice
-    #: above does, meets 43 and 5.
+    #: the same number - the Minivoicer, which does it twice, at positions 3 and
+    #: 8 - shapes no screen can literally have. So sort by it, put the unplaced
+    #: last, and do not drop them. Those two figures are on the VISIBLE basis;
+    #: sorting ``model.parameters``, which is what the advice above does, meets
+    #: 43 and 5, and the Minivoicer collides three times there.
     #:
     #: Addressing a parameter keeps using the index. This says where a control
     #: is drawn, not what selects it.
