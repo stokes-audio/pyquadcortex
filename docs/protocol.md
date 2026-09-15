@@ -519,8 +519,55 @@ appears to want the whole set before it considers the client fully connected.
 The optional initial `File` READ makes this a 22-type burst by default or 21
 when deferred. A contributed CorOS 4.1.0 check on 2026-09-08 connected with the
 21-type form and later enumerated all 586 folders explicitly under
-`Support.EXPERIMENTAL`. Whether omitting `File` also opts out of later file
-change broadcasts remains unmeasured.
+`Support.EXPERIMENTAL`.
+
+**`File` is the one type measured to behave differently: it enumerates, and it
+does not gate pushes.** This corrects the rule at the top of this section, which
+was recorded as covering every type in the burst. Measured 2026-09-09 on CorOS
+4.0.1 / `d14e`: a client that never sends the `File` READ is still told when a
+preset is saved on the unit. The other 21 types were NOT tested one at a time -
+the rule above came from section 4.1's all-or-nothing observation, not from
+omitting individual READs - so this says nothing about whether they gate their
+own pushes. On CorOS 4.1.0 the question remains unmeasured.
+
+Two connections, the same action on the unit each time, with a recorder attached
+through `before_handshake` and no type filter on either run:
+
+| connect | `File` in the burst | `File` after the on-unit save |
+|---|---|---|
+| default | 399 | 1 |
+| `initial_file_listing=False` | 0 | 1 |
+
+The action was one Save As into an empty user slot, followed about ten seconds
+later by a scene change. The scene change is a FENCING marker rather than part of
+the measurement: it proves the recorder was still live and that the operator
+acted, so an absent `File` would have meant something. Each run kept recording
+for about three minutes after the save, with a heartbeat every 15 seconds, and
+the `File` count was stable from the save to the end.
+
+The save's own cascade is identical in both runs and in the same order: `File`,
+`UndoRedo`, then `RecallPreset`, `Scene`, `RecentsFavorites`, `SetlistPosition`
+and the `Grid` pushes, all inside about a second. So omitting the READ costs the
+399-message enumeration and costs nothing else a SAVE announces. A delete, a
+rename and an IR import were not measured.
+
+What carries this is the right-hand column, not the left. The left only shows the
+flag took effect, which `tests/test_client.py` already proves offline. The finding
+is the deferred arm's `1`: a push that ARRIVED on a connection which never
+subscribed. What licenses trusting that arm's `0` in the burst is that the same
+recorder, in the same run, caught that `1`, so it was demonstrably not deaf. One
+trial per arm.
+
+The first attempt produced a convincing false negative: the recorder was never
+registered at all, and logged one message in 35 seconds on a healthy link. The
+trap and how to avoid it are lie 4 in [capture.md](capture.md#four-ways-your-instrument-lies-about-silence),
+which is where it belongs - it is a fact about the instrument, not about the
+device. What belongs here is why this measurement survived it. The eager arm is
+a positive control, it ran first, and it failed loudly.
+
+The default run also reproduces two records elsewhere in this file: 399 folders
+in the enumeration, and three inbound `Version` messages per connect. The
+deferred run enumerates nothing, by construction.
 
 `QuadCortex._hello()`, which `pyquadcortex.protocol.connect()` runs for you, does the
 same thing with one deliberate difference: it does **not** issue a host

@@ -87,6 +87,13 @@ Both connect layers accept `initial_file_listing=False`, omitting only the
 handshake's eager `File` READ. The default remains eager, and listing operations
 still fetch explicitly when called on a profile that verifies them.
 
+Deferring costs the enumeration and nothing else a save announces. Measured
+2026-09-09 on CorOS 4.0.1: a preset saved on the unit is announced identically
+whether or not the `File` READ was sent, so a listener does not go deaf by
+setting this. A delete, a rename and an IR import were not measured. That also
+corrects a general statement in [docs/protocol.md](docs/protocol.md) section
+4.2, which had every READ in the connect burst acting as a subscription.
+
 ### Where a knob's numbers start comes from the device now, not a table
 
 The Quad Cortex has knobs whose bottom position shows a word - usually `OFF` -
