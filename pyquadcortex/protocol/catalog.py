@@ -224,7 +224,9 @@ class Parameter:
     #: usually showing the wrong order. But it is not a complete layout - 23
     #: models place only SOME of their visible controls and one places two at
     #: the same number, shapes no screen can literally have - so sort by it,
-    #: put the unplaced last, and do not drop them.
+    #: put the unplaced last, and do not drop them. Those two figures are on the
+    #: VISIBLE basis; sorting ``model.parameters``, which is what the advice
+    #: above does, meets 43 and 5.
     #:
     #: Addressing a parameter keeps using the index. This says where a control
     #: is drawn, not what selects it.
@@ -587,11 +589,17 @@ class Model:
     #: as one of the two causes.
     #:
     #: Held as PAIRS rather than a dict because ``Model`` is frozen and gets
-    #: hashed; ``dict(model.resources)`` when a mapping is wanted. The pairs come
-    #: back in ALPHABETICAL key order - not the frequency order listed above, and
-    #: not the order the XML writes them. A model carrying ``dm`` returns it
-    #: second, between ``cpu`` and ``dm_heap``. Read them by name, never by
-    #: position.
+    #: hashed; ``dict(model.resources)`` when a mapping is wanted.
+    #:
+    #: The pairs come back in ALPHABETICAL key order, which is what the parser
+    #: guarantees. **Read them by name, never by position** - which keys a model
+    #: carries varies, so index 1 is not the same thing twice.
+    #:
+    #: Nothing else about the order is claimed here. Two earlier versions of
+    #: this sentence described what the ORDER contrasts with - the frequency
+    #: listing above, the order the XML writes - and both descriptions were
+    #: wrong, the second in a paragraph edited to fix the first. The sort is the
+    #: fact; anything beyond it was a guess about the data dressed as one.
     resources: tuple[tuple[str, float | str], ...] = ()
     #: True if a NEWER model replaces this one. Superseded models stay in the
     #: catalog - old presets still reference them - but the replacement is the

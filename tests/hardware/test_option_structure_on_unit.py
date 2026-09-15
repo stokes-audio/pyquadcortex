@@ -151,8 +151,6 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored, live_c
                          values.Encoded(position / (len(labels) - 1)))
             wrote.append((block, index, labels, model_name, param_name))
             time.sleep(BETWEEN)
-        if not wrote:
-            continue
         time.sleep(SETTLE)
         now = qc.read_current_preset()
         for block, index, labels, model_name, param_name in wrote:

@@ -145,8 +145,9 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 **What changed:** the on-hardware rule is split by the kind of claim being made.
 Structural facts about a control now come from the catalog without a screen
 reading; anything about what a person sees still needs eyes. `Parameter.display_pos`
-and `Model.resources` are published, moving `displayPos` and `<Padding>` out of
-the "attributes we cannot explain" appendix.
+and `Model.resources` are published. `displayPos` leaves the appendix's
+unexplained-attributes table; `<Padding>` was never in it, being a child element
+rather than an attribute. Both now have a written-up section there instead.
 
 **Why, and what was measured.** The question was whether the audit rule was
 costing hardware time to confirm things a file already knew. Three experiments:
