@@ -532,8 +532,9 @@ class Model:
     replaces: tuple[int, ...] = ()
     #: What this block reserves, from the XML's ``<Padding>`` child, keyed by
     #: the catalog's OWN attribute names: ``cpu``, ``dm_heap``, ``pm_heap``,
-    #: ``sw``, and more rarely ``dm``, ``pm``, ``sd_heap``, ``nw``, ``dm_hp``.
-    #: Empty for a model that carries no ``<Padding>`` - 331 of 533 do.
+    #: ``sw``, then ``dm`` on 126, and rarely ``sd_heap`` (19), ``pm``, ``nw``
+    #: and ``dm_hp`` (1 each). 331 of 533 models carry a ``<Padding>``; this is
+    #: empty for the 202 that do not.
     #:
     #: **The names are the device's and the meaning is not measured.** They read
     #: as DSP resource reservations and they behave like one: a grid that
@@ -734,7 +735,7 @@ def _extract_xml(payload: bytes) -> bytes:
         return extracted.read()
 
 
-def _parse_padding(element) -> tuple:
+def _parse_padding(element) -> tuple[tuple[str, float | str], ...]:
     """A model's ``<Padding>`` attributes, as numbers, keyed by the XML's names.
 
     Returns ``()`` where there is no such child. Values parse as float because

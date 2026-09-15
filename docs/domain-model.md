@@ -1458,7 +1458,12 @@ single adjacent swap rather than a wholesale reordering.
 
 Now `Parameter.display_pos`. 161 placeable models carry it on their visible
 parameters and **140 of those disagree with wire order**, so anything describing
-a block to a person should sort by it. Addressing a parameter still uses the
+a block to a person should sort by it. (349 of the 510 carry none at all, 23
+place only some of their visible parameters, and one places two at the same
+number - so a sort is not a complete layout, and what the unit does with an
+unplaced control is unmeasured.) These counts are from the 4.0.1 catalog and
+nothing offline can pin them: the raw `ModelRepo.xml` is not in this repo, by
+the same rule that keeps vendor data out of the fixtures. Addressing a parameter still uses the
 index - `displayPos` is where a control is DRAWN, not what selects it.
 
 ### `<Padding>` is what a block reserves, and we do not know the budget
@@ -1491,9 +1496,11 @@ the rendered text. Measured three ways on 2026-09-15:
 
 - The catalog container holds exactly one member, `ModelRepo.xml`. No icons, no
   string table, no localisation.
-- Of every parameter on a full preset, only the twelve DYNAMIC ones populate
-  `dynamic_steps`, `dynamic_icons` or `dynamic_metadata`. No fixed list
-  publishes any of them.
+- On a 14-block preset, the only parameters populating `dynamic_steps`,
+  `dynamic_icons` or `dynamic_metadata` were the DYNAMIC ones it happened to
+  carry - three of them. No fixed list published any. (Twelve parameters in the
+  whole catalog are marked `dynamic`; a single preset reaches only the ones its
+  blocks bring.)
 - A 150-second capture recorded everything the unit sent while a human opened a
   Mono Synth's Oscillator tab and stepped through all seven waveforms: **600
   messages, every one the metronome tempo stream.** Not one waveform label - and

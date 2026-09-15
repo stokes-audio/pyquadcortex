@@ -23,13 +23,23 @@ correction.
 ### `catalog.Parameter` now tells you the order the unit draws its controls
 
 New `Parameter.display_pos`. The parameters a model gives you are in WIRE order,
-and that is not always the order the unit puts them on screen - on 140 of the
-510 placeable models it differs. A Solo 100 Lead draws GAIN, BASS, MID, TREBLE,
-PRESENCE, MASTER, OUTPUT; the wire lists MASTER before PRESENCE.
+and that is not always the order the unit puts them on screen. A Solo 100 Lead
+draws GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT; the wire lists MASTER
+before PRESENCE.
 
-If you are showing a block's controls to a person, sort by `display_pos` and skip
-the ones where it is `None`. If you are addressing a parameter, keep using the
-index - this says where a control is drawn, not what selects it.
+Of the 510 placeable models, **349 carry no `display_pos` at all** - for those
+the wire order is all there is. 161 carry it on their visible parameters, and on
+140 of those it disagrees with the wire.
+
+If you are showing a block's controls to a person, sort by `display_pos`. Do
+**not** drop the controls where it is `None`: 23 models place only some of their
+visible parameters, and one places two of them at the same number, so a sort
+alone is not a complete layout. What the unit does with an unplaced control has
+not been measured - keep them and put them after the placed ones rather than
+hiding them.
+
+If you are addressing a parameter, keep using the index. This says where a
+control is drawn, not what selects it.
 
 ### `catalog.Model` now tells you what a block reserves
 
@@ -39,8 +49,8 @@ New `Model.resources`, from the catalog's `<Padding>`: `cpu`, `dm_heap`,
 
 **It is not a capacity model and cannot tell you whether a block will fit.** A
 ceiling clearly exists - filling a preset's free row with a 0.15-`cpu` amp fitted
-two and was refused a third - but a third of the blocks on that grid publish no
-`<Padding>` at all, so nothing here adds up to a budget. Keep trying the block
+two and was refused a third - but four of the fourteen blocks on that
+grid publish no `<Padding>` at all, so nothing here adds up to a budget. Keep trying the block
 and handling the refusal.
 
 ### Breaking: `Osc1Wave.PINK_NS` and `.WHITE_NS` were swapped, and are now fixed
