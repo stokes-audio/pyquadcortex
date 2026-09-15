@@ -1507,15 +1507,17 @@ claims nothing more. A caller still has to try the block and handle the refusal.
 ### The option names ARE conveyed, in the catalog, once per session
 
 The question was whether the words a person sees are sent anywhere - which
-matters, because a model downloaded after Cortex Control shipped still shows the
-right names on a laptop, so they have to reach it somehow.
+matters, because if a model downloaded after Cortex Control shipped still shows
+the right names on a laptop, those names have to reach it somehow. Nobody here
+has watched a downloaded model, so that is the question rather than a finding.
 
 They do. Two facts, kept apart because they came from different places:
 
 - **The `ModelRepo` payload contains the strings.** Unpacking the payload this
   library reads from the unit gives `stepNames="Sine,Triang,Sawtooth,Square,
   Pulse,Pink NS,White NS"` verbatim. That is a live read through
-  `research/scripts/dump_model_repo.py`, not an extraction from a capture.
+  `research/scripts/dump_model_repo.py` in the `quad-cortex` lab repo, not an
+  extraction from a capture.
 - **Cortex Control fetches a `ModelRepo` payload once per session.** One request
   plus 371 reports of reply, at t=110.5 / 2.5 / 18.3 in the three captured
   sessions, the reply opening with the gzip magic and running about 46.7 KB.
@@ -1524,8 +1526,12 @@ Joining them - that CC therefore receives those strings - is an INFERENCE, and a
 strong one: it is the same message type, the same compression and the same size
 against a catalog that is a single file. It is not an observation, because the
 timelines truncate payloads and reassembling the 371 reports out of the pcapng
-was not achieved here. Extracting that payload and grepping it would close the
-gap, and is the obvious next step for anyone who wants it closed.
+was not achieved here. The obstacle is specific and worth writing down: a
+message's TYPE appears only in the trailer of its FINAL report, so a run of
+reports cannot be attributed until it ends, and the captures interleave runs.
+Grouping by type therefore recovered three large messages (types 51, 35 and 4,
+at 95, 109 and 90 reports) and not the 371-report one. Attributing the runs by
+their interleaving instead, then grepping the result, would close the gap.
 
 What follows from it, also by inference: a model added to the catalog brings its
 names with it, so a host that shipped before that model still names it correctly.
@@ -1759,12 +1765,22 @@ monotonically across all seven bands, averaging +3.57 dB per octave. Position 5
 is the brighter, by the scale and in the direction that separates white from
 pink.
 
-The textbook separation is 3.01 dB per octave, and 3.57 is not that number.
-Do not read the difference as a precision match: `sinc` filtering leaks across
-band edges, so a known white-and-pink pair put through these same commands reads
-nearer 3.8 than 3.01. What the measurement establishes is the sign and the
-order of magnitude, which is all that is needed to say which of two positions is
-the white one.
+The textbook separation is 3.01 dB per octave, and 3.57 is not that number. Do
+not read the difference as a precision match. `sinc` filtering leaks across band
+edges, and on 2026-09-15 the chain was calibrated to say by how much: noise of
+both kinds generated synthetically and put through the SAME band commands gave a
+difference column averaging 3.72, 3.81 and 3.83 dB per octave over three runs
+(sox 14.4.2).
+
+```
+sox -n -r 48000 -c 1 white.wav synth 5 whitenoise
+sox -n -r 48000 -c 1 pink.wav synth 5 pinknoise
+```
+
+So this chain reads a textbook 3.01 as roughly 3.8, and the unit's 3.57 falls
+between the two rather than outside them. What the measurement establishes is
+the sign and the order of magnitude, which is all that is needed to say which of
+two positions is the white one.
 
 Each column alone says the same thing less cleanly, because the chain's response
 is curved: position 6 is flat to about 2 dB from 125 Hz to 8 kHz, and position 5
@@ -1789,9 +1805,9 @@ measured signal is present and would not be otherwise. A quick check that the
 right device is being recorded: change the block's level and watch the RMS move.
 
 The recordings themselves are not committed. They are a few seconds of noise and
-the numbers above are the finding. A caller asking for pink noise by the catalog's name gets white, which
-is the same shape of error as the metronome names and the reason this audit
-exists.
+the numbers above are the finding. A caller asking for pink noise by the
+catalog's name gets white, which is the same shape of error as the metronome
+names and the reason this audit exists.
 
 The enum members follow the screen, and `set_param_option` refuses the catalog's
 two strings rather than selecting the other noise. **The READ path is not fixed
