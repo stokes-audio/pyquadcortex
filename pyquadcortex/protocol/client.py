@@ -1831,11 +1831,17 @@ class QuadCortex:
         """Set how ONE beat of the bar sounds.
 
         ``beat`` is 1-based, up to 13. ``state`` is a
-        :class:`~pyquadcortex.protocol.enums.MetronomeBeat` - ``NORMAL``, ``OFF``,
-        ``ACCENT`` or ``QUIET``. A plain int is accepted and range-checked::
+        :class:`~pyquadcortex.protocol.enums.MetronomeBeat` - ``OFF``, ``MUTE``,
+        ``DOWN`` or ``ON``. A plain int is accepted and range-checked::
 
-            qc.set_beat(1, MetronomeBeat.ACCENT)   # the downbeat
-            qc.set_beat(3, MetronomeBeat.OFF)      # skip beat 3
+            qc.set_beat(1, MetronomeBeat.DOWN)   # the downbeat accent
+            qc.set_beat(3, MetronomeBeat.MUTE)   # silence beat 3
+
+        These four are the device's own words and they do not mean what they
+        look like: they name the ACCENT, not whether the beat sounds. ``OFF`` is
+        the plain click, ``MUTE`` is the silent one. See
+        :class:`~pyquadcortex.protocol.enums.MetronomeBeat`, which has the
+        hardware readings.
 
         These are the cells on the Tempo page, catalog ``STEPSTATE0`` upwards, and
         the mapping was traced by touching them on the unit. Note the enum's order
@@ -3390,6 +3396,37 @@ class QuadCortex:
                 f"read as the index 0 or 1. Name the option, or use an enum from "
                 f"pyquadcortex.protocol.options."
             )
+        # A NAME the catalog gets wrong must not quietly select the position it
+        # names. A Mono Synth's waveform list is the case: the catalog calls
+        # position 5 "Pink NS" and the screen draws WHT there, so matching the
+        # string would hand back white noise for a pink request. The string
+        # stays in OPTION_LABELS because the device publishes it; what is
+        # refused is USING it to choose.
+        if isinstance(option, str):
+            # `options_module` is the 4.0.1 shim, not `self.options` - the same
+            # choice the OPTION_LABELS check below makes, and it is wrong in
+            # BOTH directions on another profile. A labels tuple spelled
+            # differently will not match, so the refusal silently does not fire.
+            # And a firmware that keeps these labels but FIXES the swap would be
+            # refused a name that is correct on it - the profile-guard inversion
+            # again, where the profile that measured something is the one the
+            # guard gets backwards. It stays here because a correction is per
+            # snapshot and only 4.0.1 has been read; the lookup moves to
+            # `self.options` when a second profile records its own.
+            contested = options_module.OPTION_CONTESTED.get(tuple(names), {})
+            wrong = {label: i for i, label in contested.items()}
+            if option in wrong:
+                index_of = wrong[option]
+                raise ValueError(
+                    f"{option!r} is the catalog's name for position "
+                    f"{index_of} of this list, and the unit's screen shows "
+                    f"something else there - the catalog has these positions "
+                    f"swapped (read on the unit 2026-09-14, see "
+                    f"docs/domain-model.md). Selecting by this name would give "
+                    f"you the other one. Name the position with an enum member "
+                    f"from pyquadcortex.protocol.options, which follows the "
+                    f"screen, or pass the index."
+                )
         # An IntEnum member is an int, so a member of the WRONG list converts
         # silently: DynMode3.GATE and SplitterType.CROSSOVER are both 2, and
         # both would be accepted here. Check the enum describes THIS list.
@@ -4645,9 +4682,28 @@ def option_value(options, option) -> float:
     the same choice. ``options`` comes from :func:`param_options`.
 
     ``option`` may be the name or the index.
+
+    A NAME the catalog gets wrong is refused here as well as in
+    :meth:`QuadCortex.set_param_option`, because this function is exported and a
+    caller reaching it directly would get the same silently wrong answer the
+    method exists to prevent: on a Mono Synth's waveform list the catalog calls
+    position 5 "Pink NS" and the unit draws WHT there.
     """
     if not options:
         raise ValueError("no options: read them with param_options() first")
+    if isinstance(option, str):
+        contested = options_module.OPTION_CONTESTED.get(tuple(options), {})
+        for position, label in contested.items():
+            if option == label:
+                raise ValueError(
+                    f"{option!r} is the catalog's name for position {position} "
+                    f"of this list, and the unit draws something else there - "
+                    f"the catalog has these positions swapped (read on the unit "
+                    f"2026-09-14, see docs/domain-model.md). Selecting by this "
+                    f"name would give you the other one. Use an enum member "
+                    f"from pyquadcortex.protocol.options, which follows the "
+                    f"screen, or pass the index."
+                )
     index = options.index(option) if isinstance(option, str) else int(option)
     if not 0 <= index < len(options):
         raise ValueError(f"option index {index} outside 0..{len(options) - 1}")

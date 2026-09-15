@@ -5,6 +5,7 @@ an unclosed code fence swallowed an entire section of api.md, and the method
 table presented eleven module-level functions as methods.
 """
 import ast
+import enum
 import pathlib
 import re
 import textwrap
@@ -305,3 +306,65 @@ def test_a_docstring_reaching_for_encoded_says_why(path):
                 f"{path.name}: a docstring writes the device's own scale with "
                 f"no comment saying why a unit type will not do"
             )
+
+
+def test_no_document_names_an_enum_member_that_does_not_exist():
+    """Three documents told callers to write `MetronomeBeat.ACCENT` for months.
+
+    That member was replaced when the enum took the device's own words, and the
+    example in `docs/api.md` would have raised `AttributeError` for anyone who
+    copied it. Nothing caught it because nothing looked - this file checked
+    fence balance and the method table, and a renamed member is neither.
+
+    Scanned across `docs/*.md`, `changelog.md` and `readme.md`. The changelog is
+    deliberately included: its historical entries record what WAS true, so a
+    stale name there is expected and the known ones are listed below rather than
+    silently skipped.
+    """
+    import collections
+    import re
+
+    from pyquadcortex.protocol import enums, options
+
+    # A LIST per name, not one class. `enums` and `options` both publish an
+    # `Input` and a `TimeSignature`, with different members, and letting one
+    # shadow the other reported five real references as broken.
+    known = collections.defaultdict(list)
+    for module in (enums, options):
+        for name, cls in vars(module).items():
+            if isinstance(cls, type) and issubclass(cls, enum.Enum):
+                known[name].append(cls)
+
+    #: Stale names that are CORRECT where they appear, because the text is a
+    #: record of what the library used to do. Three, all from the changelog's
+    #: note about the metronome rename, which has to quote the old names to say
+    #: what changed.
+    #:
+    #: `MetronomeBeat.OFF` was in here too and should not have been: that member
+    #: still exists, so the entry was unreachable - and worse, it would have
+    #: silently excused that reference if `OFF` were ever renamed.
+    HISTORICAL = {("changelog.md", "MetronomeBeat", "ACCENT"),
+                  ("changelog.md", "MetronomeBeat", "NORMAL"),
+                  ("changelog.md", "MetronomeBeat", "QUIET")}
+
+    root = pathlib.Path(__file__).parent.parent
+    files = sorted((root / "docs").glob("*.md"))
+    files += [root / "changelog.md", root / "readme.md"]
+
+    bad = []
+    for path in files:
+        if not path.exists():
+            continue
+        for cls_name, member in re.findall(r"\b([A-Z][A-Za-z0-9]+)\.([A-Z][A-Z0-9_]*)\b",
+                                           path.read_text(encoding="utf-8")):
+            classes = known.get(cls_name)
+            if not classes or any(hasattr(cls, member) for cls in classes):
+                continue
+            if (path.name, cls_name, member) in HISTORICAL:
+                continue
+            bad.append(f"{path.name}: {cls_name}.{member}")
+    assert not bad, (
+        "these documents name enum members that do not exist: "
+        + ", ".join(sorted(set(bad)))
+        + ". Either the member was renamed and the document was not updated, or "
+          "the text is recording history and belongs in HISTORICAL above.")
