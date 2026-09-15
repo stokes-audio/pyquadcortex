@@ -30,8 +30,8 @@ the device RENDERS it does not match - the catalog writes ``In 1`` and
 ``Ret 1/2`` where the device writes ``Input 1`` and ``Return 1/2``. So
 each enum says whether a human has read it off the unit, and
 ``OPTION_AUDIT`` publishes that for all 113 fixed lists:
-5 audited, 0 partly, 6 impossible (every parameter
-using them is hidden), 102 unread.
+12 audited, 0 partly, 6 impossible (every parameter
+using them is hidden), 95 unread.
 """
 from enum import IntEnum
 
@@ -296,9 +296,7 @@ class Curve(IntEnum):
 
     On Volume.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-14: all 2 positions read.
     """
 
     LINEAR = 0
@@ -457,9 +455,7 @@ class DuplicateMode(IntEnum):
 
     On Looper X.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-14: all 2 positions read.
     """
 
     FREE = 0
@@ -1156,9 +1152,7 @@ class PreRoll(IntEnum):
 
     On Looper X.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-14: all 4 positions read.
     """
 
     OFF = 0
@@ -1172,9 +1166,7 @@ class PunchMode(IntEnum):
 
     On Looper X.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-14: all 2 positions read.
     """
 
     MOMENTARY = 0
@@ -1202,9 +1194,7 @@ class Quantize(IntEnum):
 
     On Looper X.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-14: all 10 positions read.
     """
 
     OFF = 0
@@ -1239,9 +1229,7 @@ class RecLength(IntEnum):
 
     On Looper X.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-14: all 33 positions read.
     """
 
     OFF = 0
@@ -1680,9 +1668,7 @@ class TapPreset(IntEnum):
 
     On Circular Delay.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-14: all 9 positions read.
     """
 
     N1 = 0    # '1'
@@ -2074,7 +2060,7 @@ OPTION_AUDIT = {
     ('Fast', 'Slow'): None,  # CoryWongDIFunkConsoleAttack
     ('Single', 'Dual'): None,  # CoryWongDelayYYMode
     ('Clean', 'Crunch'): None,  # Crunch
-    ('Linear', 'Log'): None,  # Curve
+    ('Linear', 'Log'): 'audited',  # Curve
     ('-', '+'): None,  # DCellHisbertCh2Mode
     ('Fast', 'Smooth'): None,  # Decay
     ('Neg', 'Pos'): None,  # DigitalFlangerPolarity
@@ -2085,7 +2071,7 @@ OPTION_AUDIT = {
     ('Chorus', 'Vibe'): None,  # DualChorusMode
     ('Clean', 'OD'): None,  # DumbbellOdsChannel
     ('Jazz', 'Rock'): None,  # DumbbellOdsEq
-    ('Free', 'Sync'): None,  # DuplicateMode
+    ('Free', 'Sync'): 'audited',  # DuplicateMode
     ('Duck', 'Gate'): 'hidden',  # DynMode2
     ('Off', 'Duck', 'Gate'): None,  # DynMode3
     ('Normal', 'Thick', 'Thicker'): None,  # Eq3
@@ -2128,12 +2114,12 @@ OPTION_AUDIT = {
     ('HB', 'SINGLE'): None,  # Pickup
     ('Spatial', 'Vintage'): None,  # PliniChorusMode
     ('FZ', 'OD'): None,  # PliniDriveMode
-    ('OFF', '1 BAR', '2 BARS', '4 BARS'): None,  # PreRoll
-    ('Momentary', 'Toggle'): None,  # PunchMode
+    ('OFF', '1 BAR', '2 BARS', '4 BARS'): 'audited',  # PreRoll
+    ('Momentary', 'Toggle'): 'audited',  # PunchMode
     ('0', '1', '2', '3'): 'hidden',  # Quality
-    ('OFF', '1 Beat', '2 Beats', '3 Beats', '4 Beats', '5 Beats', '6 Beats', '7 Beats', '8 Beats', '16 Beats'): None,  # Quantize
+    ('OFF', '1 Beat', '2 Beats', '3 Beats', '4 Beats', '5 Beats', '6 Beats', '7 Beats', '8 Beats', '16 Beats'): 'audited',  # Quantize
     ('2', '4', '10'): None,  # Ratio3
-    ('OFF', '1 BAR', '2 BARS', '3 BARS', '4 BARS', '5 BARS', '6 BARS', '7 BARS', '8 BARS', '9 BARS', '10 BARS', '11 BARS', '12 BARS', '13 BARS', '14 BARS', '15 BARS', '16 BARS', '17 BARS', '18 BARS', '19 BARS', '20 BARS', '21 BARS', '22 BARS', '23 BARS', '24 BARS', '25 BARS', '26 BARS', '27 BARS', '28 BARS', '29 BARS', '30 BARS', '31 BARS', '32 BARS'): None,  # RecLength
+    ('OFF', '1 BAR', '2 BARS', '3 BARS', '4 BARS', '5 BARS', '6 BARS', '7 BARS', '8 BARS', '9 BARS', '10 BARS', '11 BARS', '12 BARS', '13 BARS', '14 BARS', '15 BARS', '16 BARS', '17 BARS', '18 BARS', '19 BARS', '20 BARS', '21 BARS', '22 BARS', '23 BARS', '24 BARS', '25 BARS', '26 BARS', '27 BARS', '28 BARS', '29 BARS', '30 BARS', '31 BARS', '32 BARS'): 'audited',  # RecLength
     ('LOW', 'HIGH'): None,  # RedDriveMode
     ('Full', 'Hollow', 'Rich', 'Intense'): None,  # Resonance
     ('MULTI', 'HP', 'OUT 1/2', 'OUT 3/4', 'SEND 1/2'): None,  # Routing
@@ -2156,7 +2142,7 @@ OPTION_AUDIT = {
     ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 'audited',  # SyncNote21
     ('Lows', 'Highs'): None,  # SyncOn
     ('Vintage', 'Short', 'Mid', 'Long'): None,  # TankType
-    ('1', '2', '3', '4', '4 Alt', '5', '5 Alt', '6', '6 Alt'): None,  # TapPreset
+    ('1', '2', '3', '4', '4 Alt', '5', '5 Alt', '6', '6 Alt'): 'audited',  # TapPreset
     ('Preset', 'Global'): None,  # TempocontrolType
     ('2/4', '3/4', '4/4', '5/4', '6/4', '7/4', '8/4', '9/4', '10/4', '11/4', '12/4', '13/4', '3/8', '6/8', '9/8', '12/8', '5/8 (3+2)', '5/8 (2+3)', '7/8 (3+2+2)', '7/8 (2+3+2)', '7/8 (2+2+3)'): None,  # TimeSignature
     ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn'): None,  # TremoloWaveform

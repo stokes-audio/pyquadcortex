@@ -1540,21 +1540,54 @@ The readings are in `tests/fixtures/catalog/option_readings.json`, one row per
 POSITION, and `scripts/generate_options.py` stamps each enum's docstring from
 them. A list nobody has read says so where a caller will see it.
 
-**Where it stands (2026-09-14, CorOS 4.0.1): 5 audited, 6 impossible, 102
-unread**, of 113 fixed lists. The audited five cover 289 parameters, because the
-lists in heaviest use were done first.
+**Where it stands (2026-09-14, CorOS 4.0.1): 12 audited, 6 impossible, 95
+unread**, of 113 fixed lists. The audited twelve cover 298 of the 527 parameters
+that carry a fixed list, because the lists in heaviest use were done first. The
+95 unread cover 191.
 
 | list | parameters | how it was read |
 |---|---|---|
-| `Off,On` | 222 | a Circular Delay's SYNC and TRAILS, both positions |
-| `OFF,ON` | 25 | the same block's VINTAGE MODE, both positions |
-| `SYNC NOTE` (21 entries) | 28 | one look at the dial, all 21 in order |
+| `Off,On` | 222 | a Circular Delay's SYNC and TRAILS, each position driven |
+| `SYNC NOTE` (21 entries) | 28 | the dial in order, anchored at 0 and 13 |
+| `OFF,ON` | 25 | the same block's VINTAGE MODE, each position driven |
 | `OFF,MUTE,DOWN,ON` | 13 | the metronome cells, re-driven as the control |
-| `ROUTING MODE` (14 entries) | 1 | a Looper X, all 14 in order |
+| `Momentary,Toggle` | 3 | a Looper X RECORD MODE, each position driven |
+| `ROUTING MODE` (14) | 1 | the dial in order, anchored at 7 |
+| `REC. LENGTH` (33) | 1 | the dial, anchored at 0 and 16, gaps ruled out by asking |
+| `QUANTIZE` (10) | 1 | the dial in order, anchored at 0 and 9 |
+| `TAP PRESET` (9) | 1 | the dial in order, anchored at 0 and 4 |
+| `PRE ROLL` (4) | 1 | the dial in order, anchored at 0 and 2 |
+| `Linear,Log` | 1 | a Volume block's CURVE, each position driven |
+| `Free,Sync` | 1 | a Looper X DUPLICATE MODE, each position driven |
 
 Every one matched the catalog exactly, including spellings that look like
 mistakes and are not: `In 1` carries a space and `Out1` does not, on the same
 control, and the screen draws both that way.
+
+**A control's display order is not the wire order, and assuming it is nearly put
+three backwards names into the library.** Reading a dial top to bottom is much
+faster than driving 21 positions, and it works: SYNC NOTE and ROUTING MODE read
+in order and anchoring confirmed them. It does NOT work on a two-position
+control. `RECORD MODE`, `DUPLICATE MODE` and `CURVE` were each read as a list and
+each came back in the opposite order from the catalog - three apparent
+disagreements. Driving position 0 showed all three matched the catalog and the
+list reading was the thing that was wrong. So: a list of three or more may be
+read in order, provided at least two positions are then driven and read back, one
+of them awkward (the `16 Beats` that breaks QUANTIZE's counting, the `4 Alt` that
+breaks TAP PRESET's). A two-position list is read ONLY by driving each position.
+
+**One control cannot be audited even though it is not hidden.** The catalog's
+`METRONOME MUTE` on a Looper X offers `MUTE,UNMUTE`, and no parameter of that
+name appears on screen at all - there is a button, and its label names what
+pressing it WILL DO rather than what the state IS (confirmed as the convention
+used on the Tempo screen). So the catalog names states and the screen names an
+action, and the two vocabularies cannot be held against each other. It stays
+unread rather than being forced into one of the other statuses.
+
+**Some controls are greyed out until another is set.** `SYNC NOTE` is disabled
+until the block's `SYNC` is On; `PRE ROLL` and `REC. LENGTH` are disabled while
+`QUANTIZE` is OFF. Their lists can still be opened and read, but a reading run
+has to set the enabling control first.
 
 **Six lists can never be audited this way, and that is a finding rather than a
 gap.** Every parameter using them is marked `hidden` in the catalog, so the unit

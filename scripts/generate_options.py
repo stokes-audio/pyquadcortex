@@ -109,6 +109,15 @@ WORDS = {"+": "PLUS", "-": "MINUS", "%": "PCT", "&": "AND", "/": "_"}
 #: Beside `tests/fixtures/catalog/scales.json` on purpose - screen readings are
 #: evidence and this repo keeps them in one place (CLAUDE.md), so the generator
 #: reaches into tests/ rather than keeping a second copy that can drift.
+#:
+#: **How to take a reading.** A control's display order is NOT its wire order,
+#: and assuming it is nearly put three backwards names in here on 2026-09-14.
+#: A list of three or more may be read off the control in order, but at least
+#: two positions must then be DRIVEN and read back, one of them awkward - the
+#: "16 Beats" that breaks QUANTIZE's counting, the "4 Alt" that breaks TAP
+#: PRESET's. A TWO-position control is read only by driving each position: read
+#: as a list, RECORD MODE, DUPLICATE MODE and CURVE each came back reversed, and
+#: driving position 0 showed all three agreed with the catalog after all.
 READINGS = (pathlib.Path(__file__).resolve().parents[1]
             / "tests" / "fixtures" / "catalog" / "option_readings.json")
 

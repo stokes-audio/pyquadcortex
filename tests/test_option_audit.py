@@ -35,7 +35,7 @@ READINGS = (pathlib.Path(__file__).parent / "fixtures" / "catalog"
 #: ``docs/domain-model.md`` quotes the unread number in prose; the two move
 #: together or this test fails, which is the only thing keeping the document
 #: from drifting away from the code.
-EXPECTED = {"audited": 5, "hidden": 6, None: 102}
+EXPECTED = {"audited": 12, "hidden": 6, None: 95}
 
 #: Lists no parameter shows on screen, so no reading of them is possible. Named
 #: rather than counted, because "hidden" is the one status a reader might
