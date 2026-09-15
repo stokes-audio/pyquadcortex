@@ -515,13 +515,20 @@ touch it:
 from pyquadcortex.protocol import MetronomeBeat, beats
 
 qc.set_time_signature(TimeSignature.FOUR_FOUR)   # FIRST - see the warning below
-qc.set_beat(1, MetronomeBeat.ACCENT)             # emphasize the downbeat
-qc.set_beat(3, MetronomeBeat.OFF)                # skip beat 3 entirely
-qc.set_beats([MetronomeBeat.ACCENT, MetronomeBeat.NORMAL,
-              MetronomeBeat.OFF, MetronomeBeat.QUIET])   # a whole bar at once
+qc.set_beat(1, MetronomeBeat.DOWN)               # the big downbeat accent
+qc.set_beat(3, MetronomeBeat.MUTE)               # silence beat 3 entirely
+qc.set_beats([MetronomeBeat.DOWN, MetronomeBeat.OFF,
+              MetronomeBeat.MUTE, MetronomeBeat.ON])   # a whole bar at once
 
-beats(qc.read_current_preset())    # {1: ACCENT, 2: NORMAL, 3: OFF, 4: QUIET, ...}
+beats(qc.read_current_preset())    # {1: DOWN, 2: OFF, 3: MUTE, 4: ON, ...}
 ```
+
+**These four words name the ACCENT, not whether the beat sounds.** `OFF` is the
+plain click and `MUTE` is the silent one, which is the opposite of how they read.
+They are the device's own names, and an earlier version of this library renamed
+them by ear and got two of them backwards. The four states were re-driven on the
+unit on 2026-09-14 and the screen draws them as a filled circle (`OFF`), an empty
+one (`MUTE`), and a filled one with a dot above (`DOWN`) or below (`ON`).
 
 **Set the time signature first.** Changing it rewrites these, because the device
 re-lays the accent pattern out for the new bar - so beats written beforehand are

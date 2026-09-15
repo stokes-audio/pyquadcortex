@@ -1831,11 +1831,17 @@ class QuadCortex:
         """Set how ONE beat of the bar sounds.
 
         ``beat`` is 1-based, up to 13. ``state`` is a
-        :class:`~pyquadcortex.protocol.enums.MetronomeBeat` - ``NORMAL``, ``OFF``,
-        ``ACCENT`` or ``QUIET``. A plain int is accepted and range-checked::
+        :class:`~pyquadcortex.protocol.enums.MetronomeBeat` - ``OFF``, ``MUTE``,
+        ``DOWN`` or ``ON``. A plain int is accepted and range-checked::
 
-            qc.set_beat(1, MetronomeBeat.ACCENT)   # the downbeat
-            qc.set_beat(3, MetronomeBeat.OFF)      # skip beat 3
+            qc.set_beat(1, MetronomeBeat.DOWN)   # the downbeat accent
+            qc.set_beat(3, MetronomeBeat.MUTE)   # silence beat 3
+
+        These four are the device's own words and they do not mean what they
+        look like: they name the ACCENT, not whether the beat sounds. ``OFF`` is
+        the plain click, ``MUTE`` is the silent one. See
+        :class:`~pyquadcortex.protocol.enums.MetronomeBeat`, which has the
+        hardware readings.
 
         These are the cells on the Tempo page, catalog ``STEPSTATE0`` upwards, and
         the mapping was traced by touching them on the unit. Note the enum's order

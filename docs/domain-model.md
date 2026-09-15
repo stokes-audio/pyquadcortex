@@ -1518,9 +1518,67 @@ already about: the device's description of itself beat four names arrived at by
 listening, and the way to find that out was to drive all four states at once
 rather than reason about the two we had.
 
-**What this does not license.** Nothing has audited the other 112 option lists
-against the screen. This one was checked only because a hand-written enum
-existed to disagree with it, and the disagreement turned out to be ours.
+**What this does not license.** This one was checked only because a hand-written
+enum existed to disagree with it, and the disagreement turned out to be ours.
+Auditing the rest began on 2026-09-14; see the next section.
+
+### Auditing the option lists against the screen
+
+`stepNames` is the catalog's vocabulary, and the catalog is not the screen. The
+proof is offline and was sitting in the repo the whole time: for the twelve
+parameters whose list the device builds from the preset, the preset carries the
+device's OWN rendering in `Param.dynamic_steps`, and it does not match the
+catalog's `stepNames` for the same parameter. The catalog writes `In 1`, `Ret
+1/2` and `USB 5`; the device writes `Input 1`, `Return 1/2` and `USB input 5`.
+18 of 20 shared positions differ on all three committed preset fixtures.
+
+So every list's names are a hypothesis until a human reads them off the unit.
+`options.OPTION_AUDIT` publishes which have been, keyed by the labels rather
+than by the enum so the two Off/On lists and the metronome list - none of which
+gets an enum, and which are 251 parameters between them - can be recorded too.
+The readings are in `tests/fixtures/catalog/option_readings.json`, one row per
+POSITION, and `scripts/generate_options.py` stamps each enum's docstring from
+them. A list nobody has read says so where a caller will see it.
+
+**Where it stands (2026-09-14, CorOS 4.0.1): 5 audited, 6 impossible, 102
+unread**, of 113 fixed lists. The audited five cover 289 parameters, because the
+lists in heaviest use were done first.
+
+| list | parameters | how it was read |
+|---|---|---|
+| `Off,On` | 222 | a Circular Delay's SYNC and TRAILS, both positions |
+| `OFF,ON` | 25 | the same block's VINTAGE MODE, both positions |
+| `SYNC NOTE` (21 entries) | 28 | one look at the dial, all 21 in order |
+| `OFF,MUTE,DOWN,ON` | 13 | the metronome cells, re-driven as the control |
+| `ROUTING MODE` (14 entries) | 1 | a Looper X, all 14 in order |
+
+Every one matched the catalog exactly, including spellings that look like
+mistakes and are not: `In 1` carries a space and `Out1` does not, on the same
+control, and the screen draws both that way.
+
+**Six lists can never be audited this way, and that is a finding rather than a
+gap.** Every parameter using them is marked `hidden` in the catalog, so the unit
+draws them nowhere. They are 38 parameters, and they include `Noral,Inverted`
+(16) and `nolly,nollySkewed,nollySkewedPlug` (6) - which is very likely why
+those labels read like source identifiers rather than English. Nobody was meant
+to see them. `OPTION_AUDIT` gives them their own status so they stop looking
+like work somebody should do. Our `Noral` -> `NORMAL` correction therefore stays
+an inference about an invisible parameter, and is labelled as one.
+
+**The `hidden` attribute is not a boolean.** 649 parameters say `"true"` and one
+says `"atma"` - the Freeze block's `MOMENTARY` switch. `atma` is the Quad Cortex
+Mini's `device_type`, so the catalog is naming the MODEL a parameter is hidden
+on. `Parameter.hidden` answers for a Quad Cortex only, and a Mini profile must
+read the attribute rather than the flag. It is also a second, independent sign
+that ATMA is the Mini, which until now rested on the schema's `atma_*` field
+names alone.
+
+**A reading is a pairing, not a verdict.** "Index 2 showed `Gate`" can be
+checked; "this list is fine" cannot. A part-read list is `partial` and does NOT
+count as audited - rounding that up is what would make a checked list
+indistinguishable from an unchecked one. Where the unit DRAWS a position rather
+than naming it, as the metronome cells do, the reading records the picture and
+never counts as a disagreement.
 
 ### `expAssignable` says something, and not what it looks like
 
