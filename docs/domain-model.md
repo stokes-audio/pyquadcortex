@@ -1397,16 +1397,15 @@ the n/a rows below where they intersect the API at all.
 
 ## Catalog attributes we can see and cannot yet explain
 
-The device puts **24** distinct attributes on its `<Parameter>` elements. Sixteen
-are parsed. These are the other eight, recorded so the next person does not have to
-rediscover that they exist. None is guessed at, per the rule that a control we do
+The device puts **24** distinct attributes on its `<Parameter>` elements.
+Seventeen are parsed. These are the other seven, recorded so the next person does
+not have to rediscover that they exist. None is guessed at, per the rule that a control we do
 not understand is omitted with the reason written down.
 
 The counts are from the shipped CorOS 4.0.1 catalog, 3,809 parameters.
 
 | attribute | on | what it looks like, and what is unknown |
 |---|---|---|
-| `displayPos` | 1446 | The order the unit lays knobs out on screen, which is not wire order. Confirmed 2026-09-11: a cab's four visible controls read POSITION, DISTANCE, LEVEL, PAN on screen, which is `displayPos` 0, 1, 2, 3 and not their wire order. Still unused here; a UI would want it. |
 | `replaces` | 462 | Also distinct from the `<Model>` attribute of the same name, which we do parse. On a parameter it presumably names a superseded index, which would matter for reading an old preset - untested. |
 | `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, **212 parameters between them** | `toggleOn` carries a number (`4`, `5`, `6`) on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`). The obvious reading is the two values a footswitch toggle alternates between - obvious, and untested. Driving one and watching the screen would settle it. |
 | `tooltip` | 126 | The help text the unit shows. Real prose, occasionally load-bearing: a Vibrato's `MODE` warns that changing it causes a brief mute. Note the values contain HTML (`<div align="left">`), which is where an `align` "attribute" appears - it is markup inside the tooltip, not an attribute of the parameter. |
@@ -1446,6 +1445,92 @@ second-largest group of Off detents to measure, and `type` said they were not
 knobs before anyone connected a cable. What the library does with the other 8
 `meter` parameters, and whether `set_param` should refuse all 47, is open -
 nothing has been driven, and ADR-0010 wants the capture before the refusal.
+
+### `displayPos` is the catalog's PREDICTION of the screen's order
+
+**Read twice, not proved, and not a structural fact.** Where a control is drawn
+is presentational by the rule in `CLAUDE.md`, so this is not something the
+library takes from the file on the file's word - it is the file's prediction,
+which has now been held against a screen twice and matched twice. Two models out
+of the 163 that place a visible control, with nothing re-driving it. A third
+reading that disagreed would unseat it, the way three disagreeing readings
+unseated the drawn order of an option list.
+
+The first was 2026-09-11 - a cab's four visible controls reading POSITION,
+DISTANCE, LEVEL, PAN on screen against a different wire order - after which it
+sat in the table above as "still unused here". The second was 2026-09-15 on a
+different model and a different kind of difference: a Solo 100 Lead was placed
+and its knobs read off the screen as GAIN, BASS, MID, TREBLE, PRESENCE, MASTER,
+OUTPUT. That is `displayPos` order; the wire lists MASTER before PRESENCE, so a
+single adjacent swap rather than a wholesale reordering.
+
+Now `Parameter.display_pos`. Of the 503 models a user can place - not hidden,
+not internal, not in a hidden category - 163 place at least one VISIBLE control
+and **142 of those disagree with wire order**, so anything describing a block to
+a person should sort by it rather than ignore it - which is why it is published
+despite resting on two readings. 340 of the 503 place none of their visible controls: 338
+carry the attribute nowhere at all, and two carry it only on a hidden parameter. Of the 163 that do place one, 23 place only SOME of their
+visible controls and one places two at the same number - so a sort is not a
+complete layout, and what the unit does with an unplaced control is unmeasured. These counts are from the 4.0.1 catalog. The whole
+`ModelRepo.xml` is not committed, so the offline suite has no catalog to count -
+`tests/fixtures/catalog/scales.json` carries raw attributes for a few dozen
+parameters, nowhere near enough for 163 or 142. A distilled counts fixture could
+pin them offline the way `scales.json` pins bounds, and deliberately does not:
+the numbers are only interesting as a description of the unit, so a committed
+copy would agree with itself forever while the device moved.
+`tests/hardware/test_option_structure_on_unit.py` asserts the population figures
+against the live catalog instead - 533 models, 503 placeable, 163/142 on the
+visible basis, 165/144 counting hidden parameters, 331 carrying `<Padding>` -
+which is where a firmware that changed them would show up. The shape figures
+below (23 placing only some, one placing two at a number) are NOT pinned and are
+prose only. Addressing a parameter still uses the
+index - `displayPos` is where a control is DRAWN, not what selects it.
+
+### `<Padding>` is what a block reserves, and we do not know the budget
+
+A child element rather than an attribute, which is why it was never in the table
+above: 331 of 533 models carry one, holding `cpu`, `dm_heap`, `pm_heap` and `sw`,
+and more rarely `dm`, `pm`, `sd_heap`, `nw`, `dm_hp`. The names are the device's.
+
+They behave like DSP reservations. On 2026-09-15 the loaded preset's free row was
+filled with a 0.15-`cpu` amp: two fitted and the third was refused, putting a
+ceiling between 8.10 and 8.25 by that column. That is as far as it goes, and not
+far enough to publish a capacity model - four of the fourteen blocks already on
+the grid carry no `<Padding>` at all, so the base is an undercount, and nothing
+establishes that `cpu` is the column that binds rather than one of the heaps. The
+Mono Synth is the awkward case: no `<Padding>` element, and the unit still refused
+to place it on a full grid, so an absent element is not a free block.
+
+So `Model.resources` publishes the numbers under the catalog's own names and
+claims nothing more. A caller still has to try the block and handle the refusal.
+
+### The unit does not transmit what it draws
+
+The question was whether the screen text for a fixed list is conveyed somewhere
+we had not looked - which matters, because a downloadable model has to work on a
+unit that has never seen it, so its allowed values must travel somehow.
+
+They do travel: `stepNames` gives the count, the order and an identifier per
+position, and that is enough for the control to FUNCTION. What does not travel is
+the rendered text. Measured three ways on 2026-09-15:
+
+- The catalog container holds exactly one member, `ModelRepo.xml`. No icons, no
+  string table, no localisation.
+- On a 14-block preset, the only parameters populating `dynamic_steps`,
+  `dynamic_icons` or `dynamic_metadata` were the DYNAMIC ones it happened to
+  carry - three of them. No fixed list published any. (Twelve parameters in the
+  whole catalog are marked `dynamic`; a single preset reaches only the ones its
+  blocks bring.)
+- A 150-second capture recorded everything the unit sent while a human opened a
+  Mono Synth's Oscillator tab and stepped through all seven waveforms: **600
+  messages, every one the metronome tempo stream.** Not one waveform label - and
+  no notification that the value had changed either.
+
+So the unit draws `PNK` from something it already holds, and a display question
+has no metadata answer. What remains open is whether a DOWNLOADED model could
+introduce an option label the firmware has never rendered. Comparing a 4.1.0
+catalog's `stepNames` against 4.0.1's would answer it offline; no 4.1.0 snapshot
+is in this repo.
 
 ### `hidden` on a parameter is the vendor's intent, not the glass
 

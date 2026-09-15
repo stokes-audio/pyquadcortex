@@ -20,6 +20,73 @@ correction.
 
 ## Unreleased
 
+### Fixed: two guitar amps had no constant and could not be named
+
+`Bogna Uber Clean` and `Bogna Uber Lead` are ordinary amps your unit will place
+on request, and neither had an entry in `protocol.models` - the generated
+constants skipped straight from `UK_C15_TOPBOOST = 1128` to
+`US_HP_TWEED_TWN_NORMAL = 1132`.
+
+`catalog.Model.hidden` was reading the catalog's `hidden` attribute by PRESENCE.
+Thirteen models say `hidden="true"`; these two say `hidden="false"`, and both
+were being reported as hidden, which dropped them from `Model.is_factory` and so
+from the generated set. `Parameter.hidden` already read `== "true"` and had a
+test saying why; the model-level one never got the same treatment.
+
+`models.ALL` now holds 414 rather than 412. Settled by asking the unit rather
+than by reading the attribute again: `set_block` was sent for each and the unit
+placed both.
+
+### `catalog.Parameter` now tells you the order the unit draws its controls
+
+New `Parameter.display_pos`. The parameters a model gives you are in WIRE order,
+and that is not always the order the unit puts them on screen. A Solo 100 Lead
+draws GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT; the wire lists MASTER
+before PRESENCE.
+
+Of the 503 models you can place, **338 never carry it at all** - for those the
+wire order is all there is. 165 carry it somewhere, and on 144 of those the
+result disagrees with wire order.
+
+If you are showing a block's controls to a person, sort by `display_pos` and put
+the unplaced ones last. `None` does not compare, so the key has to say so:
+
+```python
+ordered = sorted(model.parameters,
+                 key=lambda p: (p.display_pos is None, p.display_pos))
+```
+
+The first element of that key is what makes it safe: placed controls all sort
+ahead of unplaced ones, so a `None` is never compared against a number. Two
+unplaced ones compare equal and keep their catalog order.
+
+Do **not** drop the `None` ones instead. Across every parameter a model gives
+you, 43 models place only some of them and 5 place two at the same number, so a
+sort is not a complete layout and dropping hides real controls. What the unit
+does with an unplaced control has not been measured. (Counting only the controls
+the catalog does not mark hidden, those figures are 23 and 1 - but the key above
+sorts everything `model.parameters` hands you, so the larger pair is what you
+will meet.)
+
+This rests on two screen readings - a cab on 2026-09-11 and a Solo 100 Lead on
+2026-09-15 - not on a recurring check. It is the catalog's prediction of the
+layout, confirmed twice, and a third reading that disagreed would unseat it.
+
+If you are addressing a parameter, keep using the index. This says where a
+control is drawn, not what selects it.
+
+### `catalog.Model` now tells you what a block reserves
+
+New `Model.resources`, from the catalog's `<Padding>`: `cpu`, `dm_heap`,
+`pm_heap`, `sw` and a few rarer ones, under the device's own names, as pairs
+(`dict(model.resources)` for a mapping). 331 of 533 models carry them.
+
+**It is not a capacity model and cannot tell you whether a block will fit.** A
+ceiling clearly exists - filling a preset's free row with a 0.15-`cpu` amp fitted
+two and was refused a third - but four of the fourteen blocks on that
+grid publish no `<Padding>` at all, so nothing here adds up to a budget. Keep trying the block
+and handling the refusal.
+
 ### Breaking: `Osc1Wave.PINK_NS` and `.WHITE_NS` were swapped, and are now fixed
 
 A Mono Synth's oscillator waveform list is the first place the audit below found

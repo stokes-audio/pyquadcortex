@@ -797,3 +797,339 @@ def test_hidden_atma_is_not_hidden_on_a_quad_cortex():
     momentary = model.parameters[2]
     assert momentary.name == "MOMENTARY"
     assert momentary.hidden is False
+
+
+#: Synthetic, and deliberately NOT model 1150. An earlier version borrowed the
+#: Solo 100 Lead's real id and name while giving it positions that are not that
+#: model's, which reads as the hardware reading quoted below and is not it.
+#: Vendor data stays out of the fixtures, so the shape is invented and says so.
+LAYOUT_XML = """<?xml version="1.0" ?><Models>
+<Category id="0" name="Guitar Amplifier">
+  <Model id="9001" name="Synthetic Amp">
+    <Padding sw="512" cpu="0.15"/>
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" displayPos="1"/>
+    <Parameter defaultValue="5" max="10" min="0" name="MASTER" type="float" displayPos="6"/>
+    <Parameter defaultValue="5" max="10" min="0" name="PRESENCE" type="float" displayPos="5"/>
+    <Parameter defaultValue="5" max="10" min="0" name="OUTPUT" type="float"/>
+    <Parameter defaultValue="5" max="10" min="0" name="VOLUME" type="float" displayPos="0"/>
+    <Parameter defaultValue="5" max="10" min="0" name="SAG" type="float"/>
+  </Model>
+  <Model id="9999" name="No Padding">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+</Models>"""
+
+
+def test_a_parameter_reports_where_it_sits_on_the_blocks_page():
+    """`displayPos` is the catalog's PREDICTION of the screen's order.
+
+    Read off the unit twice - a cab 2026-09-11, and a Solo 100 Lead 2026-09-15
+    whose knobs came back GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT
+    where the wire lists MASTER before PRESENCE.
+
+    142 of the 163 models that place a VISIBLE control disagree with wire order
+    (165 and 144 counting hidden parameters too), but NOT in the same way: only
+    17 are a single adjacent swap like that one, and the other 125 are other
+    reorderings. The shape below is synthetic.
+    """
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
+    by_wire = [p.name for p in model.parameters]
+    assert by_wire == ["GAIN", "MASTER", "PRESENCE", "OUTPUT", "VOLUME", "SAG"]
+
+    placed = [p for p in model.parameters if p.display_pos is not None]
+    by_screen = [p.name for p in sorted(placed, key=lambda p: p.display_pos)]
+    assert by_screen == ["VOLUME", "GAIN", "PRESENCE", "MASTER"]
+
+
+def test_a_parameter_the_catalog_does_not_place_says_so():
+    """`None`, not 0 - a missing position is not the first position."""
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
+    assert model.parameters[3].name == "OUTPUT"
+    assert model.parameters[3].display_pos is None
+
+
+def test_a_model_reports_what_it_reserves_under_the_catalogs_own_names():
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
+    assert dict(model.resources) == {"cpu": 0.15, "sw": 512.0}
+
+
+def test_resources_come_back_alphabetised_rather_than_in_source_order():
+    """The docstring promises this, so the fixture has to be able to disprove it.
+
+    `<Padding sw="512" cpu="0.15"/>` is deliberately NOT alphabetical in source
+    order - with `cpu` written first, sorted and as-written are the same list and
+    the assertion would hold either way.
+    """
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
+    assert model.resources == (("cpu", 0.15), ("sw", 512.0))
+
+
+def test_resources_are_pairs_so_a_model_stays_hashable():
+    """`Model` is frozen and gets hashed; a dict field made it unhashable."""
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
+    assert isinstance(model.resources, tuple)
+    # `len({model, model})` is the real check - hashing twice and comparing
+    # cannot fail as an equality, it can only raise.
+    assert len({model, model}) == 1
+
+
+def test_a_model_with_no_padding_reserves_nothing_rather_than_guessing():
+    """331 of 533 carry `<Padding>`; the rest say nothing and must not imply 0.
+
+    The Mono Synth is the case that matters - it has no `<Padding>` and the unit
+    still refused to place it on a full grid, so an absent element is not a free
+    block.
+    """
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9999]
+    assert model.resources == ()
+
+
+def test_a_padding_value_that_is_not_a_number_is_kept_rather_than_dropped():
+    """Nothing in the 4.0.1 catalog needs this, which is why it is tested here.
+
+    Every `<Padding>` value on that firmware parses as a float, so the fallback
+    would never fire and would sit unexercised until some future catalog put a
+    token where a number goes. Losing an unexpected shape silently is what the
+    rest of this parser exists not to do.
+    """
+    xml = LAYOUT_XML.replace('<Padding sw="512" cpu="0.15"/>',
+                             '<Padding sw="unbounded" cpu="0.15"/>')
+    model = catalog.parse_model_repo(make_payload(xml))[9001]
+    assert dict(model.resources) == {"cpu": 0.15, "sw": "unbounded"}
+
+
+def test_the_sorting_recipe_the_changelog_publishes_actually_works():
+    """`changelog.md` hands users a key for laying out a block's controls.
+
+    Nothing was executing it. `tests/test_docs.py` covers the code blocks inside
+    docstrings, not `changelog.md`, so the one snippet a reader is most likely
+    to copy had no guard at all - and it is easy to get wrong, because
+    `display_pos` is `None` on controls the catalog does not place and `None`
+    does not compare against an int.
+    """
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
+
+    # Copied verbatim from changelog.md. If this stops matching, fix both.
+    ordered = sorted(model.parameters,
+                     key=lambda p: (p.display_pos is None, p.display_pos))
+
+    assert [p.name for p in ordered] == ["VOLUME", "GAIN", "PRESENCE", "MASTER",
+                                        "OUTPUT", "SAG"]
+    # The unplaced one goes last rather than being dropped, which is the half of
+    # the advice a reader is most likely to skip.
+    # TWO unplaced controls, deliberately, because that is the case that would
+    # break a careless key. It does not break this one: placed controls all sort
+    # ahead on the first element, so a None never meets a number, and two Nones
+    # compare EQUAL rather than raising - tuple comparison finds the first
+    # differing element with `==`, and `None == None`. An earlier version of
+    # this key carried an `or 0` against a hazard that does not exist, with a
+    # comment claiming this test proved it; the test could not, and did not.
+    assert [p.name for p in ordered[-2:]] == ["OUTPUT", "SAG"]
+    assert all(p.display_pos is None for p in ordered[-2:])
+    # And position 0 must not be mistaken for missing - `0` is falsey, which is
+    # the trap in any key that tests truthiness rather than `is None`. The
+    # fixture has to CONTAIN a zero for that to mean anything, and an earlier
+    # version did not, which made this assertion unfalsifiable. 151 placeable
+    # models really do place a control at 0.
+    assert ordered[0].name == "VOLUME"
+    assert ordered[0].display_pos == 0
+
+
+HIDDEN_MODEL_XML = """<?xml version="1.0" ?><Models>
+<Category id="0" name="Guitar Amplifier">
+  <Model id="1130" name="Bogna Uber Clean" hidden="false">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+  <Model id="1140" name="Really Hidden" hidden="true">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+  <Model id="1141" name="Says Nothing">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+</Models>"""
+
+
+def test_a_model_marked_hidden_false_is_not_hidden():
+    """The bug that cost two amps their constants.
+
+    `Model.hidden` read the attribute by PRESENCE while `Parameter.hidden` -
+    which already had this exact treatment and a test - reads `== "true"`. Two
+    real amps carry `hidden="false"`, so both were reported hidden, `is_factory`
+    dropped them, and `models.py` skipped from 1128 to 1132 with no name for
+    either. The unit places both when asked, which is how it was settled.
+    """
+    cat = catalog.parse_model_repo(make_payload(HIDDEN_MODEL_XML))
+    assert cat[1130].hidden is False
+    assert cat[1140].hidden is True
+    assert cat[1141].hidden is False
+
+
+def test_a_model_marked_hidden_false_still_counts_as_factory():
+    """`is_factory` is what decides whether a model gets a generated constant."""
+    cat = catalog.parse_model_repo(make_payload(HIDDEN_MODEL_XML))
+    assert cat[1130].is_factory is True
+    assert cat[1140].is_factory is False
+
+
+def test_the_two_amps_that_were_missing_have_constants_now():
+    """Named, because a regression here silently removes public API again."""
+    from pyquadcortex.protocol import models
+
+    assert models.GuitarAmplifier.BOGNA_UBER_CLEAN == 1130
+    assert models.GuitarAmplifier.BOGNA_UBER_LEAD == 1131
+
+
+PRESENCE_XML = """<?xml version="1.0" ?><Models>
+<Category id="0" name="Visible Anyway" hidden="false">
+  <Model id="8001" name="In A False-Hidden Category">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+<Category id="1" name="Really Hidden" hidden="true">
+  <Model id="8002" name="In A Hidden Category">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+<Category id="2" name="Ordinary">
+  <Model id="8003" name="Says Internal False" internal="false">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+</Models>"""
+
+
+def test_a_category_marked_hidden_false_does_not_hide_its_models():
+    """The same attribute one element up, and it feeds `is_factory` the same way.
+
+    Nothing on CorOS 4.0.1 exercises this - all nine hidden categories say
+    `"true"` - which is exactly why it is pinned here. A firmware shipping
+    `hidden="false"` on a category would drop EVERY model in it from the
+    generated constants, silently, and nothing offline would see it. That is the
+    model-level bug that cost Bogna Uber Clean and Bogna Uber Lead their
+    constants, with a far larger blast radius.
+    """
+    cat = catalog.parse_model_repo(make_payload(PRESENCE_XML))
+    assert cat[8001].category_hidden is False
+    assert cat[8001].is_factory is True
+    assert cat[8002].category_hidden is True
+    assert cat[8002].is_factory is False
+
+
+def test_a_model_marked_internal_false_is_not_internal():
+    """Same shape again. All eight internal models say `"true"` on 4.0.1."""
+    cat = catalog.parse_model_repo(make_payload(PRESENCE_XML))
+    assert cat[8003].internal is False
+    assert cat[8003].is_factory is True
+
+
+#: Attributes the parser may legitimately read by PRESENCE, each with the reason.
+#:
+#: Empty, and that is the point - there is nowhere in this parser today where
+#: "the attribute exists" is the question. The list exists because the failure
+#: message offers this escape and a test that offers one without implementing it
+#: sends a contributor in a circle. Same shape as `BOUNDARY_MODULES` in
+#: `tests/test_translation.py` and `UNMARKED_OPERATIONS` in
+#: `tests/test_hardware_markers.py`: a name gets on it with a written reason, and
+#: a reviewer judges the reason.
+PRESENCE_IS_RIGHT: dict[str, str] = {}
+
+
+def _presence_reads(source: str) -> list[str]:
+    """Catalog attributes ``source`` reads by PRESENCE, as ``name (line N)``.
+
+    Split out from the test so the test below can feed it spellings on purpose.
+    A detector nobody probes is a detector that can quietly stop detecting -
+    which is the same failure as a guard whose assertion cannot fire.
+    """
+    import ast
+
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+            continue
+        if not isinstance(node.ops[0], (ast.IsNot, ast.NotEq)):
+            continue
+        # Either side may hold the None, so check both orders.
+        for call, other in ((node.left, node.comparators[0]),
+                            (node.comparators[0], node.left)):
+            if not (isinstance(other, ast.Constant) and other.value is None):
+                continue
+            if (isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "get"
+                    and call.args
+                    and isinstance(call.args[0], ast.Constant)
+                    and isinstance(call.args[0].value, str)):
+                found.append(f"{call.args[0].value} (line {node.lineno})")
+    return found
+
+
+def test_no_catalog_attribute_is_read_by_presence_any_more():
+    """A source check, because this bug arrived three times in one file.
+
+    `hidden` on a model, `hidden` on a category and `internal` were all read as
+    "the attribute is there", and the catalog does not use them that way - two
+    amps carry `hidden="false"`, which cost both their generated constants.
+
+    **Where this stops seeing**, stated rather than implied, and each one probed
+    in the test below rather than asserted here. It walks the parsed SOURCE, so
+    quote style, spacing, line breaks, a default argument and a reversed
+    comparison are all caught. What it does NOT catch: a presence test spelled
+    another way (`bool(el.get("x"))`, `"x" in el.attrib`, `not (... is None)`),
+    the result taken through a local first, an attribute name held in a
+    variable, and anything outside `catalog.py` - it reads that file only, which
+    is adequate while it is the one module parsing the catalog XML.
+    """
+    import pathlib
+
+    source = pathlib.Path(catalog.__file__).read_text(encoding="utf-8")
+    offenders = [o for o in _presence_reads(source)
+                 if o.split(" ")[0] not in PRESENCE_IS_RIGHT]
+    assert not offenders, (
+        f"these catalog attributes are read by presence: {offenders}. The "
+        f"device ships 'false' as a VALUE - two amps carry hidden=\"false\" and "
+        f"reading presence cost them their constants. Compare against \"true\", "
+        f"or add the attribute to PRESENCE_IS_RIGHT above with the reason "
+        f"presence is the right question for that one.")
+
+
+def test_the_presence_detector_catches_what_its_docstring_claims():
+    """Probed, because a detector that stops detecting stays green.
+
+    The spellings below are the ones `catalog.py` could plausibly acquire - it
+    already writes `p.get('name')` in single quotes elsewhere, so quote style is
+    not hypothetical. An earlier regex version of this check saw exactly one of
+    them.
+    """
+    caught = [
+        'x = el.get("hidden") is not None',
+        "x = el.get('hidden') is not None",
+        'x = el.get("hidden")   is  not  None',
+        'x = el.get("hidden") != None',
+        'x = el.get("hidden", None) is not None',
+        'x = None is not el.get("hidden")',
+    ]
+    for spelling in caught:
+        assert _presence_reads(spelling), f"not caught: {spelling}"
+
+
+def test_the_presence_detector_admits_what_it_cannot_catch():
+    """The other half, so the docstring's blind-spot list stays honest.
+
+    One of these was NAMED as a blind spot while actually being caught, which
+    would send the next contributor to write a weaker check or to claim an
+    exemption they do not need.
+    """
+    missed = [
+        'x = bool(el.get("hidden"))',
+        'x = "hidden" in el.attrib',
+        'x = not (el.get("hidden") is None)',
+        'raw = el.get("hidden")\nx = raw is not None',
+        'name = "hidden"\nx = el.get(name) is not None',
+    ]
+    for spelling in missed:
+        assert not _presence_reads(spelling), (
+            f"this IS caught, so the docstring must stop calling it a blind "
+            f"spot: {spelling!r}")

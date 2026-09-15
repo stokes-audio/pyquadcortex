@@ -62,7 +62,7 @@ itself fails first, pytest stops there and the refusal never gets to speak.
 Nothing runs in that case either - you just get pytest's collection error
 instead of the message naming the flag.
 
-That is why two files here end in `_on_unit`. **A module in this directory needs
+That is why files here end in `_on_unit`. **A module in this directory needs
 a basename no module under `tests/` already owns.** pytest maps
 `tests/hardware/test_scales.py` and `tests/test_scales.py` to one module name and
 refuses the second, which until 2026-08-28 meant `pytest --hardware` from the

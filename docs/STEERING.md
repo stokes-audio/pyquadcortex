@@ -61,6 +61,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
 | One translation boundary | Screen values become wire values in exactly one PACKAGE, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/`. The exemption covers a directory, so a test names the package's modules and a new one has to come through that list | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate/` | The protocol layer, which keeps its zero-based COORDINATES. Its scales come from the catalog, and quoting the device's own units is not translating - see ADR-0016 |
 | Model state goes through the cache | A model property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py`, not an attribute the property fills in itself | One account of what the model believes and how it learned it. A property with its own cached attribute answers from a copy nothing invalidates, and a closed connection cannot take it away (see ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry rather than read from the unit, which compute from `value()` rather than caching alongside it |
+| Catalog for structure, eyes for presentation | Structural facts about a control - option count, which wire index each choice sits at, parameter index - come from the catalog with no hardware; anything about what a person SEES needs a reading | Every position of every fixed list a preset reaches lands where the catalog says, re-driven on each hardware run; and a 150s capture while a human redrew a control found the labels are never sent at all | `tests/hardware/test_option_structure_on_unit.py` | Anything DRAWN. The order the unit shows a list's choices in - `RECORD MODE`, `DUPLICATE MODE` and `CURVE` each read back reversed - and `Parameter.display_pos` itself, which is published on two screen readings rather than taken from the file. And the list where the catalog is wrong about its own MEANING, `Pink NS` naming the position that draws WHT |
 | Evidence-stamped option lists | An option list's names carry a status saying whether a human has read them off the unit, generated from a per-position readings fixture | The catalog's `stepNames` is demonstrably not the screen's wording, so an unchecked list must not look like a checked one | `options.OPTION_AUDIT` plus `tests/fixtures/catalog/option_readings.json` | Lists the unit does not draw, which are `absent` by observation rather than unread |
 | Profile is the class | A connection resolves `(device_type, zenos_git_hash)` to a client class before the handshake; `QuadCortex` is 4.0.1 and the base, a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is the smell polymorphism removes; the decision is made once, by which class is instantiated (see ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
 
@@ -138,6 +139,65 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-09-15 - The catalog is trusted for structure and never for presentation
+
+**What changed:** the on-hardware rule is split by the kind of claim being made.
+Structural facts about a control now come from the catalog without a screen
+reading; anything about what a person sees still needs eyes. `Parameter.display_pos`
+and `Model.resources` are published. `displayPos` leaves the appendix's
+unexplained-attributes table; `<Padding>` was never in it, being a child element
+rather than an attribute. Both now have a written-up section there instead.
+
+**Why, and what was measured.** The question was whether the audit rule was
+costing hardware time to confirm things a file already knew. Three experiments:
+
+- Every position of every fixed list the loaded preset could reach was driven,
+  checking each stored `index / (count - 1)`. Zero mismatches, 156 positions on
+  the preset the recorded run used. A new hardware test does exactly this on
+  each run, so the claim keeps being tested rather than remembered - and it
+  proves the WIRE mapping only. The order the unit draws the choices in is
+  presentational and this repo has three counterexamples.
+- A Solo 100 Lead was placed and its knobs read off the screen. They came back
+  in `displayPos` order, not wire order. That is the SECOND such reading - a cab
+  on 2026-09-11 was the first - and two models out of the 163 that place a
+  visible control is all this rests on, with nothing re-driving it. So
+  `Parameter.display_pos` is published as the catalog's prediction, not as a
+  measured fact, and it is NOT one of the structural facts above. 142 of the 163
+  disagree with wire order in some way, of which only 17 are the single adjacent
+  swap this reading was; the other 125 are other reorderings.
+- A 150-second capture recorded everything the unit sent while a human opened a
+  Mono Synth's Oscillator tab and stepped through all seven waveforms. 600
+  messages, every one the metronome tempo stream. Not one waveform label, and
+  no notification that the value had changed at all.
+
+**What it turned up on the way.** Putting the population counts under a hardware
+pin exposed a real bug: `Model.hidden` read the catalog's `hidden` attribute by
+PRESENCE, and two amps carry `hidden="false"` - Bogna Uber Clean and Bogna Uber
+Lead. Both were reported hidden, dropped from `is_factory`, and had no generated
+constant at all. Settled by placing each on the unit rather than by re-reading
+the attribute. `models.ALL` is 414 now. The same presence read on a category and
+on `internal` is corrected too - latent on 4.0.1, where all nine hidden
+categories and all eight internal models say `"true"`, but a category shipping
+`"false"` would silently drop every model in it. A source-reading test now
+refuses any catalog attribute read that way.
+
+**What that settles.** The catalog container is a single XML file with no
+icons, no string table and no localisation. It carries other strings - `tooltip`
+on 126 parameters, a non-empty `units` on 1,494 of the 3,468 carrying it, the
+`min_string`/`mid_string`/`max_string`
+triple this library already reads - but none of them is a rendered option label. On a 14-block preset the only parameters
+publishing `dynamic_steps`, `dynamic_icons` or `dynamic_metadata` were the three
+DYNAMIC ones it carried; nine of the catalog's twelve have never been observed. And the
+unit does not transmit what it draws. So presentation is not downloadable, and a
+metadata explanation of a display question is not going to be found by reading
+the file more carefully. The catalog cannot even be trusted about its own
+meaning: `Pink NS` names the position that draws WHT.
+
+**Scope of impact:**
+- **Updated:** `CLAUDE.md`; `pyquadcortex/protocol/catalog.py` (new `Parameter.display_pos` and `Model.resources`, and the `hidden` / `category_hidden` / `internal` parses corrected from presence to `== "true"`); the regenerated `pyquadcortex/protocol/catalogs/coros_4_0_1/models.py` and `params.py` (two amps that had no constant); `tests/test_catalog.py`; `tests/test_models.py` (factory count 412 to 414); `docs/domain-model.md` appendix; `docs/api.md` and `docs/protocol.md` (the same count); `changelog.md`; `tests/hardware/readme.md` and this file's own hardware-suite note, which both said two files end `_on_unit` when there are four; STEERING.md sections 5 and 10
+- **New:** `tests/hardware/test_option_structure_on_unit.py`
+- **Not updated (intentionally):** `ADR.md` - this narrows how an existing rule is applied rather than deciding something new, and the option-audit convention it sits beside is still deliberately unrecorded. Nothing under `pyquadcortex/device/` - the model layer asks the protocol layer and is unaffected. `Model.resources` is deliberately NOT a capacity model: a ceiling was observed between 8.10 and 8.25 by the `cpu` column, but four of the fourteen blocks on the grid carry no `<Padding>` at all so the base is an undercount, and nothing establishes which column binds.
 
 ### 2026-09-14 - An option list now says whether anyone has checked its names
 
@@ -447,7 +507,7 @@ developers it could not happen.
 - A refusal here is loud, not a silent deselect: the developer named those tests,
   so the reason they did not run is owed to them.
 - A module in `tests/hardware/` needs a basename no module under `tests/` already
-  owns, hence the two `_on_unit` names. The rule is enforced rather than
+  owns, hence the `_on_unit` names. The rule is enforced rather than
   remembered: `tests/test_hardware_gate.py` fails if `pytest --hardware` stops
   collecting the whole tree.
 
