@@ -486,3 +486,66 @@ def test_a_swap_between_two_positions_of_the_list_is_accepted(monkeypatch, tmp_p
     assert "WILD = 1" in text
     assert "HARD = 2" in text
     assert "The catalog is WRONG at 1, 2" in text
+
+
+def test_a_rename_using_another_positions_name_is_still_not_a_swap(monkeypatch, tmp_path):
+    """`{0: "HARD"}` again, spelled with a name the list happens to contain.
+
+    Requiring the new name to belong to SOME position of the list was not
+    enough: renaming position 0 to position 2's name is an invention that
+    happens to be spelled from the right vocabulary, and it shadows the real
+    member to `HARD_2`.
+    """
+    rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 2, "Wld")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: "HARD"}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "have to be the same set" in str(caught.value)
+
+
+def test_half_a_swap_is_refused_because_it_deletes_a_member(monkeypatch, tmp_path):
+    """`{1: "WILD"}` alone emits WILD and WILD_2, and HARD simply vanishes.
+
+    Silently, from a PUBLIC enum, with no error anywhere - which is why the
+    entry is checked as a whole rather than one rename at a time.
+    """
+    rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "WILD"}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "deletes a member" in str(caught.value)
+
+
+def test_a_closed_swap_keeps_every_member_the_list_had(monkeypatch, tmp_path):
+    """The property the permutation check is really protecting."""
+    rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {SHAPE: {1: "WILD", 2: "HARD"}})
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    for member in ("SOFT = 0", "WILD = 1", "HARD = 2"):
+        assert member in text
+    # no collision suffix anywhere, which is what a deletion would have caused
+    assert "_1 =" not in text and "_2 =" not in text
+
+
+def test_a_rename_to_a_name_two_positions_produce_is_refused(monkeypatch, tmp_path):
+    """Two positions of one list can mangle to the same member name.
+
+    The note lists do it - `A` and `A#` both give `A`, which `render_enum`
+    resolves with an `_<index>` suffix. A correction naming one of those does not
+    say which position it means, so it is refused rather than resolved by
+    whichever index a dict comprehension happened to keep last.
+    """
+    notes = ("OFF", "A", "A#", "B")
+    xml = AUDIT_XML.replace(
+        b'<Parameter name="CELL" type="comboBox" stepNames="LOW,HIGH"',
+        b'<Parameter name="CELL" type="comboBox" stepNames="OFF,A,A#,B"')
+    rows = [_reading(notes, 1, "Ay")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {notes: {1: "A"}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(xml), snapshot="s")
+    assert "does not say which" in str(caught.value)

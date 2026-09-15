@@ -2061,7 +2061,10 @@ OPTION_CONTESTED = {
 #: Five answers, and every one of them is a recorded observation in
 #: ``tests/fixtures/catalog/option_readings.json``:
 #:
-#: - ``"audited"`` - every position was read, and the words match.
+#: - ``"audited"`` - every position was read off the screen. It does
+#:   NOT mean the words matched: a list can be audited AND
+#:   disagree, which is the whole point of reading one. The enum's
+#:   own docstring says which positions differ and how.
 #: - ``"drawn"`` - every position was read, but the unit DRAWS them
 #:   rather than naming them, so these words are still unchecked.
 #: - ``"partial"`` - some positions were read and some were not.

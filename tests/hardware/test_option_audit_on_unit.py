@@ -19,6 +19,7 @@ changed list on the unit before touching the recorded screen text.
 import collections
 import json
 import pathlib
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -31,6 +32,12 @@ READINGS = REPO / "tests" / "fixtures" / "catalog" / "option_readings.json"
 @pytest.fixture(scope="module")
 def live_catalog(qc):
     return catalog.parse_model_repo(qc._fetch_model_repo())
+
+
+@pytest.fixture(scope="module")
+def live_xml(qc):
+    """The catalog's raw XML, for attributes the parser turns into a bool."""
+    return ET.fromstring(catalog._extract_xml(qc._fetch_model_repo()))
 
 
 @pytest.fixture(scope="module")
@@ -82,9 +89,9 @@ def test_a_list_stamped_audited_is_still_a_list_this_unit_has(live_catalog):
     offered = {tuple(p.options) for m in live_catalog for p in m.parameters
                if p.options and not p.dynamic}
     for labels, status in options.OPTION_AUDIT.items():
-        if status == "audited":
+        if status in ("audited", "drawn"):
             assert labels in offered, (
-                f"{labels} is stamped audited but no parameter on this unit "
+                f"{labels} is stamped {status!r} but no parameter on this unit "
                 f"offers it any more")
 
 
@@ -125,3 +132,32 @@ def test_a_list_stamped_absent_still_looks_the_way_it_did_when_looked_at(live_ca
             f"unit no longer marks every parameter using it hidden. The flag "
             f"does not decide the status, but losing it means the parameter "
             f"changed - look at the control again before trusting the record.")
+
+
+def test_the_hidden_attribute_is_still_shaped_the_way_it_was_counted(live_xml):
+    """`Parameter.hidden` documents two numbers that nothing has been checking.
+
+    649 parameters say `"true"` and exactly one says `"atma"` - the Freeze
+    block's `MOMENTARY` switch, which is the whole evidence that the catalog
+    names the MODEL a parameter is hidden on, and a second independent sign that
+    ATMA is the Mini. Both live in a docstring and in `docs/domain-model.md`,
+    and the parser turns the attribute into a bool, so nothing offline can see
+    either number go stale.
+
+    A failure here is a finding about the device. If `atma` has spread to more
+    parameters, `Parameter.hidden` answering only for a Quad Cortex matters more
+    than it does today.
+    """
+    values = collections.Counter(
+        p.get("hidden") for p in live_xml.iter("Parameter")
+        if p.get("hidden") is not None)
+    assert values == {"true": 649, "atma": 1}, (
+        f"the hidden attribute now reads {dict(values)}; "
+        f"Parameter.hidden and docs/domain-model.md say "
+        f"{{'true': 649, 'atma': 1}}")
+
+    atma = [(m.get("name"), p.get("name"))
+            for c in live_xml.findall("Category") for m in c.findall("Model")
+            for p in m.findall("Parameter") if p.get("hidden") == "atma"]
+    assert atma == [("Freeze", "MOMENTARY")], (
+        f"the one atma-hidden parameter is now {atma}")

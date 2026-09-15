@@ -34,8 +34,17 @@ one changes behaviour** - and changes it to what the name always claimed. If you
 were compensating for this, stop.
 
 Selecting by the catalog's string is now refused rather than silently wrong:
-`set_param_option(block, "OSC1 WAVE", "Pink NS")` raises and tells you why. The
-strings stay in `OPTION_LABELS`, because they are what the device publishes.
+both `set_param_option(block, "OSC1 WAVE", "Pink NS")` and the exported
+`protocol.option_value(names, "Pink NS")` raise and tell you why. The strings
+stay in `OPTION_LABELS`, because they are what the device publishes.
+
+**This breaks a read-modify-write round trip on those two positions.** Reading
+still reports the catalog's name - `option_at` gives you `"Pink NS"` for the
+position that draws WHT - and feeding that name straight back now raises instead
+of quietly selecting it. That is deliberate: the alternative is a silent wrong
+answer. Fixing the read side means deciding whether a reader may overrule the
+device's own string, which is more than one finding should settle; pass the
+index or an `options.Osc1Wave` member in the meantime.
 
 ### You can now tell which option names have been checked against the screen
 

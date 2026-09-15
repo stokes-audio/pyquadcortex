@@ -201,11 +201,14 @@ def test_the_audit_covers_the_lists_with_no_enum():
 
 
 def test_a_disagreement_would_reach_the_generated_file(rows):
-    """If a reading ever contradicts the catalog, the enum has to show it.
+    """A reading that contradicts the catalog has to reach the enum.
 
-    Nothing disagrees today. The test is written against the MECHANISM rather
-    than against a current disagreement, so the day one is recorded it is caught
-    here instead of being filed and forgotten.
+    Nine rows disagree - every position of a Mono Synth's waveform list, five of
+    them abbreviations and two of them the swap - so this runs against real data
+    rather than waiting for a disagreement to arrive. It was written before any
+    existed and its docstring said so for two commits after they did, which is
+    the same drift between the record and the measurement this file exists to
+    stop.
     """
     # The GENERATED module, not `options.__file__` - that is a four-line shim
     # re-exporting this one, and reading it made this assertion unreachable:

@@ -141,6 +141,15 @@ def check_corrections(readings: dict, present: dict) -> None:
         if labels not in present:
             continue
         seen = readings.get(labels, {})
+        # Built with the one-argument `member_name`: the three-argument form
+        # consults this very table, which would let an entry justify itself.
+        # Two positions of one list can mangle to the SAME member name - the
+        # note lists do it, where "A" and "A#" both give A - and `render_enum`
+        # resolves that with an `_<index>` suffix. A correction naming one of
+        # those is ambiguous, so it is refused rather than resolved by whichever
+        # index this dict happened to keep.
+        emitted = collections.Counter(member_name(other) for other in labels)
+        available = {member_name(other): i for i, other in enumerate(labels)}
         for index, member in by_index.items():
             rows = [r for r in seen.get(index, [])
                     if r.get("method") == "driven"
@@ -182,7 +191,6 @@ def check_corrections(readings: dict, present: dict) -> None:
             #
             # Note the raw one-argument `member_name`: the three-argument form
             # consults this very table, which would let an entry justify itself.
-            available = {member_name(other): i for i, other in enumerate(labels)}
             if member not in available:
                 raise SystemExit(
                     f"MEANING_DISAGREEMENTS renames position {index} of "
@@ -191,11 +199,39 @@ def check_corrections(readings: dict, present: dict) -> None:
                     f"only say a position means what the catalog calls ANOTHER "
                     f"position of the same list - a swap. A new claim about the "
                     f"device needs a record, not a rename.")
+            if emitted[member] > 1:
+                raise SystemExit(
+                    f"MEANING_DISAGREEMENTS renames position {index} of "
+                    f"{labels} to {member!r}, and more than one position of "
+                    f"this list produces that name, so it does not say which. "
+                    f"This table cannot express that correction.")
             if available[member] == index:
                 raise SystemExit(
                     f"MEANING_DISAGREEMENTS renames position {index} of "
                     f"{labels} to {member!r}, which is already that position's "
                     f"name. Nothing changes.")
+
+        # ...and the entry as a WHOLE must be a permutation of its own indexes.
+        #
+        # Checking each rename in isolation was not enough, and the error
+        # message above was already claiming more than the code did. Three
+        # entries passed that are not swaps: `{0: "SQUARE"}` renamed position 0
+        # to a name belonging to position 3, shadowing the real SQUARE to
+        # SQUARE_3 - which is `{0: "HARD_SYNC"}` again, spelled with a name from
+        # the list. And a HALF swap, `{5: "WHITE_NS"}` alone, emitted WHITE_NS
+        # and WHITE_NS_6 and deleted PINK_NS from a public enum with no error.
+        #
+        # A swap is a closed cycle: the positions being renamed and the
+        # positions whose names are being used are the same set.
+        moved = {index: available[member] for index, member in by_index.items()}
+        if set(moved) != set(moved.values()):
+            raise SystemExit(
+                f"MEANING_DISAGREEMENTS for {labels} renames positions "
+                f"{sorted(moved)} using the names of positions "
+                f"{sorted(set(moved.values()))}. Those have to be the same set: "
+                f"this table says two or more positions of one list are "
+                f"exchanged, and anything else either invents a claim or "
+                f"deletes a member that nothing then emits.")
 
 
 #: Characters that must become a word rather than an underscore, because the
@@ -210,6 +246,13 @@ WORDS = {"+": "PLUS", "-": "MINUS", "%": "PCT", "&": "AND", "/": "_"}
 #: Beside `tests/fixtures/catalog/scales.json` on purpose - screen readings are
 #: evidence and this repo keeps them in one place (CLAUDE.md), so the generator
 #: reaches into tests/ rather than keeping a second copy that can drift.
+#:
+#: Each row carries a ``method``: ``"driven"`` when the wire position was known
+#: and the screen read at it, ``"list"`` when the control's own choices were
+#: transcribed in order, and ``"looked"`` for a row recording that a control is
+#: not drawn at all. `tests/test_option_audit.py` enforces what follows from it;
+#: nothing in this script reads the field, which is why the helper that used to
+#: sit here was deleted rather than left looking load-bearing.
 #:
 #: **How to take a reading.** A control's display order is NOT its wire order,
 #: and assuming it is nearly put three backwards names in here on 2026-09-14.
@@ -254,20 +297,6 @@ def load_readings(snapshot: str) -> dict:
     return {labels: dict(by_index) for labels, by_index in out.items()}
 
 
-def read_method(rows: list) -> set:
-    """How each of these readings was taken - ``"driven"`` or ``"list"``.
-
-    A position read by DRIVING it - setting the wire index and reading back what
-    the screen then showed - proves the mapping. A position read by transcribing
-    the control's own list proves only that the word appears somewhere in it,
-    and on a two-position control it does not even prove the order: three lists
-    read that way on 2026-09-14 came back reversed, and driving position 0
-    showed the reading was wrong, not the catalog. So the file records which,
-    and `tests/test_option_audit.py` holds the rule that follows from it.
-    """
-    return {r.get("method", "list") for r in rows}
-
-
 def is_symbol(rows: list) -> bool:
     """True when the unit DRAWS this position instead of writing it.
 
@@ -301,7 +330,7 @@ def screen_word(labels: tuple, index: int, rows: list) -> str:
     return rows[0]["screen"]
 
 
-def audit_status(labels: tuple, readings: dict, users: list = ()) -> str | None:
+def audit_status(labels: tuple, readings: dict) -> str | None:
     """What is known about whether this list's words are the screen's.
 
     ``"audited"`` when every position has been read off the unit, ``"drawn"``
@@ -352,10 +381,9 @@ def audit_status(labels: tuple, readings: dict, users: list = ()) -> str | None:
     return "audited"
 
 
-def audit_lines(labels: tuple, readings: dict, users: list = (),
-                indent: str = "    ") -> list[str]:
+def audit_lines(labels: tuple, readings: dict, indent: str = "    ") -> list[str]:
     """The docstring paragraph stating what is known about this list's words."""
-    status = audit_status(labels, readings, users)
+    status = audit_status(labels, readings)
     seen = readings.get(labels, {})
     if status == "absent":
         where = ", ".join(sorted({f"{r['model']}'s {r['param']}" for rows
@@ -546,7 +574,7 @@ def render_enum(name: str, labels: tuple, users: list, readings: dict) -> list[s
         where = (f"    On {len(models)} models, among them "
                  f"{', '.join(models[:3])}.")
     lines = (["", "", f"class {name}(IntEnum):", f'    """{summary}', "", where, ""]
-             + audit_lines(labels, readings, users) + ['    """', ""])
+             + audit_lines(labels, readings) + ['    """', ""])
     seen = readings.get(labels, {})
     used = {}
     for index, label in enumerate(labels):
@@ -586,8 +614,7 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     # below is exactly the kind that drifts, and one beside it already had.
     bools = sum(len(users) for labels, users in every.items()
                 if tuple(o.lower() for o in labels) in BOOLEAN_LISTS)
-    status = {labels: audit_status(labels, readings, users)
-              for labels, users in every.items()}
+    status = {labels: audit_status(labels, readings) for labels in every}
     done = sum(1 for v in status.values() if v == "audited")
     part = sum(1 for v in status.values() if v == "partial")
     # These four words are the statuses `audit_status` actually returns. An
@@ -672,7 +699,10 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
               "#: Five answers, and every one of them is a recorded observation in",
               "#: ``tests/fixtures/catalog/option_readings.json``:",
               "#:",
-              '#: - ``"audited"`` - every position was read, and the words match.',
+              '#: - ``"audited"`` - every position was read off the screen. It does',
+              "#:   NOT mean the words matched: a list can be audited AND",
+              "#:   disagree, which is the whole point of reading one. The enum's",
+              "#:   own docstring says which positions differ and how.",
               '#: - ``"drawn"`` - every position was read, but the unit DRAWS them',
               "#:   rather than naming them, so these words are still unchecked.",
               '#: - ``"partial"`` - some positions were read and some were not.',
