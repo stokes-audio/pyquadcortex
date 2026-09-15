@@ -27,16 +27,23 @@ and that is not always the order the unit puts them on screen. A Solo 100 Lead
 draws GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT; the wire lists MASTER
 before PRESENCE.
 
-Of the 510 placeable models, **349 carry no `display_pos` at all** - for those
-the wire order is all there is. 161 carry it on their visible parameters, and on
-140 of those it disagrees with the wire.
+Of the 510 placeable models, **349 place none of their visible controls** - for
+those the wire order is all there is. 161 place at least one, and on 140 of those
+the result disagrees with wire order.
 
-If you are showing a block's controls to a person, sort by `display_pos`. Do
-**not** drop the controls where it is `None`: 23 models place only some of their
-visible parameters, and one places two of them at the same number, so a sort
-alone is not a complete layout. What the unit does with an unplaced control has
-not been measured - keep them and put them after the placed ones rather than
-hiding them.
+If you are showing a block's controls to a person, sort by `display_pos` and put
+the unplaced ones last. `None` does not compare, so the key has to say so::
+
+    ordered = sorted(model.parameters,
+                     key=lambda p: (p.display_pos is None, p.display_pos or 0))
+
+Do **not** drop the `None` ones instead: 23 models place only some of their
+visible controls and one places two at the same number, so a sort is not a
+complete layout and dropping hides real controls. What the unit does with an
+unplaced control has not been measured.
+
+This rests on two screen readings - a cab and a Solo 100 Lead - not on a
+recurring check. It is the catalog's prediction of the layout, confirmed twice.
 
 If you are addressing a parameter, keep using the index. This says where a
 control is drawn, not what selects it.

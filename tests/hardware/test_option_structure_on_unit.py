@@ -1,16 +1,15 @@
 """The catalog predicts the WIRE for every option, on everything reachable.
 
-This is the evidence the audit policy rests on. `CLAUDE.md` says structural
-facts about an option list - how many choices, in what order, and which wire
-value selects each - are taken from the catalog without a screen reading, while
-anything about what a PERSON SEES needs eyes. That split is only defensible
-while the structural half keeps being right.
+This is the evidence the rule rests on. `CLAUDE.md` says a structural fact about
+an option list - how many choices it has and WHICH WIRE INDEX each one sits at -
+is taken from the catalog without a screen reading, while anything about what a
+PERSON SEES needs eyes. That split is only defensible while the structural half
+keeps being right.
 
 So this drives every position of every fixed list the loaded preset can reach
-and asserts the unit stores ``index / (count - 1)``. It found 0 mismatches in
-279 positions on 2026-09-15, and the option audit drove about 40 more before
-that. A failure here is a finding about the device and it invalidates the
-policy, not just this test.
+and asserts the unit stores ``index / (count - 1)``. 156 positions across 29
+parameters on the preset of the 2026-09-15 run, zero mismatches. A failure here
+is a finding about the device and it invalidates the rule, not just this test.
 
 It proves the WIRE mapping and nothing else. The ORDER the unit draws a list's
 choices in is presentational, this reads no screen, and `docs/domain-model.md`
@@ -19,7 +18,7 @@ a green run here never licenses skipping a reading.
 
 It is batched: every parameter is set to position k, then ONE preset read
 verifies them all, so the cost is one read per position rather than one per
-parameter per position. On a full preset that is about 75 seconds.
+parameter per position. On a full preset that is about 73 seconds.
 
 State-neutral by recall: nothing here saves, so the teardown reloads the preset
 and the grid returns to what the owner had. It refuses to start on a preset that
@@ -32,11 +31,6 @@ import pytest
 import pyquadcortex.protocol as pq
 from pyquadcortex.protocol import catalog as catalog_module
 from pyquadcortex.protocol import values
-
-# The one spelling of "the restore did not finish" (ADR-0005). Imported rather
-# than re-worded, because it is an instruction to the owner about their own
-# unit and `tests/test_hardware_report.py` counts the spellings.
-from tests.hardware.conftest import _unrestored
 
 #: How long to let a batch of writes settle before reading the preset back.
 SETTLE = 0.8
@@ -62,8 +56,15 @@ def _targets(preset, catalog):
 
 
 @pytest.fixture
-def restored(qc):
+def restored(qc, restores):
     """Reload the preset afterwards, which undoes every write this made.
+
+    Goes through the `restores` fixture rather than doing its own teardown: that
+    is where ADR-0005's one spelling of "COULD NOT RESTORE THE UNIT" lives, and
+    a second copy of it here would be a second one to keep right. An earlier
+    version imported `_unrestored` from conftest directly, which loads conftest
+    a SECOND time under another module name - harmless for a pure function and a
+    trap for anything stateful beside it.
 
     A recall DISCARDS unsaved edits, so this refuses to run at all on a preset
     that already has some - they would be the owner's, and nothing here could
@@ -74,15 +75,14 @@ def restored(qc):
         "recalling, which would throw them away - save or reload the preset on "
         "the unit and run again.")
     before = qc.loaded_position()
-    yield
-    failed = []
-    try:
+
+    def reload_it():
         # Recalling the SAME slot does not reload it: the unit sees no change
         # and does nothing. So this recalls a DIFFERENT slot first and comes
         # back. `position` is a linear slot index, not an offset, so the other
-        # slot is 0 or 1 rather than a neighbour - which is fine, any slot the
-        # unit actually loads will do, and the check below is what proves one
-        # did rather than the comment claiming it.
+        # slot is 0 or 1 rather than a neighbour - any slot the unit actually
+        # loads will do, and the checks below prove one did rather than the
+        # comment claiming it.
         other = 1 if before.position != 1 else 0
         qc.recall_preset(before.folder_key, other, is_factory=before.is_factory)
         time.sleep(6.0)
@@ -90,20 +90,18 @@ def restored(qc):
                          is_factory=before.is_factory)
         time.sleep(8.0)
         now = qc.loaded_position()
-        if now.position != before.position:
-            failed.append(f"the unit is on slot {now.position}, not "
-                          f"{before.position} where it started")
-        elif qc.preset_dirty(timeout=15.0):
-            # Back on the right slot and still dirty means the reload was a
-            # no-op - the neighbour slot was probably empty - and every write
-            # this test made is still on the owner's grid.
-            failed.append(f"slot {before.position} is still showing unsaved "
-                          f"edits, so the reload did not take and this test's "
-                          f"writes are still on the grid")
-    except Exception as exc:                       # noqa: BLE001 - reported
-        failed.append(f"the restore raised: {exc}")
-    if failed:
-        raise _unrestored(failed)
+        assert now.position == before.position, (
+            f"the unit is on slot {now.position}, not {before.position} where "
+            f"it started")
+        # Back on the right slot and still dirty means the reload was a no-op -
+        # the other slot was probably empty - and every write this test made is
+        # still on the owner's grid.
+        assert qc.preset_dirty(timeout=15.0) is False, (
+            f"slot {before.position} is still showing unsaved edits, so the "
+            f"reload did not take and this test's writes are still on the grid")
+
+    restores("the loaded preset", reload_it)
+    yield
 
 
 @pytest.mark.verifies("set_param", "read_current_preset")

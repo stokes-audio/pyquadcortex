@@ -1458,7 +1458,7 @@ single adjacent swap rather than a wholesale reordering.
 
 Now `Parameter.display_pos`. 161 placeable models carry it on their visible
 parameters and **140 of those disagree with wire order**, so anything describing
-a block to a person should sort by it. (349 of the 510 carry none at all, 23
+a block to a person should sort by it. (349 of the 510 place none of their visible controls - 347 carry the attribute nowhere at all, and two carry it only on a hidden parameter - 23
 place only some of their visible parameters, and one places two at the same
 number - so a sort is not a complete layout, and what the unit does with an
 unplaced control is unmeasured.) These counts are from the 4.0.1 catalog and
