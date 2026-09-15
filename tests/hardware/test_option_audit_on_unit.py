@@ -88,20 +88,40 @@ def test_a_list_stamped_audited_is_still_a_list_this_unit_has(live_catalog):
                 f"offers it any more")
 
 
-def test_a_list_stamped_hidden_is_still_hidden_on_this_unit(live_catalog):
-    """`hidden` is why six lists can never be read, so it has to stay true.
+def test_a_list_stamped_absent_still_looks_the_way_it_did_when_looked_at(live_catalog):
+    """`absent` means a person looked and the control was not drawn.
 
-    A firmware that reveals one of them turns an impossible list back into work
-    somebody should do, and nothing else would notice.
+    Nothing on the wire can re-check that - it needs eyes - so this test does
+    not pretend to. What it CAN do is notice the two things that would make the
+    recorded look stale: the parameter no longer existing, and the catalog's
+    `hidden` flag no longer being set on it.
+
+    The flag is emphatically not why these lists are stamped `absent` - it was
+    tried as a rule and a Mono Synth's `OSC1 WAVE` disproved it, being flagged
+    and drawn. It is used here only in the direction it is safe in: a flag that
+    has been REMOVED is a change to the parameter, and a reason for a human to
+    go and look again at something last checked on 2026-09-14.
+
+    An earlier version of this test gated on `status == "hidden"`, a word
+    `audit_status` had already stopped returning, so the body never ran and it
+    passed a full hardware run asserting nothing.
     """
-    visible = collections.defaultdict(list)
+    assert "absent" in set(options.OPTION_AUDIT.values()), (
+        "no list is stamped 'absent' any more - if the status was renamed, this "
+        "test stopped checking anything rather than failing")
+    flagged = collections.defaultdict(list)
     for m in live_catalog:
         for p in m.parameters:
-            if p.options and not p.dynamic and not p.hidden:
-                visible[tuple(p.options)].append(f"{m.name} {p.name}")
+            if p.options and not p.dynamic:
+                flagged[tuple(p.options)].append(p.hidden)
     for labels, status in options.OPTION_AUDIT.items():
-        if status == "hidden":
-            assert not visible[labels], (
-                f"{labels} is stamped impossible-to-audit, but this unit now "
-                f"shows it on {visible[labels][:3]}. It is auditable; re-stamp "
-                f"it and read it.")
+        if status != "absent":
+            continue
+        assert flagged[labels], (
+            f"{labels} is stamped absent but no parameter on this unit offers "
+            f"it any more")
+        assert all(flagged[labels]), (
+            f"{labels} was looked for on 2026-09-14 and was not drawn, and this "
+            f"unit no longer marks every parameter using it hidden. The flag "
+            f"does not decide the status, but losing it means the parameter "
+            f"changed - look at the control again before trusting the record.")

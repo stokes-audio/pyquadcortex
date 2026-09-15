@@ -143,9 +143,11 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 **What changed:** `options.OPTION_AUDIT` and a readings fixture record which of
 the 113 fixed option lists have been held against a real unit's screen, and
-`scripts/generate_options.py` stamps every generated enum from it. Twelve lists
-covering 298 parameters were read on CorOS 4.0.1; 96 are unread. `Parameter.hidden`
-is published but nothing branches on it.
+`scripts/generate_options.py` stamps every generated enum from it. Thirteen lists
+covering 300 parameters were read on CorOS 4.0.1; 95 are unread, covering 191.
+One of the thirteen disagreed - a Mono Synth's oscillator waveforms, where the
+catalog has pink and white noise swapped. `Parameter.hidden` is published but
+nothing branches on it.
 
 **Why:** the names come from the catalog's `stepNames`, and the catalog is not the
 screen. The proof was already offline in the repo and nobody had looked: for the

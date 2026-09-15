@@ -3403,6 +3403,13 @@ class QuadCortex:
         # stays in OPTION_LABELS because the device publishes it; what is
         # refused is USING it to choose.
         if isinstance(option, str):
+            # `options_module` is the 4.0.1 shim, not `self.options` - the same
+            # choice the OPTION_LABELS check below makes, but the failure modes
+            # differ and this one is quieter: a labels tuple that another
+            # profile spells differently simply will not match, so the refusal
+            # does not fire rather than firing wrongly. A profile that finds its
+            # own catalog errors records them in its own snapshot, and this
+            # lookup should move to `self.options` at that point.
             contested = options_module.OPTION_CONTESTED.get(tuple(names), {})
             wrong = {label: i for i, label in contested.items()}
             if option in wrong:

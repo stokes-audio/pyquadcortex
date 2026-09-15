@@ -78,7 +78,12 @@ def test_the_fixture_is_a_list_of_complete_rows(rows):
         # An "absent" row records that a control was looked for and not drawn,
         # so it has no screen text by construction.
         assert (row["screen"] is None) == (row.get("kind") == "absent"), row
-        assert row["method"] in ("driven", "list"), row
+        # "looked" is the only honest method for an absent row: nothing was
+        # driven and no list was transcribed, somebody looked for a control and
+        # it was not there. Forcing those rows to claim "driven" let the
+        # generator's correction guard accept a rename backed by one.
+        assert row["method"] in ("driven", "list", "looked"), row
+        assert (row["method"] == "looked") == (row.get("kind") == "absent"), row
 
 
 def test_every_reading_names_a_list_the_snapshot_has(rows):
@@ -253,6 +258,17 @@ def test_a_list_was_read_the_way_the_rule_says_it_must_be(rows):
                 f"{labels} is stamped {status!r} off a list reading with "
                 f"{len(anchors)} driven anchor(s) ({sorted(anchors)}). Two are "
                 f"needed, one of them somewhere an error would show.")
+            # "somewhere an error would show" is a human's judgement and cannot
+            # be checked here. What CAN be: that the anchors are not all huddled
+            # together, which is the cheap way to satisfy a count while proving
+            # almost nothing. The waveform list was exactly that - anchored at 5
+            # and 6 only, adjacent and at one end, leaving positions 0 to 4 on a
+            # transcription alone, on the one list that produced a rename.
+            if len(labels) >= 4:
+                assert max(anchors) - min(anchors) >= len(labels) // 2, (
+                    f"{labels} is stamped {status!r} with its driven anchors at "
+                    f"{sorted(anchors)} - too close together to say the order "
+                    f"holds across the list. Drive one nearer the other end.")
 
 
 def test_the_document_quotes_the_same_counts():
@@ -288,36 +304,25 @@ def test_a_drawn_list_is_not_counted_as_words_checked():
     assert drawn == {("OFF", "MUTE", "DOWN", "ON")}
 
 
-def test_a_name_the_catalog_gets_wrong_is_refused_rather_than_obeyed():
-    """`set_param_option(block, p, "Pink NS")` must not hand back white noise.
+def test_the_published_record_of_the_swap_says_what_was_measured():
+    """What `OPTION_CONTESTED` and the enum publish about the one catalog error.
 
-    The catalog calls wire position 5 of a Mono Synth's waveform list
-    "Pink NS" and the unit draws WHT there - the two noises are swapped
-    (driven on the unit 2026-09-14). The string stays in `OPTION_LABELS`
-    because the device publishes it; what is refused is selecting BY it, since
-    the caller would silently get the other noise.
+    The BEHAVIOUR - that `set_param_option` refuses these names and still
+    accepts the others - is tested in `tests/test_client.py` against the real
+    method. This one guards the record: which positions are contested, and that
+    the members follow the screen rather than the catalog.
+
+    An earlier version of this test was named as though it covered the refusal
+    and never called the method that refuses.
     """
-    from pyquadcortex.protocol import client
-
-    names = ["Sine", "Triang", "Sawtooth", "Square", "Pulse",
-             "Pink NS", "White NS"]
-    contested = options.OPTION_CONTESTED[tuple(names)]
-    assert contested == {5: "Pink NS", 6: "White NS"}
-
-    # the enum follows the SCREEN, so these two are the right way round
+    names = ("Sine", "Triang", "Sawtooth", "Square", "Pulse",
+             "Pink NS", "White NS")
+    assert options.OPTION_CONTESTED[names] == {5: "Pink NS", 6: "White NS"}
+    # the screen draws WHT at 5 and PNK at 6, so the members read that way
     assert options.Osc1Wave.WHITE_NS == 5
     assert options.Osc1Wave.PINK_NS == 6
-    # and the wire value each produces is still the plain position
-    assert client.option_value(names, int(options.Osc1Wave.WHITE_NS)) == 5 / 6
-
-
-def test_an_uncontested_name_on_the_same_list_still_works():
-    """The refusal is per POSITION, not a ban on naming options in this list."""
-    from pyquadcortex.protocol import client
-
-    names = ["Sine", "Triang", "Sawtooth", "Square", "Pulse",
-             "Pink NS", "White NS"]
-    assert client.option_value(names, "Square") == 3 / 6
+    # and the catalog's own strings are untouched, because the device sends them
+    assert options.OPTION_LABELS[options.Osc1Wave] == names
 
 
 def test_a_correction_cannot_be_added_without_a_reading_behind_it(rows):

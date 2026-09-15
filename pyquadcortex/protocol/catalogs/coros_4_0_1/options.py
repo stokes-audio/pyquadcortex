@@ -30,8 +30,9 @@ the device RENDERS it does not match - the catalog writes ``In 1`` and
 ``Ret 1/2`` where the device writes ``Input 1`` and ``Return 1/2``. So
 each enum says whether a human has read it off the unit, and
 ``OPTION_AUDIT`` publishes that for all 113 fixed lists:
-12 audited, 0 partly, 0 impossible (every parameter
-using them is hidden), 101 unread.
+12 audited, 1 drawn (read, but the unit draws pictures
+rather than words), 5 not drawn at all, 0 partly, and
+95 that nobody has looked at.
 """
 from enum import IntEnum
 
@@ -1070,7 +1071,9 @@ class Osc1Wave(IntEnum):
     On Mono Synth.
 
     Audited against the unit's screen 2026-09-14: all 7 positions read.
-    The screen and the catalog DISAGREE at 0, 1, 2, 3, 4, 5, 6; the screen's word is beside the member.
+    The screen SPELLS 0, 1, 2, 3, 4 differently; its word is beside the member.
+    The catalog is WRONG at 5, 6 - not a spelling, a different thing. The member name follows
+    the screen, and naming these by the catalog's string is refused.
     """
 
     SINE = 0    # screen: 'SIN'; catalog: 'Sine'
@@ -2055,10 +2058,18 @@ OPTION_CONTESTED = {
 
 #: Whether anyone has held this list against the unit's SCREEN.
 #:
-#: ``"audited"`` means every position was read on the device and the
-#: reading is in ``tests/fixtures/catalog/option_readings.json``.
-#: ``"partial"`` means some positions were. ``None`` means the names
-#: are the catalog's and nobody has looked.
+#: Five answers, and every one of them is a recorded observation in
+#: ``tests/fixtures/catalog/option_readings.json``:
+#:
+#: - ``"audited"`` - every position was read, and the words match.
+#: - ``"drawn"`` - every position was read, but the unit DRAWS them
+#:   rather than naming them, so these words are still unchecked.
+#: - ``"partial"`` - some positions were read and some were not.
+#: - ``"absent"`` - somebody looked for the control and the unit
+#:   does not draw it. NOT inferred from the catalog's ``hidden``
+#:   flag, which marks a Mono Synth's ``OSC1 WAVE`` that is plainly
+#:   on screen.
+#: - ``None`` - the names are the catalog's and nobody has looked.
 #:
 #: Keyed by the LABELS rather than by the enum, because the two lists
 #: that become a bool and the one published by hand have no enum and

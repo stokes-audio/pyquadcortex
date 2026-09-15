@@ -755,11 +755,13 @@ HIDDEN_XML = """<?xml version="1.0" ?><Models>
 
 
 def test_a_parameter_reports_whether_the_unit_keeps_it_off_the_screen():
-    """`hidden` decides whether a list's words can be checked against a screen.
+    """The catalog's own `hidden` attribute, published and nothing more.
 
-    Measured on the unit 2026-09-14: a block carrying each of the six lists used
-    only by hidden parameters was placed and the control looked for, and none
-    was drawn. See `Parameter.hidden`.
+    It does NOT reliably mean "off the screen", and nothing in the library
+    branches on it. Measured 2026-09-14: of the six option lists used only by
+    parameters carrying it, a block for each was placed and the control looked
+    for, and five were not drawn - but the sixth, a Mono Synth's `OSC1 WAVE`,
+    is on the screen, on a tab called Oscillator. See `Parameter.hidden`.
     """
     model = catalog.parse_model_repo(make_payload(HIDDEN_XML))[1170]
     assert model.parameters[0].hidden is True

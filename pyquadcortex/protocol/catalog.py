@@ -235,7 +235,10 @@ class Parameter:
     #: says ``"atma"`` - the Freeze block's ``MOMENTARY`` switch. ``atma`` is the
     #: Quad Cortex Mini's ``device_type``, so the catalog is naming the MODEL a
     #: parameter is hidden on, and this field answers only for a Quad Cortex.
-    #: A Mini profile must read the attribute rather than this flag. That also
+    #: The raw string is NOT kept - this is a bool - so a Mini profile wanting
+    #: that distinction has to re-read the attribute from the XML rather than
+    #: from here. Left that way deliberately: no Mini has been measured, and a
+    #: field shaped for one would be a guess about what it needs. That also
     #: makes the value a second, independent sign that ATMA is the Mini, which
     #: until now rested on the schema's ``atma_*`` field names alone.
     hidden: bool = False

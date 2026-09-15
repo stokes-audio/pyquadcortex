@@ -49,10 +49,11 @@ whose list the device builds from your preset, the catalog writes `In 1` and
 So a new `options.OPTION_AUDIT` tells you, per list, whether anybody has held it
 against a real unit: `"audited"`, `"drawn"` (read, but the unit draws pictures
 rather than words), `"absent"` (someone looked and the control is not on screen)
-or `None` for the 96 nobody has checked yet. Each enum's docstring says the same
-thing in words. Twelve lists covering 298 parameters have been read on a Quad
+or `None` for the 95 nobody has checked yet. Each enum's docstring says the same
+thing in words. Thirteen lists covering 300 parameters have been read on a Quad
 Cortex running CorOS 4.0.1, including the `Off`/`On` pair that 247 parameters
-use. Every one matched.
+use. Twelve matched the catalog exactly; the thirteenth did not, which is the
+breaking change above.
 
 Nothing about existing names changes. This only tells you how much to trust
 them, which until now you had no way to know.

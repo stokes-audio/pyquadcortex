@@ -143,12 +143,29 @@ def check_corrections(readings: dict, present: dict) -> None:
         seen = readings.get(labels, {})
         for index, member in by_index.items():
             rows = [r for r in seen.get(index, [])
-                    if r.get("method") == "driven"]
+                    if r.get("method") == "driven"
+                    and r.get("kind") not in ("absent", "symbol")]
             if not rows:
                 raise SystemExit(
                     f"MEANING_DISAGREEMENTS renames position {index} of "
                     f"{labels} to {member!r}, but no DRIVEN reading records "
-                    f"what the screen shows there. Read it on the unit first.")
+                    f"what the screen shows there. Read it on the unit first. "
+                    f"(A row saying the control is not drawn does not count - "
+                    f"it says nothing about what this position means.)")
+            # The reading must also CONTRADICT the catalog. Merely requiring one
+            # to exist let a rename ride on a reading that agreed with the label
+            # it was overruling - "rename position 0 to HARD" passed with the
+            # screen reading 'Soft' recorded there. Which member name a
+            # contradiction deserves is still a human's call, and the reason
+            # goes in the comment beside the entry; what is machine-checkable is
+            # that there IS one.
+            word = rows[0]["screen"]
+            if word == labels[index]:
+                raise SystemExit(
+                    f"MEANING_DISAGREEMENTS renames position {index} of "
+                    f"{labels} to {member!r}, but the driven reading there says "
+                    f"the screen shows {word!r} - which is what the catalog "
+                    f"already calls it. There is nothing to correct.")
 
 
 #: Characters that must become a word rather than an underscore, because the
@@ -347,9 +364,19 @@ def audit_lines(labels: tuple, readings: dict, users: list = (),
         lines.append(indent + "reading records the picture; see "
                      "``option_readings.json``.")
     if differ:
-        lines.append(indent + "The screen and the catalog DISAGREE at "
-                     + ", ".join(str(i) for i in differ)
-                     + "; the screen's word is beside the member.")
+        wrong = sorted(MEANING_DISAGREEMENTS.get(tuple(labels), {}))
+        spelling = [i for i in differ if i not in wrong]
+        if spelling:
+            lines.append(indent + "The screen SPELLS "
+                         + ", ".join(str(i) for i in spelling)
+                         + " differently; its word is beside the member.")
+        if wrong:
+            lines.append(indent + "The catalog is WRONG at "
+                         + ", ".join(str(i) for i in wrong)
+                         + " - not a spelling, a different thing. The member "
+                         + "name follows")
+            lines.append(indent + "the screen, and naming these by the catalog's "
+                         + "string is refused.")
     return lines
 
 
@@ -533,7 +560,14 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
               for labels, users in every.items()}
     done = sum(1 for v in status.values() if v == "audited")
     part = sum(1 for v in status.values() if v == "partial")
-    off = sum(1 for v in status.values() if v == "hidden")
+    # These four words are the statuses `audit_status` actually returns. An
+    # earlier version counted "hidden", which this file stopped returning in the
+    # same commit that introduced it, so the generated header reported "0
+    # impossible" and folded five lists into the unread number - while restating
+    # the flag-derived claim the measurement had just disproved, at the top of
+    # the shipped module. Anything counting statuses reads them from here.
+    off = sum(1 for v in status.values() if v == "absent")
+    pics = sum(1 for v in status.values() if v == "drawn")
 
     lines = [
         '"""The choices a list-valued parameter offers, as enums.',
@@ -568,8 +602,9 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
         "``Ret 1/2`` where the device writes ``Input 1`` and ``Return 1/2``. So",
         "each enum says whether a human has read it off the unit, and",
         f"``OPTION_AUDIT`` publishes that for all {len(every)} fixed lists:",
-        f"{done} audited, {part} partly, {off} impossible (every parameter",
-        f"using them is hidden), {len(every) - done - part - off} unread.",
+        f"{done} audited, {pics} drawn (read, but the unit draws pictures",
+        f"rather than words), {off} not drawn at all, {part} partly, and",
+        f"{len(every) - done - part - off - pics} that nobody has looked at.",
         '"""',
         "from enum import IntEnum",
     ]
@@ -604,10 +639,18 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     lines += ["", "",
               "#: Whether anyone has held this list against the unit's SCREEN.",
               "#:",
-              '#: ``"audited"`` means every position was read on the device and the',
-              '#: reading is in ``tests/fixtures/catalog/option_readings.json``.',
-              '#: ``"partial"`` means some positions were. ``None`` means the names',
-              "#: are the catalog's and nobody has looked.",
+              "#: Five answers, and every one of them is a recorded observation in",
+              "#: ``tests/fixtures/catalog/option_readings.json``:",
+              "#:",
+              '#: - ``"audited"`` - every position was read, and the words match.',
+              '#: - ``"drawn"`` - every position was read, but the unit DRAWS them',
+              "#:   rather than naming them, so these words are still unchecked.",
+              '#: - ``"partial"`` - some positions were read and some were not.',
+              '#: - ``"absent"`` - somebody looked for the control and the unit',
+              "#:   does not draw it. NOT inferred from the catalog's ``hidden``",
+              "#:   flag, which marks a Mono Synth's ``OSC1 WAVE`` that is plainly",
+              "#:   on screen.",
+              "#: - ``None`` - the names are the catalog's and nobody has looked.",
               "#:",
               "#: Keyed by the LABELS rather than by the enum, because the two lists",
               "#: that become a bool and the one published by hand have no enum and",

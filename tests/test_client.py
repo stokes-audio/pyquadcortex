@@ -4670,3 +4670,81 @@ def test_set_block_refuses_a_model_the_unit_does_not_have_before_sending():
     assert caught.value.control == "model 6026"
     assert "not in this unit's catalog" in caught.value.evidence
     assert fake.sent == []
+
+
+def _waveform_client():
+    """A client carrying the one list the catalog gets WRONG.
+
+    A Mono Synth's oscillator waveforms: the catalog calls wire position 5
+    "Pink NS" and the unit draws WHT there, and position 6 the other way about
+    (driven on the unit 2026-09-14). The two noises are swapped.
+    """
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="30" name="Synth">
+  <Model blob="syn" id="30001" name="Mono Synth">
+    <Parameter defaultValue="0" max="6" min="0" name="OSC1 WAVE" steps="7"
+               type="rotarySwitch" hidden="true"
+               stepNames="Sine,Triang,Sawtooth,Square,Pulse,Pink NS,White NS"/>
+  </Model>
+</Category>
+""" + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    return qc
+
+
+def test_selecting_by_a_name_the_catalog_gets_wrong_is_refused():
+    """"Pink NS" must not quietly hand back white noise.
+
+    This is the shipped path - `set_param_option` with a string - and it was the
+    one the audit found returning the opposite of what was asked for.
+    """
+    qc = _waveform_client()
+    with pytest.raises(ValueError) as caught:
+        qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", "Pink NS")
+    message = str(caught.value)
+    assert "swapped" in message
+    assert "options" in message          # points at the enum, which is correct
+    assert not qc._t.sent, "a refused write must not reach the wire"
+
+
+def test_the_other_swapped_name_is_refused_too():
+    qc = _waveform_client()
+    with pytest.raises(ValueError):
+        qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", "White NS")
+
+
+def test_an_uncontested_name_on_that_same_list_still_selects_normally():
+    """The refusal is per POSITION, not a ban on naming options in this list."""
+    qc = _waveform_client()
+    qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", "Square")
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(3 / 6)
+
+
+def test_the_enum_members_follow_the_screen_and_reach_the_right_positions():
+    """`WHITE_NS` writes position 5, which is where the unit draws WHT."""
+    from pyquadcortex.protocol import options
+
+    qc = _waveform_client()
+    qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", options.Osc1Wave.WHITE_NS)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(5 / 6)
+
+    qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", options.Osc1Wave.PINK_NS)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(6 / 6)
+
+
+def test_an_index_still_reaches_a_contested_position():
+    """The refusal is about the NAME being wrong, not the position being barred.
+
+    A caller who knows the wire and says so must still be able to get there, the
+    way `Encoded` always works.
+    """
+    qc = _waveform_client()
+    qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", 5)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(5 / 6)

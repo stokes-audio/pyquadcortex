@@ -299,7 +299,14 @@ def test_a_screen_word_that_contradicts_the_catalog_reaches_the_enum(monkeypatch
     mod = _with_readings(monkeypatch, tmp_path, rows)
     text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "screen: 'Firm'; catalog: 'Hard'" in text
-    assert "The screen and the catalog DISAGREE at 1" in text
+    # A wording difference and a MEANING error are said differently, because
+    # flattening them into one word buried the two that mattered among five
+    # harmless abbreviations on the waveform list.
+    assert "The screen SPELLS 1 differently" in text
+    # A wording difference is NOT announced as the catalog being wrong. Scoped
+    # to the phrase rather than the word, which also appears in the
+    # OPTION_CONTESTED docstring further down the same file.
+    assert "The catalog is WRONG at" not in text
 
 
 def test_two_readings_of_one_position_that_disagree_stop_the_generator(monkeypatch, tmp_path):
@@ -377,3 +384,68 @@ def test_a_missing_readings_file_stops_the_run_instead_of_erasing_the_audit(monk
     with pytest.raises(SystemExit) as caught:
         mod.load_readings("s")
     assert "erase every recorded reading" in str(caught.value)
+
+
+def test_a_rename_with_no_reading_behind_it_stops_the_generator(monkeypatch, tmp_path):
+    """`MEANING_DISAGREEMENTS` renames a PUBLIC member, so it needs evidence.
+
+    Without a guard it is `SPELLING_FIXES` with a bigger blast radius.
+    """
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "FIRM"}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "no DRIVEN reading records" in str(caught.value)
+
+
+def test_a_rename_cannot_lean_on_a_row_saying_the_control_is_not_drawn(monkeypatch, tmp_path):
+    """An `absent` row says nothing about what a POSITION means.
+
+    It was accepted as evidence at first, because every absent row claimed
+    `method: "driven"` - so a rename could ride on a row whose whole content is
+    "this control is not on the screen".
+    """
+    rows = [_reading(SHAPE, 1, None, kind="absent", method="looked")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "FIRM"}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "not drawn does not count" in str(caught.value)
+
+
+def test_a_rename_cannot_overrule_a_reading_that_agrees_with_the_catalog(monkeypatch, tmp_path):
+    """Requiring a reading to EXIST is not the same as requiring it to support.
+
+    At first the guard only checked existence, so renaming position 1 to
+    anything at all passed while the recorded screen word there was `Hard` -
+    the catalog's own label. There has to be something to correct.
+    """
+    rows = [_reading(SHAPE, 1, "Hard")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "FIRM"}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "nothing to correct" in str(caught.value)
+
+
+def test_a_rename_backed_by_a_contradicting_reading_is_accepted(monkeypatch, tmp_path):
+    """The real case: the screen says something else, so the member follows it."""
+    rows = [_reading(SHAPE, i, w) for i, w in enumerate(("Soft", "Firm", "Wild"))]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "FIRM"}})
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "FIRM = 1" in text
+    assert "OPTION_CONTESTED" in text
+    assert "{1: 'Hard'}" in text
+
+
+def test_a_rename_for_a_list_this_catalog_lacks_is_not_demanded(monkeypatch, tmp_path):
+    """A correction is per snapshot; another firmware need not carry the list.
+
+    Demanding a reading for a list that is not in the catalog being rendered
+    would make a 4.1.0 run fail over a 4.0.1 finding.
+    """
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {("nowhere", "at", "all"): {0: "NOWHERE"}})
+    mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")

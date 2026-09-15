@@ -1568,7 +1568,7 @@ them. A list nobody has read says so where a caller will see it.
 **Where it stands (2026-09-14, CorOS 4.0.1): 12 audited, 1 drawn, 5 not drawn,
 95 unread**, of 113 fixed lists. Those thirteen read lists cover 300 of the 527
 parameters that carry a fixed list, because the ones in heaviest use were done
-first. The 95 unread cover 189.
+first. The 95 unread cover 191.
 
 `drawn` is its own answer for one list. Every position of the metronome's
 `OFF,MUTE,DOWN,ON` was driven and read, so by position count it is complete -
@@ -1585,7 +1585,7 @@ overstatement in its purest form.
 | `OFF,ON` | 25 | the same block's VINTAGE MODE, each position driven |
 | `OFF,MUTE,DOWN,ON` | 13 | the metronome cells, re-driven as the control |
 | `Momentary,Toggle` | 3 | a Looper X RECORD MODE, each position driven |
-| `ROUTING MODE` (14) | 1 | the dial in order, anchored at 7 |
+| `ROUTING MODE` (14) | 1 | the dial in order, anchored at 7 and 11 |
 | `REC. LENGTH` (33) | 1 | the dial, anchored at 0 and 16, gaps ruled out by asking |
 | `QUANTIZE` (10) | 1 | the dial in order, anchored at 0 and 9 |
 | `TAP PRESET` (9) | 1 | the dial in order, anchored at 0 and 4 |
@@ -1614,6 +1614,15 @@ together - so neither can be a stale screen. **The catalog has pink and white
 swapped.** A caller asking for pink noise by the catalog's name gets white, which
 is the same shape of error as the metronome names and the reason this audit
 exists.
+
+The enum members follow the screen, and `set_param_option` refuses the catalog's
+two strings rather than selecting the other noise. **The READ path is not fixed
+and knowingly so:** `param_options` and `option_at` still report `Pink NS` for
+the position that draws WHT, because they hand back what the device published
+and nothing has been measured about what the unit calls it anywhere other than
+this one screen. Closing that asymmetry means deciding whether a reader may
+overrule the device's own string, which is a bigger decision than this audit
+should make on one finding. Recorded here rather than left to be discovered.
 
 **A control's display order is not the wire order, and assuming it is nearly put
 three backwards names into the library.** Reading a dial top to bottom is much
