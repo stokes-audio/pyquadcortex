@@ -336,13 +336,16 @@ def test_no_document_names_an_enum_member_that_does_not_exist():
                 known[name].append(cls)
 
     #: Stale names that are CORRECT where they appear, because the text is a
-    #: record of what the library used to do. One entry: the changelog's
-    #: 2026-08 note about the metronome rename, which has to quote the old names
-    #: to say what changed.
+    #: record of what the library used to do. Three, all from the changelog's
+    #: note about the metronome rename, which has to quote the old names to say
+    #: what changed.
+    #:
+    #: `MetronomeBeat.OFF` was in here too and should not have been: that member
+    #: still exists, so the entry was unreachable - and worse, it would have
+    #: silently excused that reference if `OFF` were ever renamed.
     HISTORICAL = {("changelog.md", "MetronomeBeat", "ACCENT"),
                   ("changelog.md", "MetronomeBeat", "NORMAL"),
-                  ("changelog.md", "MetronomeBeat", "QUIET"),
-                  ("changelog.md", "MetronomeBeat", "OFF")}
+                  ("changelog.md", "MetronomeBeat", "QUIET")}
 
     root = pathlib.Path(__file__).parent.parent
     files = sorted((root / "docs").glob("*.md"))

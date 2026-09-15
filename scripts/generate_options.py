@@ -16,7 +16,7 @@ Source: a device's ModelRepo payload, either live or previously saved.
     python scripts/generate_options.py --snapshot coros_4_1_0 \
         --payload model_repo_payload.bin
 
-Three decisions this generator makes:
+Four decisions this generator makes:
 
 1. **One enum per distinct LIST, not per parameter.** 527 parameters carry a
    fixed list and they use only 113 distinct ones, of which 110 get an enum,
@@ -120,14 +120,22 @@ MEANING_DISAGREEMENTS = {
     # same shape of error as the metronome names, which is what this audit is
     # for. The screen wins, per CLAUDE.md.
     ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS"): {
-        5: "WHITE_NS",
-        6: "PINK_NS",
+        5: ("WHITE_NS", "position 5 drew 'WHT', which is 'White NS'"),
+        6: ("PINK_NS", "position 6 drew 'PNK', which is 'Pink NS'"),
     },
 }
 
 
 def check_corrections(readings: dict, present: dict) -> None:
-    """Refuse a correction with no reading behind it.
+    """Refuse a correction the readings do not support.
+
+    **What this cannot do.** No check here proves that `WHT` means `White NS`;
+    that is a human's judgement and it lives in the comment beside the entry.
+    What the checks establish is that a correction is the SHAPE a swap has and
+    that its reason quotes the two strings being paired - so a false entry has
+    to be written out as "position 0 drew 'SIN', which is 'Square'", which a
+    reviewer reads as nonsense, rather than as two member names that look
+    reasonable on their own. The bar is reviewability, not proof.
 
     Without this the table above is just `SPELLING_FIXES` with a bigger blast
     radius - a place to rename a member on a hunch, which is exactly what the
@@ -150,7 +158,13 @@ def check_corrections(readings: dict, present: dict) -> None:
         # index this dict happened to keep.
         emitted = collections.Counter(member_name(other) for other in labels)
         available = {member_name(other): i for i, other in enumerate(labels)}
-        for index, member in by_index.items():
+        if len(by_index) < 2:
+            raise SystemExit(
+                f"MEANING_DISAGREEMENTS for {labels} has {len(by_index)} "
+                f"position(s). A swap needs at least two: an entry that renames "
+                f"one position either deletes a member or, when empty, publishes "
+                f"a contested list with nothing contested in it.")
+        for index, (member, evidence) in by_index.items():
             rows = [r for r in seen.get(index, [])
                     if r.get("method") == "driven"
                     and r.get("kind") not in ("absent", "symbol")]
@@ -205,6 +219,25 @@ def check_corrections(readings: dict, present: dict) -> None:
                     f"{labels} to {member!r}, and more than one position of "
                     f"this list produces that name, so it does not say which. "
                     f"This table cannot express that correction.")
+            # The evidence has to QUOTE the reading and the label it is being
+            # paired with. Nothing here can prove that WHT means White NS -
+            # that is a human's judgement - but the shape checks alone let a
+            # false pair through: `{0: "SQUARE", 3: "SINE"}` is a closed
+            # permutation, and on a list whose screen text abbreviates the
+            # contradiction test is satisfied at every position, so it passed
+            # and stamped "the catalog is WRONG at 0, 3". Requiring the reason
+            # to name both strings does not make that impossible; it makes it
+            # something a reviewer reads as the nonsense it is, rather than two
+            # member names that look plausible on their own.
+            target = labels[available[member]]
+            for quoted in (word, target):
+                if quoted not in evidence:
+                    raise SystemExit(
+                        f"MEANING_DISAGREEMENTS renames position {index} of "
+                        f"{labels} to {member!r}, and the reason beside it does "
+                        f"not quote {quoted!r}. Say what was read and what it "
+                        f"is being paired with, so the claim can be judged: "
+                        f"got {evidence!r}.")
             if available[member] == index:
                 raise SystemExit(
                     f"MEANING_DISAGREEMENTS renames position {index} of "
@@ -223,7 +256,7 @@ def check_corrections(readings: dict, present: dict) -> None:
         #
         # A swap is a closed cycle: the positions being renamed and the
         # positions whose names are being used are the same set.
-        moved = {index: available[member] for index, member in by_index.items()}
+        moved = {index: available[member] for index, (member, _) in by_index.items()}
         if set(moved) != set(moved.values()):
             raise SystemExit(
                 f"MEANING_DISAGREEMENTS for {labels} renames positions "
@@ -447,7 +480,7 @@ def member_name(label: str, labels: tuple = (), index: int | None = None) -> str
     """
     corrected = MEANING_DISAGREEMENTS.get(tuple(labels), {}).get(index)
     if corrected is not None:
-        return corrected
+        return corrected[0]
     text = label.strip()
     if text in SPELLING_FIXES:
         return SPELLING_FIXES[text]
@@ -615,6 +648,13 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     bools = sum(len(users) for labels, users in every.items()
                 if tuple(o.lower() for o in labels) in BOOLEAN_LISTS)
     status = {labels: audit_status(labels, readings) for labels in every}
+    # Of the three lists with no enum, the parameters whose words are still
+    # open. This was the literal 260 - every parameter those lists cover - and
+    # stayed 260 after 247 of them were read, so the shipped module claimed more
+    # was outstanding than actually was.
+    unchecked_no_enum = sum(
+        len(users) for labels, users in every.items()
+        if labels not in names and status[labels] in (None, "partial", "drawn"))
     done = sum(1 for v in status.values() if v == "audited")
     part = sum(1 for v in status.values() if v == "partial")
     # These four words are the statuses `audit_status` actually returns. An
@@ -714,7 +754,8 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
               "#:",
               "#: Keyed by the LABELS rather than by the enum, because the two lists",
               "#: that become a bool and the one published by hand have no enum and",
-              "#: are still 260 parameters whose words need checking.",
+              f"#: are {unchecked_no_enum} parameters whose words still need",
+              "#: checking - the rest of those three lists have been read.",
               "OPTION_AUDIT = {"]
     for labels in sorted(every, key=lambda l: (names.get(l, ""), l)):
         tag = f"{status[labels]!r}" if status[labels] else "None"

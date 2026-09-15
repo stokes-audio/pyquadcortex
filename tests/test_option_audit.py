@@ -380,7 +380,11 @@ def test_the_document_quotes_the_same_parameter_counts():
             source):
         uses[tuple(options.OPTION_LABELS[getattr(options, match.group(1))])] = \
             int(match.group(2))
-    # the three with no enum, whose parameter counts live nowhere else
+    # The three with no enum. These three are HAND-COUNTED - they have no
+    # generated docstring to read them off - so only their total is load
+    # bearing: an error in the split between the two Off/On spellings cancels
+    # out and nothing here would see it. Both are audited, so the split
+    # contributes to no assertion today.
     uses[("Off", "On")] = 222
     uses[("OFF", "ON")] = 25
     uses[("OFF", "MUTE", "DOWN", "ON")] = 13

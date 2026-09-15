@@ -30,14 +30,25 @@ READINGS = REPO / "tests" / "fixtures" / "catalog" / "option_readings.json"
 
 
 @pytest.fixture(scope="module")
-def live_catalog(qc):
-    return catalog.parse_model_repo(qc._fetch_model_repo())
+def live_catalog(payload):
+    return catalog.parse_model_repo(payload)
 
 
 @pytest.fixture(scope="module")
-def live_xml(qc):
+def payload(qc):
+    """One ModelRepo fetch for this module - it is ~47 KB over USB.
+
+    Two fixtures each fetching their own put that on the wire twice, in front
+    of the connect-burst tests, which time how quickly the handshake fills the
+    cache. `test_scales_on_unit.py` has the note about why that matters.
+    """
+    return qc._fetch_model_repo()
+
+
+@pytest.fixture(scope="module")
+def live_xml(payload):
     """The catalog's raw XML, for attributes the parser turns into a bool."""
-    return ET.fromstring(catalog._extract_xml(qc._fetch_model_repo()))
+    return ET.fromstring(catalog._extract_xml(payload))
 
 
 @pytest.fixture(scope="module")
@@ -86,6 +97,11 @@ def test_every_reading_still_describes_the_list_that_parameter_offers(rows, live
 
 
 def test_a_list_stamped_audited_is_still_a_list_this_unit_has(live_catalog):
+    assert {"audited", "drawn"} & set(options.OPTION_AUDIT.values()), (
+        "no list is stamped audited or drawn any more - if a status was "
+        "renamed this test stopped checking anything rather than failing, "
+        "which is how a dead `== \"hidden\"` comparison passed a whole "
+        "hardware run once already")
     offered = {tuple(p.options) for m in live_catalog for p in m.parameters
                if p.options and not p.dynamic}
     for labels, status in options.OPTION_AUDIT.items():

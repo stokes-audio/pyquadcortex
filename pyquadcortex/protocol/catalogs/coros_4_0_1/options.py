@@ -2076,7 +2076,8 @@ OPTION_CONTESTED = {
 #:
 #: Keyed by the LABELS rather than by the enum, because the two lists
 #: that become a bool and the one published by hand have no enum and
-#: are still 260 parameters whose words need checking.
+#: are 13 parameters whose words still need
+#: checking - the rest of those three lists have been read.
 OPTION_AUDIT = {
     ('OFF', 'MUTE', 'DOWN', 'ON'): 'drawn',  # no enum
     ('OFF', 'ON'): 'audited',  # no enum

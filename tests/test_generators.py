@@ -397,7 +397,7 @@ def test_a_rename_with_no_reading_behind_it_stops_the_generator(monkeypatch, tmp
     Without a guard it is `SPELLING_FIXES` with a bigger blast radius.
     """
     mod = _with_readings(monkeypatch, tmp_path, [])
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "FIRM"}})
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("HARD", "0 drew 'Sft', which is 'Hard'"), 1: ("SOFT", "1 drew 'Hrd', which is 'Soft'")}})
     with pytest.raises(SystemExit) as caught:
         mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "no DRIVEN reading records" in str(caught.value)
@@ -410,9 +410,9 @@ def test_a_rename_cannot_lean_on_a_row_saying_the_control_is_not_drawn(monkeypat
     `method: "driven"` - so a rename could ride on a row whose whole content is
     "this control is not on the screen".
     """
-    rows = [_reading(SHAPE, 1, None, kind="absent", method="looked")]
+    rows = [_reading(SHAPE, 0, None, kind="absent", method="looked")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "FIRM"}})
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("HARD", "0 drew 'Sft', which is 'Hard'"), 1: ("SOFT", "1 drew 'Hrd', which is 'Soft'")}})
     with pytest.raises(SystemExit) as caught:
         mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "not drawn does not count" in str(caught.value)
@@ -425,9 +425,9 @@ def test_a_rename_cannot_overrule_a_reading_that_agrees_with_the_catalog(monkeyp
     anything at all passed while the recorded screen word there was `Hard` -
     the catalog's own label. There has to be something to correct.
     """
-    rows = [_reading(SHAPE, 1, "Hard")]
+    rows = [_reading(SHAPE, 0, "Soft"), _reading(SHAPE, 1, "Hrd")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "FIRM"}})
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("HARD", "0 drew 'Sft', which is 'Hard'"), 1: ("SOFT", "1 drew 'Hrd', which is 'Soft'")}})
     with pytest.raises(SystemExit) as caught:
         mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "nothing to correct" in str(caught.value)
@@ -441,7 +441,7 @@ def test_a_rename_for_a_list_this_catalog_lacks_is_not_demanded(monkeypatch, tmp
     """
     mod = _with_readings(monkeypatch, tmp_path, [])
     monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
-                        {("nowhere", "at", "all"): {0: "NOWHERE"}})
+                        {("nowhere", "at", "all"): {0: ("NOWHERE", "x"), 1: ("AT", "y")}})
     mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
 
 
@@ -461,7 +461,7 @@ def test_a_rename_to_a_name_the_list_does_not_contain_is_refused(monkeypatch, tm
     rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 1, "Hrd"),
             _reading(SHAPE, 2, "Wld")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: "INVENTED"}})
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("INVENTED", "0 drew 'Sft', which is 'Soft'"), 2: ("WILD", "x")}})
     with pytest.raises(SystemExit) as caught:
         mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "not what this list calls any of its positions" in str(caught.value)
@@ -470,7 +470,7 @@ def test_a_rename_to_a_name_the_list_does_not_contain_is_refused(monkeypatch, tm
 def test_a_rename_to_the_name_that_position_already_has_is_refused(monkeypatch, tmp_path):
     rows = [_reading(SHAPE, 0, "Sft")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: "SOFT"}})
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("SOFT", "0 drew 'Sft', which is 'Soft'"), 2: ("WILD", "2 drew 'Wld', which is 'Wild'")}})
     with pytest.raises(SystemExit) as caught:
         mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "already that position's name" in str(caught.value)
@@ -481,7 +481,7 @@ def test_a_swap_between_two_positions_of_the_list_is_accepted(monkeypatch, tmp_p
     rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
     monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
-                        {SHAPE: {1: "WILD", 2: "HARD"}})
+                        {SHAPE: {1: ("WILD", "1 drew 'Wld', which is 'Wild'"), 2: ("HARD", "2 drew 'Hrd', which is 'Hard'")}})
     text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "WILD = 1" in text
     assert "HARD = 2" in text
@@ -496,9 +496,11 @@ def test_a_rename_using_another_positions_name_is_still_not_a_swap(monkeypatch, 
     happens to be spelled from the right vocabulary, and it shadows the real
     member to `HARD_2`.
     """
-    rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 2, "Wld")]
+    rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 1, "Hrd")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: "HARD"}})
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {
+        0: ("HARD", "0 drew 'Sft', which is 'Hard'"),
+        1: ("WILD", "1 drew 'Hrd', which is 'Wild'")}})
     with pytest.raises(SystemExit) as caught:
         mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "have to be the same set" in str(caught.value)
@@ -512,7 +514,7 @@ def test_half_a_swap_is_refused_because_it_deletes_a_member(monkeypatch, tmp_pat
     """
     rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: "WILD"}})
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: ("WILD", "1 drew 'Wld', which is 'Wild'")}})
     with pytest.raises(SystemExit) as caught:
         mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     assert "deletes a member" in str(caught.value)
@@ -523,7 +525,7 @@ def test_a_closed_swap_keeps_every_member_the_list_had(monkeypatch, tmp_path):
     rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
     monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
-                        {SHAPE: {1: "WILD", 2: "HARD"}})
+                        {SHAPE: {1: ("WILD", "1 drew 'Wld', which is 'Wild'"), 2: ("HARD", "2 drew 'Hrd', which is 'Hard'")}})
     text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
     for member in ("SOFT = 0", "WILD = 1", "HARD = 2"):
         assert member in text
@@ -545,7 +547,49 @@ def test_a_rename_to_a_name_two_positions_produce_is_refused(monkeypatch, tmp_pa
         b'<Parameter name="CELL" type="comboBox" stepNames="OFF,A,A#,B"')
     rows = [_reading(notes, 1, "Ay")]
     mod = _with_readings(monkeypatch, tmp_path, rows)
-    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {notes: {1: "A"}})
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {notes: {1: ("A", "1 drew 'Ay', which is 'A'"), 3: ("B", "x")}})
     with pytest.raises(SystemExit) as caught:
         mod.render(catalog.parse_model_repo(xml), snapshot="s")
     assert "does not say which" in str(caught.value)
+
+
+def test_an_entry_of_one_position_is_refused(monkeypatch, tmp_path):
+    """A swap needs two. One either deletes a member or contests nothing."""
+    rows = [_reading(SHAPE, 0, "Sft")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {SHAPE: {0: ("HARD", "0 drew 'Sft', which is 'Hard'")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "A swap needs at least two" in str(caught.value)
+
+
+def test_an_empty_entry_is_refused(monkeypatch, tmp_path):
+    """`{labels: {}}` published a contested list with nothing contested in it."""
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "A swap needs at least two" in str(caught.value)
+
+
+def test_a_correction_whose_reason_does_not_quote_the_reading_is_refused(monkeypatch, tmp_path):
+    """The shape checks alone let a FALSE pair through.
+
+    `{0: "SQUARE", 3: "SINE"}` is a closed permutation, and on a list whose
+    screen text abbreviates the contradiction test is satisfied everywhere - so
+    it passed and stamped "the catalog is WRONG at 0, 3".
+
+    Nothing here can prove `WHT` means `White NS`; that is a human's judgement.
+    What the reason must do is QUOTE both strings, so a false pair has to be
+    written out as "0 drew 'Sft', which is 'Wild'" and read as the nonsense it
+    is, instead of appearing as two member names that look fine alone.
+    """
+    rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 1, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {SHAPE: {0: ("HARD", "because it looks right"),
+                                 1: ("SOFT", "so does this")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "does not quote" in str(caught.value)
