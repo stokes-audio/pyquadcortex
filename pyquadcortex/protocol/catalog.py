@@ -552,15 +552,24 @@ class Model:
     #: reading the attribute a second time: ``set_block`` was sent for each and
     #: the unit placed both.
     hidden: bool = False
+    #: Whether the catalog marks this model internal - scaffolding rather than a
+    #: block a player places. Read ``== "true"`` for the same reason as
+    #: :attr:`hidden`; all eight on CorOS 4.0.1 say ``"true"``.
     internal: bool = False
+    #: Whether this model's CATEGORY is marked hidden. Same attribute as
+    #: :attr:`hidden`, one element up, and it feeds :attr:`is_factory` the same
+    #: way - so a category shipping ``hidden="false"`` while this was read by
+    #: presence would have dropped every model in it from the generated
+    #: constants. All nine hidden categories on CorOS 4.0.1 say ``"true"``.
     category_hidden: bool = False
     #: Ids of older models this one supersedes (the XML ``replaces`` attribute).
     replaces: tuple[int, ...] = ()
     #: What this block reserves, from the XML's ``<Padding>`` child, keyed by
     #: the catalog's OWN attribute names: ``cpu``, ``dm_heap``, ``pm_heap``,
     #: ``sw``, then ``dm`` on 126, and rarely ``sd_heap`` (19), ``pm``, ``nw``
-    #: and ``dm_hp`` (1 each). 331 of 533 models carry a ``<Padding>``; this is
-    #: empty for the 202 that do not.
+    #: and ``dm_hp`` (1 each) - that is FREQUENCY order, and ``sw`` (330) leads
+    #: it, ahead of ``cpu`` (307). 331 of 533 models carry a ``<Padding>``; this
+    #: is empty for the 202 that do not.
     #:
     #: **The names are the device's and the meaning is not measured.** They read
     #: as DSP resource reservations and they behave like one: a grid that
@@ -579,8 +588,9 @@ class Model:
     #:
     #: Held as PAIRS rather than a dict because ``Model`` is frozen and gets
     #: hashed; ``dict(model.resources)`` when a mapping is wanted. The pairs come
-    #: back in alphabetical key order, not the frequency order listed above, so
-    #: read them by name rather than by position.
+    #: back in ALPHABETICAL key order, which is not the order listed above and
+    #: is not source order either - a model carrying ``dm`` returns it second,
+    #: between ``cpu`` and ``dm_heap``. Read them by name, never by position.
     resources: tuple[tuple[str, float | str], ...] = ()
     #: True if a NEWER model replaces this one. Superseded models stay in the
     #: catalog - old presets still reference them - but the replacement is the

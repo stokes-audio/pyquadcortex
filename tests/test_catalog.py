@@ -806,7 +806,7 @@ def test_hidden_atma_is_not_hidden_on_a_quad_cortex():
 LAYOUT_XML = """<?xml version="1.0" ?><Models>
 <Category id="0" name="Guitar Amplifier">
   <Model id="9001" name="Synthetic Amp">
-    <Padding cpu="0.15" sw="512"/>
+    <Padding sw="512" cpu="0.15"/>
     <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" displayPos="1"/>
     <Parameter defaultValue="5" max="10" min="0" name="MASTER" type="float" displayPos="6"/>
     <Parameter defaultValue="5" max="10" min="0" name="PRESENCE" type="float" displayPos="5"/>
@@ -854,6 +854,17 @@ def test_a_model_reports_what_it_reserves_under_the_catalogs_own_names():
     assert dict(model.resources) == {"cpu": 0.15, "sw": 512.0}
 
 
+def test_resources_come_back_alphabetised_rather_than_in_source_order():
+    """The docstring promises this, so the fixture has to be able to disprove it.
+
+    `<Padding sw="512" cpu="0.15"/>` is deliberately NOT alphabetical in source
+    order - with `cpu` written first, sorted and as-written are the same list and
+    the assertion would hold either way.
+    """
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
+    assert model.resources == (("cpu", 0.15), ("sw", 512.0))
+
+
 def test_resources_are_pairs_so_a_model_stays_hashable():
     """`Model` is frozen and gets hashed; a dict field made it unhashable."""
     model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
@@ -882,8 +893,8 @@ def test_a_padding_value_that_is_not_a_number_is_kept_rather_than_dropped():
     token where a number goes. Losing an unexpected shape silently is what the
     rest of this parser exists not to do.
     """
-    xml = LAYOUT_XML.replace('<Padding cpu="0.15" sw="512"/>',
-                             '<Padding cpu="0.15" sw="unbounded"/>')
+    xml = LAYOUT_XML.replace('<Padding sw="512" cpu="0.15"/>',
+                             '<Padding sw="unbounded" cpu="0.15"/>')
     model = catalog.parse_model_repo(make_payload(xml))[9001]
     assert dict(model.resources) == {"cpu": 0.15, "sw": "unbounded"}
 
@@ -1013,20 +1024,61 @@ def test_a_model_marked_internal_false_is_not_internal():
     assert cat[8003].is_factory is True
 
 
+#: Attributes the parser may legitimately read by PRESENCE, each with the reason.
+#:
+#: Empty, and that is the point - there is nowhere in this parser today where
+#: "the attribute exists" is the question. The list exists because the failure
+#: message offers this escape and a test that offers one without implementing it
+#: sends a contributor in a circle. Same shape as `BOUNDARY_MODULES` in
+#: `tests/test_translation.py` and `UNMARKED_OPERATIONS` in
+#: `tests/test_hardware_markers.py`: a name gets on it with a written reason, and
+#: a reviewer judges the reason.
+PRESENCE_IS_RIGHT: dict[str, str] = {}
+
+
 def test_no_catalog_attribute_is_read_by_presence_any_more():
     """A source check, because this bug arrived three times in one file.
 
     `hidden` on a model, `hidden` on a category and `internal` were all read as
     "the attribute is there", and the catalog does not use them that way - two
-    amps carry `hidden="false"`. Anything comparing a catalog attribute against
-    `is not None` to get a boolean is the same mistake waiting again.
+    amps carry `hidden="false"`, which cost both their generated constants.
+
+    **Where this stops seeing**, stated rather than implied. It walks the parsed
+    SOURCE rather than matching text, so spacing, line breaks and quote style do
+    not hide anything - an earlier regex version missed `get('hidden')` in single
+    quotes, which `catalog.py` already uses elsewhere. What it still cannot see:
+    a presence test spelled some other way entirely - `bool(el.get("x"))`,
+    `"x" in el.attrib`, `el.get("x", None) is not None` - and any read that
+    reaches the attributes through a variable rather than a literal.
     """
+    import ast
     import pathlib
-    import re
 
     source = pathlib.Path(catalog.__file__).read_text(encoding="utf-8")
-    offenders = re.findall(r'\w+\.get\("(\w+)"\)\s+is not None', source)
+    offenders = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+            continue
+        if not isinstance(node.ops[0], (ast.IsNot, ast.NotEq)):
+            continue
+        right = node.comparators[0]
+        if not (isinstance(right, ast.Constant) and right.value is None):
+            continue
+        call = node.left
+        if not (isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "get"
+                and call.args
+                and isinstance(call.args[0], ast.Constant)
+                and isinstance(call.args[0].value, str)):
+            continue
+        name = call.args[0].value
+        if name not in PRESENCE_IS_RIGHT:
+            offenders.append(f"{name} (line {node.lineno})")
+
     assert not offenders, (
         f"these catalog attributes are read by presence: {offenders}. The "
-        f"device ships 'false' as a VALUE - compare against \"true\" instead, "
-        f"or say beside it why presence is right for that one.")
+        f"device ships 'false' as a VALUE - two amps carry hidden=\"false\" and "
+        f"reading presence cost them their constants. Compare against \"true\", "
+        f"or add the attribute to PRESENCE_IS_RIGHT above with the reason "
+        f"presence is the right question for that one.")

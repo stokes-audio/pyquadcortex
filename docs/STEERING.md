@@ -194,7 +194,7 @@ the file more carefully. The catalog cannot even be trusted about its own
 meaning: `Pink NS` names the position that draws WHT.
 
 **Scope of impact:**
-- **Updated:** `CLAUDE.md`; `pyquadcortex/protocol/catalog.py` (new `Parameter.display_pos` and `Model.resources`, and the `hidden` / `category_hidden` / `internal` parses corrected from presence to `== "true"`); the regenerated `pyquadcortex/protocol/catalogs/coros_4_0_1/models.py` and `params.py` (two amps that had no constant); new `tests/hardware/test_option_structure_on_unit.py`; `tests/test_catalog.py`; `tests/test_models.py` (factory count 412 to 414); `docs/domain-model.md` appendix; `docs/api.md` and `docs/protocol.md` (the same count); `changelog.md`; STEERING.md sections 5 and 10
+- **Updated:** `CLAUDE.md`; `pyquadcortex/protocol/catalog.py` (new `Parameter.display_pos` and `Model.resources`, and the `hidden` / `category_hidden` / `internal` parses corrected from presence to `== "true"`); the regenerated `pyquadcortex/protocol/catalogs/coros_4_0_1/models.py` and `params.py` (two amps that had no constant); new `tests/hardware/test_option_structure_on_unit.py`; `tests/test_catalog.py`; `tests/test_models.py` (factory count 412 to 414); `docs/domain-model.md` appendix; `docs/api.md` and `docs/protocol.md` (the same count); `changelog.md`; `tests/hardware/readme.md` and STEERING.md's own hardware-suite note (both said two files end `_on_unit`; there are four); STEERING.md sections 5 and 10
 - **Not updated (intentionally):** `ADR.md` - this narrows how an existing rule is applied rather than deciding something new, and the option-audit convention it sits beside is still deliberately unrecorded. Nothing under `pyquadcortex/device/` - the model layer asks the protocol layer and is unaffected. `Model.resources` is deliberately NOT a capacity model: a ceiling was observed between 8.10 and 8.25 by the `cpu` column, but four of the fourteen blocks on the grid carry no `<Padding>` at all so the base is an undercount, and nothing establishes which column binds.
 
 ### 2026-09-14 - An option list now says whether anyone has checked its names
@@ -505,7 +505,7 @@ developers it could not happen.
 - A refusal here is loud, not a silent deselect: the developer named those tests,
   so the reason they did not run is owed to them.
 - A module in `tests/hardware/` needs a basename no module under `tests/` already
-  owns, hence the two `_on_unit` names. The rule is enforced rather than
+  owns, hence the `_on_unit` names. The rule is enforced rather than
   remembered: `tests/test_hardware_gate.py` fails if `pytest --hardware` stops
   collecting the whole tree.
 
