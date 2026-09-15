@@ -115,13 +115,20 @@ SPELLING_FIXES = {
 MEANING_DISAGREEMENTS = {
     # Driven on a Mono Synth 2026-09-14, both oscillators set at once and read
     # together: wire position 5 draws WHT and position 6 draws PNK, while the
-    # catalog calls them "Pink NS" and "White NS". The catalog has the two
-    # noises swapped, so `PINK_NS = 5` would hand a caller white noise - the
-    # same shape of error as the metronome names, which is what this audit is
-    # for. The screen wins, per CLAUDE.md.
+    # catalog calls them "Pink NS" and "White NS".
+    #
+    # Confirmed acoustically 2026-09-15, which is what makes this a fact about
+    # the DEVICE rather than about one screen: captured off the unit's USB audio
+    # interface, position 6's octave-band energy is flat (pink) and position 5's
+    # climbs ~3.4 dB per octave (white). The catalog has the two noises swapped,
+    # so `PINK_NS = 5` would hand a caller white noise.
     ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS"): {
-        5: ("WHITE_NS", "position 5 drew 'WHT', which is 'White NS'"),
-        6: ("PINK_NS", "position 6 drew 'PNK', which is 'Pink NS'"),
+        5: ("WHITE_NS", "position 5 drew 'WHT', which is 'White NS' - and "
+            "measured acoustically it climbs ~3.4 dB per octave band, which is "
+            "white; see docs/domain-model.md"),
+        6: ("PINK_NS", "position 6 drew 'PNK', which is 'Pink NS' - and its "
+            "octave-band energy is flat to ~2 dB from 125 Hz to 8 kHz, which is "
+            "pink; see docs/domain-model.md"),
     },
 }
 

@@ -1526,11 +1526,21 @@ the rendered text. Measured three ways on 2026-09-15:
   messages, every one the metronome tempo stream.** Not one waveform label - and
   no notification that the value had changed either.
 
-So the unit draws `PNK` from something it already holds, and a display question
-has no metadata answer. What remains open is whether a DOWNLOADED model could
-introduce an option label the firmware has never rendered. Comparing a 4.1.0
-catalog's `stepNames` against 4.0.1's would answer it offline; no 4.1.0 snapshot
-is in this repo.
+What that does NOT mean is that the labels are unconveyed. Cortex Control
+fetches `ModelRepo` once at connect - 372 HID reports, in every one of the three
+captured sessions - and after that nothing crossing the wire is large enough to
+hold a label table: `Grid`, the most frequent message by far, is a single report
+each. A host app has no firmware string table to fall back on and no other
+source, so it renders option lists from `stepNames`, and a model downloaded
+after that host shipped brings its names with it in the catalog. That is the
+answer to "there must be some way it is conveyed": it is conveyed, once,
+upfront, in the file we already parse.
+
+What the capture actually shows is narrower. The UNIT'S OWN screen renders the
+same data differently - `SIN`, `WHT`, plus icons - and does so without asking
+anyone, because it holds the catalog too. Those abbreviations exist in no file;
+they are the firmware's rendering of `stepNames`. So there are two renderers
+over one source, and a reading taken from one of them is a fact about that one.
 
 ### `hidden` on a parameter is the vendor's intent, not the glass
 
@@ -1696,7 +1706,48 @@ Six of those are just abbreviations. The last two are not:
 
 Both were driven at once, on the two oscillators of one Mono Synth, and read
 together - so neither can be a stale screen. **The catalog has pink and white
-swapped.** A caller asking for pink noise by the catalog's name gets white, which
+swapped**, and that is now settled by measurement rather than by reading a
+label.
+
+#### Measured acoustically, 2026-09-15
+
+The screen reading said which label the unit draws. It could not say which
+signal comes out, and the catalog disagreeing with the screen leaves open which
+of the two is wrong. Noise settles it: white noise has a flat power spectrum, so
+measured in OCTAVE bands its energy rises about 3 dB per octave, because each
+band is twice as wide as the one below. Pink noise falls 3 dB per octave, so its
+octave-band energy is flat.
+
+A Mono Synth was placed at the head of a populated row, OSC 1 alone with OSC 2
+off, and four seconds captured off the unit's own USB audio interface at each
+position. The rest of the row colours both recordings identically, so comparing
+them cancels it.
+
+| octave band | position 5 | position 6 |
+|---|---|---|
+| 125-250 Hz | -43.3 dB | -32.2 dB |
+| 250-500 Hz | -38.7 dB | -32.9 dB |
+| 500 Hz-1 kHz | -33.6 dB | -31.9 dB |
+| 1-2 kHz | -29.8 dB | -31.4 dB |
+| 2-4 kHz | -27.2 dB | -31.5 dB |
+| 4-8 kHz | -26.5 dB | -33.6 dB |
+| 8-16 kHz | -28.9 dB | -39.2 dB |
+
+**Position 6 is flat to within about 2 dB from 125 Hz to 8 kHz - pink. Position
+5 climbs about 3.4 dB per octave over the same span - white.** The catalog calls
+position 5 `Pink NS`. It is white, and the screen's `WHT` is right.
+
+Reproducing it needs no special tooling - the unit enumerates as an 8-in USB
+audio device:
+
+```
+ffmpeg -f avfoundation -i ":0" -t 5 -ac 1 -ar 48000 pos5.wav
+sox pos5.wav -n sinc 2000-4000 stats      # read "RMS lev dB"
+```
+
+The recordings themselves are not committed. They are a few seconds of noise and
+the numbers above are the finding; the commands reproduce them in two minutes
+with the unit attached. A caller asking for pink noise by the catalog's name gets white, which
 is the same shape of error as the metronome names and the reason this audit
 exists.
 
