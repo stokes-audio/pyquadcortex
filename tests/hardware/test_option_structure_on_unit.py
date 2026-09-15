@@ -178,13 +178,14 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored, live_c
                 wrong.append(f"{model_name} {param_name}: asked {position} of "
                              f"{len(labels)}, unit stored {got} (wire {stored})")
 
-    # The vacuity floor is judged FIRST. A thin run that also found a mismatch
-    # would otherwise report the mismatch and never say the run proved little.
     assert not unreadable, (
         f"{len(unreadable)} scene slot(s) held nothing comparable: "
         f"{unreadable[:5]}. That is not a mismatch and says nothing about the "
         f"catalog - it means this test could not read what it wrote, so fix "
         f"the reading before drawing any conclusion from the run.")
+    # The vacuity floor is judged BEFORE the mismatch list. A thin run that also
+    # found a mismatch would otherwise report the mismatch and never say the run
+    # proved little.
     assert checked >= 100, (
         f"only {checked} positions were driven; this preset reaches too little "
         f"to say anything about the catalog. Load one with more blocks. "

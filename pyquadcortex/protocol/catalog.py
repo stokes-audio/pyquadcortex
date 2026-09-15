@@ -578,7 +578,9 @@ class Model:
     #: as one of the two causes.
     #:
     #: Held as PAIRS rather than a dict because ``Model`` is frozen and gets
-    #: hashed; ``dict(model.resources)`` when a mapping is wanted.
+    #: hashed; ``dict(model.resources)`` when a mapping is wanted. The pairs come
+    #: back in alphabetical key order, not the frequency order listed above, so
+    #: read them by name rather than by position.
     resources: tuple[tuple[str, float | str], ...] = ()
     #: True if a NEWER model replaces this one. Superseded models stay in the
     #: catalog - old presets still reference them - but the replacement is the
@@ -867,7 +869,14 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
     for category in root.findall("Category"):
         category_id = _as_int(category.get("id"))
         category_name = category.get("name", "")
-        category_hidden = category.get("hidden") is not None
+        # `== "true"`, not presence - see `Model.hidden`. This one is the
+        # same attribute one level up and it feeds `is_factory` the same
+        # way, so a category shipping `hidden="false"` would drop EVERY
+        # model in it from the generated constants. All nine hidden
+        # categories on CorOS 4.0.1 say "true", so this changes nothing
+        # today; it is fixed because the model-level version of exactly
+        # this cost two amps their names.
+        category_hidden = category.get("hidden") == "true"
         for element in category.findall("Model"):
             model_id = _as_int(element.get("id"))
             if model_id is None:
@@ -887,7 +896,9 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 plugin_id=element.get("plugin_id"),
                 resources=_parse_padding(element),
                 hidden=element.get("hidden") == "true",  # see Model.hidden
-                internal=element.get("internal") is not None,
+                # Same treatment as `hidden`, for the same reason. All
+                # eight internal models say "true" on 4.0.1.
+                internal=element.get("internal") == "true",
                 category_hidden=category_hidden,
                 replaces=_parse_replaces(element.get("replaces")),
             )

@@ -170,6 +170,17 @@ costing hardware time to confirm things a file already knew. Three experiments:
   messages, every one the metronome tempo stream. Not one waveform label, and
   no notification that the value had changed at all.
 
+**What it turned up on the way.** Putting the population counts under a hardware
+pin exposed a real bug: `Model.hidden` read the catalog's `hidden` attribute by
+PRESENCE, and two amps carry `hidden="false"` - Bogna Uber Clean and Bogna Uber
+Lead. Both were reported hidden, dropped from `is_factory`, and had no generated
+constant at all. Settled by placing each on the unit rather than by re-reading
+the attribute. `models.ALL` is 414 now. The same presence read on a category and
+on `internal` is corrected too - latent on 4.0.1, where all nine hidden
+categories and all eight internal models say `"true"`, but a category shipping
+`"false"` would silently drop every model in it. A source-reading test now
+refuses any catalog attribute read that way.
+
 **What that settles.** The catalog container is a single XML file with no
 icons, no string table and no localisation. It carries other strings - `tooltip`
 on 126 parameters, a non-empty `units` on 1,494 of the 3,468 carrying it, the
@@ -183,7 +194,7 @@ the file more carefully. The catalog cannot even be trusted about its own
 meaning: `Pink NS` names the position that draws WHT.
 
 **Scope of impact:**
-- **Updated:** `CLAUDE.md`, `pyquadcortex/protocol/catalog.py` (`Parameter.display_pos`, `Model.resources`), new `tests/hardware/test_option_structure_on_unit.py`, `tests/test_catalog.py`, `docs/domain-model.md` appendix, `changelog.md`, STEERING.md sections 5 and 10
+- **Updated:** `CLAUDE.md`; `pyquadcortex/protocol/catalog.py` (new `Parameter.display_pos` and `Model.resources`, and the `hidden` / `category_hidden` / `internal` parses corrected from presence to `== "true"`); the regenerated `pyquadcortex/protocol/catalogs/coros_4_0_1/models.py` and `params.py` (two amps that had no constant); new `tests/hardware/test_option_structure_on_unit.py`; `tests/test_catalog.py`; `tests/test_models.py` (factory count 412 to 414); `docs/domain-model.md` appendix; `docs/api.md` and `docs/protocol.md` (the same count); `changelog.md`; STEERING.md sections 5 and 10
 - **Not updated (intentionally):** `ADR.md` - this narrows how an existing rule is applied rather than deciding something new, and the option-audit convention it sits beside is still deliberately unrecorded. Nothing under `pyquadcortex/device/` - the model layer asks the protocol layer and is unaffected. `Model.resources` is deliberately NOT a capacity model: a ceiling was observed between 8.10 and 8.25 by the `cpu` column, but four of the fourteen blocks on the grid carry no `<Padding>` at all so the base is an undercount, and nothing establishes which column binds.
 
 ### 2026-09-14 - An option list now says whether anyone has checked its names

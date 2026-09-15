@@ -968,3 +968,65 @@ def test_the_two_amps_that_were_missing_have_constants_now():
 
     assert models.GuitarAmplifier.BOGNA_UBER_CLEAN == 1130
     assert models.GuitarAmplifier.BOGNA_UBER_LEAD == 1131
+
+
+PRESENCE_XML = """<?xml version="1.0" ?><Models>
+<Category id="0" name="Visible Anyway" hidden="false">
+  <Model id="8001" name="In A False-Hidden Category">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+<Category id="1" name="Really Hidden" hidden="true">
+  <Model id="8002" name="In A Hidden Category">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+<Category id="2" name="Ordinary">
+  <Model id="8003" name="Says Internal False" internal="false">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+</Models>"""
+
+
+def test_a_category_marked_hidden_false_does_not_hide_its_models():
+    """The same attribute one element up, and it feeds `is_factory` the same way.
+
+    Nothing on CorOS 4.0.1 exercises this - all nine hidden categories say
+    `"true"` - which is exactly why it is pinned here. A firmware shipping
+    `hidden="false"` on a category would drop EVERY model in it from the
+    generated constants, silently, and nothing offline would see it. That is the
+    model-level bug that cost Bogna Uber Clean and Bogna Uber Lead their
+    constants, with a far larger blast radius.
+    """
+    cat = catalog.parse_model_repo(make_payload(PRESENCE_XML))
+    assert cat[8001].category_hidden is False
+    assert cat[8001].is_factory is True
+    assert cat[8002].category_hidden is True
+    assert cat[8002].is_factory is False
+
+
+def test_a_model_marked_internal_false_is_not_internal():
+    """Same shape again. All eight internal models say `"true"` on 4.0.1."""
+    cat = catalog.parse_model_repo(make_payload(PRESENCE_XML))
+    assert cat[8003].internal is False
+    assert cat[8003].is_factory is True
+
+
+def test_no_catalog_attribute_is_read_by_presence_any_more():
+    """A source check, because this bug arrived three times in one file.
+
+    `hidden` on a model, `hidden` on a category and `internal` were all read as
+    "the attribute is there", and the catalog does not use them that way - two
+    amps carry `hidden="false"`. Anything comparing a catalog attribute against
+    `is not None` to get a boolean is the same mistake waiting again.
+    """
+    import pathlib
+    import re
+
+    source = pathlib.Path(catalog.__file__).read_text(encoding="utf-8")
+    offenders = re.findall(r'\w+\.get\("(\w+)"\)\s+is not None', source)
+    assert not offenders, (
+        f"these catalog attributes are read by presence: {offenders}. The "
+        f"device ships 'false' as a VALUE - compare against \"true\" instead, "
+        f"or say beside it why presence is right for that one.")
