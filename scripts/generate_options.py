@@ -118,17 +118,20 @@ MEANING_DISAGREEMENTS = {
     # catalog calls them "Pink NS" and "White NS".
     #
     # Confirmed acoustically 2026-09-15, which is what makes this a fact about
-    # the DEVICE rather than about one screen: captured off the unit's USB audio
-    # interface, position 6's octave-band energy is flat (pink) and position 5's
-    # climbs ~3.4 dB per octave (white). The catalog has the two noises swapped,
-    # so `PINK_NS = 5` would hand a caller white noise.
+    # the DEVICE rather than about one screen. Both positions were captured off
+    # the unit's USB audio interface and SUBTRACTED, which cancels the rest of
+    # the signal chain: position 5 is brighter by ~3.6 dB per octave band,
+    # monotonically across all seven, which is the direction and scale that
+    # separate white noise from pink. The catalog has the two swapped, so
+    # `PINK_NS = 5` would hand a caller white noise.
     ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS"): {
         5: ("WHITE_NS", "position 5 drew 'WHT', which is 'White NS' - and "
-            "measured acoustically it climbs ~3.4 dB per octave band, which is "
-            "white; see docs/domain-model.md"),
-        6: ("PINK_NS", "position 6 drew 'PNK', which is 'Pink NS' - and its "
-            "octave-band energy is flat to ~2 dB from 125 Hz to 8 kHz, which is "
-            "pink; see docs/domain-model.md"),
+            "recorded against position 6 it is brighter by ~3.6 dB per octave "
+            "band, monotonically, which makes it the white one; see "
+            "docs/domain-model.md"),
+        6: ("PINK_NS", "position 6 drew 'PNK', which is 'Pink NS' - and it is "
+            "the darker of the pair by that same measurement, so it is the "
+            "pink one; see docs/domain-model.md"),
     },
 }
 

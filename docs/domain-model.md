@@ -1510,13 +1510,26 @@ The question was whether the words a person sees are sent anywhere - which
 matters, because a model downloaded after Cortex Control shipped still shows the
 right names on a laptop, so they have to reach it somehow.
 
-They do, and the proof is direct rather than by elimination: **the `ModelRepo`
-payload that crosses the wire contains the strings themselves.** Unpacking the
-captured transfer gives `stepNames="Sine,Triang,Sawtooth,Square,Pulse,Pink
-NS,White NS"` verbatim. Cortex Control fetches that payload once per session -
-one request plus 371 reports of reply, in every one of the three captured
-sessions - so any host has the vocabulary from connect onwards, and a model
-added to the catalog brings its names with it. That is the whole answer.
+They do. Two facts, kept apart because they came from different places:
+
+- **The `ModelRepo` payload contains the strings.** Unpacking the payload this
+  library reads from the unit gives `stepNames="Sine,Triang,Sawtooth,Square,
+  Pulse,Pink NS,White NS"` verbatim. That is a live read through
+  `research/scripts/dump_model_repo.py`, not an extraction from a capture.
+- **Cortex Control fetches a `ModelRepo` payload once per session.** One request
+  plus 371 reports of reply, at t=110.5 / 2.5 / 18.3 in the three captured
+  sessions, the reply opening with the gzip magic and running about 46.7 KB.
+
+Joining them - that CC therefore receives those strings - is an INFERENCE, and a
+strong one: it is the same message type, the same compression and the same size
+against a catalog that is a single file. It is not an observation, because the
+timelines truncate payloads and reassembling the 371 reports out of the pcapng
+was not achieved here. Extracting that payload and grepping it would close the
+gap, and is the obvious next step for anyone who wants it closed.
+
+What follows from it, also by inference: a model added to the catalog brings its
+names with it, so a host that shipped before that model still names it correctly.
+Nothing here observed a downloaded or purchased model.
 
 An earlier version of this section argued the point by elimination, claiming
 nothing else crossing the wire was large enough to hold a label table. That was
@@ -1742,9 +1755,16 @@ position.
 
 **Read the difference column.** The rest of the row colours both recordings
 identically, so subtracting them removes it - and the result climbs
-monotonically across all seven bands, averaging +3.57 dB per octave against the
-3.01 that separates white from pink. Position 5 is the brighter by exactly the
-margin the two noise types differ by.
+monotonically across all seven bands, averaging +3.57 dB per octave. Position 5
+is the brighter, by the scale and in the direction that separates white from
+pink.
+
+The textbook separation is 3.01 dB per octave, and 3.57 is not that number.
+Do not read the difference as a precision match: `sinc` filtering leaks across
+band edges, so a known white-and-pink pair put through these same commands reads
+nearer 3.8 than 3.01. What the measurement establishes is the sign and the
+order of magnitude, which is all that is needed to say which of two positions is
+the white one.
 
 Each column alone says the same thing less cleanly, because the chain's response
 is curved: position 6 is flat to about 2 dB from 125 Hz to 8 kHz, and position 5
