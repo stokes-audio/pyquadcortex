@@ -1397,8 +1397,8 @@ the n/a rows below where they intersect the API at all.
 
 ## Catalog attributes we can see and cannot yet explain
 
-The device puts **24** distinct attributes on its `<Parameter>` elements. Fifteen
-are parsed. These are the other nine, recorded so the next person does not have to
+The device puts **24** distinct attributes on its `<Parameter>` elements. Sixteen
+are parsed. These are the other eight, recorded so the next person does not have to
 rediscover that they exist. None is guessed at, per the rule that a control we do
 not understand is omitted with the reason written down.
 
@@ -1407,7 +1407,6 @@ The counts are from the shipped CorOS 4.0.1 catalog, 3,809 parameters.
 | attribute | on | what it looks like, and what is unknown |
 |---|---|---|
 | `displayPos` | 1446 | The order the unit lays knobs out on screen, which is not wire order. Confirmed 2026-09-11: a cab's four visible controls read POSITION, DISTANCE, LEVEL, PAN on screen, which is `displayPos` 0, 1, 2, 3 and not their wire order. Still unused here; a UI would want it. |
-| `hidden` | 650 | Present on a parameter, distinct from the `hidden` we already read on a `<Model>`. Whether it means "not shown on screen" or "not writable" is untested, and the two have very different consequences for a host. |
 | `replaces` | 462 | Also distinct from the `<Model>` attribute of the same name, which we do parse. On a parameter it presumably names a superseded index, which would matter for reading an old preset - untested. |
 | `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, **212 parameters between them** | `toggleOn` carries a number (`4`, `5`, `6`) on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`). The obvious reading is the two values a footswitch toggle alternates between - obvious, and untested. Driving one and watching the screen would settle it. |
 | `tooltip` | 126 | The help text the unit shows. Real prose, occasionally load-bearing: a Vibrato's `MODE` warns that changing it causes a brief mute. Note the values contain HTML (`<div align="left">`), which is where an `align` "attribute" appears - it is markup inside the tooltip, not an attribute of the parameter. |
@@ -1447,6 +1446,32 @@ second-largest group of Off detents to measure, and `type` said they were not
 knobs before anyone connected a cable. What the library does with the other 8
 `meter` parameters, and whether `set_param` should refuse all 47, is open -
 nothing has been driven, and ADR-0010 wants the capture before the refusal.
+
+### `hidden` on a parameter is the vendor's intent, not the glass
+
+Parsed since 2026-09-14 as `Parameter.hidden`, and this table used to carry it as
+unexplained: "whether it means 'not shown on screen' or 'not writable' is
+untested". It is now tested, and the answer is neither cleanly.
+
+Six option lists are used only by parameters carrying it, and a block for each
+was placed on the grid and searched page by page. Five controls are genuinely
+not drawn. The sixth, a Mono Synth's `OSC1 WAVE`, **is on the screen** - on a tab
+called Oscillator, as waveform icons - and so is `OSC1 ACTIVE` beside it, which
+the flag also marks. Writability was not tested, so that half of the old question
+stays open.
+
+So the flag predicts the screen most of the time and not always, which is the
+worst kind of signal to build on: it looks reliable right up until it is not.
+`options.OPTION_AUDIT` deliberately does not use it. `Parameter.hidden` is
+published because it is real catalog data and a useful hint about where to look,
+and nothing in the library branches on it.
+
+It is also not a boolean. 649 parameters say `"true"` and one says `"atma"` - the
+Freeze block's `MOMENTARY` switch. `atma` is the Quad Cortex Mini's `device_type`,
+so the catalog is naming the MODEL a parameter is hidden on. `Parameter.hidden`
+answers for a Quad Cortex only, and a Mini profile must read the attribute rather
+than the flag. That value is also a second, independent sign that ATMA is the
+Mini, which until now rested on the schema's `atma_*` field names alone.
 
 ### `mid_string` is the label at the middle of the wire
 
@@ -1535,15 +1560,23 @@ catalog's `stepNames` for the same parameter. The catalog writes `In 1`, `Ret
 So every list's names are a hypothesis until a human reads them off the unit.
 `options.OPTION_AUDIT` publishes which have been, keyed by the labels rather
 than by the enum so the two Off/On lists and the metronome list - none of which
-gets an enum, and which are 251 parameters between them - can be recorded too.
+gets an enum, and which are 260 parameters between them - can be recorded too.
 The readings are in `tests/fixtures/catalog/option_readings.json`, one row per
 POSITION, and `scripts/generate_options.py` stamps each enum's docstring from
 them. A list nobody has read says so where a caller will see it.
 
-**Where it stands (2026-09-14, CorOS 4.0.1): 12 audited, 6 impossible, 95
-unread**, of 113 fixed lists. The audited twelve cover 298 of the 527 parameters
-that carry a fixed list, because the lists in heaviest use were done first. The
-95 unread cover 191.
+**Where it stands (2026-09-14, CorOS 4.0.1): 12 audited, 1 drawn, 5 not drawn,
+95 unread**, of 113 fixed lists. Those thirteen read lists cover 300 of the 527
+parameters that carry a fixed list, because the ones in heaviest use were done
+first. The 95 unread cover 189.
+
+`drawn` is its own answer for one list. Every position of the metronome's
+`OFF,MUTE,DOWN,ON` was driven and read, so by position count it is complete -
+but the unit draws a circle, filled or empty, with an optional dot, and never
+writes the word `MUTE` anywhere. Those four words remain exactly the hypothesis
+this mechanism exists to flag. What the readings confirm is the ORDER and the
+behaviour, not the spelling, and calling that audited would be the
+overstatement in its purest form.
 
 | list | parameters | how it was read |
 |---|---|---|
@@ -1559,10 +1592,28 @@ that carry a fixed list, because the lists in heaviest use were done first. The
 | `PRE ROLL` (4) | 1 | the dial in order, anchored at 0 and 2 |
 | `Linear,Log` | 1 | a Volume block's CURVE, each position driven |
 | `Free,Sync` | 1 | a Looper X DUPLICATE MODE, each position driven |
+| `OSC1 WAVE` (7) | 2 | a Mono Synth's two oscillators, positions 5 and 6 driven |
 
-Every one matched the catalog exactly, including spellings that look like
-mistakes and are not: `In 1` carries a space and `Out1` does not, on the same
-control, and the screen draws both that way.
+Twelve of the thirteen matched the catalog exactly, including spellings that
+look like mistakes and are not: `In 1` carries a space and `Out1` does not, on
+the same control, and the screen draws both that way.
+
+**The thirteenth is a real disagreement, and it is the kind that changes what a
+caller gets.** A Mono Synth's oscillator waveform list reads, in the catalog,
+`Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On screen the seven
+shapes are drawn as waveform icons labelled `SIN, TRI, SAW, SQR, PUL, WHT, PNK`.
+Six of those are just abbreviations. The last two are not:
+
+| wire position | catalog says | the screen shows |
+|---|---|---|
+| 5 | `Pink NS` | **WHT** |
+| 6 | `White NS` | **PNK** |
+
+Both were driven at once, on the two oscillators of one Mono Synth, and read
+together - so neither can be a stale screen. **The catalog has pink and white
+swapped.** A caller asking for pink noise by the catalog's name gets white, which
+is the same shape of error as the metronome names and the reason this audit
+exists.
 
 **A control's display order is not the wire order, and assuming it is nearly put
 three backwards names into the library.** Reading a dial top to bottom is much
@@ -1589,22 +1640,41 @@ until the block's `SYNC` is On; `PRE ROLL` and `REC. LENGTH` are disabled while
 `QUANTIZE` is OFF. Their lists can still be opened and read, but a reading run
 has to set the enabling control first.
 
-**Six lists can never be audited this way, and that is a finding rather than a
-gap.** Every parameter using them is marked `hidden` in the catalog, so the unit
-draws them nowhere. They are 38 parameters, and they include `Noral,Inverted`
-(16) and `nolly,nollySkewed,nollySkewedPlug` (6) - which is very likely why
-those labels read like source identifiers rather than English. Nobody was meant
-to see them. `OPTION_AUDIT` gives them their own status so they stop looking
-like work somebody should do. Our `Noral` -> `NORMAL` correction therefore stays
-an inference about an invisible parameter, and is labelled as one.
+**Five lists are not drawn at all, and that was measured rather than inferred -
+after the inference turned out to be wrong.** The catalog marks 649 parameters
+`hidden`, and six lists are used only by parameters it marks that way. The
+obvious move was to call those six unauditable and stop. That rule is false. A
+block carrying each of the six was placed on the grid and the named control
+looked for on every page:
 
-**The `hidden` attribute is not a boolean.** 649 parameters say `"true"` and one
-says `"atma"` - the Freeze block's `MOMENTARY` switch. `atma` is the Quad Cortex
-Mini's `device_type`, so the catalog is naming the MODEL a parameter is hidden
-on. `Parameter.hidden` answers for a Quad Cortex only, and a Mini profile must
-read the attribute rather than the flag. It is also a second, independent sign
-that ATMA is the Mini, which until now rested on the schema's `atma_*` field
-names alone.
+| list | looked for on | drawn? |
+|---|---|---|
+| `Clean,Crunch,Lead` | a Soldano SLO-100's `CHANNEL` | no |
+| `Noral,Inverted` | an IR loader's `INVERT` | no |
+| `nolly,nollySkewed,nollySkewedPlug` | a Gojira REV's `MIX LAW` | no |
+| `0,1,2,3` | a Slapback Delay's `QUALITY` | no |
+| `Duck,Gate` | a Plini Delay's `DYN MODE` | no |
+| `Sine,Triang,...` | a Mono Synth's `OSC1 WAVE` | **yes** |
+
+The Mono Synth's oscillator waveform is marked `hidden="true"` and is on the
+screen, on a tab called Oscillator, drawn as waveform icons - as is
+`OSC1 ACTIVE`, which the flag also marks. So `hidden` describes the vendor's
+intent and not the glass, and a status built on it would have declared a
+visible, readable control permanently uncheckable. This is ADR-0010's lesson
+again: a plausible rule about a parameter attribute, false on the unit.
+
+So `OPTION_AUDIT`'s `absent` comes from an OBSERVATION - a row in
+`option_readings.json` naming the model and control somebody looked at and did
+not find - and never from the flag. A test names the Mono Synth list explicitly
+so that if the derivation ever slips back to the flag, it fails.
+
+The Soldano is worth keeping for a second reason: it carries **two** parameters
+called `CHANNEL`, one flagged and offering `Clean,Crunch,Lead` and one not,
+offering `Normal,OD`. The screen draws the second only, so the unit honours the
+flag per parameter rather than per name.
+
+Our `Noral` -> `NORMAL` correction stays an inference about a control nobody can
+see, and is labelled as one.
 
 **A reading is a pairing, not a verdict.** "Index 2 showed `Gate`" can be
 checked; "this list is fine" cannot. A part-read list is `partial` and does NOT

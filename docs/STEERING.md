@@ -61,6 +61,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
 | One translation boundary | Screen values become wire values in exactly one PACKAGE, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/`. The exemption covers a directory, so a test names the package's modules and a new one has to come through that list | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate/` | The protocol layer, which keeps its zero-based COORDINATES. Its scales come from the catalog, and quoting the device's own units is not translating - see ADR-0016 |
 | Model state goes through the cache | A model property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py`, not an attribute the property fills in itself | One account of what the model believes and how it learned it. A property with its own cached attribute answers from a copy nothing invalidates, and a closed connection cannot take it away (see ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry rather than read from the unit, which compute from `value()` rather than caching alongside it |
+| Evidence-stamped option lists | An option list's names carry a status saying whether a human has read them off the unit, generated from a per-position readings fixture | The catalog's `stepNames` is demonstrably not the screen's wording, so an unchecked list must not look like a checked one | `options.OPTION_AUDIT` plus `tests/fixtures/catalog/option_readings.json` | Lists the unit does not draw, which are `absent` by observation rather than unread |
 | Profile is the class | A connection resolves `(device_type, zenos_git_hash)` to a client class before the handshake; `QuadCortex` is 4.0.1 and the base, a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is the smell polymorphism removes; the decision is made once, by which class is instantiated (see ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
 
 ## 6. Constraints
@@ -137,6 +138,30 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-09-14 - An option list now says whether anyone has checked its names
+
+**What changed:** `options.OPTION_AUDIT` and a readings fixture record which of
+the 113 fixed option lists have been held against a real unit's screen, and
+`scripts/generate_options.py` stamps every generated enum from it. Twelve lists
+covering 298 parameters were read on CorOS 4.0.1; 96 are unread. `Parameter.hidden`
+is published but nothing branches on it.
+
+**Why:** the names come from the catalog's `stepNames`, and the catalog is not the
+screen. The proof was already offline in the repo and nobody had looked: for the
+twelve parameters whose list the device builds from the preset, `dynamic_steps`
+carries the device's own rendering and it disagrees with `stepNames` at 18 of 20
+shared positions.
+
+**What it cost to get right.** Two rules were adopted and then disproved on the
+unit in the same session. Reading a control's choices in order looked
+interchangeable with driving each position; on a two-position control it is not,
+and three lists came back reversed before driving showed the reading was wrong.
+And `hidden` looked like it meant "not on screen"; five of the six lists used
+only by hidden parameters really are not drawn, and the sixth is a Mono Synth's
+`OSC1 WAVE`, which is on a tab called Oscillator with its own icons. Both rules
+are now measurements instead: how a position was read is a field, and `absent` is
+an observation naming where somebody looked. ADR-0010 said this already.
 
 ### 2026-09-14 - The connect burst is waited for as a group, not a head message
 

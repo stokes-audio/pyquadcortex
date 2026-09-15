@@ -11,8 +11,8 @@ an option means knowing its position. These name the positions::
 the same thing wherever it appears - the note-length list is shared by
 ``SYNC NOTE``, ``SYNC NOTE L``, ``SYNC NOTE R`` and two more.
 
-**A two-option Off/On parameter gets no enum.** 247 parameters offer
-exactly those, and ``True`` says everything ``OffOn.ON`` would::
+**A two-option Off/On parameter gets no enum.** 247 parameters
+offer exactly those, and ``True`` says everything ``OffOn.ON`` would::
 
     qc.set_param(block, 'SYNC', True)
 
@@ -30,8 +30,8 @@ the device RENDERS it does not match - the catalog writes ``In 1`` and
 ``Ret 1/2`` where the device writes ``Input 1`` and ``Return 1/2``. So
 each enum says whether a human has read it off the unit, and
 ``OPTION_AUDIT`` publishes that for all 113 fixed lists:
-12 audited, 0 partly, 6 impossible (every parameter
-using them is hidden), 95 unread.
+12 audited, 0 partly, 0 impossible (every parameter
+using them is hidden), 101 unread.
 """
 from enum import IntEnum
 
@@ -467,12 +467,14 @@ class DynMode2(IntEnum):
 
     On 9 models, among them Gojira DLY, Nameless Delay, Nolly Delay-1 (M).
 
-    CANNOT be audited: every parameter using this list is
-    marked hidden, so the unit never draws these words and
-    there is no screen text to hold them against.
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Plini Delay's DYN MODE and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    DUCK = 0
+    DUCK = 0    # screen: None; catalog: 'Duck'
     GATE = 1
 
 
@@ -712,12 +714,14 @@ class Invert(IntEnum):
 
     On 8 models, among them Dual (M), Dual (M) Lite, Dual (ST).
 
-    CANNOT be audited: every parameter using this list is
-    marked hidden, so the unit never draws these words and
-    there is no screen text to hold them against.
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Single (M)'s INVERT and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    NORMAL = 0    # 'Noral'
+    NORMAL = 0    # screen: None; catalog: 'Noral'
     INVERTED = 1
 
 
@@ -853,12 +857,14 @@ class MixLaw(IntEnum):
 
     On 6 models, among them Cory Wong The Wash, Default Reverb, Gojira REV.
 
-    CANNOT be audited: every parameter using this list is
-    marked hidden, so the unit never draws these words and
-    there is no screen text to hold them against.
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Gojira REV's MIX LAW and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    NOLLY = 0
+    NOLLY = 0    # screen: None; catalog: 'nolly'
     NOLLYSKEWED = 1
     NOLLYSKEWEDPLUG = 2
 
@@ -1063,18 +1069,17 @@ class Osc1Wave(IntEnum):
 
     On Mono Synth.
 
-    CANNOT be audited: every parameter using this list is
-    marked hidden, so the unit never draws these words and
-    there is no screen text to hold them against.
+    Audited against the unit's screen 2026-09-14: all 7 positions read.
+    The screen and the catalog DISAGREE at 0, 1, 2, 3, 4, 5, 6; the screen's word is beside the member.
     """
 
-    SINE = 0
-    TRIANG = 1
-    SAWTOOTH = 2
-    SQUARE = 3
-    PULSE = 4
-    PINK_NS = 5    # 'Pink NS'
-    WHITE_NS = 6    # 'White NS'
+    SINE = 0    # screen: 'SIN'; catalog: 'Sine'
+    TRIANG = 1    # screen: 'TRI'; catalog: 'Triang'
+    SAWTOOTH = 2    # screen: 'SAW'; catalog: 'Sawtooth'
+    SQUARE = 3    # screen: 'SQR'; catalog: 'Square'
+    PULSE = 4    # screen: 'PUL'; catalog: 'Pulse'
+    WHITE_NS = 5    # screen: 'WHT'; catalog: 'Pink NS'
+    PINK_NS = 6    # screen: 'PNK'; catalog: 'White NS'
 
 
 class OutMode(IntEnum):
@@ -1178,12 +1183,14 @@ class Quality(IntEnum):
 
     On 4 models, among them Analog Delay (M), Analog Delay (ST), Slapback Delay (M).
 
-    CANNOT be audited: every parameter using this list is
-    marked hidden, so the unit never draws these words and
-    there is no screen text to hold them against.
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Slapback Delay (M)'s QUALITY and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    N0 = 0    # '0'
+    N0 = 0    # screen: None; catalog: '0'
     N1 = 1    # '1'
     N2 = 2    # '2'
     N3 = 3    # '3'
@@ -1411,12 +1418,14 @@ class SoldanoSlo100Channel(IntEnum):
 
     On Soldano SLO-100®.
 
-    CANNOT be audited: every parameter using this list is
-    marked hidden, so the unit never draws these words and
-    there is no screen text to hold them against.
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Soldano SLO-100®'s CHANNEL and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    CLEAN = 0
+    CLEAN = 0    # screen: None; catalog: 'Clean'
     CRUNCH = 1
     LEAD = 2
 
@@ -2031,6 +2040,19 @@ OPTION_LABELS = {
 }
 
 
+#: Catalog names a driven reading showed to be WRONG about what the
+#: position means, as ``{labels: {index: the catalog's name}}``.
+#:
+#: One entry: a Mono Synth's oscillator waveforms, where the catalog
+#: has pink and white noise swapped. The strings stay in
+#: ``OPTION_LABELS`` because the device publishes them, but naming
+#: one of these in ``set_param_option`` is refused rather than
+#: silently selecting the other noise.
+OPTION_CONTESTED = {
+    ('Sine', 'Triang', 'Sawtooth', 'Square', 'Pulse', 'Pink NS', 'White NS'): {5: 'Pink NS', 6: 'White NS'},
+}
+
+
 #: Whether anyone has held this list against the unit's SCREEN.
 #:
 #: ``"audited"`` means every position was read on the device and the
@@ -2040,9 +2062,9 @@ OPTION_LABELS = {
 #:
 #: Keyed by the LABELS rather than by the enum, because the two lists
 #: that become a bool and the one published by hand have no enum and
-#: are still 251 parameters whose words need checking.
+#: are still 260 parameters whose words need checking.
 OPTION_AUDIT = {
-    ('OFF', 'MUTE', 'DOWN', 'ON'): 'audited',  # no enum
+    ('OFF', 'MUTE', 'DOWN', 'ON'): 'drawn',  # no enum
     ('OFF', 'ON'): 'audited',  # no enum
     ('Off', 'On'): 'audited',  # no enum
     ('Bypass', '90°', '180°'): None,  # Adjust
@@ -2072,7 +2094,7 @@ OPTION_AUDIT = {
     ('Clean', 'OD'): None,  # DumbbellOdsChannel
     ('Jazz', 'Rock'): None,  # DumbbellOdsEq
     ('Free', 'Sync'): 'audited',  # DuplicateMode
-    ('Duck', 'Gate'): 'hidden',  # DynMode2
+    ('Duck', 'Gate'): 'absent',  # DynMode2
     ('Off', 'Duck', 'Gate'): None,  # DynMode3
     ('Normal', 'Thick', 'Thicker'): None,  # Eq3
     ('Reverse', 'Flip'): None,  # FeedbackMode
@@ -2088,7 +2110,7 @@ OPTION_AUDIT = {
     ('Flat', '-6', '-12', '-18', '-24', '-30', '-36', '-42', '-48'): None,  # HpfSlope
     ('Low', 'High'): None,  # Input
     ('Guitar', 'Bass'): None,  # Instrument
-    ('Noral', 'Inverted'): 'hidden',  # Invert
+    ('Noral', 'Inverted'): 'absent',  # Invert
     ('4', '8', '12', '20', 'All'): None,  # Legendary87MRatio
     ('225 Hz', '150 Hz'): None,  # LowsFreq
     ('Off', 'Boost'): None,  # Mid
@@ -2096,7 +2118,7 @@ OPTION_AUDIT = {
     ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', 'Omni'): None,  # MinivoicerMidiCh
     ('Major', 'Minor', 'Chrom'): None,  # MinivoicerMode
     ('A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'): None,  # MinivoicerRoot
-    ('nolly', 'nollySkewed', 'nollySkewedPlug'): 'hidden',  # MixLaw
+    ('nolly', 'nollySkewed', 'nollySkewedPlug'): 'absent',  # MixLaw
     ('LFO', 'LFO Stereo', '+Envelope', '-Envelope'): None,  # ModSource
     ('Off', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', 'Omni'): None,  # MonoSynthMidiCh
     ('OFF', 'A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'): None,  # MonoSynthRoot
@@ -2108,7 +2130,7 @@ OPTION_AUDIT = {
     ('QUARTER', 'EIGHTH', 'TRIPLET', 'SIXTEENTH'): None,  # Notelength
     ('-2', '-1', '0', '1', '2'): None,  # Octave
     ('RELEASE', 'FREEZE'): None,  # OnOff
-    ('Sine', 'Triang', 'Sawtooth', 'Square', 'Pulse', 'Pink NS', 'White NS'): 'hidden',  # Osc1Wave
+    ('Sine', 'Triang', 'Sawtooth', 'Square', 'Pulse', 'Pink NS', 'White NS'): 'audited',  # Osc1Wave
     ('Mono', 'Wet/Dry'): None,  # OutMode
     ('LP', 'HP'): None,  # Peak
     ('HB', 'SINGLE'): None,  # Pickup
@@ -2116,7 +2138,7 @@ OPTION_AUDIT = {
     ('FZ', 'OD'): None,  # PliniDriveMode
     ('OFF', '1 BAR', '2 BARS', '4 BARS'): 'audited',  # PreRoll
     ('Momentary', 'Toggle'): 'audited',  # PunchMode
-    ('0', '1', '2', '3'): 'hidden',  # Quality
+    ('0', '1', '2', '3'): 'absent',  # Quality
     ('OFF', '1 Beat', '2 Beats', '3 Beats', '4 Beats', '5 Beats', '6 Beats', '7 Beats', '8 Beats', '16 Beats'): 'audited',  # Quantize
     ('2', '4', '10'): None,  # Ratio3
     ('OFF', '1 BAR', '2 BARS', '3 BARS', '4 BARS', '5 BARS', '6 BARS', '7 BARS', '8 BARS', '9 BARS', '10 BARS', '11 BARS', '12 BARS', '13 BARS', '14 BARS', '15 BARS', '16 BARS', '17 BARS', '18 BARS', '19 BARS', '20 BARS', '21 BARS', '22 BARS', '23 BARS', '24 BARS', '25 BARS', '26 BARS', '27 BARS', '28 BARS', '29 BARS', '30 BARS', '31 BARS', '32 BARS'): 'audited',  # RecLength
@@ -2128,7 +2150,7 @@ OPTION_AUDIT = {
     ('Small', 'Med', 'Large'): None,  # Size
     ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8'): None,  # SlapbackDelayMSyncNote
     ('6dB/Oct', '12dB/Oct', '18dB/Oct', '24dB/Oct'): None,  # Slope
-    ('Clean', 'Crunch', 'Lead'): 'hidden',  # SoldanoSlo100Channel
+    ('Clean', 'Crunch', 'Lead'): 'absent',  # SoldanoSlo100Channel
     ('BLIP', 'BLOCK', 'COWBELL', 'DIGITAL', 'DRUM KIT', 'SOFT KIT'): None,  # Sound
     ('Slow', 'Fast'): None,  # Speed
     ('Regular', 'Invert'): None,  # SplitterMode
@@ -2271,4 +2293,5 @@ __all__ = [
     "VoiceMode",
     "OPTION_LABELS",
     "OPTION_AUDIT",
+    "OPTION_CONTESTED",
 ]

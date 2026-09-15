@@ -20,6 +20,58 @@ correction.
 
 ## Unreleased
 
+### Breaking: `Osc1Wave.PINK_NS` and `.WHITE_NS` were swapped, and are now fixed
+
+A Mono Synth's oscillator waveform list is the first place the audit below found
+the device's catalog to be **wrong**, not merely differently worded. The catalog
+calls wire position 5 `Pink NS` and position 6 `White NS`. The unit's screen
+draws `WHT` at position 5 and `PNK` at position 6. Both were set at once, on the
+two oscillators of one Mono Synth, and read together.
+
+So until now `Osc1Wave.PINK_NS` selected **white** noise and `.WHITE_NS` selected
+pink. The members now follow the screen, which means **existing code using either
+one changes behaviour** - and changes it to what the name always claimed. If you
+were compensating for this, stop.
+
+Selecting by the catalog's string is now refused rather than silently wrong:
+`set_param_option(block, "OSC1 WAVE", "Pink NS")` raises and tells you why. The
+strings stay in `OPTION_LABELS`, because they are what the device publishes.
+
+### You can now tell which option names have been checked against the screen
+
+`pyquadcortex.protocol.options` names the choices a list-valued parameter
+offers - `SyncNote21.N1_4`, `RoutingMode.GRID` and 108 more. Those names come
+from the device's catalog, and **the catalog is not always what the screen
+says.** Where the two can be compared directly they differ: for the parameters
+whose list the device builds from your preset, the catalog writes `In 1` and
+`Ret 1/2` where the device itself writes `Input 1` and `Return 1/2`.
+
+So a new `options.OPTION_AUDIT` tells you, per list, whether anybody has held it
+against a real unit: `"audited"`, `"drawn"` (read, but the unit draws pictures
+rather than words), `"absent"` (someone looked and the control is not on screen)
+or `None` for the 96 nobody has checked yet. Each enum's docstring says the same
+thing in words. Twelve lists covering 298 parameters have been read on a Quad
+Cortex running CorOS 4.0.1, including the `Off`/`On` pair that 247 parameters
+use. Every one matched.
+
+Nothing about existing names changes. This only tells you how much to trust
+them, which until now you had no way to know.
+
+### `catalog.Parameter` reports whether the unit keeps a parameter off the screen
+
+New `Parameter.hidden`, from the catalog's own `hidden` attribute. **Treat it as
+a hint, not a fact:** 649 parameters carry it, and at least one of them - a Mono
+Synth's `OSC1 WAVE` - is plainly on the screen. Nothing in the library makes a
+decision based on it.
+
+### Fixed: three places told you to use metronome names that do not exist
+
+`docs/api.md`, `docs/manual-coverage.md` and `QuadCortex.set_beat`'s own
+docstring all used `MetronomeBeat.ACCENT` and `MetronomeBeat.NORMAL`. Those
+members were replaced by the device's own words - `OFF`, `MUTE`, `DOWN`, `ON` -
+and the example in the API document would have raised `AttributeError` if you
+copied it.
+
 ### Initial file enumeration can be deferred
 
 Both connect layers accept `initial_file_listing=False`, omitting only the

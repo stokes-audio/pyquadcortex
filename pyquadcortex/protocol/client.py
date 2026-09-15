@@ -3396,6 +3396,27 @@ class QuadCortex:
                 f"read as the index 0 or 1. Name the option, or use an enum from "
                 f"pyquadcortex.protocol.options."
             )
+        # A NAME the catalog gets wrong must not quietly select the position it
+        # names. A Mono Synth's waveform list is the case: the catalog calls
+        # position 5 "Pink NS" and the screen draws WHT there, so matching the
+        # string would hand back white noise for a pink request. The string
+        # stays in OPTION_LABELS because the device publishes it; what is
+        # refused is USING it to choose.
+        if isinstance(option, str):
+            contested = options_module.OPTION_CONTESTED.get(tuple(names), {})
+            wrong = {label: i for i, label in contested.items()}
+            if option in wrong:
+                index_of = wrong[option]
+                raise ValueError(
+                    f"{option!r} is the catalog's name for position "
+                    f"{index_of} of this list, and the unit's screen shows "
+                    f"something else there - the catalog has these positions "
+                    f"swapped (read on the unit 2026-09-14, see "
+                    f"docs/domain-model.md). Selecting by this name would give "
+                    f"you the other one. Name the position with an enum member "
+                    f"from pyquadcortex.protocol.options, which follows the "
+                    f"screen, or pass the index."
+                )
         # An IntEnum member is an int, so a member of the WRONG list converts
         # silently: DynMode3.GATE and SplitterType.CROSSOVER are both 2, and
         # both would be accepted here. Check the enum describes THIS list.

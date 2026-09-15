@@ -97,6 +97,60 @@ SPELLING_FIXES = {
     "Noral": "NORMAL",
 }
 
+#: Positions where the screen and the catalog disagree about MEANING, not just
+#: spelling, and the member name therefore follows the SCREEN.
+#:
+#: Most screen wording differs harmlessly - the unit draws ``SIN`` where the
+#: catalog writes ``Sine``, and nobody is misled. This table is for the other
+#: kind, and it is written by hand one reviewed line at a time because no
+#: generator can tell an abbreviation from a contradiction.
+#:
+#: Every entry MUST have a driven reading behind it in ``option_readings.json``;
+#: ``check_corrections`` below refuses one that does not, so this cannot become
+#: somewhere to put a hunch. The wire is untouched - ``OPTION_LABELS`` still
+#: holds the catalog's strings, because that is what the device publishes.
+#:
+#: One list so far. A SECOND is not a precedent to follow blindly; read it on
+#: the unit the same way and write the evidence beside it.
+MEANING_DISAGREEMENTS = {
+    # Driven on a Mono Synth 2026-09-14, both oscillators set at once and read
+    # together: wire position 5 draws WHT and position 6 draws PNK, while the
+    # catalog calls them "Pink NS" and "White NS". The catalog has the two
+    # noises swapped, so `PINK_NS = 5` would hand a caller white noise - the
+    # same shape of error as the metronome names, which is what this audit is
+    # for. The screen wins, per CLAUDE.md.
+    ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS"): {
+        5: "WHITE_NS",
+        6: "PINK_NS",
+    },
+}
+
+
+def check_corrections(readings: dict, present: dict) -> None:
+    """Refuse a correction with no reading behind it.
+
+    Without this the table above is just `SPELLING_FIXES` with a bigger blast
+    radius - a place to rename a member on a hunch, which is exactly what the
+    audit exists to stop.
+
+    Only lists THIS catalog offers are checked. A correction is per snapshot and
+    a different firmware need not carry the list at all, so demanding a reading
+    for one that is not here would make a 4.1.0 run fail over a 4.0.1 finding.
+    """
+    for labels, by_index in MEANING_DISAGREEMENTS.items():
+        if labels not in present:
+            continue
+        seen = readings.get(labels, {})
+        for index, member in by_index.items():
+            rows = [r for r in seen.get(index, [])
+                    if r.get("method") == "driven"]
+            if not rows:
+                raise SystemExit(
+                    f"MEANING_DISAGREEMENTS renames position {index} of "
+                    f"{labels} to {member!r}, but no DRIVEN reading records "
+                    f"what the screen shows there. Read it on the unit first.")
+
+
 #: Characters that must become a word rather than an underscore, because the
 #: underscore would lose the distinction. "+" and "-" appear as a whole option
 #: name on a Rotary's direction switch.
@@ -135,7 +189,15 @@ def load_readings(snapshot: str) -> dict:
     appears in 27 of 4.1.0's labels and none of 4.0.1's.
     """
     if not READINGS.exists():
-        return {}
+        # NOT an empty dict. Returning one rewrites options.py with all 113
+        # lists stamped "NOT audited", erasing every audit, and prints success -
+        # the same silent-wrong-path failure the CATALOGS comment above was
+        # written about. The file is committed; if it is not here, the run is
+        # wrong, not the record.
+        raise SystemExit(
+            f"no readings at {READINGS}. That file is committed, so this is a "
+            f"wrong path rather than an empty audit - regenerating now would "
+            f"erase every recorded reading from options.py.")
     rows = json.loads(READINGS.read_text(encoding="utf-8"))
     out = collections.defaultdict(lambda: collections.defaultdict(list))
     for row in rows:
@@ -143,6 +205,20 @@ def load_readings(snapshot: str) -> dict:
             continue
         out[tuple(row["labels"])][row["index"]].append(row)
     return {labels: dict(by_index) for labels, by_index in out.items()}
+
+
+def read_method(rows: list) -> set:
+    """How each of these readings was taken - ``"driven"`` or ``"list"``.
+
+    A position read by DRIVING it - setting the wire index and reading back what
+    the screen then showed - proves the mapping. A position read by transcribing
+    the control's own list proves only that the word appears somewhere in it,
+    and on a two-position control it does not even prove the order: three lists
+    read that way on 2026-09-14 came back reversed, and driving position 0
+    showed the reading was wrong, not the catalog. So the file records which,
+    and `tests/test_option_audit.py` holds the rule that follows from it.
+    """
+    return {r.get("method", "list") for r in rows}
 
 
 def is_symbol(rows: list) -> bool:
@@ -181,28 +257,52 @@ def screen_word(labels: tuple, index: int, rows: list) -> str:
 def audit_status(labels: tuple, readings: dict, users: list = ()) -> str | None:
     """What is known about whether this list's words are the screen's.
 
-    ``"audited"`` when every position has been read off the unit, ``"partial"``
-    when only some, ``"hidden"`` when no parameter using it is on the screen at
-    all, and ``None`` when nobody has looked.
+    ``"audited"`` when every position has been read off the unit, ``"drawn"``
+    when every position was read but the unit draws pictures rather than words,
+    ``"partial"`` when only some, ``"absent"`` when somebody looked for the
+    control and the unit does not draw it, and ``None`` when nobody has looked.
 
     A half-read list is NOT audited. It is the most tempting place to round up -
     a 21-entry note-length list read at four positions feels checked - and
     rounding up is what makes an unaudited list indistinguishable from a checked
     one, which is the whole thing this stamp exists to prevent.
 
-    ``"hidden"`` is its own answer rather than a kind of unread, because the two
-    call for opposite things. An unread list is work somebody should do; a
-    hidden one is work nobody can do, and leaving it in the unread pile makes
-    the job look bigger than it is forever. Six lists are hidden, 38 parameters,
-    and they include the two that looked most like typos - which is the likely
-    explanation for the typos.
+    **``"absent"`` comes from an observation, never from the catalog's
+    ``hidden`` flag.** The first version of this derived it from the flag, and
+    hardware disproved the rule on the day it was written: of the six lists used
+    only by parameters the catalog marks hidden, five were looked for on the
+    unit and were not drawn - and the sixth, a Mono Synth's ``OSC1 WAVE``, is on
+    the screen, on a tab called Oscillator, with its own icons. So the flag is a
+    hint about the vendor's intent and not a fact about the screen, and a status
+    built on it would have declared a visible control permanently uncheckable.
+    ADR-0010 is the precedent: a rule about a parameter attribute, plausible,
+    and false on the unit. An ``absent`` row records WHERE somebody looked, so
+    the claim can be re-checked the way a reading can.
     """
-    seen = readings.get(labels)
-    if seen:
-        return "audited" if set(seen) == set(range(len(labels))) else "partial"
-    if users and all(p.hidden for _, p in users):
-        return "hidden"
-    return None
+    seen = dict(readings.get(labels) or {})
+    absent = [r for rows in seen.values() for r in rows if r.get("kind") == "absent"]
+    positions = {i: rows for i, rows in seen.items()
+                 if not all(r.get("kind") == "absent" for r in rows)}
+    if absent and positions:
+        raise SystemExit(
+            f"{labels} is recorded both as read and as not drawn: "
+            f"{absent[0]['model']} {absent[0]['param']} was looked for and was "
+            f"not there, yet positions {sorted(positions)} have readings. One "
+            f"of the two observations is wrong; neither should win by file "
+            f"order.")
+    if absent:
+        return "absent"
+    seen = positions
+    if not seen:
+        return None
+    if set(seen) != set(range(len(labels))):
+        return "partial"
+    # Every position read - but a list the unit DRAWS has had no words checked,
+    # and calling that "audited" is the overstatement this whole stamp exists
+    # to prevent. It gets its own answer.
+    if all(is_symbol(rows) for rows in seen.values()):
+        return "drawn"
+    return "audited"
 
 
 def audit_lines(labels: tuple, readings: dict, users: list = (),
@@ -210,10 +310,21 @@ def audit_lines(labels: tuple, readings: dict, users: list = (),
     """The docstring paragraph stating what is known about this list's words."""
     status = audit_status(labels, readings, users)
     seen = readings.get(labels, {})
-    if status == "hidden":
-        return [indent + "CANNOT be audited: every parameter using this list is",
-                indent + "marked hidden, so the unit never draws these words and",
-                indent + "there is no screen text to hold them against."]
+    if status == "absent":
+        where = ", ".join(sorted({f"{r['model']}'s {r['param']}" for rows
+                                  in readings.get(labels, {}).values()
+                                  for r in rows if r.get("kind") == "absent"}))
+        return [indent + "NOT DRAWN by the unit, so these words cannot be held",
+                indent + "against a screen. Looked for on " + where + " and not",
+                indent + "found on any page of the block (2026-09-14). This is",
+                indent + "an observation, not the catalog's ``hidden`` flag - a",
+                indent + "list marked hidden IS drawn on a Mono Synth."]
+    if status == "drawn":
+        return [indent + "Every position was read on the unit, but the screen",
+                indent + "DRAWS them rather than naming them, so these WORDS",
+                indent + "remain unchecked - what was confirmed is the order and",
+                indent + "the behaviour, not the spelling. See",
+                indent + "``option_readings.json`` for the pictures."]
     if status is None:
         return [indent + "NOT audited against the screen. These names are the",
                 indent + "catalog's ``stepNames``, which is not known to be the",
@@ -242,8 +353,16 @@ def audit_lines(labels: tuple, readings: dict, users: list = (),
     return lines
 
 
-def member_name(label: str) -> str:
-    """'Lo Pass' -> 'LO_PASS'; '1/64T' -> 'N1_64T'; '-6' -> 'MINUS_6'."""
+def member_name(label: str, labels: tuple = (), index: int | None = None) -> str:
+    """'Lo Pass' -> 'LO_PASS'; '1/64T' -> 'N1_64T'; '-6' -> 'MINUS_6'.
+
+    Where a driven reading shows the screen means something DIFFERENT here -
+    not merely spells it differently - the screen's meaning wins and the name
+    comes from `MEANING_DISAGREEMENTS`.
+    """
+    corrected = MEANING_DISAGREEMENTS.get(tuple(labels), {}).get(index)
+    if corrected is not None:
+        return corrected
     text = label.strip()
     if text in SPELLING_FIXES:
         return SPELLING_FIXES[text]
@@ -374,7 +493,7 @@ def render_enum(name: str, labels: tuple, users: list, readings: dict) -> list[s
     seen = readings.get(labels, {})
     used = {}
     for index, label in enumerate(labels):
-        member = member_name(label)
+        member = member_name(label, labels, index)
         if member in used:
             member = f"{member}_{index}"
         used[member] = index
@@ -387,7 +506,7 @@ def render_enum(name: str, labels: tuple, users: list, readings: dict) -> list[s
         elif rows and screen_word(labels, index, rows) != label:
             note = (f"    # screen: {screen_word(labels, index, rows)!r}; "
                     f"catalog: {label!r}")
-        elif member_name(label) != label.upper():
+        elif member_name(label, labels, index) != label.upper():
             note = f"    # {label!r}"
         else:
             note = ""
@@ -401,6 +520,15 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     names = name_lists(lists)
     total = sum(len(v) for v in lists.values())
     readings = load_readings(snapshot)
+    check_corrections(readings, every)
+    # {labels: {index: the catalog string that means the wrong thing here}}
+    CONTESTED = {labels: {i: labels[i] for i in by_index}
+                 for labels, by_index in MEANING_DISAGREEMENTS.items()
+                 if labels in every}
+    # Counted, never written down: the literal that used to sit in the header
+    # below is exactly the kind that drifts, and one beside it already had.
+    bools = sum(len(users) for labels, users in every.items()
+                if tuple(o.lower() for o in labels) in BOOLEAN_LISTS)
     status = {labels: audit_status(labels, readings, users)
               for labels, users in every.items()}
     done = sum(1 for v in status.values() if v == "audited")
@@ -421,8 +549,8 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
         "the same thing wherever it appears - the note-length list is shared by",
         "``SYNC NOTE``, ``SYNC NOTE L``, ``SYNC NOTE R`` and two more.",
         "",
-        "**A two-option Off/On parameter gets no enum.** 247 parameters offer",
-        "exactly those, and ``True`` says everything ``OffOn.ON`` would::",
+        f"**A two-option Off/On parameter gets no enum.** {bools} parameters",
+        "offer exactly those, and ``True`` says everything ``OffOn.ON`` would::",
         "",
         "    qc.set_param(block, 'SYNC', True)",
         "",
@@ -460,6 +588,20 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     lines.append("}")
 
     lines += ["", "",
+              "#: Catalog names a driven reading showed to be WRONG about what the",
+              "#: position means, as ``{labels: {index: the catalog's name}}``.",
+              "#:",
+              "#: One entry: a Mono Synth's oscillator waveforms, where the catalog",
+              "#: has pink and white noise swapped. The strings stay in",
+              "#: ``OPTION_LABELS`` because the device publishes them, but naming",
+              "#: one of these in ``set_param_option`` is refused rather than",
+              "#: silently selecting the other noise.",
+              "OPTION_CONTESTED = {"]
+    for labels in sorted(CONTESTED, key=lambda l: (names.get(l, ""), l)):
+        lines.append(f"    {labels!r}: {CONTESTED[labels]!r},")
+    lines.append("}")
+
+    lines += ["", "",
               "#: Whether anyone has held this list against the unit's SCREEN.",
               "#:",
               '#: ``"audited"`` means every position was read on the device and the',
@@ -469,7 +611,7 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
               "#:",
               "#: Keyed by the LABELS rather than by the enum, because the two lists",
               "#: that become a bool and the one published by hand have no enum and",
-              "#: are still 251 parameters whose words need checking.",
+              "#: are still 260 parameters whose words need checking.",
               "OPTION_AUDIT = {"]
     for labels in sorted(every, key=lambda l: (names.get(l, ""), l)):
         tag = f"{status[labels]!r}" if status[labels] else "None"
@@ -480,7 +622,8 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     lines += ["", "", "__all__ = ["]
     for labels, _ in sorted(lists.items(), key=lambda kv: names[kv[0]]):
         lines.append(f'    "{names[labels]}",')
-    lines += ['    "OPTION_LABELS",', '    "OPTION_AUDIT",', "]", ""]
+    lines += ['    "OPTION_LABELS",', '    "OPTION_AUDIT",',
+              '    "OPTION_CONTESTED",', "]", ""]
     return "\n".join(lines)
 
 
@@ -511,8 +654,8 @@ def main():
     # exactly what is there, so a snapshot generated one module at a
     # time imports at every step instead of only at the last.
     _snapshots.ensure_snapshot_package(CATALOGS, args.snapshot)
-    print(f"wrote {out} ({text.count('class ')} enums, "
-          f"{text.count(chr(58) + chr(32) + chr(39) + 'audited' + chr(39))} audited lists)")
+    audited = text.count(": 'audited'")
+    print(f"wrote {out} ({text.count('class ')} enums, {audited} audited lists)")
 
 
 if __name__ == "__main__":

@@ -203,15 +203,33 @@ class Parameter:
     #: Whether the screen shows this without a decimal point.
     show_as_integer: bool = False
     #: Whether the unit keeps this parameter OFF the screen, from the XML's
-    #: ``hidden``. It matters to anything that compares
-    #: the catalog against what a person can see: a hidden parameter's option
-    #: names are never drawn, so they cannot be checked and are not expected to
-    #: read like screen text. That is the likeliest reading of why the labels
-    #: which look like source identifiers - ``nollySkewedPlug``, ``Noral``,
-    #: ``Triang`` - sit almost entirely on hidden parameters. The flag is the
-    #: device's own claim and nothing here has proved the unit honours it on
-    #: every one; what IS measured is 2026-09-14, when two lists used only by
-    #: hidden parameters were looked for on the unit and were not on any page.
+    #: ``hidden``. It matters to anything that compares the catalog against what
+    #: a person can see: a hidden parameter's option names are never drawn, so
+    #: they cannot be checked and are not expected to read like screen text.
+    #: That is why the labels which look like source identifiers -
+    #: ``nollySkewedPlug``, ``Noral``, ``Triang`` - sit almost entirely on
+    #: hidden parameters.
+    #:
+    #: **It does not reliably mean "not on screen", and that was measured**
+    #: (2026-09-14, CorOS 4.0.1). A block carrying each of the six lists used
+    #: ONLY by hidden parameters was placed on the grid and the named control
+    #: looked for on every page of that block. Five were genuinely not drawn: a
+    #: Soldano SLO-100's ``CHANNEL``, an IR loader's ``INVERT``, a Gojira REV's
+    #: ``MIX LAW``, a Slapback Delay's ``QUALITY`` and a Plini Delay's ``DYN
+    #: MODE``. The sixth, a Mono Synth's ``OSC1 WAVE``, **is on the screen** -
+    #: on a tab called Oscillator, drawn as waveform icons, alongside
+    #: ``OSC1 ACTIVE`` which this flag also marks hidden.
+    #:
+    #: So do not build behaviour on it. `options.OPTION_AUDIT` deliberately does
+    #: not: a list is stamped unreadable only where somebody looked and it was
+    #: not there, never because of this flag. ADR-0010 is the precedent - a
+    #: plausible rule about a parameter attribute, disproved on the unit.
+    #:
+    #: What the flag IS good for is a hint about where to look first, and it is
+    #: read per PARAMETER rather than per name. The Soldano is the proof: it
+    #: carries two parameters called ``CHANNEL``, one flagged and offering
+    #: ``Clean,Crunch,Lead`` and one not, offering ``Normal,OD``, and the screen
+    #: draws the second only.
     #:
     #: **The attribute is not a boolean.** 649 parameters say ``"true"`` and one
     #: says ``"atma"`` - the Freeze block's ``MOMENTARY`` switch. ``atma`` is the

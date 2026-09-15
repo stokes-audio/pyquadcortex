@@ -24,6 +24,7 @@ import pathlib
 import pytest
 
 from pyquadcortex.protocol import options
+from pyquadcortex.protocol.catalogs.coros_4_0_1 import options as generated
 
 READINGS = (pathlib.Path(__file__).parent / "fixtures" / "catalog"
             / "option_readings.json")
@@ -32,22 +33,28 @@ READINGS = (pathlib.Path(__file__).parent / "fixtures" / "catalog"
 #: ``{status: number of lists}``. Pinned so that landing an audit is a visible
 #: diff and losing one cannot happen quietly. ``None`` is "nobody has looked".
 #:
-#: ``docs/domain-model.md`` quotes the unread number in prose; the two move
-#: together or this test fails, which is the only thing keeping the document
-#: from drifting away from the code.
-EXPECTED = {"audited": 12, "hidden": 6, None: 95}
+#: ``docs/domain-model.md`` quotes these numbers in prose, and
+#: ``test_the_document_quotes_the_same_counts`` below actually opens the file
+#: and looks for them. An earlier version of this comment claimed the two moved
+#: together while the test only compared the code against the literal here -
+#: which would have passed happily with the document saying anything at all.
+EXPECTED = {"audited": 12, "drawn": 1, "absent": 5, None: 95}
 
-#: Lists no parameter shows on screen, so no reading of them is possible. Named
-#: rather than counted, because "hidden" is the one status a reader might
-#: mistake for a job still to do, and because the set changing means the device
-#: changed. Five of the six carry labels that look like source identifiers -
-#: which is the likeliest reason they do: nobody was meant to read them.
-HIDDEN_LISTS = {
+#: Lists somebody looked for on the unit and did not find, so no reading of them
+#: is possible. Named rather than counted, because "absent" is the one status a
+#: reader might mistake for a job still to do, and because the set changing
+#: means the device changed.
+#:
+#: **Every entry is an observation.** An earlier version derived this from the
+#: catalog's `hidden` flag and listed seven, including the Mono Synth's
+#: `OSC1 WAVE` - which is on the screen, on a tab called Oscillator, drawn as
+#: waveform icons. The flag is the vendor's intent, not a fact about the glass,
+#: and ADR-0010 is the precedent for what happens to rules like that.
+ABSENT_LISTS = {
     ("Noral", "Inverted"),
     ("Duck", "Gate"),
     ("nolly", "nollySkewed", "nollySkewedPlug"),
     ("0", "1", "2", "3"),
-    ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS"),
     ("Clean", "Crunch", "Lead"),
 }
 
@@ -58,12 +65,20 @@ def rows():
 
 
 def test_the_fixture_is_a_list_of_complete_rows(rows):
-    required = {"snapshot", "labels", "index", "screen", "read_on",
-                "model", "param", "param_index"}
+    required = {"snapshot", "labels", "index", "screen", "read_on", "method",
+                "model", "model_id", "param", "param_index"}
     for row in rows:
         missing = required - set(row)
         assert not missing, f"reading {row} is missing {sorted(missing)}"
-        assert row["kind"] in (None, "text", "symbol") if "kind" in row else True
+        # model_id is in that set although it may be null, because the hardware
+        # test dereferences it. A row without the KEY passes every offline check
+        # and raises KeyError on the unit, which is the worst place to find out.
+        if "kind" in row:
+            assert row["kind"] in ("text", "symbol", "absent"), row
+        # An "absent" row records that a control was looked for and not drawn,
+        # so it has no screen text by construction.
+        assert (row["screen"] is None) == (row.get("kind") == "absent"), row
+        assert row["method"] in ("driven", "list"), row
 
 
 def test_every_reading_names_a_list_the_snapshot_has(rows):
@@ -117,12 +132,15 @@ def test_audited_means_every_position_was_read(rows):
     """
     read = collections.defaultdict(set)
     for row in rows:
-        if row["snapshot"] == "coros_4_0_1":
+        # An "absent" row is an observation about the CONTROL, not a reading of
+        # a position - its index is a placeholder and counting it would report
+        # position 0 of an undrawn list as read.
+        if row["snapshot"] == "coros_4_0_1" and row.get("kind") != "absent":
             read[tuple(row["labels"])].add(row["index"])
     for labels, status in options.OPTION_AUDIT.items():
-        if status == "audited":
+        if status in ("audited", "drawn"):
             assert read[labels] == set(range(len(labels))), (
-                f"{labels} is stamped audited but positions "
+                f"{labels} is stamped {status!r} but positions "
                 f"{sorted(set(range(len(labels))) - read[labels])} were "
                 f"never read")
         elif status == "partial":
@@ -132,9 +150,23 @@ def test_audited_means_every_position_was_read(rows):
                 f"{labels} has readings but is stamped {status!r}")
 
 
-def test_a_hidden_list_is_not_a_list_awaiting_work():
-    assert {k for k, v in options.OPTION_AUDIT.items() if v == "hidden"} == \
-        HIDDEN_LISTS
+def test_an_absent_list_is_not_a_list_awaiting_work():
+    assert {k for k, v in options.OPTION_AUDIT.items() if v == "absent"} == \
+        ABSENT_LISTS
+
+
+def test_absent_is_recorded_by_observation_and_never_by_the_hidden_flag():
+    """The rule that was wrong, kept honest by the list that disproved it.
+
+    A Mono Synth's `OSC1 WAVE` is marked `hidden="true"` in the catalog and is
+    nonetheless drawn on screen. If `absent` ever goes back to being derived
+    from the flag, this list will be stamped unreadable and a visible control
+    will be declared permanently uncheckable.
+    """
+    osc = ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS")
+    assert options.OPTION_AUDIT[osc] != "absent", (
+        "OSC1 WAVE is on screen - it was read on the unit 2026-09-14. Marking "
+        "it absent means `absent` is being derived from the hidden flag again.")
 
 
 def test_the_audit_counts_are_what_we_last_agreed():
@@ -155,8 +187,12 @@ def test_the_audit_covers_the_lists_with_no_enum():
     without = set(options.OPTION_AUDIT) - with_enum
     assert without == {("Off", "On"), ("OFF", "ON"),
                        ("OFF", "MUTE", "DOWN", "ON")}
-    for labels in without:
-        assert options.OPTION_AUDIT[labels] == "audited"
+    assert options.OPTION_AUDIT[("Off", "On")] == "audited"
+    assert options.OPTION_AUDIT[("OFF", "ON")] == "audited"
+    # The metronome's four are DRAWN, not written, so its words are still
+    # unchecked - and it is the one list with no enum whose docstring could have
+    # said so, which is why the status has to carry it instead.
+    assert options.OPTION_AUDIT[("OFF", "MUTE", "DOWN", "ON")] == "drawn"
 
 
 def test_a_disagreement_would_reach_the_generated_file(rows):
@@ -166,9 +202,14 @@ def test_a_disagreement_would_reach_the_generated_file(rows):
     than against a current disagreement, so the day one is recorded it is caught
     here instead of being filed and forgotten.
     """
-    source = pathlib.Path(options.__file__).read_text(encoding="utf-8")
+    # The GENERATED module, not `options.__file__` - that is a four-line shim
+    # re-exporting this one, and reading it made this assertion unreachable:
+    # "screen: " can never appear there, so the test passed only because no
+    # reading disagrees yet. It would have fired on the first real disagreement,
+    # after a correct regeneration, telling the author to regenerate again.
+    source = pathlib.Path(generated.__file__).read_text(encoding="utf-8")
     for row in rows:
-        if row.get("kind") == "symbol":
+        if row.get("kind") in ("symbol", "absent"):
             continue
         label = row["labels"][row["index"]]
         if row["screen"] != label:
@@ -176,3 +217,121 @@ def test_a_disagreement_would_reach_the_generated_file(rows):
                 f"{row['param']} index {row['index']} was read as "
                 f"{row['screen']!r} but the catalog says {label!r}, and the "
                 f"generated module does not mention it. Regenerate.")
+
+
+def test_a_list_was_read_the_way_the_rule_says_it_must_be(rows):
+    """The safeguard that nearly did not exist.
+
+    Transcribing a control's choices in order is far faster than driving every
+    position, and on a dial it works. On a TWO-position control it does not:
+    `RECORD MODE`, `DUPLICATE MODE` and `CURVE` were each read as a list on
+    2026-09-14 and each came back in the OPPOSITE order from the catalog. All
+    three were wrong, and recording them would have put three backwards names
+    into the library - the same failure `enums.MetronomeBeat` already had once.
+
+    So the rule: a two-position list is audited only by DRIVING both positions,
+    and a longer one only with at least two positions driven. This test is what
+    makes it a rule rather than a paragraph - the first version of this work
+    wrote the rule into a comment and shipped a list that broke it.
+    """
+    driven = collections.defaultdict(set)
+    for row in rows:
+        if row["method"] == "driven" and row.get("kind") != "absent":
+            driven[tuple(row["labels"])].add(row["index"])
+    for labels, status in options.OPTION_AUDIT.items():
+        if status not in ("audited", "drawn"):
+            continue
+        anchors = driven[labels]
+        if len(labels) == 2:
+            assert anchors == {0, 1}, (
+                f"{labels} is a two-position list stamped {status!r}, but "
+                f"positions {sorted(anchors)} were driven. Both must be: read "
+                f"as a list, a two-position control does not even give its "
+                f"order away.")
+        else:
+            assert len(anchors) >= 2, (
+                f"{labels} is stamped {status!r} off a list reading with "
+                f"{len(anchors)} driven anchor(s) ({sorted(anchors)}). Two are "
+                f"needed, one of them somewhere an error would show.")
+
+
+def test_the_document_quotes_the_same_counts():
+    """`docs/domain-model.md` states the audit's numbers in prose.
+
+    Nothing else connects the two, so without this the document drifts away
+    from the code the first time somebody updates one and not the other.
+    """
+    doc = (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+    # Whitespace-collapsed: the sentence is wrapped at 80 columns in the
+    # document, so a literal search would demand the prose keep a line break in
+    # one particular place, and reflowing a paragraph would "fail the audit".
+    text = " ".join(doc.read_text(encoding="utf-8").split())
+    counts = collections.Counter(options.OPTION_AUDIT.values())
+    phrase = (f"{counts['audited']} audited, {counts['drawn']} drawn, "
+              f"{counts['absent']} not drawn, {counts[None]} unread")
+    assert phrase in text, (
+        f"docs/domain-model.md does not say {phrase!r}. The audit moved and the "
+        f"document did not; they are updated in the same commit.")
+
+
+def test_a_drawn_list_is_not_counted_as_words_checked():
+    """`OFF,MUTE,DOWN,ON` is the case, and it is the easiest one to overclaim.
+
+    All four positions were driven and read, so by position count the list is
+    complete. But the unit draws a filled or empty circle with an optional dot;
+    it never writes `MUTE`. Those four WORDS are exactly the hypothesis this
+    mechanism exists to flag, so calling the list audited would be the
+    overstatement in its purest form - a list stamped checked where nothing
+    about the spelling was.
+    """
+    drawn = {k for k, v in options.OPTION_AUDIT.items() if v == "drawn"}
+    assert drawn == {("OFF", "MUTE", "DOWN", "ON")}
+
+
+def test_a_name_the_catalog_gets_wrong_is_refused_rather_than_obeyed():
+    """`set_param_option(block, p, "Pink NS")` must not hand back white noise.
+
+    The catalog calls wire position 5 of a Mono Synth's waveform list
+    "Pink NS" and the unit draws WHT there - the two noises are swapped
+    (driven on the unit 2026-09-14). The string stays in `OPTION_LABELS`
+    because the device publishes it; what is refused is selecting BY it, since
+    the caller would silently get the other noise.
+    """
+    from pyquadcortex.protocol import client
+
+    names = ["Sine", "Triang", "Sawtooth", "Square", "Pulse",
+             "Pink NS", "White NS"]
+    contested = options.OPTION_CONTESTED[tuple(names)]
+    assert contested == {5: "Pink NS", 6: "White NS"}
+
+    # the enum follows the SCREEN, so these two are the right way round
+    assert options.Osc1Wave.WHITE_NS == 5
+    assert options.Osc1Wave.PINK_NS == 6
+    # and the wire value each produces is still the plain position
+    assert client.option_value(names, int(options.Osc1Wave.WHITE_NS)) == 5 / 6
+
+
+def test_an_uncontested_name_on_the_same_list_still_works():
+    """The refusal is per POSITION, not a ban on naming options in this list."""
+    from pyquadcortex.protocol import client
+
+    names = ["Sine", "Triang", "Sawtooth", "Square", "Pulse",
+             "Pink NS", "White NS"]
+    assert client.option_value(names, "Square") == 3 / 6
+
+
+def test_a_correction_cannot_be_added_without_a_reading_behind_it(rows):
+    """`MEANING_DISAGREEMENTS` renames a public member, so it needs evidence.
+
+    Without the generator's check it is `SPELLING_FIXES` with a bigger blast
+    radius. This holds the other half: that the evidence for the one entry
+    that exists is actually in the fixture, driven rather than transcribed.
+    """
+    driven = {(tuple(r["labels"]), r["index"]) for r in rows
+              if r["method"] == "driven"}
+    for labels, by_index in options.OPTION_CONTESTED.items():
+        for index in by_index:
+            assert (labels, index) in driven, (
+                f"position {index} of {labels} is published as contested, but "
+                f"no driven reading in the fixture says what the screen shows "
+                f"there")

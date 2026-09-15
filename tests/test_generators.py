@@ -215,3 +215,165 @@ def test_the_output_tree_is_the_repos_catalogs_package_wherever_the_run_starts(n
     mod = _load(name)
     assert mod.CATALOGS.is_absolute()
     assert mod.CATALOGS == ROOT / "pyquadcortex" / "protocol" / "catalogs"
+
+
+# ---------------------------------------------------------------------------
+# generate_options' audit stamping
+#
+# All of this shipped untested in its first version, including two refusals
+# whose whole value is that they fire. `screen_word`'s in particular is the
+# mechanism for catching a device that draws one `stepNames` string two ways -
+# a finding - and nothing had ever invoked it.
+# ---------------------------------------------------------------------------
+
+AUDIT_XML = b"""<?xml version="1.0"?>
+<ModelRepo>
+  <Category id="6" name="Delay">
+    <Model id="6001" name="Test Delay">
+      <Parameter name="SHAPE" type="comboBox" stepNames="Soft,Hard,Wild"
+                 min="0" max="1" defaultValue="0" steps="3"/>
+      <Parameter name="SECRET" type="comboBox" stepNames="alpha,beta" hidden="true"
+                 min="0" max="1" defaultValue="0" steps="2"/>
+      <Parameter name="CELL" type="comboBox" stepNames="LOW,HIGH"
+                 min="0" max="1" defaultValue="0" steps="2"/>
+    </Model>
+  </Category>
+</ModelRepo>"""
+
+
+def _reading(labels, index, screen, **extra):
+    row = {"snapshot": "s", "labels": list(labels), "index": index,
+           "screen": screen, "read_on": "2026-09-14", "method": "driven",
+           "model": "Test Delay", "model_id": 6001, "param": "X",
+           "param_index": 0}
+    row.update(extra)
+    return row
+
+
+def _with_readings(monkeypatch, tmp_path, rows):
+    """Point the generator's READINGS at a fixture we control."""
+    import json
+    mod = _load("generate_options")
+    path = tmp_path / "readings.json"
+    path.write_text(json.dumps(rows), encoding="utf-8")
+    monkeypatch.setattr(mod, "READINGS", path)
+    return mod
+
+
+SHAPE = ("Soft", "Hard", "Wild")
+
+
+def test_a_list_nobody_read_says_so_in_its_own_docstring(monkeypatch, tmp_path):
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "NOT audited against the screen" in text
+    assert "'audited'" not in text
+
+
+def test_reading_every_position_stamps_the_enum_audited(monkeypatch, tmp_path):
+    rows = [_reading(SHAPE, i, w) for i, w in enumerate(SHAPE)]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "Audited against the unit's screen 2026-09-14: all 3 positions read." in text
+
+
+def test_reading_some_positions_is_partial_and_never_audited(monkeypatch, tmp_path):
+    """The status most likely to be rounded up, so it gets its own test."""
+    rows = [_reading(SHAPE, 0, "Soft"), _reading(SHAPE, 2, "Wild")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "PARTLY audited against the screen" in text
+    assert "2 of 3 positions read" in text
+    assert "'partial'" in text
+    assert "'audited'" not in text
+
+
+def test_a_screen_word_that_contradicts_the_catalog_reaches_the_enum(monkeypatch, tmp_path):
+    """The case the whole mechanism exists for, and which has never happened.
+
+    Written against a SYNTHETIC disagreement rather than a recorded one, so it
+    is a real test today instead of an assertion that waits years to run.
+    """
+    rows = [_reading(SHAPE, 0, "Soft"), _reading(SHAPE, 1, "Firm"),
+            _reading(SHAPE, 2, "Wild")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "screen: 'Firm'; catalog: 'Hard'" in text
+    assert "The screen and the catalog DISAGREE at 1" in text
+
+
+def test_two_readings_of_one_position_that_disagree_stop_the_generator(monkeypatch, tmp_path):
+    """Two parameters sharing a `stepNames` string, drawn differently.
+
+    That is a finding about the device. Letting file order pick a winner would
+    bury it, so the generator refuses rather than emitting either.
+    """
+    rows = [_reading(SHAPE, 0, "Soft"),
+            _reading(SHAPE, 0, "Gentle", param="OTHER"),
+            _reading(SHAPE, 1, "Hard"), _reading(SHAPE, 2, "Wild")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "readings disagree" in str(caught.value)
+    assert "not one list" in str(caught.value)
+
+
+def test_the_hidden_flag_alone_never_stamps_a_list_unreadable(monkeypatch, tmp_path):
+    """The rule that was wrong, pinned so it cannot come back.
+
+    `SECRET` here is marked `hidden="true"` exactly as a Mono Synth's
+    `OSC1 WAVE` is - and that one is on the screen. So a flagged parameter with
+    no observation behind it stays UNREAD, which is work somebody should do,
+    rather than `absent`, which is work nobody can.
+    """
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "'absent'" not in text
+    assert "NOT audited against the screen" in text
+
+
+def test_looking_for_a_control_and_not_finding_it_stamps_the_list_absent(monkeypatch, tmp_path):
+    rows = [_reading(("alpha", "beta"), 0, None, kind="absent",
+                     model="Test Delay", param="SECRET")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "'absent'" in text
+    assert "NOT DRAWN by the unit" in text
+    assert "Test Delay's SECRET" in text
+
+
+def test_a_list_recorded_both_read_and_not_drawn_stops_the_generator(monkeypatch, tmp_path):
+    """One of the two observations is wrong; neither wins by file order."""
+    rows = [_reading(("alpha", "beta"), 0, None, kind="absent", param="SECRET"),
+            _reading(("alpha", "beta"), 1, "beta", param="SECRET")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "recorded both as read and as not drawn" in str(caught.value)
+
+
+def test_a_list_the_unit_draws_is_stamped_drawn_rather_than_audited(monkeypatch, tmp_path):
+    """Every position read, and not one WORD checked.
+
+    `OFF,MUTE,DOWN,ON` is the real case: the unit draws circles and dots and
+    never writes `MUTE`. Calling that audited would be the overstatement the
+    stamp exists to prevent.
+    """
+    rows = [_reading(("LOW", "HIGH"), 0, "empty circle", kind="symbol"),
+            _reading(("LOW", "HIGH"), 1, "filled circle", kind="symbol")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "'drawn'" in text
+    assert "DRAWS them rather than naming them" in text
+    assert "drawn as 'empty circle'" in text
+    # and a drawing must never be reported as a disagreement with the word
+    assert "DISAGREE" not in text
+
+
+def test_a_missing_readings_file_stops_the_run_instead_of_erasing_the_audit(monkeypatch, tmp_path):
+    """Returning {} here rewrites every list as unread and prints success."""
+    mod = _load("generate_options")
+    monkeypatch.setattr(mod, "READINGS", tmp_path / "does-not-exist.json")
+    with pytest.raises(SystemExit) as caught:
+        mod.load_readings("s")
+    assert "erase every recorded reading" in str(caught.value)
