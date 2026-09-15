@@ -20,6 +20,23 @@ correction.
 
 ## Unreleased
 
+### Fixed: two guitar amps had no constant and could not be named
+
+`Bogna Uber Clean` and `Bogna Uber Lead` are ordinary amps your unit will place
+on request, and neither had an entry in `protocol.models` - the generated
+constants skipped straight from `UK_C15_TOPBOOST = 1128` to
+`US_HP_TWEED_TWN_NORMAL = 1132`.
+
+`catalog.Model.hidden` was reading the catalog's `hidden` attribute by PRESENCE.
+Thirteen models say `hidden="true"`; these two say `hidden="false"`, and both
+were being reported as hidden, which dropped them from `Model.is_factory` and so
+from the generated set. `Parameter.hidden` already read `== "true"` and had a
+test saying why; the model-level one never got the same treatment.
+
+`models.ALL` now holds 414 rather than 412. Settled by asking the unit rather
+than by reading the attribute again: `set_block` was sent for each and the unit
+placed both.
+
 ### `catalog.Parameter` now tells you the order the unit draws its controls
 
 New `Parameter.display_pos`. The parameters a model gives you are in WIRE order,
@@ -27,8 +44,8 @@ and that is not always the order the unit puts them on screen. A Solo 100 Lead
 draws GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT; the wire lists MASTER
 before PRESENCE.
 
-Of the 501 models you can place, **338 never carry it at all** - for those the
-wire order is all there is. 163 carry it somewhere, and on 142 of those the
+Of the 503 models you can place, **338 never carry it at all** - for those the
+wire order is all there is. 165 carry it somewhere, and on 144 of those the
 result disagrees with wire order.
 
 If you are showing a block's controls to a person, sort by `display_pos` and put
@@ -36,8 +53,12 @@ the unplaced ones last. `None` does not compare, so the key has to say so:
 
 ```python
 ordered = sorted(model.parameters,
-                 key=lambda p: (p.display_pos is None, p.display_pos or 0))
+                 key=lambda p: (p.display_pos is None, p.display_pos))
 ```
+
+The first element of that key is what makes it safe: placed controls all sort
+ahead of unplaced ones, so a `None` is never compared against a number. Two
+unplaced ones compare equal and keep their catalog order.
 
 Do **not** drop the `None` ones instead. Across every parameter a model gives
 you, 43 models place only some of them and 5 place two at the same number, so a

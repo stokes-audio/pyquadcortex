@@ -64,7 +64,6 @@ def live_catalog(qc):
     tests, which time how quickly the handshake fills the cache, and two of them
     began failing in a full run while passing alone as that grew.
     """
-    from pyquadcortex.protocol import catalog as catalog_module
     return catalog_module.parse_model_repo(qc._fetch_model_repo())
 
 
@@ -127,10 +126,8 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored, live_c
     that the catalog's POSITION is the position you get, which is the claim the
     rule makes - not that the float is bit-exact.
     """
-    live = live_catalog
-
     preset = qc.read_current_preset()
-    targets = _targets(preset, live)
+    targets = _targets(preset, live_catalog)
     assert targets, "the loaded preset has no fixed-list parameters to drive"
 
     # set_param without `scene=` writes the ACTIVE scene, so the read has to
@@ -139,6 +136,11 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored, live_c
     longest = max(len(labels) for _, _, labels, _, _ in targets)
     checked = 0
     wrong = []
+    # Kept apart from `wrong` on purpose. A slot that cannot be read is not a
+    # mismatch, and reporting it as one raises an alarm whose text says the
+    # catalog's wire mapping is wrong - the same false-alarm shape as reading
+    # the wrong scene slot did.
+    unreadable = []
     for position in range(longest):
         wrote = []
         for block, index, labels, model_name, param_name in targets:
@@ -167,9 +169,8 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored, live_c
             # unmaintained slots. All three are "nothing to compare", and
             # float() would turn the last two into a traceback instead.
             if stored is None or isinstance(stored, str) or stored != stored:
-                wrong.append(f"{model_name} {param_name}: scene slot {slot} "
-                             f"holds {stored!r}, so nothing can be compared")
-                checked += 1
+                unreadable.append(f"{model_name} {param_name}: scene slot "
+                                  f"{slot} holds {stored!r}")
                 continue
             got = round(float(stored) * (len(labels) - 1))
             checked += 1
@@ -179,6 +180,11 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored, live_c
 
     # The vacuity floor is judged FIRST. A thin run that also found a mismatch
     # would otherwise report the mismatch and never say the run proved little.
+    assert not unreadable, (
+        f"{len(unreadable)} scene slot(s) held nothing comparable: "
+        f"{unreadable[:5]}. That is not a mismatch and says nothing about the "
+        f"catalog - it means this test could not read what it wrote, so fix "
+        f"the reading before drawing any conclusion from the run.")
     assert checked >= 100, (
         f"only {checked} positions were driven; this preset reaches too little "
         f"to say anything about the catalog. Load one with more blocks. "
@@ -208,9 +214,7 @@ def test_the_displayPos_counts_the_docs_quote_still_hold(live_catalog):
     numbers in `CLAUDE.md`, `docs/STEERING.md`, `docs/domain-model.md` and
     `changelog.md` need re-deriving before anything else is trusted.
     """
-    live = live_catalog
-
-    placeable = [m for m in live
+    placeable = [m for m in live_catalog
                  if not (m.hidden or m.internal or m.category_hidden)]
 
     def placed(params):
@@ -245,15 +249,15 @@ def test_the_displayPos_counts_the_docs_quote_still_hold(live_catalog):
         # and left `len(live)` free, so a catalog that grew while still having
         # 331 padded models would have passed green with 533 and the derived 202
         # going stale in four documents.
-        "models": len(live),
-        "with_resources": sum(1 for m in live if m.resources),
+        "models": len(live_catalog),
+        "with_resources": sum(1 for m in live_catalog if m.resources),
     }
     assert counts == {
-        "placeable": 501,
-        "visible_placing_any": 161,
-        "visible_disagreeing": 140,
-        "all_placing_any": 163,
-        "all_disagreeing": 142,
+        "placeable": 503,
+        "visible_placing_any": 163,
+        "visible_disagreeing": 142,
+        "all_placing_any": 165,
+        "all_disagreeing": 144,
         "models": 533,
         "with_resources": 331,
     }, (f"this unit's catalog gives {counts}, and the docs quote the values in "

@@ -3491,7 +3491,7 @@ Attributes that classify a model:
 
 Because the catalog comes FROM the device it also covers Neural Captures
 (categories 14 and 20), which are user content. That is why the library ships
-generated constants only for factory content (412 of the 533 models on the observed
+generated constants only for factory content (414 of the 533 models on the observed
 unit) and resolves everything else at runtime.
 
 **A capture id is a BLOCK TYPE, not a capture.** Category 14 holds only a couple of

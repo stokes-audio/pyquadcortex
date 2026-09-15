@@ -811,6 +811,8 @@ LAYOUT_XML = """<?xml version="1.0" ?><Models>
     <Parameter defaultValue="5" max="10" min="0" name="MASTER" type="float" displayPos="6"/>
     <Parameter defaultValue="5" max="10" min="0" name="PRESENCE" type="float" displayPos="5"/>
     <Parameter defaultValue="5" max="10" min="0" name="OUTPUT" type="float"/>
+    <Parameter defaultValue="5" max="10" min="0" name="VOLUME" type="float" displayPos="0"/>
+    <Parameter defaultValue="5" max="10" min="0" name="SAG" type="float"/>
   </Model>
   <Model id="9999" name="No Padding">
     <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
@@ -820,24 +822,24 @@ LAYOUT_XML = """<?xml version="1.0" ?><Models>
 
 
 def test_a_parameter_reports_where_it_sits_on_the_blocks_page():
-    """`displayPos` is the SCREEN's order, and the wire's order is different.
+    """`displayPos` is the catalog's PREDICTION of the screen's order.
 
     Read off the unit twice - a cab 2026-09-11, and a Solo 100 Lead 2026-09-15
     whose knobs came back GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT
     where the wire lists MASTER before PRESENCE.
 
-    140 of the 161 models that place a VISIBLE control disagree with wire order
-    (163 and 142 counting hidden parameters too), but
-    NOT in the same way: only 17 are a single adjacent swap like that one, and
-    the other 123 are other reorderings. The shape below is synthetic.
+    142 of the 163 models that place a VISIBLE control disagree with wire order
+    (165 and 144 counting hidden parameters too), but NOT in the same way: only
+    17 are a single adjacent swap like that one, and the other 125 are other
+    reorderings. The shape below is synthetic.
     """
     model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
     by_wire = [p.name for p in model.parameters]
-    assert by_wire == ["GAIN", "MASTER", "PRESENCE", "OUTPUT"]
+    assert by_wire == ["GAIN", "MASTER", "PRESENCE", "OUTPUT", "VOLUME", "SAG"]
 
     placed = [p for p in model.parameters if p.display_pos is not None]
     by_screen = [p.name for p in sorted(placed, key=lambda p: p.display_pos)]
-    assert by_screen == ["GAIN", "PRESENCE", "MASTER"]
+    assert by_screen == ["VOLUME", "GAIN", "PRESENCE", "MASTER"]
 
 
 def test_a_parameter_the_catalog_does_not_place_says_so():
@@ -899,13 +901,70 @@ def test_the_sorting_recipe_the_changelog_publishes_actually_works():
 
     # Copied verbatim from changelog.md. If this stops matching, fix both.
     ordered = sorted(model.parameters,
-                     key=lambda p: (p.display_pos is None, p.display_pos or 0))
+                     key=lambda p: (p.display_pos is None, p.display_pos))
 
-    assert [p.name for p in ordered] == ["GAIN", "PRESENCE", "MASTER", "OUTPUT"]
+    assert [p.name for p in ordered] == ["VOLUME", "GAIN", "PRESENCE", "MASTER",
+                                        "OUTPUT", "SAG"]
     # The unplaced one goes last rather than being dropped, which is the half of
     # the advice a reader is most likely to skip.
-    assert ordered[-1].name == "OUTPUT"
-    assert ordered[-1].display_pos is None
-    # And `display_pos == 0` must not be mistaken for missing: `0 or 0` is 0,
-    # so the key is safe, and 149 real models place a control at 0.
-    assert ordered[0].display_pos == 0 or ordered[0].name == "GAIN"
+    # TWO unplaced controls, deliberately, because that is the case that would
+    # break a careless key. It does not break this one: placed controls all sort
+    # ahead on the first element, so a None never meets a number, and two Nones
+    # compare EQUAL rather than raising - tuple comparison finds the first
+    # differing element with `==`, and `None == None`. An earlier version of
+    # this key carried an `or 0` against a hazard that does not exist, with a
+    # comment claiming this test proved it; the test could not, and did not.
+    assert [p.name for p in ordered[-2:]] == ["OUTPUT", "SAG"]
+    assert all(p.display_pos is None for p in ordered[-2:])
+    # And position 0 must not be mistaken for missing - `0` is falsey, which is
+    # the trap in any key that tests truthiness rather than `is None`. The
+    # fixture has to CONTAIN a zero for that to mean anything, and an earlier
+    # version did not, which made this assertion unfalsifiable. 151 placeable
+    # models really do place a control at 0.
+    assert ordered[0].name == "VOLUME"
+    assert ordered[0].display_pos == 0
+
+
+HIDDEN_MODEL_XML = """<?xml version="1.0" ?><Models>
+<Category id="0" name="Guitar Amplifier">
+  <Model id="1130" name="Bogna Uber Clean" hidden="false">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+  <Model id="1140" name="Really Hidden" hidden="true">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+  <Model id="1141" name="Says Nothing">
+    <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float"/>
+  </Model>
+</Category>
+</Models>"""
+
+
+def test_a_model_marked_hidden_false_is_not_hidden():
+    """The bug that cost two amps their constants.
+
+    `Model.hidden` read the attribute by PRESENCE while `Parameter.hidden` -
+    which already had this exact treatment and a test - reads `== "true"`. Two
+    real amps carry `hidden="false"`, so both were reported hidden, `is_factory`
+    dropped them, and `models.py` skipped from 1128 to 1132 with no name for
+    either. The unit places both when asked, which is how it was settled.
+    """
+    cat = catalog.parse_model_repo(make_payload(HIDDEN_MODEL_XML))
+    assert cat[1130].hidden is False
+    assert cat[1140].hidden is True
+    assert cat[1141].hidden is False
+
+
+def test_a_model_marked_hidden_false_still_counts_as_factory():
+    """`is_factory` is what decides whether a model gets a generated constant."""
+    cat = catalog.parse_model_repo(make_payload(HIDDEN_MODEL_XML))
+    assert cat[1130].is_factory is True
+    assert cat[1140].is_factory is False
+
+
+def test_the_two_amps_that_were_missing_have_constants_now():
+    """Named, because a regression here silently removes public API again."""
+    from pyquadcortex.protocol import models
+
+    assert models.GuitarAmplifier.BOGNA_UBER_CLEAN == 1130
+    assert models.GuitarAmplifier.BOGNA_UBER_LEAD == 1131

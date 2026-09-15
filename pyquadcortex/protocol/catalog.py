@@ -211,15 +211,15 @@ class Parameter:
     #: file on the file's word. What is behind it: a cab read off the unit
     #: 2026-09-11 (POSITION, DISTANCE, LEVEL, PAN) and a Solo 100 Lead read
     #: 2026-09-15 (GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT, where the
-    #: wire lists MASTER before PRESENCE). Two models out of the 161 that place
+    #: wire lists MASTER before PRESENCE). Two models out of the 163 that place
     #: a VISIBLE control, and nothing re-drives it. (Counting every parameter a
-    #: model hands you, hidden ones included, it is 163 - which is the basis the
+    #: model hands you, hidden ones included, it is 165 - which is the basis the
     #: changelog's sorting recipe uses, because that is what it sorts.) A third reading that disagreed
     #: would unseat this the way three disagreeing readings unseated the drawn
     #: order of an option list.
     #:
-    #: It still beats ignoring it: 140 of those 161 disagree with wire order (142
-    #: of 163 counting hidden parameters too), so
+    #: It still beats ignoring it: 142 of those 163 disagree with wire order (144
+    #: of 165 counting hidden parameters too), so
     #: a caller showing ``model.parameters`` in the order it gets them is
     #: usually showing the wrong order. But it is not a complete layout - 23
     #: models place only SOME of their visible controls and one places two at
@@ -538,6 +538,19 @@ class Model:
     parameters: tuple[Parameter, ...] = ()
     sku: str | None = None
     plugin_id: str | None = None
+    #: Whether the catalog marks this model hidden, from the XML's ``hidden``.
+    #:
+    #: **Read as ``== "true"``, not by presence**, because the attribute is not
+    #: a boolean here any more than it is on a parameter. 13 models say
+    #: ``"true"`` and two say ``"false"`` - Bogna Uber Clean (1130) and Bogna
+    #: Uber Lead (1131), ordinary amps in a visible category with no ``sku``.
+    #: Reading presence reported both as hidden, which made :attr:`is_factory`
+    #: drop them, which left them out of the generated constants entirely:
+    #: ``models.py`` went from ``UK_C15_TOPBOOST = 1128`` straight to
+    #: ``US_HP_TWEED_TWN_NORMAL = 1132`` and two amps a player can use had no
+    #: name. Fixed 2026-09-15, and settled by ASKING the unit rather than by
+    #: reading the attribute a second time: ``set_block`` was sent for each and
+    #: the unit placed both.
     hidden: bool = False
     internal: bool = False
     category_hidden: bool = False
@@ -873,7 +886,7 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 sku=element.get("sku"),
                 plugin_id=element.get("plugin_id"),
                 resources=_parse_padding(element),
-                hidden=element.get("hidden") is not None,
+                hidden=element.get("hidden") == "true",  # see Model.hidden
                 internal=element.get("internal") is not None,
                 category_hidden=category_hidden,
                 replaces=_parse_replaces(element.get("replaces")),
