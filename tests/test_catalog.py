@@ -738,3 +738,62 @@ def test_an_unknown_parameter_name_still_says_what_there_is():
     model = catalog.parse_model_repo(make_payload(xml))[1]
     with pytest.raises(KeyError, match="has no parameter"):
         model.parameter("NOPE")
+
+
+HIDDEN_XML = """<?xml version="1.0" ?><Models>
+<Category id="0" name="Amps">
+  <Model id="1170" name="Soldano">
+    <Parameter defaultValue="0" max="1" min="0" name="CHANNEL" type="comboBox"
+               stepNames="Clean,Crunch,Lead" hidden="true"/>
+    <Parameter defaultValue="0" max="1" min="0" name="CHANNEL" type="comboBox"
+               stepNames="Normal,OD"/>
+    <Parameter defaultValue="0" max="1" min="0" name="MOMENTARY" type="switch"
+               stepNames="Off,On" hidden="atma"/>
+  </Model>
+</Category>
+</Models>"""
+
+
+def test_a_parameter_reports_whether_the_unit_keeps_it_off_the_screen():
+    """The catalog's own `hidden` attribute, published and nothing more.
+
+    It does NOT reliably mean "off the screen", and nothing in the library
+    branches on it. Measured 2026-09-14: of the six option lists used only by
+    parameters carrying it, a block for each was placed and the control looked
+    for, and five were not drawn - but the sixth, a Mono Synth's `OSC1 WAVE`,
+    is on the screen, on a tab called Oscillator. See `Parameter.hidden`.
+    """
+    model = catalog.parse_model_repo(make_payload(HIDDEN_XML))[1170]
+    assert model.parameters[0].hidden is True
+    assert model.parameters[1].hidden is False
+
+
+def test_two_parameters_of_one_name_are_hidden_independently():
+    """The Soldano SLO-100 is the real case and it is why the FLAG is read.
+
+    It carries two parameters called `CHANNEL`: one hidden offering
+    `Clean,Crunch,Lead` and one visible offering `Normal,OD`. On 2026-09-14 the
+    unit drew the second and not the first, so the unit honours the flag per
+    PARAMETER. Anything keyed on the parameter's NAME would get this backwards.
+    """
+    model = catalog.parse_model_repo(make_payload(HIDDEN_XML))[1170]
+    named = [p for p in model.parameters if p.name == "CHANNEL"]
+    assert len(named) == 2
+    assert [p.hidden for p in named] == [True, False]
+    assert [p.options for p in named] == [("Clean", "Crunch", "Lead"),
+                                          ("Normal", "OD")]
+
+
+def test_hidden_atma_is_not_hidden_on_a_quad_cortex():
+    """The attribute is not a boolean: one parameter's value is `atma`.
+
+    `atma` is the Quad Cortex Mini's `device_type`, so the catalog is naming the
+    MODEL a parameter is hidden on. `Parameter.hidden` answers for a Quad Cortex,
+    which is what this library connects to, so `atma` must read as NOT hidden
+    here - the `is not None` test used for `Model.hidden` would get it wrong, and
+    would also quietly stamp the Freeze block's `MOMENTARY` list unauditable.
+    """
+    model = catalog.parse_model_repo(make_payload(HIDDEN_XML))[1170]
+    momentary = model.parameters[2]
+    assert momentary.name == "MOMENTARY"
+    assert momentary.hidden is False

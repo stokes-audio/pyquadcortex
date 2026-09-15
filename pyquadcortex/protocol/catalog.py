@@ -202,6 +202,46 @@ class Parameter:
     exp_assignable: bool = True
     #: Whether the screen shows this without a decimal point.
     show_as_integer: bool = False
+    #: Whether the unit keeps this parameter OFF the screen, from the XML's
+    #: ``hidden``. It matters to anything that compares the catalog against what
+    #: a person can see: a hidden parameter's option names are never drawn, so
+    #: they cannot be checked and are not expected to read like screen text.
+    #: That is why the labels which look like source identifiers -
+    #: ``nollySkewedPlug``, ``Noral``, ``Triang`` - sit almost entirely on
+    #: hidden parameters.
+    #:
+    #: **It does not reliably mean "not on screen", and that was measured**
+    #: (2026-09-14, CorOS 4.0.1). A block carrying each of the six lists used
+    #: ONLY by hidden parameters was placed on the grid and the named control
+    #: looked for on every page of that block. Five were genuinely not drawn: a
+    #: Soldano SLO-100's ``CHANNEL``, an IR loader's ``INVERT``, a Gojira REV's
+    #: ``MIX LAW``, a Slapback Delay's ``QUALITY`` and a Plini Delay's ``DYN
+    #: MODE``. The sixth, a Mono Synth's ``OSC1 WAVE``, **is on the screen** -
+    #: on a tab called Oscillator, drawn as waveform icons, alongside
+    #: ``OSC1 ACTIVE`` which this flag also marks hidden.
+    #:
+    #: So do not build behaviour on it. `options.OPTION_AUDIT` deliberately does
+    #: not: a list is stamped unreadable only where somebody looked and it was
+    #: not there, never because of this flag. ADR-0010 is the precedent - a
+    #: plausible rule about a parameter attribute, disproved on the unit.
+    #:
+    #: What the flag IS good for is a hint about where to look first, and it is
+    #: read per PARAMETER rather than per name. The Soldano is the proof: it
+    #: carries two parameters called ``CHANNEL``, one flagged and offering
+    #: ``Clean,Crunch,Lead`` and one not, offering ``Normal,OD``, and the screen
+    #: draws the second only.
+    #:
+    #: **The attribute is not a boolean.** 649 parameters say ``"true"`` and one
+    #: says ``"atma"`` - the Freeze block's ``MOMENTARY`` switch. ``atma`` is the
+    #: Quad Cortex Mini's ``device_type``, so the catalog is naming the MODEL a
+    #: parameter is hidden on, and this field answers only for a Quad Cortex.
+    #: The raw string is NOT kept - this is a bool - so a Mini profile wanting
+    #: that distinction has to re-read the attribute from the XML rather than
+    #: from here. Left that way deliberately: no Mini has been measured, and a
+    #: field shaped for one would be a guess about what it needs. That also
+    #: makes the value a second, independent sign that ATMA is the Mini, which
+    #: until now rested on the schema's ``atma_*`` field names alone.
+    hidden: bool = False
 
     @property
     def floor(self) -> "values.Real | None":
@@ -725,6 +765,7 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         max_label=max_label,
         exp_assignable=p.get("expAssignable") != "false",
         show_as_integer=show_as_integer,
+        hidden=p.get("hidden") == "true",
     )
 
 
