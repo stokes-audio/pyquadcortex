@@ -27,23 +27,29 @@ and that is not always the order the unit puts them on screen. A Solo 100 Lead
 draws GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT; the wire lists MASTER
 before PRESENCE.
 
-Of the 510 placeable models, **349 place none of their visible controls** - for
-those the wire order is all there is. 161 place at least one, and on 140 of those
-the result disagrees with wire order.
+Of the 510 placeable models, **347 never carry it at all** - for those the wire
+order is all there is. 163 carry it somewhere, and on 142 of those the result
+disagrees with wire order.
 
 If you are showing a block's controls to a person, sort by `display_pos` and put
-the unplaced ones last. `None` does not compare, so the key has to say so::
+the unplaced ones last. `None` does not compare, so the key has to say so:
 
-    ordered = sorted(model.parameters,
-                     key=lambda p: (p.display_pos is None, p.display_pos or 0))
+```python
+ordered = sorted(model.parameters,
+                 key=lambda p: (p.display_pos is None, p.display_pos or 0))
+```
 
-Do **not** drop the `None` ones instead: 23 models place only some of their
-visible controls and one places two at the same number, so a sort is not a
-complete layout and dropping hides real controls. What the unit does with an
-unplaced control has not been measured.
+Do **not** drop the `None` ones instead. Across every parameter a model gives
+you, 43 models place only some of them and 5 place two at the same number, so a
+sort is not a complete layout and dropping hides real controls. What the unit
+does with an unplaced control has not been measured. (Counting only the controls
+the catalog does not mark hidden, those figures are 23 and 1 - but the key above
+sorts everything `model.parameters` hands you, so the larger pair is what you
+will meet.)
 
-This rests on two screen readings - a cab and a Solo 100 Lead - not on a
-recurring check. It is the catalog's prediction of the layout, confirmed twice.
+This rests on two screen readings - a cab on 2026-09-11 and a Solo 100 Lead on
+2026-09-15 - not on a recurring check. It is the catalog's prediction of the
+layout, confirmed twice, and a third reading that disagreed would unseat it.
 
 If you are addressing a parameter, keep using the index. This says where a
 control is drawn, not what selects it.

@@ -202,19 +202,29 @@ class Parameter:
     exp_assignable: bool = True
     #: Whether the screen shows this without a decimal point.
     show_as_integer: bool = False
-    #: Where this control sits on the block's page, from the XML's
-    #: ``displayPos``, or ``None`` where the catalog does not say.
+    #: Where the catalog says this control sits on the block's page, from the
+    #: XML's ``displayPos``, or ``None`` where it does not say.
     #:
-    #: **It is the screen's order and the wire's order is not** - which matters
-    #: because the wire order is the one a caller gets from
-    #: ``model.parameters``. 161 placeable models carry it on their visible
-    #: parameters, and on 140 of those it disagrees with the wire.
+    #: **This is the catalog's PREDICTION of what the screen does, and it is
+    #: read twice, not proved.** Where a control is drawn is presentational, so
+    #: unlike a parameter's index it is not a fact this library takes from the
+    #: file on the file's word. What is behind it: a cab read off the unit
+    #: 2026-09-11 (POSITION, DISTANCE, LEVEL, PAN) and a Solo 100 Lead read
+    #: 2026-09-15 (GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT, where the
+    #: wire lists MASTER before PRESENCE). Two models out of the 161 that place
+    #: any control, and nothing re-drives it. A third reading that disagreed
+    #: would unseat this the way three disagreeing readings unseated the drawn
+    #: order of an option list.
     #:
-    #: Confirmed on the unit 2026-09-15. A Solo 100 Lead was placed and its
-    #: knobs read off the screen: GAIN, BASS, MID, TREBLE, PRESENCE, MASTER,
-    #: OUTPUT. That is ``displayPos`` order exactly; the wire lists MASTER
-    #: before PRESENCE. So anything describing a block to a person should sort
-    #: by this, and anything addressing a parameter must keep using the index.
+    #: It still beats ignoring it: 140 of those 161 disagree with wire order, so
+    #: a caller showing ``model.parameters`` in the order it gets them is
+    #: usually showing the wrong order. But it is not a complete layout - 23
+    #: models place only SOME of their visible controls and one places two at
+    #: the same number, shapes no screen can literally have - so sort by it,
+    #: put the unplaced last, and do not drop them.
+    #:
+    #: Addressing a parameter keeps using the index. This says where a control
+    #: is drawn, not what selects it.
     display_pos: int | None = None
     #: Whether the unit keeps this parameter OFF the screen, from the XML's
     #: ``hidden``. It matters to anything that compares the catalog against what

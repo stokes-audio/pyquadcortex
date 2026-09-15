@@ -799,9 +799,13 @@ def test_hidden_atma_is_not_hidden_on_a_quad_cortex():
     assert momentary.hidden is False
 
 
+#: Synthetic, and deliberately NOT model 1150. An earlier version borrowed the
+#: Solo 100 Lead's real id and name while giving it positions that are not that
+#: model's, which reads as the hardware reading quoted below and is not it.
+#: Vendor data stays out of the fixtures, so the shape is invented and says so.
 LAYOUT_XML = """<?xml version="1.0" ?><Models>
 <Category id="0" name="Guitar Amplifier">
-  <Model id="1150" name="Solo 100 Lead">
+  <Model id="9001" name="Synthetic Amp">
     <Padding cpu="0.15" sw="512"/>
     <Parameter defaultValue="5" max="10" min="0" name="GAIN" type="float" displayPos="1"/>
     <Parameter defaultValue="5" max="10" min="0" name="MASTER" type="float" displayPos="6"/>
@@ -818,12 +822,15 @@ LAYOUT_XML = """<?xml version="1.0" ?><Models>
 def test_a_parameter_reports_where_it_sits_on_the_blocks_page():
     """`displayPos` is the SCREEN's order, and the wire's order is different.
 
-    Confirmed on the unit 2026-09-15: a Solo 100 Lead was placed and its knobs
-    read off the screen as GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT -
-    `displayPos` order exactly, where the wire lists MASTER before PRESENCE.
-    140 placeable models disagree the same way.
+    Read off the unit twice - a cab 2026-09-11, and a Solo 100 Lead 2026-09-15
+    whose knobs came back GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT
+    where the wire lists MASTER before PRESENCE.
+
+    140 of the 161 models that place any control disagree with wire order, but
+    NOT in the same way: only 17 are a single adjacent swap like that one, and
+    the other 123 are other reorderings. The shape below is synthetic.
     """
-    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[1150]
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
     by_wire = [p.name for p in model.parameters]
     assert by_wire == ["GAIN", "MASTER", "PRESENCE", "OUTPUT"]
 
@@ -834,21 +841,22 @@ def test_a_parameter_reports_where_it_sits_on_the_blocks_page():
 
 def test_a_parameter_the_catalog_does_not_place_says_so():
     """`None`, not 0 - a missing position is not the first position."""
-    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[1150]
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
     assert model.parameters[3].name == "OUTPUT"
     assert model.parameters[3].display_pos is None
 
 
 def test_a_model_reports_what_it_reserves_under_the_catalogs_own_names():
-    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[1150]
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
     assert dict(model.resources) == {"cpu": 0.15, "sw": 512.0}
 
 
 def test_resources_are_pairs_so_a_model_stays_hashable():
     """`Model` is frozen and gets hashed; a dict field made it unhashable."""
-    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[1150]
+    model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
     assert isinstance(model.resources, tuple)
-    assert hash(model) == hash(model)
+    # `len({model, model})` is the real check - hashing twice and comparing
+    # cannot fail as an equality, it can only raise.
     assert len({model, model}) == 1
 
 
@@ -861,3 +869,17 @@ def test_a_model_with_no_padding_reserves_nothing_rather_than_guessing():
     """
     model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9999]
     assert model.resources == ()
+
+
+def test_a_padding_value_that_is_not_a_number_is_kept_rather_than_dropped():
+    """Nothing in the 4.0.1 catalog needs this, which is why it is tested here.
+
+    Every `<Padding>` value on that firmware parses as a float, so the fallback
+    would never fire and would sit unexercised until some future catalog put a
+    token where a number goes. Losing an unexpected shape silently is what the
+    rest of this parser exists not to do.
+    """
+    xml = LAYOUT_XML.replace('<Padding cpu="0.15" sw="512"/>',
+                             '<Padding cpu="0.15" sw="unbounded"/>')
+    model = catalog.parse_model_repo(make_payload(xml))[9001]
+    assert dict(model.resources) == {"cpu": 0.15, "sw": "unbounded"}
