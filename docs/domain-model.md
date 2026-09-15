@@ -1504,43 +1504,51 @@ to place it on a full grid, so an absent element is not a free block.
 So `Model.resources` publishes the numbers under the catalog's own names and
 claims nothing more. A caller still has to try the block and handle the refusal.
 
-### The unit does not transmit what it draws
+### The option names ARE conveyed, in the catalog, once per session
 
-The question was whether the screen text for a fixed list is conveyed somewhere
-we had not looked - which matters, because a downloadable model has to work on a
-unit that has never seen it, so its allowed values must travel somehow.
+The question was whether the words a person sees are sent anywhere - which
+matters, because a model downloaded after Cortex Control shipped still shows the
+right names on a laptop, so they have to reach it somehow.
 
-They do travel: `stepNames` gives the count, the order and an identifier per
-position, and that is enough for the control to FUNCTION. What does not travel is
-the rendered text. Measured three ways on 2026-09-15:
+They do, and the proof is direct rather than by elimination: **the `ModelRepo`
+payload that crosses the wire contains the strings themselves.** Unpacking the
+captured transfer gives `stepNames="Sine,Triang,Sawtooth,Square,Pulse,Pink
+NS,White NS"` verbatim. Cortex Control fetches that payload once per session -
+one request plus 371 reports of reply, in every one of the three captured
+sessions - so any host has the vocabulary from connect onwards, and a model
+added to the catalog brings its names with it. That is the whole answer.
 
-- The catalog container holds exactly one member, `ModelRepo.xml`. No icons, no
-  string table, no localisation.
-- On a 14-block preset, the only parameters populating `dynamic_steps`,
-  `dynamic_icons` or `dynamic_metadata` were the DYNAMIC ones it happened to
-  carry - three of them. No fixed list published any. (Twelve parameters in the
-  whole catalog are marked `dynamic`; a single preset reaches only the ones its
-  blocks bring.)
-- A 150-second capture recorded everything the unit sent while a human opened a
-  Mono Synth's Oscillator tab and stepped through all seven waveforms: **600
-  messages, every one the metronome tempo stream.** Not one waveform label - and
-  no notification that the value had changed either.
+An earlier version of this section argued the point by elimination, claiming
+nothing else crossing the wire was large enough to hold a label table. That was
+false and the captures disprove it: `File` reaches 885 reports in one message,
+more than twice `ModelRepo`'s 371, and its largest arrives about seven seconds
+AFTER it. `File` also carries preset bodies, and a preset body carries
+`dynamic_steps` - which is option-label text, for the twelve dynamic parameters.
+So label text crosses in at least two message families. The elimination argument
+was both unnecessary and wrong; the payload is the evidence.
 
-What that does NOT mean is that the labels are unconveyed. Cortex Control
-fetches `ModelRepo` once at connect - 372 HID reports, in every one of the three
-captured sessions - and after that nothing crossing the wire is large enough to
-hold a label table: `Grid`, the most frequent message by far, is a single report
-each. A host app has no firmware string table to fall back on and no other
-source, so it renders option lists from `stepNames`, and a model downloaded
-after that host shipped brings its names with it in the catalog. That is the
-answer to "there must be some way it is conveyed": it is conveyed, once,
-upfront, in the file we already parse.
+### The unit's screen is a second renderer over that same data
 
-What the capture actually shows is narrower. The UNIT'S OWN screen renders the
-same data differently - `SIN`, `WHT`, plus icons - and does so without asking
-anyone, because it holds the catalog too. Those abbreviations exist in no file;
-they are the firmware's rendering of `stepNames`. So there are two renderers
-over one source, and a reading taken from one of them is a fact about that one.
+What the 150-second capture actually showed is narrower, and still worth having.
+While a human opened a Mono Synth's Oscillator tab and stepped through all seven
+waveforms, the unit sent **600 messages, every one the metronome tempo stream** -
+not one waveform label, and no notice that the value had changed. It had no need
+to send anything: it holds the catalog too.
+
+So there are two renderers over one source, and they do not agree. The unit
+draws `SIN`, `TRI`, `WHT` and a row of icons where the catalog writes `Sine`,
+`Triang`, `White NS`. `SIN` and `TRI` are plainly truncations; `WHT` and `PNK`
+are not truncations of `White NS` and `Pink NS`, so no single transform explains
+both, and a firmware abbreviation table is at least as likely as a rule applied
+to `stepNames`. **Which it is has not been measured** - it would need either a
+catalog whose `stepNames` the firmware has never met, or a look inside the
+firmware. A 4.1.0 catalog compared against 4.0.1's would be the cheap first
+step, and no 4.1.0 snapshot is in this repo.
+
+The practical consequence is the one that matters: a reading taken off the
+unit's screen is a fact about the unit's screen. It is not automatically a fact
+about what a host shows, and - as the noise labels prove - not automatically a
+fact about what the device produces either.
 
 ### `hidden` on a parameter is the vendor's intent, not the glass
 
@@ -1719,35 +1727,49 @@ band is twice as wide as the one below. Pink noise falls 3 dB per octave, so its
 octave-band energy is flat.
 
 A Mono Synth was placed at the head of a populated row, OSC 1 alone with OSC 2
-off, and four seconds captured off the unit's own USB audio interface at each
-position. The rest of the row colours both recordings identically, so comparing
-them cancels it.
+off, and five seconds captured off the unit's own USB audio interface at each
+position.
 
-| octave band | position 5 | position 6 |
-|---|---|---|
-| 125-250 Hz | -43.3 dB | -32.2 dB |
-| 250-500 Hz | -38.7 dB | -32.9 dB |
-| 500 Hz-1 kHz | -33.6 dB | -31.9 dB |
-| 1-2 kHz | -29.8 dB | -31.4 dB |
-| 2-4 kHz | -27.2 dB | -31.5 dB |
-| 4-8 kHz | -26.5 dB | -33.6 dB |
-| 8-16 kHz | -28.9 dB | -39.2 dB |
+| octave band | position 5 | position 6 | difference |
+|---|---|---|---|
+| 125-250 Hz | -43.3 dB | -32.2 dB | -11.1 |
+| 250-500 Hz | -38.7 dB | -32.9 dB | -5.8 |
+| 500 Hz-1 kHz | -33.6 dB | -31.9 dB | -1.7 |
+| 1-2 kHz | -29.8 dB | -31.4 dB | +1.6 |
+| 2-4 kHz | -27.2 dB | -31.5 dB | +4.3 |
+| 4-8 kHz | -26.5 dB | -33.6 dB | +7.1 |
+| 8-16 kHz | -28.9 dB | -39.2 dB | +10.3 |
 
-**Position 6 is flat to within about 2 dB from 125 Hz to 8 kHz - pink. Position
-5 climbs about 3.4 dB per octave over the same span - white.** The catalog calls
-position 5 `Pink NS`. It is white, and the screen's `WHT` is right.
+**Read the difference column.** The rest of the row colours both recordings
+identically, so subtracting them removes it - and the result climbs
+monotonically across all seven bands, averaging +3.57 dB per octave against the
+3.01 that separates white from pink. Position 5 is the brighter by exactly the
+margin the two noise types differ by.
+
+Each column alone says the same thing less cleanly, because the chain's response
+is curved: position 6 is flat to about 2 dB from 125 Hz to 8 kHz, and position 5
+climbs about 3.4 dB per octave over that span, but neither is a straight line.
+The subtraction is what makes the comparison controlled.
+
+The catalog calls position 5 `Pink NS`. It is white, and the screen's `WHT` is
+right.
 
 Reproducing it needs no special tooling - the unit enumerates as an 8-in USB
-audio device:
+audio device. Find its index first, because the numbering is per machine and
+index 0 is often the built-in microphone:
 
 ```
-ffmpeg -f avfoundation -i ":0" -t 5 -ac 1 -ar 48000 pos5.wav
-sox pos5.wav -n sinc 2000-4000 stats      # read "RMS lev dB"
+ffmpeg -f avfoundation -list_devices true -i ""     # note the Quad Cortex index
+ffmpeg -f avfoundation -i ":N" -t 5 -ac 1 -ar 48000 pos5.wav
+sox pos5.wav -n sinc 2000-4000 stats                # read "RMS lev dB"; repeat per band
 ```
+
+`-ac 1` sums the interface's eight inputs to mono, which is fine while only the
+measured signal is present and would not be otherwise. A quick check that the
+right device is being recorded: change the block's level and watch the RMS move.
 
 The recordings themselves are not committed. They are a few seconds of noise and
-the numbers above are the finding; the commands reproduce them in two minutes
-with the unit attached. A caller asking for pink noise by the catalog's name gets white, which
+the numbers above are the finding. A caller asking for pink noise by the catalog's name gets white, which
 is the same shape of error as the metronome names and the reason this audit
 exists.
 

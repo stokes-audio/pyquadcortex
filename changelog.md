@@ -95,8 +95,9 @@ calls wire position 5 `Pink NS` and position 6 `White NS`. The unit's screen
 draws `WHT` at position 5 and `PNK` at position 6. Both were set at once, on the
 two oscillators of one Mono Synth, and read together - and the swap was then
 confirmed acoustically, by capturing each off the unit's own USB audio interface
-and measuring octave bands. Position 6 is flat across the spectrum (pink);
-position 5 climbs about 3.4 dB per octave (white). So this is a fact about what
+and measuring octave bands. Position 6's octave-band energy is flat to about
+2 dB from 125 Hz to 8 kHz (pink); position 5's climbs about 3.4 dB per octave
+over the same span (white). So this is a fact about what
 the device produces, not about what one screen prints.
 
 So until now `Osc1Wave.PINK_NS` selected **white** noise and `.WHITE_NS` selected
