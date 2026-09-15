@@ -158,8 +158,13 @@ costing hardware time to confirm things a file already knew. Three experiments:
   proves the WIRE mapping only. The order the unit draws the choices in is
   presentational and this repo has three counterexamples.
 - A Solo 100 Lead was placed and its knobs read off the screen. They came back
-  in `displayPos` order, not wire order - and 140 placeable models differ that
-  way, so reading wire order would mislead on all of them.
+  in `displayPos` order, not wire order. That is the SECOND such reading - a cab
+  on 2026-09-11 was the first - and two models out of the 161 that place a
+  visible control is all this rests on, with nothing re-driving it. So
+  `Parameter.display_pos` is published as the catalog's prediction, not as a
+  measured fact, and it is NOT one of the structural facts above. 140 of the 161
+  disagree with wire order in some way, of which only 17 are the single adjacent
+  swap this reading was; the other 123 are other reorderings.
 - A 150-second capture recorded everything the unit sent while a human opened a
   Mono Synth's Oscillator tab and stepped through all seven waveforms. 600
   messages, every one the metronome tempo stream. Not one waveform label, and

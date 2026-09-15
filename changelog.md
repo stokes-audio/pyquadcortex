@@ -27,9 +27,9 @@ and that is not always the order the unit puts them on screen. A Solo 100 Lead
 draws GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT; the wire lists MASTER
 before PRESENCE.
 
-Of the 510 placeable models, **347 never carry it at all** - for those the wire
-order is all there is. 163 carry it somewhere, and on 142 of those the result
-disagrees with wire order.
+Of the 501 models you can place, **338 never carry it at all** - for those the
+wire order is all there is. 163 carry it somewhere, and on 142 of those the
+result disagrees with wire order.
 
 If you are showing a block's controls to a person, sort by `display_pos` and put
 the unplaced ones last. `None` does not compare, so the key has to say so:

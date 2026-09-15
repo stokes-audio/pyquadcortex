@@ -212,11 +212,14 @@ class Parameter:
     #: 2026-09-11 (POSITION, DISTANCE, LEVEL, PAN) and a Solo 100 Lead read
     #: 2026-09-15 (GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT, where the
     #: wire lists MASTER before PRESENCE). Two models out of the 161 that place
-    #: any control, and nothing re-drives it. A third reading that disagreed
+    #: a VISIBLE control, and nothing re-drives it. (Counting every parameter a
+    #: model hands you, hidden ones included, it is 163 - which is the basis the
+    #: changelog's sorting recipe uses, because that is what it sorts.) A third reading that disagreed
     #: would unseat this the way three disagreeing readings unseated the drawn
     #: order of an option list.
     #:
-    #: It still beats ignoring it: 140 of those 161 disagree with wire order, so
+    #: It still beats ignoring it: 140 of those 161 disagree with wire order (142
+    #: of 163 counting hidden parameters too), so
     #: a caller showing ``model.parameters`` in the order it gets them is
     #: usually showing the wrong order. But it is not a complete layout - 23
     #: models place only SOME of their visible controls and one places two at
@@ -761,7 +764,12 @@ def _parse_padding(element) -> tuple[tuple[str, float | str], ...]:
     for key, raw in sorted(pad.attrib.items()):
         try:
             out.append((key, float(raw)))
-        except (TypeError, ValueError):
+        except ValueError:
+            # ElementTree attribute values are always str, so ValueError is the
+            # only way this fires - no TypeError arm. Nothing in the 4.0.1
+            # catalog needs it; a token where a number goes is kept rather than
+            # dropped, because losing an unexpected shape silently is what the
+            # rest of this parser exists not to do.
             out.append((key, raw))
     return tuple(out)
 

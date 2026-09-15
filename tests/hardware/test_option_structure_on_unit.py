@@ -167,3 +167,60 @@ def test_every_option_position_lands_where_the_catalog_says(qc, restored):
         f"test.")
     print(f"\n  {checked} option positions driven across {len(targets)} "
           f"parameters, all landed where the catalog says")
+
+
+def test_the_displayPos_counts_the_docs_quote_still_hold(qc):
+    """`display_pos` is published on two screen readings, so pin what is countable.
+
+    The readings themselves cannot be re-taken without eyes. What CAN be checked
+    is the population they were generalised over - and four triage passes on
+    this change each found a number wrong somewhere, which is the argument for
+    putting these under a test rather than in prose alone.
+
+    Nothing offline can do it: the whole `ModelRepo.xml` is not committed, and
+    `tests/fixtures/catalog/scales.json` carries raw attributes for only a few
+    dozen parameters. So it happens here, against the catalog the unit is
+    actually running. A failure is a finding about the device, and it means the
+    numbers in `CLAUDE.md`, `docs/STEERING.md`, `docs/domain-model.md` and
+    `changelog.md` need re-deriving before anything else is trusted.
+    """
+    from pyquadcortex.protocol import catalog as catalog_module
+    live = catalog_module.parse_model_repo(qc._fetch_model_repo())
+
+    placeable = [m for m in live
+                 if not (m.hidden or m.internal or m.category_hidden)]
+
+    def placed(params):
+        return [p for p in params if p.display_pos is not None]
+
+    def disagrees(params):
+        put = placed(params)
+        return ([p.name for p in put]
+                != [p.name for p in sorted(put, key=lambda p: p.display_pos)])
+
+    visible = {m.id: [p for p in m.parameters if not p.hidden]
+               for m in placeable}
+    every = {m.id: list(m.parameters) for m in placeable}
+
+    counts = {
+        "placeable": len(placeable),
+        # the basis the docstring and CLAUDE.md quote
+        "visible_placing_any": sum(1 for v in visible.values() if placed(v)),
+        "visible_disagreeing": sum(1 for v in visible.values()
+                                   if placed(v) and disagrees(v)),
+        # the basis the changelog's sorting recipe operates on
+        "all_placing_any": sum(1 for v in every.values() if placed(v)),
+        "all_disagreeing": sum(1 for v in every.values()
+                               if placed(v) and disagrees(v)),
+        "with_resources": sum(1 for m in live if m.resources),
+    }
+    assert counts == {
+        "placeable": 501,
+        "visible_placing_any": 161,
+        "visible_disagreeing": 140,
+        "all_placing_any": 163,
+        "all_disagreeing": 142,
+        "with_resources": 331,
+    }, (f"this unit's catalog gives {counts}, and the docs quote the values in "
+        f"the assertion. Re-derive every display_pos and Padding figure in "
+        f"CLAUDE.md, docs/STEERING.md, docs/domain-model.md and changelog.md.")
