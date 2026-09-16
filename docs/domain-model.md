@@ -1645,7 +1645,7 @@ is a waveform picker.
 Read `Flanger Engine` first, because it holds the WIDGET TYPE constant: its
 `WAVEFORM` is a `rotarySwitch` like `OSC1 WAVE`, while `Tremolo`'s is a
 `comboBox`, a type nothing in the readings fixture has ever been read on - 129
-of its 133 rows resolve to a catalog parameter, 114 `rotarySwitch` and 15
+of its 133 rows resolve to a catalog parameter, 115 `rotarySwitch` and 14
 `switch`, and the other four are the Tempo page's symbols. Widget type needs
 holding constant even though the section above rules it OUT as a rule: ruling it
 out as SUFFICIENT is not ruling it out as necessary, and a `comboBox` reading
@@ -1653,17 +1653,26 @@ would confound the two.
 
 What the read establishes is narrower than it looks, and the paragraph above
 says why: `Flanger Engine`'s `WAVEFORM` is itself a waveform picker, and its
-widget type was held constant ON PURPOSE. So if `Sine` and `Square` draw `SIN`
-and `SQR` there, the abbreviation travels with something those two controls
-SHARE - the strings, or waveform pickers, or a `rotarySwitch` - and the read
-does not choose between them. If they draw in full, none of the three is it, and
-what it travels with instead stays open, because the two controls differ in more
-than the one variable held constant. `OSC1 WAVE` and `OSC2 WAVE` are `hidden`
-parameters and `Flanger Engine`'s `WAVEFORM` is not; the Mono Synth's list is
-drawn as a row of waveform ICONS and nothing records whether the Flanger's is;
-and they sit on different models. Note also that the scope, if it is narrow, is
-not "that one control" - `OSC1 WAVE` and `OSC2 WAVE` both abbreviate, and both
-are in the fixture. Write the reading down and leave the scope open rather than
+widget type was held constant ON PURPOSE. So it cuts one way only.
+
+`SIN`/`SQR` there rules out every scope PRIVATE to the Mono Synth - this model,
+these `hidden` parameters, this list - and leaves whatever the two controls
+share. That is not a set anyone can close from here. The strings and
+waveform-picker-ness are the two worth naming; both lists are also seven
+positions long; and nothing says those are all. The widget type is NOT on that
+list, because a `rotarySwitch` on its own is already disproved: `Looper X`'s
+`QUANTIZE` is one and draws `16 Beats` verbatim on a driven reading - eight
+characters, the same length as the `Sawtooth` that draws `SAW`. It can still be
+a CONDITION on one of the others, which is the only reason the read holds it
+constant.
+
+Drawing in FULL cuts the other way: the scope is private to the Mono Synth, and
+which private thing stays open, because the two controls differ in more than the
+one variable held constant. `OSC1 WAVE` and `OSC2 WAVE` are `hidden` parameters
+and `Flanger Engine`'s `WAVEFORM` is not; the Mono Synth's list is drawn as a
+row of waveform ICONS and nothing records whether the Flanger's is; and they sit
+on different models. Note that "private" is not "that one control" - `OSC1 WAVE`
+and `OSC2 WAVE` both abbreviate, and both are in the fixture. Write the reading down and leave the scope open rather than
 picking whichever candidate the outcome flatters. Both lists are among the 95
 nobody has read - one parameter and two - so either read lands in the audit as
 well.

@@ -441,6 +441,10 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     earlier version of this test searched the whole document for the substring
     ``"| 14 | 17 |"``, which read as checking the row and in fact checked
     neither the order nor the other two columns.
+
+    It also holds the sentence that describes the tail BELOW the table, because
+    that sentence counts the same ranking from the row after the last one the
+    table shows.
     """
     unread = sorted(
         (labels for labels, status in options.OPTION_AUDIT.items()
@@ -545,7 +549,8 @@ def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
             f"Synth's. Backticked on purpose - a bare \"Tremolo\" is satisfied "
             f"by \"Harmonic Tremolo\" alone")
 
-    # Both documents have drifted back to `Tremolo` once, so both are pinned.
+    # Each document named `Tremolo` at some point in review, so both are
+    # pinned - the doc for two rounds, STEERING for four.
     steering = (pathlib.Path(__file__).parents[1] / "docs" / "STEERING.md")
     for path, phrase in ((doc, "Read `Flanger Engine` first"),
                          (steering, "`Flanger Engine` `WAVEFORM` read")):
@@ -553,5 +558,5 @@ def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
         assert phrase in body, (
             f"{path.name} must point the read at `Flanger Engine`, whose "
             f"`WAVEFORM` holds the widget type constant against `OSC1 WAVE`. "
-            f"It said `Tremolo` for two rounds, and `Tremolo`'s is a "
-            f"`comboBox`")
+            f"Each document named `Tremolo` at some point in review, and "
+            f"`Tremolo`'s is a `comboBox`")
