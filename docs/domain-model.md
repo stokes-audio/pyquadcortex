@@ -1511,30 +1511,37 @@ matters, because if a model downloaded after Cortex Control shipped still shows
 the right names on a laptop, those names have to reach it somehow. Nobody here
 has watched a downloaded model, so that is the question rather than a finding.
 
-They do. Two facts, kept apart because they came from different places:
+They do, and it is observed rather than inferred. The reply Cortex Control
+receives was taken out of the capture and read:
 
-- **The `ModelRepo` payload contains the strings.** Unpacking the payload this
-  library reads from the unit gives `stepNames="Sine,Triang,Sawtooth,Square,
-  Pulse,Pink NS,White NS"` verbatim. That is a live read through
-  `research/scripts/dump_model_repo.py` in the `quad-cortex` lab repo, not an
-  extraction from a capture.
-- **Cortex Control fetches a `ModelRepo` payload once per session.** One request
-  plus 371 reports of reply, at t=110.5 / 2.5 / 18.3 in the three captured
-  sessions, the reply opening with the gzip magic and running about 46.7 KB.
+- **Cortex Control fetches the catalog at connect, in every session.** It is
+  the THIRD message type of the session - after `ResetCommsBuffers` and
+  `Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198
+  / 1.187 seconds after the session's first message in the three captures. The
+  reply is 46,713 / 46,723 / 46,702 bytes.
+- **That reply contains the strings.** Reassembled out of all three pcapng
+  files and inflated, it is a 558,592-byte tar holding one member,
+  `ModelRepo.xml`, 556,732 bytes, carrying 539 `stepNames` attributes -
+  including `stepNames="Sine,Triang,Sawtooth,Square,Pulse,Pink NS,White NS"`.
+  The three sessions give byte-identical XML.
 
-Joining them - that CC therefore receives those strings - is an INFERENCE, and a
-strong one: it is the same message type, the same compression and the same size
-against a catalog that is a single file. It is not an observation, because the
-timelines truncate payloads and reassembling the 371 reports out of the pcapng
-was not achieved here. The obstacle is specific and worth writing down: a
-message's TYPE appears only in the trailer of its FINAL report, so a run of
-reports cannot be attributed until it ends, and the captures interleave runs.
-Grouping by type therefore recovered three large messages (types 51, 35 and 4,
-at 95, 109 and 90 reports) and not the 371-report one. Attributing the runs by
-their interleaving instead, then grepping the result, would close the gap.
+So the vocabulary a host renders is handed to it, in full, before the host
+does anything else. The same file is what this library reads live through
+`research/scripts/dump_model_repo.py` in the `quad-cortex` lab repo.
 
-What follows from it, also by inference: a model added to the catalog brings its
-names with it, so a host that shipped before that model still names it correctly.
+**How to repeat it.** `research/scripts/decode_capture.py` in that repo already
+does the reassembly - accumulate INPUT reports until `framing.is_complete`,
+resync on FIRST - and its committed timelines show the message. With tshark
+absent, the same loop runs off the pcapng directly by keeping USBPcap records
+that are interrupt transfers, device-to-host, completion, carrying a 129-byte
+body, and no others. That last clause is the whole trick: an earlier attempt
+swept in the control-transfer records on the same endpoint, which split the
+FIRST..LAST runs and produced three large messages that do not exist. Reports
+dropped and runs left open, on the correct filter: zero, in all three captures.
+Then find the gzip magic inside the protobuf field, inflate, untar, grep.
+
+What is still INFERENCE: that a model added to the catalog brings its names
+with it, so a host that shipped before that model still names it correctly.
 Nothing here observed a downloaded or purchased model.
 
 An earlier version of this section argued the point by elimination, claiming
@@ -1766,21 +1773,27 @@ is the brighter, by the scale and in the direction that separates white from
 pink.
 
 The textbook separation is 3.01 dB per octave, and 3.57 is not that number. Do
-not read the difference as a precision match. `sinc` filtering leaks across band
-edges, and on 2026-09-15 the chain was calibrated to say by how much: noise of
-both kinds generated synthetically and put through the SAME band commands gave a
-difference column averaging 3.72, 3.81 and 3.83 dB per octave over three runs
-(sox 14.4.2).
+not read the difference as a precision match. The BAND ANALYSIS below is not
+exact - `sinc` filtering leaks across band edges - and on 2026-09-15 it was
+calibrated to say by how much. Synthetic noise of both kinds, put through the
+same per-band commands and the same subtraction, gave 3.72, 3.81 and 3.83 dB
+per octave over three runs (sox 14.4.2):
 
 ```
 sox -n -r 48000 -c 1 white.wav synth 5 whitenoise
 sox -n -r 48000 -c 1 pink.wav synth 5 pinknoise
+# then the same `sinc <band> stats` per band as below, and the slope of the
+# difference column across the seven bands
 ```
 
-So this chain reads a textbook 3.01 as roughly 3.8, and the unit's 3.57 falls
-between the two rather than outside them. What the measurement establishes is
-the sign and the order of magnitude, which is all that is needed to say which of
-two positions is the white one.
+So this analysis returns about 3.8 for a pair that is exactly 3.01 apart. The
+unit's 3.57 is between the two, and below all three calibration runs; the
+calibration does not account for the gap, it moves it to the other side. That
+is the honest position, and the finding does not rest on it. What the
+measurement establishes is the SIGN and the order of magnitude, which is all
+that is needed to say which of two positions is the white one. Note also that
+the calibration exercised only the band analysis - synthetic files straight
+into `sox` - and not the unit, the USB capture or the amp row.
 
 Each column alone says the same thing less cleanly, because the chain's response
 is curved: position 6 is flat to about 2 dB from 125 Hz to 8 kHz, and position 5

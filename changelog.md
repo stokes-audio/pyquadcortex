@@ -98,7 +98,7 @@ confirmed acoustically, by capturing each off the unit's own USB audio interface
 and measuring octave bands. Subtracting one recording from the other cancels the
 rest of the signal chain, and the difference climbs monotonically across all
 seven bands - about 3.6 dB per octave, in the direction that separates white
-from pink and, once this chain's own leakage is calibrated out, at the scale.
+from pink and at the right order of magnitude.
 Position 5 is the brighter, so it is the white one. So this is a fact about what
 the device produces, not about what one screen prints.
 

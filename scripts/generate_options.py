@@ -122,8 +122,8 @@ MEANING_DISAGREEMENTS = {
     # the unit's USB audio interface and SUBTRACTED, which cancels the rest of
     # the signal chain: position 5 is brighter by ~3.6 dB per octave band,
     # monotonically across all seven, which is the direction that separates
-    # white noise from pink and, once this chain's own leakage is calibrated
-    # out, the scale. The catalog has the two swapped, so
+    # white noise from pink and the right order of magnitude. The catalog has
+    # the two swapped, so
     # `PINK_NS = 5` would hand a caller white noise.
     ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS"): {
         5: ("WHITE_NS", "position 5 drew 'WHT', which is 'White NS' - and "
