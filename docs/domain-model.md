@@ -1625,25 +1625,32 @@ sentence: `Momentary`, `2 BARS`, `4 Alt` and `1/64T` were each DRIVEN and read
 back, while `Sawtooth`'s `SAW` comes from transcribing the waveform list, whose
 driven anchors are positions 0, 3, 5 and 6.
 
-**What is still unmeasured** is whether the firmware keys a table on those exact
-strings or scopes the abbreviation to this one control. Do not write down either
-- and note that one READ settles it, needing no new tooling. A `Tremolo`'s
-`WAVEFORM` is placeable, its parameter is not hidden, and its list is
-`Sine,Triangle,Square,Saw Up,Saw Dn` - which shares `Sine` and `Square` verbatim
-with the Mono Synth's. If those two draw `SIN` and `SQR` there as well, the
-firmware keys on the strings; if they draw in full, the abbreviation belongs to
-the Mono Synth's oscillator control. That list is one of the 95 nobody has read,
-at two parameters, so the read lands in the audit too.
+**What is still unmeasured** is what the firmware scopes the abbreviation to.
+Four answers are live, and writing them down BEFORE the read is the point -
+this repo's precedent is three plausible rules tried against hardware and all
+three false. The firmware may key on the STRINGS; or on WAVEFORM SELECTORS; or
+on the WIDGET TYPE; or on that one control.
 
-Write the residual down before taking it, because this repo's own precedent is
-three plausible rules tried against hardware and all three false. A third answer
-survives that read: an abbreviation scoped to WAVEFORM SELECTORS rather than to
-either the strings or that one control, which produces `SIN` and `SQR` on the
-Tremolo exactly as keying on the strings would. Nothing can design the confound
-away - `Tremolo`/`Harmonic Tremolo` `WAVEFORM` and `Flanger Engine` `WAVEFORM`
-are the only lists in the whole catalog sharing any string with the Mono
-Synth's, and all of them are waveform pickers. So the read narrows to two
-answers, and does not choose between them.
+Three catalog lists share any string with the Mono Synth's, and no others do:
+`Tremolo` and `Harmonic Tremolo` `WAVEFORM` (`Sine,Triangle,Square,Saw Up,Saw
+Dn`), and `Flanger Engine` `WAVEFORM` (the same plus `rndSmooth,rndStep`). All
+three share exactly `Sine` and `Square`, all three are placeable with the
+parameter not hidden, and all three lists are unread. So the strings-versus-
+selectors confound cannot be designed away: every control that shares a string
+is also a waveform picker.
+
+The widget type CAN be held constant, and must be, because this section has
+just used widget type as a discriminator. `OSC1 WAVE` is a `rotarySwitch`, and
+so is `Flanger Engine`'s `WAVEFORM` - while `Tremolo`'s is a `comboBox`, a type
+NOTHING in the readings fixture has ever been read on. So point the read at
+`Flanger Engine` first. Reading both is better still: `SIN`/`SQR` on the
+`rotarySwitch` and verbatim on the `comboBox` is a result none of the other
+three answers predicts, and would name the widget type outright.
+
+What the reads can do: verbatim on `Flanger Engine` leaves only "that one
+control"; `SIN`/`SQR` there narrows to strings-or-selectors without choosing.
+Both lists are among the 95 nobody has read - one parameter and two - so either
+read lands in the audit as well.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact

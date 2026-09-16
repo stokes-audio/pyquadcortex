@@ -427,12 +427,17 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     its first two columns are compared, IN ORDER, against the snapshot's own
     ranking of the unread lists.
 
-    What this does NOT check, and cannot offline: columns three and four, which
-    name the list and a model the control appears on. Confirming those needs
-    the `ModelRepo` payload, and no payload is committed here - the snapshot is
-    generated constants. An earlier version of this test searched the whole
-    document for the substring ``"| 14 | 17 |"``, which read as checking the
-    row and in fact checked neither the order nor the other two columns.
+    Column three is checked where the row quotes the label tuple literally,
+    which three of the five do; the other two describe their list in prose
+    (``a 17-entry `SYNC NOTE` ``) because quoting seventeen note values in a
+    table cell would be unreadable.
+
+    What this does NOT check, and cannot offline: column four, the model the
+    control appears on. Confirming a model name needs the `ModelRepo` payload,
+    and no payload is committed here - the snapshot is generated constants. An
+    earlier version of this test searched the whole document for the substring
+    ``"| 14 | 17 |"``, which read as checking the row and in fact checked
+    neither the order nor the other two columns.
     """
     unread = sorted(
         (labels for labels, status in options.OPTION_AUDIT.items()
@@ -445,12 +450,12 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     assert lines.count(header) == 1, (
         f"docs/domain-model.md must carry exactly one worklist table with the "
         f"header {header!r}; it has {lines.count(header)}")
-    rows = []
+    parsed = []
     for line in lines[lines.index(header) + 2:]:
         if not line.startswith("|"):
             break
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
-        rows.append((int(cells[0]), int(cells[1])))
+        parsed.append([cell.strip() for cell in line.strip("|").split("|")])
+    rows = [(int(cells[0]), int(cells[1])) for cells in parsed]
 
     assert rows == [(options.OPTION_USAGE[labels], len(labels))
                     for labels in unread[:len(rows)]], (
@@ -459,6 +464,18 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
         f"{[(options.OPTION_USAGE[l], len(l)) for l in unread[:len(rows)]]}. "
         f"The ranking moved and the table did not.")
     assert len(rows) == 5, f"the worklist table has {len(rows)} rows, not five"
+
+    quoted = 0
+    for cells, labels in zip(parsed, unread):
+        if cells[2] == f"`{','.join(labels)}`":
+            quoted += 1
+        else:
+            assert "-entry" in cells[2], (
+                f"worklist row {cells[0]} describes its list as {cells[2]!r}, "
+                f"which is neither the snapshot's labels "
+                f"`{','.join(labels)}` nor an \"N-entry\" description")
+    assert quoted == 3, (
+        f"three of the five rows quote their label tuple; {quoted} do")
 
     text = " ".join(doc.read_text(encoding="utf-8").split())
     rest = unread[len(rows):]
@@ -469,29 +486,49 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     assert phrase in text, f"docs/domain-model.md does not say {phrase!r}."
 
 
-def test_the_read_that_would_settle_the_abbreviations_is_still_available():
-    """A `Tremolo`'s WAVEFORM is what the document offers as the next step.
+def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
+    """What `docs/domain-model.md` points the next hardware session at.
 
-    It is only the next step while it is unread, and only useful while its list
-    shares strings with the Mono Synth's. Both are properties of the snapshot,
-    so they are checked rather than asserted in prose - if a later catalog
-    renames either list, or somebody audits this one, the document is pointing
-    at a read that settles nothing.
+    Four answers are live for what the firmware scopes its abbreviations to,
+    and the document names the reads that narrow them. Those reads are only
+    available while the lists are unread, and only informative while they share
+    strings with the Mono Synth's - both properties of the snapshot, so they
+    are checked rather than asserted in prose.
+
+    The load-bearing claim is the last one: that NO OTHER list shares a string.
+    The whole residual rests on it, because it is why the strings-versus-
+    selectors confound cannot be designed away.
     """
-    tremolo = ("Sine", "Triangle", "Square", "Saw Up", "Saw Dn")
     mono = ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS",
             "White NS")
-    assert options.OPTION_AUDIT[tremolo] is None, (
-        "the document offers this list as an unread next step; it has been read")
+    tremolo = ("Sine", "Triangle", "Square", "Saw Up", "Saw Dn")
+    flanger = tremolo + ("rndSmooth", "rndStep")
+
     assert options.OPTION_AUDIT[mono] == "audited"
-    shared = set(tremolo) & set(mono)
-    assert shared == {"Sine", "Square"}, (
-        f"the document names Sine and Square as the shared strings; the "
-        f"snapshot shares {sorted(shared)}")
+    for labels in (tremolo, flanger):
+        assert options.OPTION_AUDIT[labels] is None, (
+            f"the document offers {','.join(labels)!r} as an unread next step; "
+            f"it has been read")
+        assert set(labels) & set(mono) == {"Sine", "Square"}, (
+            f"the document names Sine and Square as the shared strings; "
+            f"{','.join(labels)!r} shares "
+            f"{sorted(set(labels) & set(mono))}")
+
+    sharing = {labels for labels in options.OPTION_AUDIT
+               if labels != mono and set(labels) & set(mono)}
+    assert sharing == {tremolo, flanger}, (
+        f"the document says these two are the ONLY lists sharing a string with "
+        f"the Mono Synth's, which is why the confound cannot be designed away. "
+        f"The snapshot has {sorted(sharing)}")
 
     text = " ".join(
         (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
         .read_text(encoding="utf-8").split())
     assert f"`{','.join(tremolo)}`" in text, (
-        f"docs/domain-model.md no longer quotes the list it points the next "
-        f"read at, {','.join(tremolo)!r}")
+        "docs/domain-model.md no longer quotes the shared list it points the "
+        "next read at")
+    for model in ("Tremolo", "Harmonic Tremolo", "Flanger Engine"):
+        assert model in text, (
+            f"docs/domain-model.md no longer names {model}, one of the three "
+            f"models carrying a list that shares a string with the Mono "
+            f"Synth's")
