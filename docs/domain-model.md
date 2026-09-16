@@ -1529,12 +1529,21 @@ run together. The compressed payloads on the wire DIFFER (46,713 / 46,723 /
 46,702 bytes; the gzip header alone carries a different MTIME each time). The
 inflated XML differs in 4,800 and 4,825 bytes against session 01 - and every
 one of those bytes is inside a `blob="..."` attribute, 338 of the 351 changing
-between fetches, which is what the appendix below already records about `blob`.
-Strip that one attribute and all three are byte-identical, 551,715 bytes,
-and so is the catalog this library dumped live off the unit on 2026-07-26
-(`research/catalog/ModelRepo.xml` in the lab repo). The vocabulary itself is
-identical in all four: the same 539 `stepNames`, 655 `id` and 4,374 `name`
-attributes, byte for byte.
+between fetches. Strip that one attribute and all three are byte-identical,
+551,715 bytes: the vocabulary does not differ at all, the same 539 `stepNames`,
+655 `id` and 4,374 `name` attributes byte for byte.
+
+That 338 is arrived at twice, independently. The appendix below records it from
+two LIVE dumps of one unit taken minutes apart, which "differed on 338 models
+and on nothing else"; this is three captured sessions, and the changing set is
+the same 338 in every pairwise comparison, with the same thirteen holding still.
+
+The lab repo's `research/catalog/ModelRepo.xml` is NOT a fourth sample and must
+not be counted as one. It is byte-identical to session 02 - all 351 tokens, not
+just the vocabulary - so it is that same fetch, and its 2026-07-26 date is when
+the lab repo was reorganised, not when anything was dumped. What it is good for
+is checking the METHOD: the payload reassembled here out of the pcapng equals,
+byte for byte, a file committed months before this reassembly was written.
 
 So a host is handed the whole vocabulary, in full, before it does anything
 else. What was observed is the DELIVERY; nobody here watched Cortex Control
@@ -1766,8 +1775,9 @@ band is twice as wide as the one below. Pink noise falls 3 dB per octave, so its
 octave-band energy is flat.
 
 A Mono Synth was placed at the head of a populated row, OSC 1 alone with OSC 2
-off, and five seconds captured off the unit's own USB audio interface at each
-position.
+off, and the unit's own USB audio interface recorded at each position -
+`-t 5`, which avfoundation delivers a little short, so the two files are 4.47
+and 4.48 seconds.
 
 | octave band | position 5 | position 6 | difference |
 |---|---|---|---|
