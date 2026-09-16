@@ -56,7 +56,7 @@ already read and need no connection; calling them as methods raises
 | **Input gate** | `set_param(LaneInput(row), param, value)`: `NOISE REDUCTION`, `BYPASS`, `INPUT GAIN` |
 | **Split and mix** | `set_param(Splitter(row), param, ...)`, `set_param(Mixer(row), param, ...)`, `set_split_mute(row)`, `protocol.splits(preset)` |
 | **Footswitches** | `set_stomp_assignment(cell, footswitch)`, `set_stomp_momentary()`, `set_stomp_label()`, `protocol.stomp_assignments(preset)` |
-| **Parameter names** | `protocol.params`: a constant per parameter, so `params.LaneOutputParam.VOLUME` replaces `"VOLUME"`. It is its wire index, so it skips the catalog fetch a name needs, and it carries the parameter's unit in its type so a type checker rejects the wrong one |
+| **Parameter names** | `protocol.params`: a constant per parameter, so `params.LaneOutputParam.VOLUME` replaces `"VOLUME"`. It is its wire index, so it skips the catalog read a name needs, and it carries the parameter's unit in its type so a type checker rejects the wrong one |
 | **Expression pedals** | `set_expression(target, param, pedal, minimum, maximum)` and `clear_expression(target, param)`, against any target. `protocol.expression_assignments(preset)` reads back what is assigned |
 | **Preset MIDI Out** | `set_midi_out(source, [MidiOut.cc(...)])`, `set_preset_load_midi_out([...])`, `protocol.midi_out(preset)` |
 | **Tempo `MODE`** | `tempo_mode()`, `set_tempo_mode(TempoMode.GLOBAL)`: global, and it picks which tempo block plays |
@@ -99,7 +99,7 @@ Things to know before you script against this:
 - **The default connect enumerates folders.** On a populated unit that means
   several hundred `File` pushes. Pass `initial_file_listing=False` to either
   `protocol.connect()` or `pyquadcortex.connect()` to defer them. Listing
-  methods still fetch on demand on a verified profile; an unverified profile
+  methods still read on demand on a verified profile; an unverified profile
   needs `support=Support.EXPERIMENTAL` for them.
 - **Editing goes recall, change, save.** The unit saves whatever is on the grid,
   so an edit means recalling the preset first. [protocol.md](protocol.md) says

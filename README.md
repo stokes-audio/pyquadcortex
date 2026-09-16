@@ -139,12 +139,15 @@ with protocol.connect() as qc:
 
 `protocol.connect()` finds the unit, opens it, and completes the handshake the
 unit requires, so what you get back is ready to use. As a context manager it also
-releases the unit when the block ends; otherwise call `qc.close()`.
+releases the unit when the block ends; otherwise call `qc.close()`. Closing tells
+the unit the client is leaving, as Cortex Control does on quit. If you supplied
+your own transport and own its teardown, call `qc.disconnect()` before you tear
+it down.
 
 The default handshake asks for the unit's full folder tree, which can keep
 several hundred `File` pushes arriving after `connect()` returns. Pass
 `protocol.connect(initial_file_listing=False)` to skip that; `list_presets()`
-and the other file APIs still fetch on demand.
+and the other file APIs still read on demand on a verified profile.
 
 Presets are addressed by name with `find_preset()`, by the slot name shown on the
 unit (`"30A"`), or by linear index. Scenes, inputs, outputs and instrument tags

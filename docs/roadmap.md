@@ -33,14 +33,14 @@ know. In the target design, each is something the library knows instead.
 | Leak | What a caller must know today | What they should be able to do |
 |---|---|---|
 | `ColBypass.sceneMode` | Partly absorbed: `field_present` stops the crash and writes are correct, but a caller still has to know the flag exists to read state safely | Ask whether a block is on in a given scene and get the answer the unit would give |
-| Grid geometry | Partly absorbed by `blocks()` and `splits()` | Address a block by its position on the grid, or iterate the grid |
+| Grid geometry | Partly absorbed by `blocks()` and `splits()`. The splitter and mixer carry no column, so their position is read from `split_control_points` rather than from the block | Address a block by its position on the grid, or iterate the grid |
 | The edit path | Edits must be recall, then row/column-keyed update, then save; writing a whole preset back does nothing | Change a preset and save it |
 | Scene copy side effects | Copying a scene also moves its label and colour | Copy a scene, and keep the label if that is wanted |
 | Setlist paths | The factory path needs a trailing slash for recalls but not for listing keys | Refer to the factory library |
 | ~~Slot addressing~~ | **Absorbed.** Slot names are accepted anywhere a position is taken, and `position_to_slot` converts back | |
 | ~~Empty slots~~ | **Absorbed.** `list_presets` returns occupied slots by default; `include_empty=True` gives the full map | |
 | ~~Saved names~~ | **Absorbed.** `save_current_preset(confirm=True)` returns the name the unit stored | |
-| The write STALL | Nothing. The transport swallows it | |
+| The write stall | Nothing. The transport swallows it | |
 
 The last row is the model for the others: the benign write stall is a real
 protocol wart that no caller sees, because the transport absorbs it.

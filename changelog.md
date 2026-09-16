@@ -47,7 +47,7 @@ with pyquadcortex.connect() as device:
 
 `Device` gives you the unit's identity, the loaded preset with its rows, slots,
 blocks, splits, routing and eight scenes, `has_unsaved_changes`, `is_current`,
-and `device.events`. Rows are 1 to 4 and slots 1 to 8, as on the screen. Nothing
+and `device.events`. The Directory is not in the model yet. Rows are 1 to 4 and slots 1 to 8, as on the screen. Nothing
 is stubbed out to look finished; use the protocol layer for the rest. To use
 both layers in one script, wrap a connection you already have with
 `Device.from_client(qc)`, which does not take ownership of it. Where the model
@@ -119,8 +119,10 @@ qc.set_param(ir, params.SingleM.IR_1_PATH, "/media/...")  # a string is itself
 
 `value=`, `real=` and `text=` are replaced by one positional value, and a bare
 number is refused. Every knob has two number lines, the screen's and the
-device's, and on a lane volume zero on the screen's line is unity while zero on
-the device's line is silence. Naming the unit gets it checked: `Db` on a
+unit's, and on a lane volume zero on the screen's line is unity while zero on
+the unit's line is silence. The sharpest case is master volume: the screen shows
+0 to 100 and the wire is 0..1, so `set_master_volume(30)` meaning "30 on screen"
+used to write full output. Naming the unit gets it checked: `Db` on a
 parameter the catalog calls Hz is a `TypeError`. Reads come back the same way, so
 `to_real` hands you `Db(12.0)` rather than `12.0`, and `str()` of one shows the
 type name. `scene` and `promote` are keyword-only. See
@@ -135,7 +137,8 @@ only, and a `Db` raises `ControlNotDrivable` saying what would have to be
 measured. A setting with no wire scale (the `HOLD` threshold in `Milliseconds`, the
 tuner reference in `Hertz`) refuses `Encoded`. Selectors still take an enum or a
 bool. `set_expression`'s sweep ends take the assigned parameter's own typed
-values: `maximum=Db(3.2)` replaces `maximum=db_to_lane_level(3.2)`.
+values: `maximum=Db(3.2)` replaces `maximum=db_to_lane_level(3.2)`. The unit
+displays a sweep end as a percentage of the wire (0.830769 shows as 83.08%).
 
 **A generated constant carries its unit in its type**, so a type checker refuses
 `set_param(VOLUME, Hertz(217))` before anything runs. `params.py`'s constants are
@@ -157,7 +160,7 @@ qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))
 qc.set_param(LaneInput(0), "INPUT GAIN", Db(12.0))
 qc.set_param(Mixer(0), "LEVEL A", Encoded(UNITY_LEVEL))
 qc.set_param(Splitter(0), "LEVEL TO B", Encoded(0.25))
-qc.set_param(Tempo(), "TEMPO", Bpm(120))
+qc.set_param(Tempo(), "TEMPO", Bpm(120))            # 40..240 bpm; tempo_bpm() converts
 ```
 
 `set_lane_output`, `set_input_gate`, `set_mixer_param`, `set_splitter_param`,
@@ -343,8 +346,9 @@ device.preset.blocks.pedals               # the screen's rows, slots and dB
 ```
 
 The model reads it the way the unit shows it, for example
-`<EXP 2 on VOLUME (row 1): Off to 3.2 dB>`. `minimum` above `maximum` reverses the pedal, so the pair is reported
-rather than sorted; an end at the `OFF` detent prints `Off` rather than a number;
+`<EXP 2 on VOLUME (row 1): Off to 3.2 dB>`, and `block.pedals` narrows it to one
+cell. `minimum` above `maximum` reverses the pedal, so the pair is reported rather
+than sorted and `reversed` says so; an end at the `OFF` detent prints `Off` rather than a number;
 with no unit attached the sweep stays the wire's 0..1 and `in_real_units` says
 so. Reading only; assigning through the model is M2.
 
@@ -361,7 +365,10 @@ of them in both directions while accepting the byte-identical message on
 **Breaking: `ExpressionBypassMode` is now `ExpressionSwitchMode`.** Same values,
 same meaning. The enum is the unit's `SWITCH ON` control and applies to a block's
 bypass and to a lane output's `MUTE` and `SOLO`, so the old name described one of
-three things. No alias.
+three things. No alias. The mode decides which other controls exist (`SWITCH`
+greys out `SWITCH DELAY`, `HEEL_TOE` greys out `LATCH EMULATION`); the library
+still lets you send either, so a combination the touchscreen cannot produce is
+reachable from the host and has never been tested.
 
 ### `framing.decode_reports` returns a `Frame`, not a tuple
 

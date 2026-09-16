@@ -106,8 +106,8 @@ ADR-0012.
 | Keyed grid edits | A mutation is a row/column-keyed `Grid` `UPDATE` | The unit applies grid updates by key and ignores a wholesale preset write ([`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` | Reads, and operations outside the grid |
 | One translation boundary | Screen values become wire values in one package, and a source-reading test proves no other module in the package does it | A wrong row is silent: the write lands on a real row and reads back perfectly (design principle 5 in [`domain-model.md`](domain-model.md); ADR-0013) | `pyquadcortex/device/translate/` | The protocol layer keeps zero-based coordinates and quotes the catalog's own units (ADR-0016) |
 | Model state goes through the cache | A property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py` | One account of what the model believes and how it learned it (ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry compute from `value()` instead of caching beside it |
-| Catalog for structure, a reading for presentation | Option count, wire index and parameter index come from the catalog; anything a person sees needs a reading | Every fixed list the loaded preset reaches lands where the catalog says, re-driven each hardware run; the drawn order, the option names and `display_pos` have each disagreed with the file | `tests/hardware/test_option_structure_on_unit.py` | Anything drawn |
-| Evidence-stamped option lists | Each option list carries a status saying whether a person read its names off the unit | The catalog's `stepNames` differ from the screen's words on the lists where both can be compared | `options.OPTION_AUDIT` and `tests/fixtures/catalog/option_readings.json` | A list the unit does not draw is `absent` by observation |
+| Catalog for structure, a reading for presentation | Option count, wire index and parameter index come from the catalog; anything a person sees needs a reading | Every fixed list the loaded preset reaches lands where the catalog says, re-driven each hardware run. The drawn order of three lists and one list's option names disagreed with the file; `display_pos` has matched twice and rests on those two readings | `tests/hardware/test_option_structure_on_unit.py` | Anything drawn |
+| Evidence-stamped option lists | Each option list carries a status saying whether a person read its names off the unit | The catalog's `stepNames` differ from the unit's own `dynamic_steps` at 18 of 20 shared positions, and one of thirteen lists read on the screen disagreed, so an unchecked list must not look checked | `options.OPTION_AUDIT` and `tests/fixtures/catalog/option_readings.json` | A list the unit does not draw is `absent` by observation |
 | The profile is the class | `connect()` resolves `(device_type, zenos_git_hash)` to a client class before the handshake; a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is what polymorphism removes (ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
 
 ## 6. Constraints
@@ -123,7 +123,9 @@ ADR-0012.
   or needs `DYLD_LIBRARY_PATH` (ADR-0002). The hardware suite in
   `tests/hardware/` runs only under `--hardware`, is state-neutral on success and
   never runs in CI (ADR-0005). Its gate and its rules are in
-  `tests/hardware/readme.md`.
+  `tests/hardware/readme.md`. Its modules stay importable offline:
+  `tests/test_hardware_gate.py` collects the whole tree with `hid` poisoned, and
+  `tests/test_scene_echo_predicates.py` imports `test_write_echo.py`.
 - **Wire behaviour is stated per profile, named by CorOS version.** An unknown
   profile refuses to connect. An observation from another profile is recorded
   beside the 4.0.1 record in `protocol.md`, dated (ADR-0020).
@@ -220,7 +222,7 @@ behind each one is in the lab repository,
 
 ### 2026-09-15 - The catalog carries the option vocabulary; the screen is a second renderer
 
-- **What changed:** Cortex Control fetches `ModelRepo` third in every session,
+- **What changed:** Cortex Control reads `ModelRepo` third in every session,
   and the reply carries every `stepNames` string. The unit draws its own
   abbreviations over the same data. Pink and white noise were confirmed swapped by
   an acoustic measurement.
@@ -247,11 +249,10 @@ behind each one is in the lab repository,
   lists have been read on a unit; the generator stamps each enum from it.
   `Parameter.hidden` is published and nothing branches on it.
 - **Why:** `stepNames` disagrees with the unit's own `dynamic_steps` at 18 of 20
-  shared positions, so an unchecked list must not look checked.
-- **Scope:** generator, `catalog.py`, `client.py`, the 4.0.1 options snapshot,
-  fixtures and tests, `domain-model.md`, `api.md`, `manual-coverage.md`,
-  `CLAUDE.md`, `changelog.md`. `ADR.md` unchanged: the convention was corrected
-  three times in one session and is not settled enough to record.
+  shared positions.
+- **Scope:** generator, `catalog.py`, `client.py`, the options snapshot, tests,
+  five documents. `ADR.md` unchanged: the convention moved three times in one
+  session and is not settled enough to record.
 
 ### 2026-09-14 - The connect burst is waited for as a group
 
@@ -261,7 +262,8 @@ behind each one is in the lab repository,
 - **Why:** the other three follow `RecallPreset` by 3.6 to 6.0 ms against a
   100 ms poll, which failed two tests a few runs in a hundred.
 - **Scope:** `tests/hardware/`, `tests/test_handshake_burst_recorder.py`,
-  `protocol.md`, `CLAUDE.md`. No library change.
+  `protocol.md`, `CLAUDE.md`. No library change. `BURST_TAIL` stays off the
+  profile class until a second profile has measured its own burst.
 
 ### 2026-09-12 - The Off-detent table is deleted; the floor is derived (ADR-0015)
 
@@ -431,7 +433,9 @@ behind each one is in the lab repository,
   the protocol layer, moved verbatim. `Device` checks field presence and refuses
   reads once closed.
 - **Why:** M1 story #9; every later story imports through the new layout.
-- **Scope:** the whole package, CI, `scripts/`, every document.
+- **Scope:** the whole package, CI, `scripts/`, every document. ADR-0001 keeps
+  its `pyquadcortex/proto/` paths as written, because a decided record is
+  append-only; the directory now lives at `pyquadcortex/protocol/proto/`.
 
 ### 2026-08-06 - Domain model Part 2: state tracking and save behaviour
 

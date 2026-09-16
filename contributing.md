@@ -23,9 +23,9 @@ You do not need to ask for access first.
    expect a round or two of feedback.
 
 CI runs the offline suite, mypy and a packaging build on every pull request. A red
-build blocks the merge. Green proves the library agrees with itself. Only a unit
-proves it agrees with the unit, which is why the hardware suite is part of every
-pull request too.
+build blocks the merge. A green build proves the library agrees with itself. Only
+a run against a unit proves it agrees with the unit's protocol, which is why the
+hardware suite is part of every pull request too.
 
 ## Development setup
 
@@ -60,8 +60,8 @@ Regenerate them only when the schema changes:
 scripts/compile_protos.sh
 ```
 
-The script refuses to write bindings older than the committed ones. If it does,
-reinstall the dev extra (`pip install -U -e ".[dev]"`). A newer generator means
+The script refuses to write bindings older than the committed ones. If it
+refuses, reinstall the dev extra (`pip install -U -e ".[dev]"`). A newer generator means
 raising the `protobuf` pin in `pyproject.toml` in the same commit. Details and
 the reasons are in [docs/architecture.md](docs/architecture.md), "The generated
 protobuf bindings".
@@ -89,10 +89,10 @@ Two contracts the tests protect:
 
 - `import pyquadcortex` and `qcctl --help` work without hidapi installed. Any
   `import hid` stays inside the function that opens the device.
-- The client layer speaks only protobuf, never HID, so it is tested against a
-  fake transport.
+- The protocol layer's client speaks only protobuf, never HID, so it is tested
+  against a fake transport.
 
-## Working with hardware
+## Working with a unit
 
 - Connect the Quad Cortex over USB. Wi-Fi may stay on.
 - **Quit Cortex Control first.** It holds the USB interface exclusively.
@@ -145,6 +145,6 @@ are easier to review as separate pull requests.
 
 Documents follow [docs/writing.md](docs/writing.md).
 
-In user-facing text, describe the project as speaking the device's own protobuf
+In user-facing text, describe the project as speaking the unit's own protobuf
 protocol. It is a USB client, like Cortex Control, and requires no modification to
-the device.
+the unit.

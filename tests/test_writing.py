@@ -20,9 +20,11 @@ WRITING_GUIDE = ROOT / "docs" / "writing.md"
 #: governed, so a new document has to come through `docs/writing.md`'s table.
 NOT_GOVERNED = {
     "code_of_conduct.md": "the Contributor Covenant's own text",
-    "LICENSE": "not a document",
 }
-NOT_GOVERNED_DIRS = {".github", ".venv", ".pytest_cache", ".claude", "node_modules"}
+#: `.github/` holds issue and pull request forms, which have no prose purpose.
+#: The rest are tool directories that can hold third-party READMEs.
+NOT_GOVERNED_DIRS = {".github", ".venv", "venv", "env", ".pytest_cache", ".claude",
+                     "node_modules", "build", "dist", "htmlcov", ".mypy_cache"}
 
 
 def governed_documents():
@@ -62,22 +64,31 @@ def _without_code(text):
     An inline span may wrap across a line break, so spans are removed from the
     whole text with their newlines kept, and line numbers stay right.
     """
-    out, in_fence = [], False
+    out, fence = [], None
     for line in text.splitlines():
-        if line.startswith("```"):
-            in_fence = not in_fence
+        opened = re.match(r"\s*(`{3,}|~{3,})", line)
+        if fence is None and opened:
+            fence = opened.group(1)[0] * 3
             out.append("")
             continue
-        out.append("" if in_fence else line)
+        if fence is not None:
+            if line.strip().startswith(fence):
+                fence = None
+            out.append("")
+            continue
+        out.append(line)
     joined = "\n".join(out)
-    return re.sub(r"`[^`]*`",
-                  lambda m: "`code`" + "\n" * m.group(0).count("\n"), joined)
+    joined = re.sub(r"`[^`]*`",
+                    lambda m: "`code`" + "\n" * m.group(0).count("\n"), joined)
+    # A link target or a bare URL is an address, not prose.
+    joined = re.sub(r"\]\([^)\s]*\)", "](url)", joined)
+    return re.sub(r"https?://\S+", "url", joined)
 
 
 # -- one purpose per document ---------------------------------------------------
 
 PURPOSE_WORDS = 40
-NEGATION = re.compile(r"\b(not|never|nor|neither|except|nothing)\b|n't\b",
+NEGATION = re.compile(r"\b(not|never|nor|neither|except|nothing|no|cannot)\b|n't\b",
                       re.IGNORECASE)
 
 
@@ -124,15 +135,19 @@ def test_every_governed_document_is_named_in_the_writing_guide():
 #: they are spelled. A label the unit shows, a protobuf action or a constant is
 #: NOT on this list: those go in backticks.
 ACRONYMS = {
-    "USB", "HID", "MIDI", "CPU", "DSP", "ADR", "ADRs", "PR", "PRs", "CI", "EQ",
-    "IR", "IRs", "XML", "JSON", "API", "APIs", "OS", "ID", "IDs", "LED", "LEDs",
-    "RX", "TX", "PCM", "WAV", "CC", "PC", "MSB", "LSB", "DIN", "HP", "DI",
-    "ARGB", "UI", "URL", "CRC", "AES", "GCM", "SHA", "MIT", "IEEE", "RMS",
-    "DAW", "ESS", "README", "CLAUDE", "STEERING", "LICENSE", "CorOS", "PyPI",
-    "TestPyPI", "MCP", "SDK", "HTML", "SD", "UK", "US", "VCA", "LR", "CA",
-    "TWN", "AO", "VMT", "DG", "OS", "GitHub", "PCOM", "HPF", "LPF", "FX",
-    "XLR", "USBPcap", "NaN", "MiB", "KB", "GB", "BPM", "OK", "SSH", "IDE",
-    "MAC", "NET", "XXTEA", "SHA1", "CPython", "IOKit", "AO900",
+    "USB", "HID", "MIDI", "CPU", "DSP", "ADR", "PR", "CI", "EQ", "IR", "XML",
+    "JSON", "API", "OS", "ID", "LED", "RX", "TX", "PCM", "WAV", "CC", "PC", "MSB",
+    "LSB", "DIN", "HP", "DI", "ARGB", "UI", "URL", "CRC", "AES", "GCM", "SHA",
+    "SHA1", "MIT", "IEEE", "RMS", "DAW", "ESS", "MCP", "SDK", "HTML", "SD", "FX",
+    "XLR", "HPF", "LPF", "KB", "GB", "BPM", "OK", "SSH", "IDE", "MAC", "NET",
+    "XXTEA",
+    "CPython",
+    # Proper nouns whose second letter is upper case
+    "IOKit", "USBPcap",
+    # File names this repository refers to by name
+    "README", "CLAUDE", "STEERING",
+    # Names of things on the unit, quoted as the unit spells them
+    "PCOM", "AO900", "TWN", "US",
 }
 
 SHOUT = re.compile(r"(?<![A-Za-z0-9_/`])([A-Z][A-Z0-9_]{1,}[A-Za-z0-9_]*)(?![A-Za-z0-9_`])")
@@ -164,8 +179,7 @@ def test_no_capitals_for_emphasis(path):
     shouted = []
     for number, line in _prose_lines(_governed_text(path)):
         for word in SHOUT.findall(line):
-            bare = word.rstrip("s") if word.endswith("s") and word[:-1] in ACRONYMS else word
-            if bare in ACRONYMS or word in ACRONYMS:
+            if word in ACRONYMS or (word.endswith("s") and word[:-1] in ACRONYMS):
                 continue
             if re.fullmatch(r"[A-Z]\d*", word):
                 continue
@@ -196,7 +210,7 @@ def test_no_review_history_in_the_prose(path):
     """A document records what is known. How the argument went is not that."""
     if path == WRITING_GUIDE:
         pytest.skip("the guide lists the phrases")
-    text = _without_code(_governed_text(path)).lower()
+    text = " ".join(_without_code(_governed_text(path)).lower().split())
     found = sorted({tell for tell in TELLS if tell in text})
     assert not found, (
         f"{_ids(path)} contains {found}. Rewrite the sentence to state the fact; "
@@ -236,7 +250,7 @@ def _blocks(text):
             current, start = [], None
         if not current:
             start = number
-        current.append(stripped)
+        current.append(re.sub(r"^([-*]|\d+\.)\s+", "", stripped) if is_item else stripped)
     if current:
         blocks.append((start, " ".join(current)))
     return [(n, len(b.split())) for n, b in blocks]
@@ -259,6 +273,28 @@ def test_no_paragraph_runs_past_the_limit(path):
     assert not long, (
         f"{_ids(path)} has paragraphs over {PARAGRAPH_WORDS} words: {long}. "
         f"Split them, or move the detail to the document that owns it")
+
+
+STEERING_ENTRY_WORDS = 80
+
+
+def test_steering_change_log_entries_stay_short():
+    """A change-log entry in STEERING.md is a summary; the story is in the PR.
+
+    `docs/writing.md` gives the shape and the limit. The narrative history that
+    grew here before is archived in the lab repository.
+    """
+    text = (ROOT / "docs" / "STEERING.md").read_text(encoding="utf-8")
+    log = text[text.index("## Change Log"):]
+    long = []
+    for entry in re.split(r"^### ", log, flags=re.MULTILINE)[1:]:
+        title, _, body = entry.partition("\n")
+        words = len(_without_code(body).split())
+        if words > STEERING_ENTRY_WORDS:
+            long.append(f"{title.strip()}: {words} words")
+    assert not long, (
+        f"STEERING.md change-log entries over {STEERING_ENTRY_WORDS} words: {long}. "
+        f"Keep what changed, why, and scope; the story goes in the pull request")
 
 
 def test_claude_md_bullets_stay_short():

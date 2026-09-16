@@ -20,7 +20,8 @@ Two more options go with the flag (ADR-0020):
 - `--profile CLASSNAME` connects as that profile class instead of the one the
   unit's identity resolves to. That is how a unit the registry would refuse, an
   unmeasured firmware or a Mini, gets measured. The name is a class in
-  `pyquadcortex.protocol.profiles`, or `QuadCortex` itself.
+  `pyquadcortex.protocol.profiles`, or `QuadCortex` itself; an unknown name stops
+  the run naming the real ones. Without `--hardware` it is ignored.
 
   ```bash
   pytest tests/hardware --hardware --profile QuadCortexMini
@@ -41,7 +42,11 @@ path:
   --hardware`, naming every path it refused. pytest does not consult
   `pytest_ignore_collect` for a path named on the command line, so these are
   collected first and then refused by `pytest_collection_modifyitems`. The
-  refusal is loud because you asked for those tests by name.
+  refusal is loud because you asked for those tests by name. `--collect-only`
+  still prints the item list before it exits. That pytest exempts a named path
+  from `pytest_ignore_collect` is observed behaviour, not its hookspec; if pytest
+  ever closes the gap, `tests/test_hardware_gate.py` fails on the exit code it
+  asserts.
 
 The gate is those two hooks in `conftest.py`, and it stays two. Folding them into
 one restores the bug for whichever half is dropped. `tests/test_hardware_gate.py`
@@ -97,6 +102,12 @@ messages that close it: `RecallPreset`, `SetlistPosition`, `PresetDirty`,
 3.6 to 6.0 ms against a 100 ms poll, so waiting for `RecallPreset` alone lost one
 of the others a few runs in a hundred. `unfinished()` names what never arrived,
 in the run's own report and in the tests that guard on it.
+
+The burst test's `assert handshake_burst.closed` and `unfinished() is None` are
+the only assertions that fail if the fixture stops waiting for the burst; every
+other assertion in that test is a floor, and contamination satisfies a floor. Do
+not delete them as redundant. The cache costs the RX thread one small message
+copy per `Version` or `PresetDirty` push and nothing for anything else.
 
 A new cache entry comes through `BURST_TAIL`, `OUTSIDE_THE_BURST` or
 `NOT_WARMED_BY_THE_BURST` in `tests/test_handshake_burst_recorder.py`, with its

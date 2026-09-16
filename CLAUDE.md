@@ -17,16 +17,23 @@ small documentation fixes.
   no `DYLD_LIBRARY_PATH`.
 - Hardware tests live in `tests/hardware/` behind `--hardware`. How to run them,
   how a test names what it verifies, and how to add one: `tests/hardware/readme.md`.
+  Every module there stays importable offline; `tests/test_hardware_gate.py` and
+  `tests/test_scene_echo_predicates.py` hold that.
 - Quit Cortex Control before a hardware session. It holds the HID interface
   exclusively.
 - A pull request opens as a draft (`gh pr create --draft`). It is marked ready
   only after the hardware suite has run on its final commit, with the run recorded
   in the description, or the owner has waived the run there. The rule and the
   three states: `contributing.md`, "Before you mark a pull request ready".
+- Never waive the run yourself. The contributor's no-unit state is not yours: you
+  work where the unit is.
 - A draft is not a handover. The sequence is one unit of work: open the draft,
   run the hardware suite on the final commit, run `/triage-pr` on that commit
-  through a subagent, fix what it finds, mark ready with `gh pr ready`, then send
-  the link. Triage again after any change to the code.
+  through a subagent, fix what it finds, re-run whatever the fixes invalidated,
+  mark ready with `gh pr ready`, then send the link. Triage again after any
+  substantive change.
+- A finding you choose not to fix is named in the pull request description, with
+  the reason.
 - Changed code under a path in `docs/STEERING.md` section 4? Update STEERING,
   this file and `docs/ADR.md` in the same pull request.
 - Write every document by `docs/writing.md`. `tests/test_writing.py` checks the
@@ -93,8 +100,9 @@ small documentation fixes.
   a field the entry does not keep marks it; there is no "harmless field" list.
   (ADR-0011)
 - `Grid` pushes invalidate rather than merge (`FieldPlan(invalidates=True)`), and
-  so does any entry whose fields have no presence. Never widen the shared
-  `SCAFFOLDING` skip to quiet a new entry. (ADR-0012)
+  so does `SceneLabel`, whose `index` and `label` have no presence and so blind
+  the per-field check. Never widen the shared `SCAFFOLDING` skip to quiet a new
+  entry. (ADR-0012)
 - A closed `Device` refuses reads. `Device.close()` closes the state layer first.
 
 ### Parameters and scales
@@ -104,6 +112,10 @@ small documentation fixes.
   `units.FIRMWARE_CONSTANTS`, each with evidence; an unknown name raises. The
   one measured override is `units.LABELLED_END_SPAN`; a second needs a new ADR.
   Screen readings are tests in `tests/test_scales.py`. (ADR-0015)
+- A bound nobody can measure goes in `units.UNMEASURED_BOUNDS` and the parameter
+  refuses. There is one, and its block crashes the unit.
+- Before parsing a new catalog attribute, check `docs/domain-model.md`, "Catalog
+  attributes", which lists the ones we can see and cannot yet explain.
 - The catalog is trusted for structure (option count, wire index of each option,
   parameter index) and not for what the unit draws (option names, drawn order,
   `display_pos`). A two-position list is read by driving each position. Readings

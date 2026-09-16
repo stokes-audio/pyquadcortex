@@ -224,7 +224,7 @@ caller's thread. A message type no entry tracks returns at once, which is what
 makes the metronome's tempo stream free.
 
 `entries.py` is the table of what is tracked: per entry, the message types that
-carry it, the fields kept, and the read that fetches it.
+carry it, the fields kept, and the read that answers it.
 
 `watch.py` is the write side. A write updates the cache at once and the unit's
 echo confirms it in the background against one rule: every field we sent must

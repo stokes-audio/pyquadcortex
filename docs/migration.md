@@ -162,8 +162,8 @@ it.
 p.to_real(0.25)     # before: 5015.0    after: 216.7    the unit shows 217
 ```
 
-The new numbers are the ones the unit displays; see `docs/protocol.md`, "A
-parameter's scale is in the catalog".
+The new numbers are the ones the unit displays; see `docs/protocol.md`, "One
+law covers every parameter's scale".
 
 ### An out-of-range value is refused, not clamped
 
@@ -192,8 +192,8 @@ wire to the bottom 0.02%.
 
 ### Converting real units now needs a catalog
 
-A real value reads the unit's own description of the parameter, so it fetches
-one. Previously a few parameters were served by a hand-measured table and worked
+A real value reads the unit's own description of the parameter, so it asks the
+unit for one. Previously a few parameters were served by a hand-measured table and worked
 with no unit attached, `Tempo()` in particular.
 
 To convert without a unit, use the standalone helpers, which are unchanged:

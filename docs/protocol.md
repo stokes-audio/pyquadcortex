@@ -331,7 +331,8 @@ declares **71 types** (`Undefined = 0` through `GenerateTestPreset = 70`, with
 | 51 | `ModelRepo` | required readiness step in the handshake, and the catalog |
 | 52 | `ResetCommsBuffers` | session hello with a session token |
 
-`registry.py` registers 70 of the 72 types so the RX path can decode them.
+`registry.py` registers 70 of those 72 enum values (the 71 types plus the
+sentinel) so the RX path can decode them.
 
 Most messages carry `action` (field 1) from `MessageAction.Enum`:
 
@@ -378,7 +379,7 @@ Two steps matter and are not obvious:
 
 - **The Cortex Control version announce.** The unit gates its pushes on receiving
   a valid `cortex_control_version`. The library announces `"4.0.1"`
-  (`QuadCortex.CC_VERSION`).
+  (`QuadCortex.CC_VERSION`), the string seen on the wire from Cortex Control.
 - **A `ModelRepo` read.** Empirically required: with it the unit starts pushing;
   without it, with everything else present, it stays silent.
 
@@ -401,15 +402,18 @@ As Cortex Control performs it:
 Each read in step 3 acts as a subscription: the unit pushes that state type to
 clients that asked for it. `QuadCortex._SUBSCRIBE_TYPES` lists the set, mirroring
 Cortex Control's burst: 22 types by default, or 21 with `initial_file_listing=False`.
-A contributed CorOS 4.1.0 check on 2026-09-08 connected with the 21-type form.
+A contributed CorOS 4.1.0 check on 2026-09-08 connected with the 21-type form
+and then enumerated all 586 folders explicitly under `Support.EXPERIMENTAL`
+(a 4.0.1 unit reports 399).
 
 **`File` is the one type measured not to gate pushes.** Measured 2026-09-09 on
 CorOS 4.0.1: a client that never sends the `File` read is still told when a
 preset is saved on the unit, and the save's cascade (`File`, `UndoRedo`,
 `RecallPreset`, `Scene`, `RecentsFavorites`, `SetlistPosition`, `Grid`) is
 identical with and without it. Omitting the read costs the 399-message
-enumeration and nothing else a save announces. The other 21 types were not tested
-one at a time; a delete, a rename and an IR import were not measured.
+enumeration and nothing else a save announces. One trial per arm. The other 21
+types were not tested one at a time; a delete, a rename and an IR import were
+not measured; and on CorOS 4.1.0 the question is unmeasured.
 
 `QuadCortex._hello()` does the same as Cortex Control with one difference: it
 issues no host `Version` read, because a redundant read would race a caller's
@@ -430,7 +434,8 @@ teardown.
 
 Abandoning a session without the goodbye leaks nothing observable. Measured: 12
 sessions opened and abandoned, then the seed push still arrived, subscriptions
-still fired, and `read_preset` took the same time. Not established: whether the
+still fired, and `read_preset` took the same time. Handshake duration is a poor
+instrument for this: six clean sessions spanned 2.03 s to 3.80 s. Not established: whether the
 unit supersedes an old session on a fresh `ResetCommsBuffers`, reaps sessions
 whose keepalives stop, or has a ceiling on accumulated sessions. The goodbye is
 sent because it matches Cortex Control, not because a fault was found.
@@ -562,7 +567,8 @@ eight-scene preset), usually gzip-compressed at the frame level. Consequences:
 
 `RecallPresetReason.Enum` is `OTHER = 0`, `UNDO = 1`, `SAVE = 2`. A host recall
 and a read reply carry `OTHER`; the push a save emits carries `SAVE`; `UNDO` has
-not been observed. `RecallReason` names them.
+not been observed, and which value accompanies a footswitch recall on the unit is
+not measured. `RecallReason` names them.
 
 **The live grid is readable without a recall.** `RecallPreset{READ, request_id}`
 answers with the preset as it is right now, unsaved edits included, with no side
@@ -750,8 +756,9 @@ the flag.
   block in one scene, switch to that scene and write index 0, which
   `set_bypass(scene=...)` does.
 - **`sceneMode` is not host-writable.** Sent alone and sent beside a bypass
-  entry, both ignored. Factory content arrives with it set on some blocks (5 of
-  32 positions in one preset). A block whose `sceneMode` is false can appear from
+  entry, both ignored. The flag has no presence, so disabling it could not be
+  expressed on the wire even if the unit honoured the write. Factory content
+  arrives with it set on some blocks (5 of 32 positions in one preset). A block whose `sceneMode` is false can appear from
   its `sceneBypass` array to differ between scenes while the unit shows it the
   same in all of them; filter on `sceneMode` before comparing scenes.
 - **The bypass table persists for empty cells.** A freshly placed block inherits
@@ -759,10 +766,12 @@ the flag.
   placing.
 - **A bypass written to a Neural Capture block before the preset's first save
   does not survive that save**, while an ordinary block in the same row keeps it.
-  On the live grid the capture bypasses like any other block. The sequence that
-  persists, verified on 24 presets: save, recall the stored slot, write the bypass
-  again, save again. Re-saving the same name to the same slot does not trigger
-  `_N` renaming.
+  On the live grid the capture bypasses like any other block, and parameters
+  written after the load do survive that first save; only the bypass does not.
+  The sequence that persists, verified on 24 presets: save, recall the stored
+  slot, write the bypass again, save again. Re-saving the same name to the same
+  slot does not trigger `_N` renaming. Verify a bypass against the stored preset
+  (`bypass_state()` on a `read_preset()` result), not only the live grid.
 
 **`Chain.row` and `Model.column` are zero-based on the wire, and the screen
 labels rows 1 to 4.** `chains[0]` is the top row.
@@ -806,7 +815,8 @@ landed. A port conflict is the second cause and looks identical from the host:
 placing an `FX Loop 1` where a `Send 1` already claims the same physical send is
 refused, and the unit puts a modal on its own screen that no message carries
 ("Port Conflict / Send is used as an output by FX Loop Send 1 on path 2"). It
-stays refused until dismissed on the unit (observed 2026-08-26).
+stays refused until dismissed on the unit (observed 2026-08-26). An `FX Loop 2`
+beside `Send 1` places fine: the specific port collides, not the block type.
 
 **The refusal is detectable without saving.** The unit echoes a `Grid` push
 naming each cell it accepts, plus an `UndoRedo`; a refused block produces neither:
@@ -942,6 +952,8 @@ with it and are writable the same way: `stomp_labels`, `single_stomp_labels`
 (both `map<uint32, string>`) and `stomp_is_momentary` (`map<uint32, bool>`), all
 keyed by footswitch index, not column (a block at column 3 assigned to footswitch
 E produced `key: 4`). The unit clears all three when an assignment is removed.
+Factory content leaves `stomp_is_momentary` empty, so a missing entry means
+latching.
 
 **Momentary is real, and the manual does not mention it.** The touchscreen's
 Assign footswitch modal carries a Latching/Momentary toggle, and using it
@@ -1076,8 +1088,9 @@ Each preset carries a `TempoControl` block (model `25000`) in
 parameters. **It is writable, even though it is not row or column keyed**: a
 `Grid` `UPDATE` carrying `tempoProgramData{params{index, param_values}}` is
 applied and survives a save and recall, with the hash optional. Confirmed:
-`LED LIGHT` 1.0 to 0.0 turns the tempo LED off, `VOLUME` to 0.0 silences the
-metronome.
+`LED LIGHT` 1.0 to 0.0 turns the tempo LED off, and `VOLUME` to 0.0 takes the
+metronome to the bottom of its knob (-60 dB, quiet but still audible; `MUTE` is
+parameter 4).
 
 In the stored preset these params are positional: all 24 arrive with `index`
 absent. A host write sets `index`. `protocol.tempo_params()` reads them.
@@ -1138,7 +1151,7 @@ list at `option / 3`, with the unit's own names from the catalog's `stepNames`:
 | 1.0 | 3 | `ON` | a small accent | solid circle, dot below |
 
 Driven on the unit 2026-08-27, one bar at 60 bpm with all four states on the four
-beats, listened to and looked at. `OFF` and `ON` are about the accent, not about
+beats, listened to and looked at, and driven again on 2026-09-14. `OFF` and `ON` are about the accent, not about
 whether the beat sounds. A cell cycles up by 1/3 and wraps after four touches.
 Changing the time signature rewrites these: selecting 7/8 (2+2+3) wrote indices 6,
 12 and 14 together. Set the signature before the beats. All 13 exist whatever the
@@ -1171,10 +1184,13 @@ the unit's readable state moving; a host write moved the unit's own menu, watche
 at the unit; and the tempo in effect switched between the two blocks' stored
 values. The method was a differential state capture of twelve readable types plus
 a 14-second tap of everything pushed, in each position (ADR-0010,
-`tests/hardware/state_snapshot.py`). `GeneralSettings` was identical in both
-positions, no message carried an unknown field number, and index 24 of the device
-block (absent from the preset's 24 and described nowhere) held `0.0` in both and
-is still unattributed.
+`tests/hardware/state_snapshot.py`). Two negatives from it: `GeneralSettings` was
+identical in both positions and no message carried an unknown field number, so
+the mode is not in the settings bag; and `BinaryPreset.tempo` (field 10) was
+absent in both positions with the preset's whole `tempoProgramData` block
+identical across the flip, so the preset does not carry it either. Index 24 of the
+device block (absent from the preset's 24 and described nowhere) held `0.0` in
+both and is still unattributed.
 
 **The unit emits no change event when the switch moves.** Three listening runs
 established that, the last two with 70 of 72 types decoded and a liveness
@@ -1642,9 +1658,8 @@ send it beside a level.
 `{parameter_index, value}` pairs, sparse by index on write. Band N's controls sit
 at `(N - 1) * 5 + offset`:
 
-> `tests/test_client.py` reads the table below and holds it against
-> `QuadCortex`'s `GLOBAL_EQ_BAND_*` constants. Correct a row here and the offline
-> suite fails until the constants agree.
+> `tests/test_client.py` holds this table against `QuadCortex`'s
+> `GLOBAL_EQ_BAND_*` constants.
 
 | offset | control | notes |
 |---|---|---|
@@ -1652,12 +1667,19 @@ at `(N - 1) * 5 + offset`:
 | 1 | FREQUENCY | mapping not established |
 | 2 | Q | mapping not established |
 | 3 | TYPE | a five-option list, `index / 4` |
-| 4 | band ENABLE | 1.0 is active, 0.0 bypasses the band (the manual's EQ BAND BYPASS) |
+| 4 | band ENABLE | 1.0 is active, 0.0 bypasses the band (the manual's `EQ BAND BYPASS`) |
 
 Established by changing each of band 1's controls in turn with a scene change
 fencing each, then checked against the shipped defaults, which line up as a
-five-band parametric EQ should: identical gains and Qs, rising frequencies, and
-shelf/peak/peak/peak/shelf types.
+five-band parametric EQ should:
+
+```
+band 1   gain 0.5   freq 0.142   Q 0.0613   type 1.00 (Lo Shelf)
+band 2   gain 0.5   freq 0.207   Q 0.0613   type 0.00 (Peak)
+band 3   gain 0.5   freq 0.405   Q 0.0613   type 0.00 (Peak)
+band 4   gain 0.5   freq 0.616   Q 0.0613   type 0.00 (Peak)
+band 5   gain 0.5   freq 0.729   Q 0.0613   type 0.75 (Hi Shelf)
+```
 
 **Indices 25 to 27 are the `OUT` tab**: 25 the overall level (dB mapping not
 established), 26 assign to `OUT 1/2` (confirmed on the unit), 27 assign to
@@ -1767,14 +1789,16 @@ arrives after every accepted grid edit, which makes it an acceptance signal.
 ### 12.1 The connect burst
 
 Measured from before the handshake with a `connect(before_handshake=...)`
-listener, CorOS 4.0.1, several sessions:
+listener on CorOS 4.0.1: first on 2026-08-12, the `Version` count corrected on
+2026-08-27 and 2026-09-07, and the closing group re-measured on 2026-09-14 over
+three consecutive connections:
 
 | after connect | what arrives |
 |---|---|
 | 2.0 s | `connect()` returns, having seen the `ResetCommsBuffers` echo and the `Version` messages (section 4.2) |
 | 4.9 s | the `ModelRepo` payload, one message of 371 reports |
 | 5.1 s | 399 `File` listings at about 1490 reports/s for about 5 s, and most settings types |
-| 9 to 11.2 s | `RecallPreset` (the seed), `SetlistPosition`, `PresetDirty`, `Scene`, in that order, inside 3.6 to 6.0 ms |
+| 9 to 11.2 s | `RecallPreset` (the seed), `SetlistPosition`, `PresetDirty`, `Scene`, in that order, inside 3.6 to 6.0 ms (2026-09-14: 11.21 s, 11.08 s and 11.07 s after connect, spread over 6.0, 3.6 and 5.8 ms) |
 
 About 474 messages of 24 distinct types by 15 s. So a listener attached to the
 client `connect()` returns is about 3 s too late for the catalog and 8 s too late
@@ -1921,9 +1945,9 @@ Named forms live in `pyquadcortex/protocol/enums.py` (`Input`, `Output`,
 
 ## 14. The model catalog (ModelRepo)
 
-`ModelRepo` is fetched during the connect burst as a readiness gate, and its
+`ModelRepo` is read during the connect burst as a readiness gate, and its
 payload is the unit's whole block catalog: gzip(tar(`ModelRepo.xml`)), about 46 KB
-compressed and 557 KB expanded. Cortex Control fetches it as the third message
+compressed and 557 KB expanded. Cortex Control reads it as the third message
 type of every session, after `ResetCommsBuffers` and `Version`, and the reply
 lands about 1.2 s after the session's first message in all three lab captures.
 
@@ -1970,11 +1994,13 @@ on hardware 2026-08-26 over three blocks in two units:
 | Low-High Cut | `HPF FREQ` | 0.3 | 0.25 | 216.7 Hz | 217 Hz |
 | Low-High Cut | `LPF FREQ` | 0.3 | 0.75 | 7678.3 Hz | 7678 Hz |
 | Low-High Cut | `OUTPUT` | none | 0.25 | -10.0 dB | -10.0 dB |
-| Envelope Filter | `FREQ` | LOG_SKEW | 0.25 | 197.4 Hz | 197 Hz |
-| Envelope Filter | `RESO` | LOG_SKEW | 0.75 | 4.450 | 4.45 |
+| Envelope Filter | `FREQ` | `LOG_SKEW` | 0.25 | 197.4 Hz | 197 Hz |
+| Envelope Filter | `RESO` | `LOG_SKEW` | 0.75 | 4.450 | 4.45 |
 
-615 parameters carry a non-linear skew. Every screen reading taken in this
-project is a row in `tests/test_scales.py`, asserting the catalog reproduces the
+The two `LOG_SKEW` readings solve independently to exponents 3.3366 and 3.3330,
+both `1/0.3`; a true log sweep would have shown 316 Hz and 5.62, and a straight
+line 2575 and 7.75. 615 parameters carry a non-linear skew. Every screen reading
+taken in this project is a row in `tests/test_scales.py`, asserting the catalog reproduces the
 display at its own precision; the lab repository's `doc/scale-readings-campaign.md`
 holds the readings and how they were taken.
 
@@ -1992,6 +2018,12 @@ its evidence. A name the build has never met raises rather than falling back.
 | `TEMPO` | 1 | `TEMPO` | 40..240 | `steps=201` fixes whole bpm; three interior points |
 | `EQ_FREQ` | 2 | `FREQUENCY` on both splitter models | 20..20000 | solved from `defaultValue`, `skew` and one wire value |
 | `INPUT_TRIM` | 1 | `NC_Recorder OUT LEVEL` | **unknown** | placing the block crashes the unit |
+
+**The block EQs (`4000`, `4001`, `4004`) share two facts with the Global EQ.** A
+band's `TYPE` decides whether its `GAIN` means anything: Lo Pass and Hi Pass
+disable the control, and a gain written to such a band is stored and ignored. And
+`N BYPASS = 1` means the band is on. A disabled band displays `0.0 dB` whatever
+it stores, which makes a write look like it never landed.
 
 **Unity for the level parameters is `0.76923077`** (10/13, 0 dB on -40..+12).
 `MIXER LEVEL` and `LEVEL TO A/B` read exactly that on every one of the 34 factory
@@ -2022,7 +2054,12 @@ because it rounds (`-40.0 dB` at the lowest real position and `OFF` one step
 below), and a knob cannot turn below 1% of travel. `min_string` is trusted per
 parameter: 14 cab `LEVEL`s (the PCOM variants and Parallax) omit it, and a
 `Parallax` cab `LEVEL` displays -40.0 dB where a labelled cab shows `OFF` at the
-same wire 0.0 (typed on 2026-09-12). The `-Inf` law is 20 `type="grMeter"`
+same wire 0.0 (typed on 2026-09-12).
+
+Keying the label by law instead would be
+wrong: 559 parameters share a law with a labelled one without carrying the label,
+and 474 of those are ordinary 0-100% controls whose 0% is a real value. The
+`-Inf` law is 20 `type="grMeter"`
 readouts, not knobs. The amp `OUTPUT` law (-60..12, skew 3.8018) reads numbers to
 -58.1 dB at wire 0.000001, matching the law to 0.03 dB.
 
@@ -2141,6 +2178,8 @@ wire, with no independent read-back.
   block crashes the unit.
 - **What `expAssignable="false"` governs.** It does not stop a host write. The
   touchscreen's own assignment menu is the candidate and has not been checked.
+  Whether the unit acts on an assignment stored against such a parameter needs
+  audio, not a wire read.
 - **What `toggleOn`, `toggleOff` and `toggleStep` mean**, on 212 parameters.
 - **Whether a capture id denotes different content on a different unit** needs a
   second unit.

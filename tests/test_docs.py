@@ -349,7 +349,7 @@ def test_no_document_names_an_enum_member_that_does_not_exist():
 
     root = pathlib.Path(__file__).parent.parent
     files = sorted((root / "docs").glob("*.md"))
-    files += [root / "changelog.md", root / "readme.md"]
+    files += [root / "changelog.md", root / "README.md"]
 
     bad = []
     for path in files:

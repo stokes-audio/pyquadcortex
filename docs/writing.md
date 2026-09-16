@@ -19,7 +19,8 @@ Every document opens with one line after its title:
 
 At most 40 words. It says what the document is for. It does not say what the
 document is not for. A purpose that grows into "X, and not Y, and never Z" has
-stopped being a purpose, so the test rejects a negation in that line. When
+stopped being a purpose, so the test rejects the common negations (`not`,
+`never`, `no`, `cannot`, `nor`, `neither`, `except`, `nothing`) in that line. When
 something does not fit, put it where it fits (next table) and link to it.
 
 | document | purpose |
@@ -70,8 +71,8 @@ Write for a reader who knows the domain and reads English as a second language.
 - No capital letters for emphasis. A label the unit shows goes in backticks:
   `VOLUME`, `MODE`. A protobuf action goes in backticks: `READ`, `UPDATE`.
 - Numbers that matter go in a table, not in a sentence.
-- Bold marks a term being defined or the first words of a list item. Never a
-  whole sentence.
+- Bold marks a term being defined, the first words of a list item, or the lead
+  sentence of a paragraph. Never a paragraph.
 - Link to the one place a thing is explained. Do not restate it.
 
 ## Evidence, not narrative
@@ -84,7 +85,8 @@ the commit message or the lab repository.
 - A correction replaces the wrong sentence. Do not leave the old sentence beside
   the new one.
 - A document never talks about itself, its history, its reviewers or its
-  drafts. Such sentences have no reader.
+  drafts. Such sentences have no reader. The changelog is the one exception: an
+  entry that withdraws a released claim names the entry it withdraws.
 - A negative result says which question the instrument answered. "The unit does
   not announce X" and "X is not on the wire" are different claims.
 
@@ -109,13 +111,19 @@ the one place they may appear, because it lists them.
 | a bullet in `CLAUDE.md` | 60 words |
 | a paragraph or list item in any governed document | 150 words |
 
+| an entry in `docs/STEERING.md`'s change log | 80 words |
+
 Governed documents are every `.md` file in the repository except
-`code_of_conduct.md` and the released entries of `changelog.md`, which are a
-record of what was said at release time. `docs/ADR.md` is exempt from the
+`code_of_conduct.md`, the issue and pull request forms under `.github/`, and the
+released entries of `changelog.md`, which are a record of what was said at
+release time. `docs/ADR.md` is exempt from the
 paragraph limit only: a decided record is append-only and is not edited for
 length. New records follow the limit.
 
 ## Glossary
+
+The glossary governs prose. A code identifier keeps its own name:
+`await_broadcast`, `set_scene_color`, `Device`.
 
 | word | meaning | avoid |
 |---|---|---|
@@ -126,9 +134,9 @@ length. New records follow the limit.
 | catalog | the `ModelRepo` XML the unit publishes | model repository |
 | profile | one measured pair of `device_type` and CorOS version, as a client class | baseline |
 | protocol layer | `pyquadcortex.protocol` | client layer, low level |
-| model layer | `pyquadcortex` and the code in `pyquadcortex/device/` | object model |
+| model layer, the model | `pyquadcortex` and the code in `pyquadcortex/device/`; "the domain model" is the design's name in `docs/domain-model.md` and the ADRs | object model |
 | block | a placed amp, pedal or other virtual device on the grid | model, in prose (`model` is the wire's word and the code's) |
-| slot, column | the screen's word and the wire's word for a cell in a row | mixing them in one document |
+| slot, column | the screen's word and the wire's word for a cell in a row | mixing them when writing about one layer |
 | push | a message the unit sends without being asked; as a verb, the unit announces or pushes | broadcast, notification |
 | read | a `READ` request and its answer | fetch, query |
 

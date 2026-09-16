@@ -988,8 +988,8 @@ Two method notes. **A read straight after a write returns the previous value**; 
 produced the master-volume "refusal" that stood for releases. **A flawlessly
 repeatable negative is the instrument**: a host bypass write read as "discarded"
 in all three behaviour modes because `ColBypass.column` has no presence and reads
-0 on every entry, so a filter on it matched nothing. Any measurement worth
-recording deserves a control.
+0 on every entry, so a filter on it matched nothing. Any measurement that is
+recorded deserves a control.
 
 ---
 
@@ -1260,7 +1260,7 @@ refused on a full grid. A caller still has to try the block and handle the refus
 
 ### The option vocabulary is conveyed once per session, and the screen is a second renderer
 
-Cortex Control fetches the catalog as the third message type of every session,
+Cortex Control reads the catalog as the third message type of every session,
 and the reply carries every `stepNames` string: reassembled from each of the three
 lab captures, it is a 556,732-byte `ModelRepo.xml` with 539 `stepNames`
 attributes, the same vocabulary in all three. So a host is handed the whole
@@ -1314,7 +1314,7 @@ side to 50 on the other, whatever span the catalog declares
 `A/B PITCH MIX` spells them `A`/`A/B`/`B`.
 
 On `<Model>`, `blob` is unexplained: a same-length string that changes between
-fetches, on 338 models and no others across the three lab captures. A per-fetch
+reads, on 338 models and no others across the three lab captures. A per-read
 token, not content.
 
 On `<Option>` labels, the character `¤` (U+00A4) appears as a separator inside a
@@ -1333,8 +1333,8 @@ against `Return 1/2`, `USB 5` against `USB input 5`).
 
 So every list's names are a hypothesis until a person reads them off the unit.
 `options.OPTION_AUDIT` publishes which have been, keyed by the labels rather than
-by the enum so the two Off/On lists and the metronome list, which get no enum,
-can be recorded too. The readings are in `tests/fixtures/catalog/option_readings.json`,
+by the enum so the two Off/On lists and the metronome list, which get no enum
+and are 260 parameters between them, can be recorded too. The readings are in `tests/fixtures/catalog/option_readings.json`,
 one row per position, and `scripts/generate_options.py` stamps each enum's
 docstring from them.
 
@@ -1423,5 +1423,5 @@ it. What it does govern is not established ([`protocol.md`](protocol.md) section
 - **Library management** (capture and IR folders, renames) and **on-wire search**:
   modelled as flat listings until the `File` family is understood.
 
-The history of this document's changes is in the lab repository,
-`doc/pyquadcortex/history/domain-model-change-log.md`.
+Earlier versions of this design, with what changed when, are archived in the lab
+repository at `doc/pyquadcortex/history/domain-model-change-log.md`.

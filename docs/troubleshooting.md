@@ -13,7 +13,7 @@ This is field experience from one unit, and the root cause is unknown. It is
 recorded because the symptoms mislead.
 
 **What it looks like:** `hid.enumerate()` reports zero Neural DSP interfaces and
-`connect()` raises. Reseating the cable changes nothing, and retrying in software
+`connect()` raises. Reseating the cable at either end changes nothing, and retrying in software
 never succeeds (25 attempts over 75 seconds, never visible once).
 
 **How to tell it from a plain disconnection:** the port is flapping, asserting
@@ -39,7 +39,8 @@ enumerated on its own two and a half minutes after the restart.
 
 **What is not established:** the cause. One unit, one host, and only the cable
 that shipped with it, so a marginal cable is not ruled out. Onset followed about
-20 minutes of continuous heavy write traffic.
+20 minutes of continuous heavy write traffic; whether that is connected is
+unknown.
 
 ## The rig is silent (or clicking) and every read-back looks perfect
 
