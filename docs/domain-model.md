@@ -1607,11 +1607,14 @@ zero times in the 556,732-byte `ModelRepo.xml`. `SIN` occurs once, inside
 of one, anywhere in the file. So there is no unparsed short-label attribute
 waiting to be found: whatever holds these words is in the firmware.
 
-**And no transform of the catalog string reaches them.** Mind which position is
-which here - it is the one list this repo has already had to measure twice. The
-position that draws `WHT` carries the catalog string `Pink NS`, and no
-shortening of `Pink NS` yields `WHT`, because the catalog has that position's
-MEANING wrong (`options.OPTION_CONTESTED`). Length is not the rule either:
+**And two of the seven are not reachable from their catalog string at all.**
+Four are: `Sine`, `Triang`, `Sawtooth` and `Pulse` give `SIN`, `TRI`, `SAW` and
+`PUL` by taking the first three letters. `Square` does not - that rule gives
+`SQU` and the screen draws `SQR`. And the seventh is the one this repo has
+already had to measure twice: the position that draws `WHT` carries the catalog
+string `Pink NS`, so no shortening of it arrives anywhere near `WHT`, because
+the catalog has that position's MEANING wrong (`options.OPTION_CONTESTED`).
+Length is not the rule either:
 `RECORD MODE` draws `Momentary`, nine characters, driven and read back, while
 `Sawtooth` at eight draws `SAW`. Nor is the widget type - `PRE ROLL`,
 `TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"` on the models they were
@@ -1757,8 +1760,7 @@ parameters that carry a fixed list, because the ones in heaviest use were done
 first. The 95 unread cover 191.
 
 **What is left is not 95 equal jobs.** Ranked by how many parameters each list
-decides, the tail falls away fast: the biggest five cover 54 of the 191, and
-most of the rest are two-position lists deciding one or two controls each.
+decides, the tail falls away fast: the biggest five cover 54 of the 191.
 `options.OPTION_USAGE` publishes the count for every list, so a session at the
 unit can be planned from the library rather than from a one-off count:
 

@@ -417,3 +417,59 @@ def test_the_unread_work_is_long_tailed_and_the_document_says_so():
     assert phrase in text, (
         f"docs/domain-model.md does not say {phrase!r}. The ranking moved and "
         f"the document did not.")
+
+
+def test_the_worklist_table_is_the_snapshots_own_ranking():
+    """The five rows the document names, and the two numbers beside them.
+
+    The point of `OPTION_USAGE` is to stop these being carried in prose from a
+    one-off count, so every figure in that table is checked against the
+    snapshot: the parameter count, the position count, and that the five are
+    in fact the five biggest unread lists in that order.
+    """
+    unread = sorted(
+        (labels for labels, status in options.OPTION_AUDIT.items()
+         if status is None),
+        key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
+
+    text = " ".join(
+        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+        .read_text(encoding="utf-8").split())
+    for labels in unread[:5]:
+        row = f"| {options.OPTION_USAGE[labels]} | {len(labels)} |"
+        assert row in text, (
+            f"docs/domain-model.md has no worklist row {row!r} for "
+            f"{','.join(labels)!r}. The ranking moved and the table did not.")
+
+    rest = unread[5:]
+    few = sum(1 for labels in rest if options.OPTION_USAGE[labels] <= 2)
+    two = sum(1 for labels in rest if len(labels) == 2)
+    phrase = (f"Of the remaining {len(rest)}, {few} decide one or two "
+              f"parameters each and {two} have only two positions")
+    assert phrase in text, f"docs/domain-model.md does not say {phrase!r}."
+
+
+def test_the_read_that_would_settle_the_abbreviations_is_still_available():
+    """A `Tremolo`'s WAVEFORM is what the document offers as the next step.
+
+    It is only the next step while it is unread, and only decisive while its
+    list shares strings with the Mono Synth's. Both are properties of the
+    snapshot, so they are checked rather than asserted in prose - if a later
+    catalog renames either list, or somebody audits this one, the document is
+    pointing at a read that no longer settles anything.
+    """
+    tremolo = ("Sine", "Triangle", "Square", "Saw Up", "Saw Dn")
+    mono = ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS",
+            "White NS")
+    assert options.OPTION_AUDIT[tremolo] is None, (
+        "the document offers this list as an unread next step; it has been read")
+    assert options.OPTION_AUDIT[mono] == "audited"
+    shared = set(tremolo) & set(mono)
+    assert shared == {"Sine", "Square"}, (
+        f"the document names Sine and Square as the shared strings; the "
+        f"snapshot shares {sorted(shared)}")
+
+    text = " ".join(
+        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+        .read_text(encoding="utf-8").split())
+    assert f"`{','.join(tremolo)}`" in text

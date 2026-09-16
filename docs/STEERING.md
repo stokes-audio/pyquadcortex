@@ -151,10 +151,12 @@ narrow. `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
 `ModelRepo.xml`; `SIN` occurs only inside `SINGLE`, `PUL` only inside `PULL`,
 and `TRI` inside `TRIG`, `TRIGGER`, `RETRIGGER`, `TRIM`, `MAX_INPUT_TRIM`,
 `MIN_INPUT_TRIM` and `TRIPLET` - so there is no unparsed short-label attribute,
-and whatever holds those words is in the firmware. And no transform of the
-catalog string reaches them: the position that draws `WHT` carries the string
-`Pink NS`, the one the catalog gets WRONG, so no shortening of it arrives at
-`WHT` at all. Length is not the rule either - `RECORD MODE` draws `Momentary`
+and whatever holds those words is in the firmware. And no ONE transform covers the
+set: first-three gives `SIN`/`TRI`/`SAW`/`PUL` from `Sine`/`Triang`/`Sawtooth`/
+`Pulse` but `SQU` from `Square`, where the screen draws `SQR` - and the position
+that draws `WHT` carries the string `Pink NS`, the one the catalog gets WRONG,
+so no shortening of it arrives at `WHT` at all. Length is not the rule either -
+`RECORD MODE` draws `Momentary`
 at nine characters while `Sawtooth` at eight draws `SAW` - nor the widget type,
 since `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `rotarySwitch` on the models
 they were read on, exactly like `OSC1 WAVE`, yet draw `2 BARS`, `4 Alt` and
