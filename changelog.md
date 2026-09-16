@@ -179,8 +179,8 @@ is `targets.Tempo.NAMES`. `set_param` no longer defaults its value to 0.0
 `params.LaneOutputParam.VOLUME`, `params.TempoParam.TEMPO`. A constant is its wire
 index, so passing one skips the catalog fetch a name needs. Two things the catalog
 could not have told you: a cab's repeated parameters are two microphones
-(`MIC_1_DISTANCE`, `MIC_2_DISTANCE`), and all 140 cab models share the one
-`Default Cabsim` layout, so a cab is driven through `params.Cabsim`. An IR
+(`MIC_1_DISTANCE`, `MIC_2_DISTANCE`), and a cab is driven through
+`params.Cabsim`, the layout the wire carried on every cab measured so far. An IR
 Loader's repeated block is two IR slots (`IR_1_PATH`, `IR_2_PATH`). A hardware
 test regenerates from the connected unit and fails if the committed file has
 drifted.

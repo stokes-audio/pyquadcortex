@@ -1686,7 +1686,9 @@ established), 26 assign to `OUT 1/2` (confirmed on the unit), 27 assign to
 `OUT 3/4` (by elimination). `GlobalEQMessage.bypassed` is the whole EQ's switch and the
 inverse of the unit's On/Off control: `bypassed: true` is the EQ off, which is
 how the observed unit ships. **Filter types** are `0.0` Peak, `0.25` Hi pass,
-`0.5` Lo pass, `0.75` Hi Shelf, `1.0` Lo Shelf. A `parameters` block carrying no
+`0.5` Lo pass, `0.75` Hi Shelf, `1.0` Lo Shelf.
+The block EQs share the band polarity and the type-disables-gain rule (section
+14.1). A `parameters` block carrying no
 `parameter_index` is index 0, and one carrying no `value` is 0.0, because both
 are plain scalars.
 

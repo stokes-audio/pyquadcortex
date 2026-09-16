@@ -1360,9 +1360,10 @@ parameters that carry a fixed list. The 95 unread cover 191.
 
 The statuses:
 
-- **audited**: every position read and matching the catalog's words. Twelve of
-  the thirteen, including spellings that look like mistakes and are not (`In 1`
-  carries a space and `Out1` does not, on the same control).
+- **audited**: every position read, and the enum's names follow the screen.
+  Twelve of the thirteen read lists. Eleven match the catalog's words, including
+  spellings that look like mistakes and are not (`In 1` carries a space and `Out1`
+  does not, on the same control); the twelfth, `OSC1 WAVE`, is the swap below.
 - **drawn**: every position driven and read, and the unit draws a picture rather
   than a word. The metronome's `OFF,MUTE,DOWN,ON` is the case: the screen shows a
   filled or empty circle with an optional dot and never writes `MUTE`, so the

@@ -20,7 +20,8 @@ Every document opens with one line after its title:
 At most 40 words. It says what the document is for. It does not say what the
 document is not for. A purpose that grows into "X, and not Y, and never Z" has
 stopped being a purpose, so the test rejects the common negations (`not`,
-`never`, `no`, `cannot`, `nor`, `neither`, `except`, `nothing`) in that line. When
+`never`, `no`, `cannot`, `nor`, `neither`, `except`, `nothing`, and any `n't`)
+in that line. When
 something does not fit, put it where it fits (next table) and link to it.
 
 | document | purpose |
@@ -110,7 +111,6 @@ the one place they may appear, because it lists them.
 | the purpose line | 40 words, no negation |
 | a bullet in `CLAUDE.md` | 60 words |
 | a paragraph or list item in any governed document | 150 words |
-
 | an entry in `docs/STEERING.md`'s change log | 80 words |
 
 Governed documents are every `.md` file in the repository except
