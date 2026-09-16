@@ -363,9 +363,9 @@ def test_the_document_quotes_the_same_parameter_counts():
     """The counts in prose that the status counts do not cover.
 
     `docs/domain-model.md` states how many PARAMETERS each part of the audit
-    covers, and those are the numbers a reader cares about - 12 lists sounds
-    small and 287 parameters does not. They were wrong twice on one branch,
-    once as a silent regression, because nothing derived them.
+    covers, and those are the numbers a reader cares about: a list count sounds
+    small where a parameter count does not. Derived rather than written down,
+    because a number typed into prose goes stale the next time a reading lands.
 
     Derived here from `options.OPTION_USAGE`, which the generator emits from
     the catalog beside the audit. It used to be scraped out of the enums'
@@ -439,9 +439,9 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     control appears on. Confirming a model name needs the `ModelRepo` payload,
     and no payload is committed here - the snapshot is generated constants.
 
-    It also holds the sentence describing the tail below the table, because
-    that sentence counts the same ranking starting from the row after the last
-    one the table shows.
+    This test also holds the sentence describing the tail below the table,
+    because that sentence counts the same ranking starting from the row after
+    the last one the table shows.
     """
     unread = sorted(
         (labels for labels, status in options.OPTION_AUDIT.items()
@@ -537,15 +537,25 @@ def test_only_the_mono_synth_shortens_a_word_on_screen():
         "docs/domain-model.md needs rewriting, not this list extending")
 
     # The document counts controls READ, which is not every control in the
-    # fixture: five are records of looking and finding nothing on screen.
+    # fixture: five are records of looking and finding nothing on screen. Held
+    # against the document rather than against a literal, because the sentence
+    # is the thing that goes stale.
     pairs = {(r["model"], r["param"]) for r in rows}
     looked = {(r["model"], r["param"]) for r in rows if r.get("method") == "looked"}
-    assert (len(pairs), len(looked)) == (24, 5), (
-        f"{len(pairs)} controls in the fixture, {len(looked)} of them looked-for "
-        f"and absent - docs/domain-model.md says 24 and 5")
-    assert len(pairs - looked) - len(differ) == 13, (
-        "docs/domain-model.md says thirteen read controls match the catalog "
-        "exactly")
+    read, matching = len(pairs - looked), len(pairs - looked) - len(differ)
+    words = {5: "five", 13: "thirteen", 19: "Nineteen"}
+    text = " ".join(
+        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+        .read_text(encoding="utf-8").split())
+    phrase = (f"{words[read]} controls have been read - the fixture holds "
+              f"{len(pairs)}, but {words[len(looked)]} of those are records of "
+              f"looking")
+    assert phrase in text, (
+        f"docs/domain-model.md does not say {phrase!r}. The readings moved and "
+        f"the document did not.")
+    assert f"The other {words[matching].lower()} match the catalog" in text, (
+        f"docs/domain-model.md must say {words[matching].lower()} read controls "
+        f"match the catalog exactly")
 
 
 def test_the_ranking_recipe_the_changelog_publishes_actually_works():
@@ -557,9 +567,13 @@ def test_the_ranking_recipe_the_changelog_publishes_actually_works():
     guard. This one also publishes its own answer in a comment, which is the
     part that rots.
     """
+    # Copied verbatim from changelog.md. If this stops matching, fix both -
+    # the single-key version this replaced diverged from the published one at
+    # index 9 and passed anyway, because it only ever read unread[0].
     unread = [labels for labels, status in options.OPTION_AUDIT.items()
               if status is None]
-    unread.sort(key=lambda labels: -options.OPTION_USAGE[labels])
+    unread.sort(key=lambda labels: (-options.OPTION_USAGE[labels],
+                                    len(labels), labels))
     biggest = options.OPTION_USAGE[unread[0]]
 
     text = (pathlib.Path(__file__).parents[1] / "changelog.md").read_text(

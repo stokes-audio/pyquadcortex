@@ -147,8 +147,9 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 **Why - the abbreviations.** The question was whether the unit shortens every
 long name or just that one control. Just that one: a Flanger Engine's
-`WAVEFORM` offers `Sine`, `Triangle` and `Square`, and the screen spells all of
-them out (read 2026-09-16 on the unit, positions 0 and 3 driven from a host). The same word draws as `SIN` on a Mono Synth oscillator,
+`WAVEFORM` offers seven waveform names and the screen spells all of them out
+(read 2026-09-16 on the unit, with positions 0 and 3 driven from a host and
+read back). The same word draws as `SIN` on a Mono Synth oscillator,
 so the shortening belongs to that control. The short words are not in the
 catalog either - `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the
 556,732-byte file - so nothing in it predicts a shortened control.

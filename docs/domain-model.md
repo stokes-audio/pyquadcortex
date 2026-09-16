@@ -1594,7 +1594,7 @@ the Mono Synth's oscillator tab the screen shortens the catalog's words and
 draws a row of icons: `Sine` appears as `SIN`, `Pulse` as `PUL`. On two of the
 seven the catalog is the one that is wrong: it has pink and white noise the
 opposite way round from what the unit actually produces. The acoustic
-measurement that settled that is below.
+measurement that settled it is further down.
 
 **The shortening is not about the words.** A Flanger Engine's `WAVEFORM` offers
 `Sine`, `Triangle`, `Square`, `Saw Up`, `Saw Dn`, `rndSmooth`, `rndStep`, and
@@ -1617,8 +1617,8 @@ four step cells draw circles instead of words, which is why that list is
 `drawn` rather than `audited` below. The other thirteen match the catalog
 exactly.
 
-So the only thing still unknown here is whether some control nobody has opened
-yet also draws its own words. There are 94 lists left to read.
+So the only thing still unknown here is whether some control nobody has looked
+at yet also draws its own words. The 94 unread lists below are where to look.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact
@@ -1807,8 +1807,8 @@ the same control, and the screen draws both that way.
 
 Two did not. The metronome's cells are drawn rather than written, which is the
 `drawn` row above. **The other is a real disagreement, and it is the kind that
-changes what a caller gets.** A Mono Synth's oscillator waveform list reads, in the catalog,
-`Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On screen the seven
+changes what a caller gets.** A Mono Synth's oscillator waveform list reads, in
+the catalog, `Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On screen the seven
 shapes are drawn as waveform icons labelled `SIN, TRI, SAW, SQR, PUL, WHT, PNK`.
 Six of those are just abbreviations. The last two are not:
 
