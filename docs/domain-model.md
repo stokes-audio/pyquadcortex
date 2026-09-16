@@ -1408,13 +1408,12 @@ own words: `stepNames="OFF,MUTE,DOWN,ON"` against a hand-chosen `NORMAL`, `OFF`,
 `ACCENT`, `QUIET`, two of which were backwards. `OFF` and `ON` are about the accent
 ([`protocol.md`](protocol.md) section 8).
 
-### `expAssignable` says something, and not what it looks like
+### `expAssignable` does not govern a host write
 
-Fourteen parameters carry `expAssignable="false"`, and it does not govern a host
-expression assignment (ADR-0010 capture, 2026-08-26). It is published as
-`Parameter.exp_assignable` and nothing acts on it. The likely reading, that it
-governs which knobs the touchscreen offers for assignment, is a guess. Whether the
-unit acts on an assignment stored against such a parameter needs audio.
+Fourteen parameters carry `expAssignable="false"`, and a host can still assign a
+pedal to them. It is published as `Parameter.exp_assignable` and nothing acts on
+it. What it does govern is not established ([`protocol.md`](protocol.md) section
+14.1).
 
 ## Deferred by design
 

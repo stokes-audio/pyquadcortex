@@ -2141,8 +2141,6 @@ wire, with no independent read-back.
   block crashes the unit.
 - **What `expAssignable="false"` governs.** It does not stop a host write. The
   touchscreen's own assignment menu is the candidate and has not been checked.
-  Whether the unit acts on an assignment stored against such a parameter needs
-  audio.
 - **What `toggleOn`, `toggleOff` and `toggleStep` mean**, on 212 parameters.
 - **Whether a capture id denotes different content on a different unit** needs a
   second unit.
