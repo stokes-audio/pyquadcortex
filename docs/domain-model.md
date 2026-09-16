@@ -1645,8 +1645,10 @@ is a waveform picker.
 Read `Flanger Engine` first, because it holds the WIDGET TYPE constant: its
 `WAVEFORM` is a `rotarySwitch` like `OSC1 WAVE`, while `Tremolo`'s is a
 `comboBox`, a type nothing in the readings fixture has ever been read on - 129
-of its 133 rows resolve to a catalog parameter, 115 `rotarySwitch` and 14
-`switch`, and the other four are the Tempo page's symbols. Widget type needs
+of its 133 rows are 115 `rotarySwitch` and 14 `switch`, and the last four are
+the Tempo page's `STEPSTATE0..3`, which are `type="empty"` - catalog parameters
+like the rest, findable only by parameter index because the fixture records no
+`model_id` for that page. Widget type needs
 holding constant even though the section above rules it OUT as a rule: ruling it
 out as SUFFICIENT is not ruling it out as necessary, and a `comboBox` reading
 would confound the two.
@@ -1666,16 +1668,21 @@ characters, the same length as the `Sawtooth` that draws `SAW`. It can still be
 a CONDITION on one of the others, which is the only reason the read holds it
 constant.
 
-Drawing in FULL cuts the other way: the scope is private to the Mono Synth, and
-which private thing stays open, because the two controls differ in more than the
-one variable held constant. `OSC1 WAVE` and `OSC2 WAVE` are `hidden` parameters
-and `Flanger Engine`'s `WAVEFORM` is not; the Mono Synth's list is drawn as a
-row of waveform ICONS and nothing records whether the Flanger's is; and they sit
-on different models. Note that "private" is not "that one control" - `OSC1 WAVE`
-and `OSC2 WAVE` both abbreviate, and both are in the fixture. Write the reading down and leave the scope open rather than
+Drawing in FULL cuts the other way, and only that far: the scope keys on
+something the two controls DIFFER on. Which one stays open, and do not read that
+as "private to the Mono Synth" - two of the three differences are not private at
+all. `OSC1 WAVE` and `OSC2 WAVE` are `hidden` parameters and `Flanger Engine`'s
+`WAVEFORM` is not, and `hidden` marks 132 list-carrying parameters across 54
+models, so "the firmware abbreviates hidden list parameters" is a catalog-wide
+scope a verbatim reading leaves entirely intact. The Mono Synth's list is drawn
+as a row of waveform ICONS and nothing records whether the Flanger's is - and
+the metronome's `OFF,MUTE,DOWN,ON` is drawn as symbols too, on another model
+entirely. Only the third difference, the model, is private, and even then not to
+one control: `OSC1 WAVE` and `OSC2 WAVE` both abbreviate, and both are in the
+fixture. Write the reading down and leave the scope open rather than
 picking whichever candidate the outcome flatters. Both lists are among the 95
-nobody has read - one parameter and two - so either read lands in the audit as
-well.
+nobody has read - the tremolos' two parameters and the Flanger's one - so either
+read lands in the audit as well.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact

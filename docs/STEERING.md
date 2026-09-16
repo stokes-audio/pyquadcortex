@@ -156,8 +156,8 @@ set: first-three gives `SIN`/`TRI`/`SAW`/`PUL` from `Sine`/`Triang`/`Sawtooth`/
 `Pulse` but `SQU` from `Square`, where the screen draws `SQR` - and the position
 that draws `WHT` carries the string `Pink NS`, the one the catalog gets WRONG,
 so no shortening of it arrives at `WHT` at all. Length is not the rule either -
-`RECORD MODE` draws `Momentary`
-at nine characters while `Sawtooth` at eight draws `SAW`. And the widget type is
+`RECORD MODE` draws `Momentary` at nine characters while `Sawtooth` at eight
+draws `SAW`. And the widget type is
 not SUFFICIENT - `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `rotarySwitch` on
 the models they were read on, exactly like `OSC1 WAVE`, yet draw `2 BARS`,
 `4 Alt` and `1/64T` verbatim - which does not rule it out as necessary.

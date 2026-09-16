@@ -371,7 +371,9 @@ def test_the_document_quotes_the_same_parameter_counts():
     the catalog beside the audit. It used to be scraped out of the enums'
     docstrings with a regex, with the three lists that get no enum hand-copied
     into this file - so an error in the split between the two Off/On spellings
-    cancelled out and nothing here could see it. Now every list is counted the
+    would have cancelled out and nothing here could have seen it. The
+    hand-copied numbers were in fact right; what was wrong was that nothing
+    could tell. Now every list is counted the
     same way, and this fails if the document drifts OR if the snapshot changes
     underneath it.
     """
@@ -560,3 +562,24 @@ def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
             f"`WAVEFORM` holds the widget type constant against `OSC1 WAVE`. "
             f"Each document named `Tremolo` at some point in review, and "
             f"`Tremolo`'s is a `comboBox`")
+
+
+def test_the_ranking_recipe_the_changelog_publishes_actually_works():
+    """`changelog.md` hands users a recipe for ranking the unread lists.
+
+    Same reason as `tests/test_catalog.py`'s sibling for the `display_pos`
+    recipe: `tests/test_docs.py` covers code blocks inside docstrings, not
+    `changelog.md`, so the snippet a reader is most likely to copy has no guard.
+    This one also publishes its own answer in a comment, which is the part that
+    rots - `# 14 - the biggest list nobody has read`.
+    """
+    unread = [labels for labels, status in options.OPTION_AUDIT.items()
+              if status is None]
+    unread.sort(key=lambda labels: -options.OPTION_USAGE[labels])
+    biggest = options.OPTION_USAGE[unread[0]]
+
+    text = (pathlib.Path(__file__).parents[1] / "changelog.md").read_text(
+        encoding="utf-8")
+    assert f"# {biggest} - the biggest list nobody has read" in text, (
+        f"changelog.md's ranking recipe claims an answer that is no longer "
+        f"{biggest}. The snapshot moved and the changelog did not.")
