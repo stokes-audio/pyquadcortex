@@ -20,6 +20,21 @@ correction.
 
 ## Unreleased
 
+### The unit shortens one control's words, and it is not about the words
+
+A Mono Synth's oscillator tab draws `SIN` where the catalog says `Sine`. It was
+not known whether the unit shortens every long name or just that one control.
+
+It is that one control. A Flanger Engine's `WAVEFORM` offers `Sine`, `Triangle`,
+`Square`, `Saw Up`, `Saw Dn`, `rndSmooth` and `rndStep`, and the screen spells
+all seven out - read on the unit 2026-09-16, with positions 0 and 3 driven from
+a host. The same word draws two ways on two controls, so nothing about the
+catalog's text predicts it.
+
+Twenty-four controls have been read now. Two shorten, four draw circles instead
+of words, and the other eighteen match the catalog exactly. `Osc1Wave` is the
+only enum whose names are known to differ from what the screen shows.
+
 ### New: `options.OPTION_USAGE` says how many parameters each option list decides
 
 `OPTION_AUDIT` tells you whether anybody has held a list against the unit's

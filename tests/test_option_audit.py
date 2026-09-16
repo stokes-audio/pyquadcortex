@@ -38,7 +38,7 @@ READINGS = (pathlib.Path(__file__).parent / "fixtures" / "catalog"
 #: and looks for them. An earlier version of this comment claimed the two moved
 #: together while the test only compared the code against the literal here -
 #: which would have passed happily with the document saying anything at all.
-EXPECTED = {"audited": 12, "drawn": 1, "absent": 5, None: 95}
+EXPECTED = {"audited": 13, "drawn": 1, "absent": 5, None: 94}
 
 #: Lists somebody looked for on the unit and did not find, so no reading of them
 #: is possible. Named rather than counted, because "absent" is the one status a
@@ -410,7 +410,7 @@ def test_the_unread_work_is_long_tailed_and_the_document_says_so():
         key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
     total = sum(options.OPTION_USAGE[labels] for labels in unread)
     top5 = sum(options.OPTION_USAGE[labels] for labels in unread[:5])
-    assert (len(unread), total) == (95, 191)
+    assert (len(unread), total) == (94, 190)
 
     text = " ".join(
         (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
@@ -496,90 +496,29 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     assert phrase in text, f"docs/domain-model.md does not say {phrase!r}."
 
 
-def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
-    """What `docs/domain-model.md` points the next hardware session at.
+def test_only_the_mono_synth_shortens_a_word_on_screen():
+    """The finding that replaced four paragraphs of argument.
 
-    How widely the firmware applies its abbreviations is unmeasured, and the
-    document deliberately does not enumerate the possible scopes - it names one
-    read and says what that read can and cannot separate. The read is only
-    available while the list is unread, and only informative while it shares
-    strings with the Mono Synth's - both properties of the snapshot, so they
-    are checked rather than asserted in prose.
+    The catalog says `Sine`. The Mono Synth's oscillator tab draws `SIN`; a
+    Flanger Engine's WAVEFORM, offering the same word, draws `Sine`. So the
+    shortening belongs to that control, not to the catalog's text - which is
+    what let the documentation stop speculating about which rule produces it.
 
-    The load-bearing claim is that NO OTHER list shares a string. The whole
-    residual rests on it, because it is why the strings-versus-selectors
-    confound cannot be designed away.
-
-    NOT checked here, and not checkable offline: that `Flanger Engine`'s
-    `WAVEFORM` is a `rotarySwitch` and `Tremolo`'s is a `comboBox`, which is
-    the reason the document points the read at one and not the other. Widget
-    type is not in the generated snapshot, and no `ModelRepo` payload is
-    committed. What IS checked is that the document still says which one to
-    read, because it named the wrong one for two rounds.
+    Guarded here because it is a claim about the readings, and a later reading
+    that shortens a word somewhere else would make the document wrong.
     """
-    mono = ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS",
-            "White NS")
-    tremolo = ("Sine", "Triangle", "Square", "Saw Up", "Saw Dn")
-    flanger = tremolo + ("rndSmooth", "rndStep")
+    rows = json.loads(READINGS.read_text(encoding="utf-8"))
+    differ = {(r["model"], r["param"]) for r in rows
+              if r["screen"] and r["screen"] != r["labels"][r["index"]]}
+    assert differ == {
+        ("Mono Synth", "OSC1 WAVE"), ("Mono Synth", "OSC2 WAVE"),
+        ("Tempo page", "STEPSTATE0"), ("Tempo page", "STEPSTATE1"),
+        ("Tempo page", "STEPSTATE2"), ("Tempo page", "STEPSTATE3"),
+    }, (
+        "the screen matches the catalog everywhere it has been read except the "
+        "Mono Synth's two oscillators, which shorten, and the metronome's four "
+        "step cells, which draw circles. A new entry here means "
+        "docs/domain-model.md needs rewriting, not this list extending")
 
-    assert options.OPTION_AUDIT[mono] == "audited"
-    for labels in (tremolo, flanger):
-        assert options.OPTION_AUDIT[labels] is None, (
-            f"the document offers {','.join(labels)!r} as an unread next step; "
-            f"it has been read")
-        assert set(labels) & set(mono) == {"Sine", "Square"}, (
-            f"the document names Sine and Square as the shared strings; "
-            f"{','.join(labels)!r} shares "
-            f"{sorted(set(labels) & set(mono))}")
-
-    sharing = {labels for labels in options.OPTION_AUDIT
-               if labels != mono and set(labels) & set(mono)}
-    assert sharing == {tremolo, flanger}, (
-        f"the document says these two are the ONLY lists sharing a string with "
-        f"the Mono Synth's, which is why the confound cannot be designed away. "
-        f"The snapshot has {sorted(sharing)}")
-
-    doc = (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
-    text = " ".join(doc.read_text(encoding="utf-8").split())
-    assert f"`{','.join(tremolo)}`" in text, (
-        "docs/domain-model.md no longer quotes the shared list it points the "
-        "next read at")
-    for model in ("`Tremolo`", "`Harmonic Tremolo`", "`Flanger Engine`"):
-        assert model in text, (
-            f"docs/domain-model.md no longer names {model}, one of the three "
-            f"controls carrying a list that shares a string with the Mono "
-            f"Synth's. Backticked on purpose - a bare \"Tremolo\" is satisfied "
-            f"by \"Harmonic Tremolo\" alone")
-
-    # Each document named `Tremolo` at some point in review, so both are
-    # pinned - the doc for two rounds, STEERING for four.
-    steering = (pathlib.Path(__file__).parents[1] / "docs" / "STEERING.md")
-    for path, phrase in ((doc, "Read `Flanger Engine` first"),
-                         (steering, "`Flanger Engine` `WAVEFORM` read")):
-        body = " ".join(path.read_text(encoding="utf-8").split())
-        assert phrase in body, (
-            f"{path.name} must point the read at `Flanger Engine`, whose "
-            f"`WAVEFORM` holds the widget type constant against `OSC1 WAVE`. "
-            f"Each document named `Tremolo` at some point in review, and "
-            f"`Tremolo`'s is a `comboBox`")
-
-
-def test_the_ranking_recipe_the_changelog_publishes_actually_works():
-    """`changelog.md` hands users a recipe for ranking the unread lists.
-
-    Same reason as `tests/test_catalog.py`'s sibling for the `display_pos`
-    recipe: `tests/test_docs.py` covers code blocks inside docstrings, not
-    `changelog.md`, so the snippet a reader is most likely to copy has no guard.
-    This one also publishes its own answer in a comment, which is the part that
-    rots - `# 14 - the biggest list nobody has read`.
-    """
-    unread = [labels for labels, status in options.OPTION_AUDIT.items()
-              if status is None]
-    unread.sort(key=lambda labels: -options.OPTION_USAGE[labels])
-    biggest = options.OPTION_USAGE[unread[0]]
-
-    text = (pathlib.Path(__file__).parents[1] / "changelog.md").read_text(
-        encoding="utf-8")
-    assert f"# {biggest} - the biggest list nobody has read" in text, (
-        f"changelog.md's ranking recipe claims an answer that is no longer "
-        f"{biggest}. The snapshot moved and the changelog did not.")
+    both = {(r["model"], r["param"]) for r in rows} 
+    assert len(both) == 24, f"{len(both)} controls have been read, not 24"

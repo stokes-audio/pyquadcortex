@@ -30,9 +30,9 @@ the device RENDERS it does not match - the catalog writes ``In 1`` and
 ``Ret 1/2`` where the device writes ``Input 1`` and ``Return 1/2``. So
 each enum says whether a human has read it off the unit, and
 ``OPTION_AUDIT`` publishes that for all 113 fixed lists:
-12 audited, 1 drawn (read, but the unit draws pictures
+13 audited, 1 drawn (read, but the unit draws pictures
 rather than words), 5 not drawn at all, 0 partly, and
-95 that nobody has looked at.
+94 that nobody has looked at.
 """
 from enum import IntEnum
 
@@ -573,9 +573,7 @@ class FlangerEngineWaveform(IntEnum):
 
     On Flanger Engine.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-16: all 7 positions read.
     """
 
     SINE = 0
@@ -2116,7 +2114,7 @@ OPTION_AUDIT = {
     ('4-POLE', '2-POLE'): None,  # Filter
     ('Low', 'A', 'B', 'High'): None,  # FilterCutoff
     ('Lowpass', 'Bandpass', 'Highpass'): None,  # FilterType
-    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn', 'rndSmooth', 'rndStep'): None,  # FlangerEngineWaveform
+    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn', 'rndSmooth', 'rndStep'): 'audited',  # FlangerEngineWaveform
     ('ON', 'OFF'): None,  # Focus
     ('1', '2', '3', '4', '5'): None,  # Frequency
     ('Normal', 'Inverted'): None,  # GainPolarity
@@ -2206,9 +2204,9 @@ OPTION_AUDIT = {
 #: it too.
 #:
 #: Totals on this snapshot: 527
-#: parameters across 113 lists, of which 191 across
-#: 95 lists nobody has read. The work is long-tailed - the
-#: five biggest unread lists cover 54 of those 191.
+#: parameters across 113 lists, of which 190 across
+#: 94 lists nobody has read. The work is long-tailed - the
+#: five biggest unread lists cover 54 of those 190.
 OPTION_USAGE = {
     ('OFF', 'MUTE', 'DOWN', 'ON'): 13,  # no enum
     ('OFF', 'ON'): 25,  # no enum

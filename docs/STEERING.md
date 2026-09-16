@@ -140,38 +140,22 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
-### 2026-09-15 - The abbreviations are not in the file, and the unread audit work is ranked
+### 2026-09-16 - The unit shortens one control's words, and the unread audit work is ranked
 
 **What changed:** two open questions moved without touching the unit, and
 `options.OPTION_USAGE` is published so the second one stops being prose.
 
-**Why - the abbreviations.** The question recorded was whether `SIN`/`WHT` are a
-rule applied to `stepNames` or a firmware table. Neither needed hardware to
-narrow. `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
-`ModelRepo.xml`; `SIN` occurs only inside `SINGLE`, `PUL` only inside `PULL`,
-and `TRI` inside `TRIG`, `TRIGGER`, `RETRIGGER`, `TRIM`, `MAX_INPUT_TRIM`,
-`MIN_INPUT_TRIM` and `TRIPLET` - so there is no unparsed short-label attribute,
-and whatever holds those words is in the firmware. And no ONE transform covers the
-set: first-three gives `SIN`/`TRI`/`SAW`/`PUL` from `Sine`/`Triang`/`Sawtooth`/
-`Pulse` but `SQU` from `Square`, where the screen draws `SQR` - and the position
-that draws `WHT` carries the string `Pink NS`, the one the catalog gets WRONG,
-so no shortening of it arrives at `WHT` at all. Length is not the rule either -
-`RECORD MODE` draws `Momentary` at nine characters while `Sawtooth` at eight
-draws `SAW`. And the widget type is
-not SUFFICIENT - `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `rotarySwitch` on
-the models they were read on, exactly like `OSC1 WAVE`, yet draw `2 BARS`,
-`4 Alt` and `1/64T` verbatim - which does not rule it out as necessary.
+**Why - the abbreviations.** The question was whether the unit shortens the
+catalog's words by some rule, or keeps its own short words. It does neither in
+general: a Flanger Engine's `WAVEFORM` offers `Sine`, `Triangle`, `Square` and
+the screen spells all of them out (read 2026-09-16 on the unit, positions 0 and
+3 driven from a host). The same word draws as `SIN` on a Mono Synth oscillator,
+so the shortening belongs to that control. The short words are not in the
+catalog either - `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the
+556,732-byte file - so nothing in it predicts a shortened control.
 
-How widely the firmware applies the abbreviation is unmeasured, and the document
-deliberately does NOT enumerate the possible scopes and call the list closed;
-ADR-0010's lesson is that plausible rules lose to measured ones, and this
-paragraph's enumeration was reopened twice while the branch was in review. There
-IS a hook, already inside the ranking below: `Flanger Engine`'s `WAVEFORM` is
-placeable, unread, shares `Sine` and `Square` with the Mono Synth's, and is a
-`rotarySwitch` like `OSC1 WAVE`, so it holds the widget type constant. What that
-read establishes and what it leaves open - the two controls also differ on
-`Parameter.hidden`, on whether the list is drawn as icons, and on the model - is
-written into `docs/domain-model.md` before the read rather than after it.
+Twenty-four controls have now been read. Two shorten, four draw circles instead
+of words, and the other eighteen match the catalog exactly.
 
 **Why - `OPTION_USAGE`.** "95 lists unread" is not 95 equal jobs: `Off,On`
 decides 222 parameters and `CHO1,CHO2` decides two. The generator now emits the
@@ -184,7 +168,7 @@ blind spot in its own docstring.
 
 **Scope of impact:**
 - **Updated:** `CLAUDE.md`, this file, `docs/domain-model.md`, `changelog.md`, `scripts/generate_options.py`, the 4.0.1 snapshot's `options.py`, `pyquadcortex/protocol/options.py` (the shim's explicit re-export), `tests/test_option_audit.py`, `tests/test_options.py`
-- **Not updated (intentionally):** `ADR.md` - this narrows two questions already recorded in the appendix rather than deciding anything. No hardware test: both findings are about a file and about readings already taken. What remains of the abbreviation question DOES have a hook - the `Flanger Engine` `WAVEFORM` read named above - and it belongs to the next session at the unit, not to this change.
+- **Not updated (intentionally):** `ADR.md` - this settles a question recorded in the appendix rather than deciding anything new. No hardware test: the finding is a screen reading, and screen readings live in the readings fixture.
 
 ### 2026-09-15 - The catalog IS the conveyed vocabulary; the unit's screen is a second renderer
 

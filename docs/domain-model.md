@@ -1589,99 +1589,30 @@ waveforms, the unit sent **600 messages, every one the metronome tempo stream** 
 not one waveform label, and no notice that the value had changed. It had no need
 to send anything: it holds the catalog too.
 
-So there are two renderers over one source, and they do not agree. Where the
-catalog writes `Sine` and `Triang` the unit draws `SIN` and `TRI`, plainly
-truncations, in a row of icons. The last two positions are not truncations of
-anything: the catalog writes `Pink NS` then `White NS`, and the screen draws
-`WHT` then `PNK` - in that order, which is the swap measured further down. No
-single transform explains the set.
+So there are two renderers over one source, and they do not always agree. On
+the Mono Synth's oscillator tab the screen shortens the catalog's words and
+draws a row of icons: `Sine` appears as `SIN`, `Pulse` as `PUL`. It also gets
+two of them the wrong way round, which is the finding recorded further down.
 
-Two things about that are now settled, both off the catalog and the readings
-already recorded, neither needing the unit.
+**The shortening is not about the words.** A Flanger Engine's `WAVEFORM` offers
+`Sine`, `Triangle`, `Square`, `Saw Up`, `Saw Dn`, `rndSmooth`, `rndStep`, and
+the screen spells all seven out (read 2026-09-16, positions 0 and 3 driven from
+a host). The same word `Sine` draws as `SIN` on the synth and `Sine` on the
+Flanger, so whatever shortens it belongs to that oscillator control and not to
+the catalog's text.
 
-**The abbreviations are not in the file.** `WHT`, `PNK`, `SAW` and `SQR` appear
-zero times in the 556,732-byte `ModelRepo.xml`. `SIN` occurs once, inside
-`SINGLE`; `PUL` five times, all inside `PULL`; `TRI` twenty-four times, inside
-`TRIG`, `TRIGGER`, `RETRIGGER`, `TRIM`, `MAX_INPUT_TRIM`, `MIN_INPUT_TRIM` and
-`TRIPLET`. None of the seven is an attribute value, or a comma-separated entry
-of one, anywhere in the file. So there is no unparsed short-label attribute
-waiting to be found: whatever holds these words is in the firmware.
+That also rules out finding the short words in the file. They are not there:
+`WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
+`ModelRepo.xml`, and the only hits for `SIN`, `TRI` and `PUL` are inside
+`SINGLE`, `TRIG`/`TRIM`/`TRIPLET` and `PULL`. Nothing in the catalog says a
+control will be drawn short, so a caller cannot predict it and the library does
+not try.
 
-**And no one transform covers the set.** Take the seven in three groups. Four
-yield to the first three letters: `Sine`, `Triang`, `Sawtooth` and `Pulse` give
-`SIN`, `TRI`, `SAW` and `PUL`. `Square` does not - that rule makes `SQU` and the
-screen draws `SQR`. And the last two are the pair this repo has already had to
-measure twice, where the question cannot even be asked of the string: the
-position carrying `Pink NS` draws `WHT` and the position carrying `White NS`
-draws `PNK`, so nothing derived from either string arrives at what is drawn
-beside it (`options.OPTION_CONTESTED`).
-
-Length is not the rule either: `RECORD MODE` draws `Momentary` at nine
-characters while `Sawtooth` at eight draws `SAW`. Nor is the widget type
-SUFFICIENT - `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"`
-on the models they were read on, exactly like `OSC1 WAVE`, and all three render
-their catalog strings verbatim: `2 BARS`, `4 Alt`, `1/64T`. That rules the type
-out as a rule on its own; it does not rule it out as a condition, which is why
-the read below still has to hold it constant. Mind the evidence grades in that
-sentence: `Momentary`, `2 BARS`, `4 Alt` and `1/64T` were each DRIVEN and read
-back, while `Sawtooth`'s `SAW` comes from transcribing the waveform list, whose
-driven anchors are positions 0, 3, 5 and 6.
-
-**What is still unmeasured** is how widely the firmware applies the
-abbreviation. Resist enumerating the possible scopes and calling the list
-closed: ADR-0010's lesson is that plausible rules lose to measured ones, and
-this paragraph's own enumeration has been reopened twice already. Say instead
-what a read can separate and what it cannot.
-
-TWO catalog lists share any string with the Mono Synth's, carried by three
-controls, and no others do: `Sine,Triangle,Square,Saw Up,Saw Dn` on `Tremolo`
-and `Harmonic Tremolo` `WAVEFORM`, and that plus `rndSmooth,rndStep` on
-`Flanger Engine` `WAVEFORM`. All three share exactly `Sine` and `Square`, all
-three are placeable with the parameter not hidden, and both lists are unread. So
-no choice of control separates "the firmware keys on the strings" from "the
-firmware abbreviates waveform pickers" - every control carrying a shared string
-is a waveform picker.
-
-Read `Flanger Engine` first, because it holds the WIDGET TYPE constant: its
-`WAVEFORM` is a `rotarySwitch` like `OSC1 WAVE`, while `Tremolo`'s is a
-`comboBox`, a type nothing in the readings fixture has ever been read on. Its
-133 rows are 115 `rotarySwitch`, 14 `switch` and four `type="empty"` - the last
-being the Tempo page's `STEPSTATE0..3`, catalog parameters like the rest,
-findable only by parameter index because the fixture records no `model_id` for
-that page. Widget type needs holding constant even though the section above
-rules it OUT as a rule: ruling it out as SUFFICIENT is not ruling it out as
-necessary, and a `comboBox` reading would confound the two.
-
-What the read establishes is narrower than it looks, and the paragraph above
-says why: `Flanger Engine`'s `WAVEFORM` is itself a waveform picker, and its
-widget type was held constant ON PURPOSE. So it cuts one way only.
-
-`SIN`/`SQR` there rules out every scope the Flanger's control does NOT satisfy -
-this model, `hidden` parameters, this list - and leaves whatever the two
-controls share. That is not a set anyone can close from here. The strings and
-waveform-picker-ness are the two worth naming; both lists are also seven
-positions long; and nothing says those are all. The widget type is NOT on that
-list, because a `rotarySwitch` on its own is already disproved: `Looper X`'s
-`QUANTIZE` is one and draws `16 Beats` verbatim on a driven reading - eight
-characters, the same length as the `Sawtooth` that draws `SAW`. It can still be
-a CONDITION on one of the others, which is the only reason the read holds it
-constant.
-
-Drawing in FULL cuts the other way, and only that far: the scope keys on
-something the two controls DIFFER on. Which one stays open, and do not collapse
-that into "private to the Mono Synth" - two of the three differences are not
-private at all. `OSC1 WAVE` and `OSC2 WAVE` are `hidden` parameters and `Flanger Engine`'s
-`WAVEFORM` is not, and `hidden` marks 132 list-carrying parameters across 54
-models, so "the firmware abbreviates hidden list parameters" is a catalog-wide
-scope a verbatim reading leaves entirely intact. The Mono Synth's list is drawn
-as a row of waveform ICONS and nothing records whether the Flanger's is - and
-the metronome's `OFF,MUTE,DOWN,ON` is drawn as symbols too, on another model
-entirely. Only the third difference, the model, is private, and even then not to
-one control: `OSC1 WAVE` and `OSC2 WAVE` both abbreviate, and both are in the
-fixture. Write the reading down and leave the scope open rather than
-picking whichever candidate the outcome flatters. Both lists are among the 95
-nobody has read - the tremolos' two parameters and the Flanger's one - so either
-read lands in the audit as well.
+What is left unknown is small: which other controls the unit draws its own way.
+Twenty-four have been read. The Mono Synth's two oscillators are the only ones
+that shorten a word; the metronome's four step cells draw circles instead of
+words, which is why that list is `drawn` rather than `audited` below. The other
+eighteen match the catalog exactly.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact
@@ -1806,13 +1737,13 @@ The readings are in `tests/fixtures/catalog/option_readings.json`, one row per
 POSITION, and `scripts/generate_options.py` stamps each enum's docstring from
 them. A list nobody has read says so where a caller will see it.
 
-**Where it stands (2026-09-14, CorOS 4.0.1): 12 audited, 1 drawn, 5 not drawn,
-95 unread**, of 113 fixed lists. Those thirteen read lists cover 300 of the 527
+**Where it stands (2026-09-16, CorOS 4.0.1): 13 audited, 1 drawn, 5 not drawn,
+94 unread**, of 113 fixed lists. Those fourteen read lists cover 301 of the 527
 parameters that carry a fixed list, because the ones in heaviest use were done
-first. The 95 unread cover 191.
+first. The 94 unread cover 190.
 
 **What is left is not 95 equal jobs.** Ranked by how many parameters each list
-decides, the tail falls away fast: the biggest five cover 54 of the 191.
+decides, the tail falls away fast: the biggest five cover 54 of the 190.
 `options.OPTION_USAGE` publishes the count for every list, so a session at the
 unit can be planned from the library rather than from a one-off count:
 
@@ -1826,10 +1757,10 @@ unit can be planned from the library rather than from a one-off count:
 
 The two note lists are the cheap ones despite their length: a 21-entry
 `SYNC NOTE` is already audited, and these two are its shorter siblings, so a
-reader knows what to expect and where an error would show. Of the remaining 90,
-84 decide one or two parameters each and 46 have only two positions.
+reader knows what to expect and where an error would show. Of the remaining 89,
+83 decide one or two parameters each and 46 have only two positions.
 
-Eight of the 95 lists, 12 parameters between them, are carried only by models a
+Eight of the 94 lists, 12 parameters between them, are carried only by models a
 user cannot PLACE: three lists and seven parameters on the Splitter family,
 whose category is hidden, and five lists and five parameters on `TempoControl`,
 which is internal and in a hidden category. That says where they sit and
