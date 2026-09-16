@@ -148,16 +148,21 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 **Why - the abbreviations.** The question recorded was whether `SIN`/`WHT` are a
 rule applied to `stepNames` or a firmware table. Neither needed hardware to
 narrow. `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
-`ModelRepo.xml`, and the `SIN`/`TRI`/`PUL` hits are all inside `SINGLE`,
-`TRIG`/`TRIM` and `PULL` - so there is no unparsed short-label attribute, and
-whatever holds those words is in the firmware. And it is not a general rule over
-`stepNames`: the readings already in the fixture rule that out on length and on
-widget type at once, since `RECORD MODE` draws `Momentary` at nine characters
-where `White NS` is eight and draws `WHT`, and `PRE ROLL`, `TAP PRESET` and
-`SYNC NOTE` are `rotarySwitch` exactly like `OSC1 WAVE` yet draw `2 BARS`,
-`4 Alt` and `1/64T` verbatim. What is left unmeasured is narrower: whether the
-firmware keys a table on those strings or transforms them. A 4.1.0 catalog is
-still the cheap first step.
+`ModelRepo.xml`; `SIN` occurs only inside `SINGLE`, `PUL` only inside `PULL`,
+and `TRI` inside `TRIG`, `TRIGGER`, `RETRIGGER`, `TRIM`, `MAX_INPUT_TRIM`,
+`MIN_INPUT_TRIM` and `TRIPLET` - so there is no unparsed short-label attribute,
+and whatever holds those words is in the firmware. And no transform of the
+catalog string reaches them: the position that draws `WHT` carries the string
+`Pink NS`, the one the catalog gets WRONG, so no shortening of it arrives at
+`WHT` at all. Length is not the rule either - `RECORD MODE` draws `Momentary`
+at nine characters while `Sawtooth` at eight draws `SAW` - nor the widget type,
+since `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `rotarySwitch` on the models
+they were read on, exactly like `OSC1 WAVE`, yet draw `2 BARS`, `4 Alt` and
+`1/64T` verbatim. What is left unmeasured is whether the firmware keys a table
+on those strings or scopes the abbreviation to that control - and there IS a
+hook for it, one read, already inside the ranking below: a `Tremolo`'s
+`WAVEFORM` is placeable and its list shares `Sine` and `Square` verbatim with
+the Mono Synth's.
 
 **Why - `OPTION_USAGE`.** "95 lists unread" is not 95 equal jobs: `Off,On`
 decides 222 parameters and `CHO1,CHO2` decides two. The generator now emits the
@@ -170,7 +175,7 @@ blind spot in its own docstring.
 
 **Scope of impact:**
 - **Updated:** `CLAUDE.md`, this file, `docs/domain-model.md`, `changelog.md`, `scripts/generate_options.py`, the 4.0.1 snapshot's `options.py`, `pyquadcortex/protocol/options.py` (the shim's explicit re-export), `tests/test_option_audit.py`, `tests/test_options.py`
-- **Not updated (intentionally):** `ADR.md` - this narrows two questions already recorded in the appendix rather than deciding anything. No hardware test: both findings are about a file and about readings already taken, and neither has a hook on the wire.
+- **Not updated (intentionally):** `ADR.md` - this narrows two questions already recorded in the appendix rather than deciding anything. No hardware test: both findings are about a file and about readings already taken. What remains of the abbreviation question DOES have a hook - the `Tremolo` `WAVEFORM` read named above - and it belongs to the next session at the unit, not to this change.
 
 ### 2026-09-15 - The catalog IS the conveyed vocabulary; the unit's screen is a second renderer
 

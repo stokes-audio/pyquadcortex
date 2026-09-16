@@ -1589,36 +1589,44 @@ waveforms, the unit sent **600 messages, every one the metronome tempo stream** 
 not one waveform label, and no notice that the value had changed. It had no need
 to send anything: it holds the catalog too.
 
-So there are two renderers over one source, and they do not agree. The unit
-draws `SIN`, `TRI`, `WHT` and a row of icons where the catalog writes `Sine`,
-`Triang`, `White NS`. `SIN` and `TRI` are plainly truncations; `WHT` and `PNK`
-are not truncations of `White NS` and `Pink NS`, so no single transform explains
-both.
+So there are two renderers over one source, and they do not agree. Where the
+catalog writes `Sine` and `Triang` the unit draws `SIN` and `TRI`, plainly
+truncations, in a row of icons. The last two positions are not truncations of
+anything: the catalog writes `Pink NS` then `White NS`, and the screen draws
+`WHT` then `PNK` - in that order, which is the swap measured further down. No
+single transform explains the set.
 
 Two things about that are now settled, both off the catalog and the readings
 already recorded, neither needing the unit.
 
 **The abbreviations are not in the file.** `WHT`, `PNK`, `SAW` and `SQR` appear
-zero times in the 556,732-byte `ModelRepo.xml`; the only hits for `SIN`, `TRI`
-and `PUL` are inside `SINGLE`, `TRIG`/`TRIM` and `PULL`, and not one of the
-seven is a standalone attribute value or list entry anywhere. So there is no
-unparsed short-label attribute waiting to be found: whatever holds these words
-is in the firmware.
+zero times in the 556,732-byte `ModelRepo.xml`. `SIN` occurs once, inside
+`SINGLE`; `PUL` five times, all inside `PULL`; `TRI` twenty-four times, inside
+`TRIG`, `TRIGGER`, `RETRIGGER`, `TRIM`, `MAX_INPUT_TRIM`, `MIN_INPUT_TRIM` and
+`TRIPLET`. None of the seven is an attribute value, or a comma-separated entry
+of one, anywhere in the file. So there is no unparsed short-label attribute
+waiting to be found: whatever holds these words is in the firmware.
 
-**And it is not a rule the firmware applies to `stepNames` generally.** The
-readings rule that out on length and on widget type at once. `RECORD MODE`
-draws `Momentary` - nine characters, driven and read back - where `White NS` is
-eight and draws `WHT`, so nothing length-driven is happening. And `PRE ROLL`,
-`TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"` exactly like `OSC1 WAVE`,
-and all three render their catalog strings verbatim: `2 BARS`, `4 Alt`, `1/64T`.
-Whatever abbreviates this list is scoped to this control - the one the unit also
-draws as icons - and not to a type or a length.
+**And no transform of the catalog string reaches them.** Mind which position is
+which here - it is the one list this repo has already had to measure twice. The
+position that draws `WHT` carries the catalog string `Pink NS`, and no
+shortening of `Pink NS` yields `WHT`, because the catalog has that position's
+MEANING wrong (`options.OPTION_CONTESTED`). Length is not the rule either:
+`RECORD MODE` draws `Momentary`, nine characters, driven and read back, while
+`Sawtooth` at eight draws `SAW`. Nor is the widget type - `PRE ROLL`,
+`TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"` on the models they were
+read on, exactly like `OSC1 WAVE`, and all three render their catalog strings
+verbatim: `2 BARS`, `4 Alt`, `1/64T`.
 
-**What is still unmeasured** is whether the firmware holds a table keyed on
-those exact strings or applies some transform of its own to them, and that needs
-either a catalog whose `stepNames` the firmware has never met, or a look inside
-the firmware. A 4.1.0 catalog compared against 4.0.1's would be the cheap first
-step, and no 4.1.0 snapshot is in this repo.
+**What is still unmeasured** is whether the firmware keys a table on those exact
+strings or scopes the abbreviation to this one control. Do not write down either
+- and note that one READ settles it, needing no new tooling. A `Tremolo`'s
+`WAVEFORM` is placeable, its parameter is not hidden, and its list is
+`Sine,Triangle,Square,Saw Up,Saw Dn` - which shares `Sine` and `Square` verbatim
+with the Mono Synth's. If those two draw `SIN` and `SQR` there as well, the
+firmware keys on the strings; if they draw in full, the abbreviation belongs to
+the Mono Synth's oscillator control. That list is one of the 95 nobody has read,
+at two parameters, so the read lands in the audit too.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact
@@ -1764,10 +1772,18 @@ unit can be planned from the library rather than from a one-off count:
 
 The two note lists are the cheap ones despite their length: a 21-entry
 `SYNC NOTE` is already audited, and these two are its shorter siblings, so a
-reader knows what to expect and where an error would show. Eight of the 95
-lists, 12 parameters between them, are carried only by models a user cannot
-place or by parameters marked hidden - so nobody has a way to look at them yet,
-and they are NOT `absent`, which is a record of having looked.
+reader knows what to expect and where an error would show. Of the remaining 90,
+84 decide one or two parameters each and 46 have only two positions.
+
+Eight of the 95 lists, 12 parameters between them, are carried only by models a
+user cannot PLACE: three lists and seven parameters on the Splitter family,
+whose category is hidden, and five lists and five parameters on `TempoControl`,
+which is internal and in a hidden category. None of the twelve is reached
+through a hidden parameter on a placeable model. That says where they sit and
+nothing about whether anyone can see them - the Tempo page is on the unit, and
+this fixture already carries four driven readings taken from it, so
+`TempoControl`'s five are a job to do rather than a dead end. None of the eight
+is `absent`, which is a record of having looked.
 
 `drawn` is its own answer for one list. Every position of the metronome's
 `OFF,MUTE,DOWN,ON` was driven and read, so by position count it is complete -
