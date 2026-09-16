@@ -61,7 +61,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 | Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
 | One translation boundary | Screen values become wire values in exactly one PACKAGE, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/`. The exemption covers a directory, so a test names the package's modules and a new one has to come through that list | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate/` | The protocol layer, which keeps its zero-based COORDINATES. Its scales come from the catalog, and quoting the device's own units is not translating - see ADR-0016 |
 | Model state goes through the cache | A model property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py`, not an attribute the property fills in itself | One account of what the model believes and how it learned it. A property with its own cached attribute answers from a copy nothing invalidates, and a closed connection cannot take it away (see ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry rather than read from the unit, which compute from `value()` rather than caching alongside it |
-| Catalog for structure, eyes for presentation | Structural facts about a control - option count, which wire index each choice sits at, parameter index - come from the catalog with no hardware; anything about what a person SEES needs a reading | Every position of every fixed list a preset reaches lands where the catalog says, re-driven on each hardware run; and a 150s capture while a human redrew a control found the labels are never sent at all | `tests/hardware/test_option_structure_on_unit.py` | Anything DRAWN. The order the unit shows a list's choices in - `RECORD MODE`, `DUPLICATE MODE` and `CURVE` each read back reversed - and `Parameter.display_pos` itself, which is published on two screen readings rather than taken from the file. And the list where the catalog is wrong about its own MEANING, `Pink NS` naming the position that draws WHT |
+| Catalog for structure, eyes for what the unit DRAWS | Structural facts about a control - option count, which wire index each choice sits at, parameter index - come from the catalog with no hardware; anything about what a person SEES needs a reading | Every position of every fixed list a preset reaches lands where the catalog says, re-driven on each hardware run; the reply Cortex Control receives at connect was reassembled out of all three captures and inflated, and it carries the `stepNames` strings, so a host is handed the whole vocabulary about 1.2 seconds into a session, before it does anything else; and the catalog can be wrong about its own meaning, measured acoustically on the one list where it is | `tests/hardware/test_option_structure_on_unit.py` | Anything DRAWN. The order the unit shows a list's choices in - `RECORD MODE`, `DUPLICATE MODE` and `CURVE` each read back reversed - and `Parameter.display_pos` itself, which is published on two screen readings rather than taken from the file. And the list where the catalog is wrong about its own MEANING, `Pink NS` naming the position that draws WHT |
 | Evidence-stamped option lists | An option list's names carry a status saying whether a human has read them off the unit, generated from a per-position readings fixture | The catalog's `stepNames` is demonstrably not the screen's wording, so an unchecked list must not look like a checked one | `options.OPTION_AUDIT` plus `tests/fixtures/catalog/option_readings.json` | Lists the unit does not draw, which are `absent` by observation rather than unread |
 | Profile is the class | A connection resolves `(device_type, zenos_git_hash)` to a client class before the handshake; `QuadCortex` is 4.0.1 and the base, a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is the smell polymorphism removes; the decision is made once, by which class is instantiated (see ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
 
@@ -140,6 +140,48 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-15 - The catalog IS the conveyed vocabulary; the unit's screen is a second renderer
+
+**What changed:** the rule added earlier the same day said presentation is not
+downloadable. That is wrong, and the captures we already had say so. Corrected in
+`CLAUDE.md`, this file and `docs/domain-model.md`.
+
+**Why.** The reply Cortex Control receives was read. It fetches `ModelRepo` as
+the third message type of every session - after `ResetCommsBuffers` and
+`Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198 /
+1.187 seconds in. Reassembled independently from each of the three captures and
+inflated, it is a 558,592-byte tar holding one 556,732-byte `ModelRepo.xml` with
+539 `stepNames` attributes, `stepNames="Sine,Triang,...,Pink NS,White NS"` among
+them. The three are not byte-identical and the doc says exactly where they
+differ: only inside the 338 changing `blob` tokens, with the vocabulary the same
+in all three and in the catalog dumped live off the unit. Two earlier drafts got this wrong in opposite directions: one
+argued it by elimination - nothing else is big enough - which is false, since
+`File` carries 885-report messages and preset bodies carry `dynamic_steps`; the
+other called the reassembly unachievable, when the lab repo's own
+`decode_capture.py` does it and the failure was a bad USBPcap filter.
+The question was "there must be some way it is conveyed", and the answer is that
+it is conveyed once, upfront, in the file this library already parses.
+
+The earlier capture watched the UNIT draw on its own touchscreen, which proves
+nothing about conveyance - the unit holds the catalog too. What it does show is
+that the unit renders the same data differently: `SIN`, `WHT`, and icons, none of
+which exist in any file. Two renderers over one source.
+
+**And the pink/white finding is now measured rather than read.** The breaking
+rename in #72 rested on the unit's screen showing `WHT` at wire position 5, which
+could not say which signal comes out. Captured off the unit's own USB audio
+interface: subtracting the two recordings cancels the rest of the
+signal chain, and the difference climbs monotonically across all seven bands at
+about 3.6 dB per octave - the direction that separates white from pink, and the
+right order of magnitude. The catalog calls position 5
+`Pink NS`. It is white. The numbers and the two commands that reproduce them are
+in `docs/domain-model.md`; the recordings are not committed, being a few seconds
+of noise whose finding is the numbers.
+
+**Scope of impact:**
+- **Updated:** `CLAUDE.md`, `docs/STEERING.md` section 5, `docs/domain-model.md`, `changelog.md`, `scripts/generate_options.py` (the rename's recorded reason)
+- **Not updated (intentionally):** no code behaviour changes - the rename shipped in #72 was correct and the measurement confirms it, so nothing under `pyquadcortex/` moves at all - the evidence strings live in the generator's table, not in what it emits, and regenerating produces no diff. `ADR.md` - this narrows a rule written two days ago rather than deciding something new. No new test: the claim is about what crosses the wire in a capture the lab repo holds, and the library has no hook to assert it.
+
 ### 2026-09-15 - The catalog is trusted for structure and never for presentation
 
 **What changed:** the on-hardware rule is split by the kind of claim being made.
@@ -181,6 +223,14 @@ on `internal` is corrected too - latent on 4.0.1, where all nine hidden
 categories and all eight internal models say `"true"`, but a category shipping
 `"false"` would silently drop every model in it. A source-reading test now
 refuses any catalog attribute read that way.
+
+**The paragraph BELOW is superseded** by the 2026-09-15 entry at the top of
+this log, written later the same day. Its conclusion - that presentation is not
+downloadable - is wrong: the `ModelRepo` payload carries the `stepNames`
+strings, and Cortex Control fetches such a payload every session. What this
+capture actually showed is that the UNIT has no need to send them, holding the
+catalog itself. Left in place unedited, because a change log records what was
+believed when.
 
 **What that settles.** The catalog container is a single XML file with no
 icons, no string table and no localisation. It carries other strings - `tooltip`
