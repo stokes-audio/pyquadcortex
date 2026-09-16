@@ -76,7 +76,7 @@ small documentation fixes.
   filled. A control we do not understand is left out, with the reason in
   `docs/domain-model.md`'s appendix. (ADR-0007)
 - Before writing a refusal, run the differential capture in `docs/capture.md`,
-  "Diff the whole state". "The unit broadcasts nothing" is not evidence about the
+  "Diff the whole state". "The unit announces nothing" is not evidence about the
   wire. Do not derive a refusal from a rule about parameter types;
   `LANE_OUTPUT_UNASSIGNABLE` is a measured list. (ADR-0010)
 - A property reads a field only if it is present (`protocol.field_present`).

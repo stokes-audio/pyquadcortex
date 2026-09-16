@@ -24,7 +24,7 @@ You do not need to ask for access first.
 
 CI runs the offline suite, mypy and a packaging build on every pull request. A red
 build blocks the merge. Green proves the library agrees with itself. Only a unit
-proves it agrees with the device, which is why the hardware suite is part of every
+proves it agrees with the unit, which is why the hardware suite is part of every
 pull request too.
 
 ## Development setup

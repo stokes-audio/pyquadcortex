@@ -967,11 +967,11 @@ returns the current one.
 
 | was open | outcome |
 |---|---|
-| Device-wide broadcast sweep | swept; all eight action categories captured |
+| Device-wide push sweep | swept; all eight action categories captured |
 | Echo latencies for the unmeasured write types | `tests/hardware/test_write_echo.py`; `protocol.md` section 12.3 |
 | Writes during standby | honoured, and they survive the wake |
 | Bank size, 8 versus 4 | 8, and 4 under a `PRESET` hybrid; slot names are mode-dependent |
-| Scene name and colour writes | `SceneLabel` and `SceneColor`. An edit made on the unit re-broadcasts all eight; a host write echoes only the index it wrote |
+| Scene name and colour writes | `SceneLabel` and `SceneColor`. An edit made on the unit re-sends all eight; a host write echoes only the index it wrote |
 | Scene copy and swap | `SceneCopy{from_index, to_index, is_swap}` |
 | The three ExpressionBypass fields | `invert`, `delay_ms` in real milliseconds, `latch_emulation` |
 | SCENE BYPASS BEHAVIOR persistence | a host write counts as a touchscreen edit; `protocol.md` section 11.1 |
@@ -1046,7 +1046,7 @@ hardware, host concerns or reference text with nothing for a host API to model.
 | I/O: output LEVEL / GROUND LIFT / MUTE | `io.outputs[...]` | yes | mute travels alone; absorbed |
 | I/O: output pairing | `io.output_pairs[...].linked` | yes | |
 | I/O: USB LEVEL / HP SOURCE / DRY-WET / MIDI THRU | `io.usb` | yes | the headphone output's own level is not writable anywhere |
-| I/O: EXP 1 / EXP 2 ports | `io.expression[...]` | partly | POSITION streams as `exp_port.level`. RECALIBRATE broadcasts `exp_port{exp_port_id, calibrating}` and has never been driven from a host |
+| I/O: EXP 1 / EXP 2 ports | `io.expression[...]` | partly | POSITION streams as `exp_port.level`. RECALIBRATE announces `exp_port{exp_port_id, calibrating}` and has never been driven from a host |
 | Global EQ: bypass, 5 bands, output assignment | `io.global_eq` | yes | whole 28-index layout mapped |
 | Global EQ: OUT tab overall level | **omitted** | partly | reachable, and its dB mapping is unverified |
 
@@ -1381,10 +1381,9 @@ only by driving each position: read as a list, `RECORD MODE`, `DUPLICATE MODE`
 and `CURVE` each came back in the opposite order from the catalog, and driving
 position 0 showed all three matched the catalog.
 
-Some controls are greyed out
-until another is set (`SYNC NOTE` until `SYNC` is On; `PRE ROLL` and `REC.
-LENGTH` while `QUANTIZE` is `OFF`). One control cannot be audited though it is
-not hidden: a Looper X's `METRONOME MUTE` offers `MUTE,UNMUTE`, and the screen
+Some controls are greyed out until another is set: `SYNC NOTE` until `SYNC` is
+On, `PRE ROLL` and `REC. LENGTH` while `QUANTIZE` is `OFF`. One control cannot be
+audited though it is not hidden: a Looper X's `METRONOME MUTE` offers `MUTE,UNMUTE`, and the screen
 shows a button whose label names what pressing it will do, so the two vocabularies
 cannot be held against each other.
 

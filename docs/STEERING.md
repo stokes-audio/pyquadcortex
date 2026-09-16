@@ -404,7 +404,7 @@ behind each one is in the lab repository,
 - **What changed:** `tempo_mode()` and `set_tempo_mode()` ship. ADR-0010 requires
   a differential state capture before a control is recorded as having no wire path.
   `docs/capture.md` gains "Diff the whole state".
-- **Why:** three tests had watched for a broadcast and seen none; one `READ` found
+- **Why:** three tests had listened for an announcement and heard none; one `READ` found
   the switch in `GlobalTempo.params[1]`.
 - **Scope:** `client.py`, `protocol.md`, `domain-model.md`, `manual-coverage.md`,
   `capture.md`, `ADR.md`, `tests/hardware/state_snapshot.py`.

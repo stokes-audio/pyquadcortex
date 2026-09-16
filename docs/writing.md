@@ -129,7 +129,7 @@ length. New records follow the limit.
 | model layer | `pyquadcortex` and the code in `pyquadcortex/device/` | object model |
 | block | a placed amp, pedal or other virtual device on the grid | model, in prose (`model` is the wire's word and the code's) |
 | slot, column | the screen's word and the wire's word for a cell in a row | mixing them in one document |
-| push | a message the unit sends without being asked | broadcast, notification |
+| push | a message the unit sends without being asked; as a verb, the unit announces or pushes | broadcast, notification |
 | read | a `READ` request and its answer | fetch, query |
 
 ## The change log in `docs/STEERING.md`

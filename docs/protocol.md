@@ -174,7 +174,7 @@ n+5     1     COMPRESSED: 1 = the payload is a gzip stream
 n+6     2     zero from the host; the device fills varying nonzero values
 ```
 
-Two things to state plainly: **the message type lives in the trailer, not in a
+Two facts: **the message type lives in the trailer, not in a
 header**, so a receiver cannot know a message's type until the last fragment
 arrives; and there is no length field.
 
@@ -356,7 +356,7 @@ recalled preset (section 7), and `Param.index` is absent too, so a parameter's
 index is its position in `params`.
 
 **The protocol is symmetric.** The same types flow both ways. The unit answers a
-host `Version` read and then asks one of its own, and it broadcasts `Scene`,
+host `Version` read and then asks one of its own, and it announces `Scene`,
 `SceneLabel`, `SceneColor`, `SceneCopy`, `Grid` and `RecallPreset` when a person
 operates the touchscreen. So a message of a tracked type is not always news: the
 unit's own `Version` read carries `action` and nothing else. Anything counting
@@ -374,7 +374,7 @@ with only that, preset recalls produced zero traffic. The unit answers direct
 requests, but the pushes that carry real state (the `RecallPreset` dump, `Grid`
 and `Scene` live sync, folder listings) never arrive.
 
-Two steps are load bearing and not obvious:
+Two steps matter and are not obvious:
 
 - **The Cortex Control version announce.** The unit gates its pushes on receiving
   a valid `cortex_control_version`. The library announces `"4.0.1"`
@@ -545,7 +545,7 @@ type to push the preset.
 
 **There is no host-initiated "read this slot" request.** A `Grid` or
 `RecallPreset` read of a slot gets no reply. Whenever a preset is recalled, by the
-host or on the unit, the unit broadcasts:
+host or on the unit, the unit pushes:
 
 ```
 RecallPreset{action: UPDATE, preset: <BinaryPreset>, reason: <RecallPresetReason>}
@@ -780,7 +780,7 @@ distinguishes them:
   treats it as "no model specified".
 
 Both confirmed twice: driven from the host with a read-back, and by watching the
-unit's own broadcast when the same edit is made on the touchscreen, which for a
+unit's own push when the same edit is made on the touchscreen, which for a
 delete is exactly `Grid{action: DELETE, chains{row: 0, models{column: 2, hash: 0}}}`.
 
 **Move.** `GridMove{move{from_row, from_col, to_row, to_col, is_drop}}` is
@@ -945,7 +945,7 @@ E produced `key: 4`). The unit clears all three when an assignment is removed.
 
 **Momentary is real, and the manual does not mention it.** The touchscreen's
 Assign footswitch modal carries a Latching/Momentary toggle, and using it
-broadcasts `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}`. **A momentary
+announces `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}`. **A momentary
 write lands only on a footswitch driving exactly one block.** A write aimed at a
 multi-block switch is accepted, echoes nothing, and reads back unchanged; the unit
 greys out its own toggle in the same case.
@@ -960,7 +960,7 @@ Grid{UPDATE, preset{chains{row, models{column, params{index, expression,
 
 `expression` is the pedal (1 or 2), 0 means unassigned and is sent, and the two
 floats are the normalized ends of the sweep; min above max reverses it. Confirmed
-as the unit's broadcast when a pedal is assigned on screen and as a host write
+as the unit's push when a pedal is assigned on screen and as a host write
 surviving save and read-back. The unit leaves `scene_mode` alone when it assigns
 a pedal, and the manual excludes an expression-assigned parameter from scene data.
 
@@ -982,7 +982,7 @@ Three rules were tried and all are false: "switch parameters are refused"
 (`HIGH CUT`, `PHASE` and `TYPE` are `switch` and accept), "bypass-like parameters
 are refused" (the gate's `BYPASS` accepts and clears), and "`output_control`
 rejects `expression`" (`VOLUME` and `PAN` accept). `output_control.bypass_expression`
-is not a back door either. The unit broadcasts nothing when a lane output is
+is not a back door either. The unit announces nothing when a lane output is
 edited (180 seconds of listening), so the differential capture ADR-0010 requires
 was run: between `MUTE` assigned and unassigned, the only device state that moved
 was `PresetDirty.is_dirty`, the free-storage counter, and the running metronome
@@ -1047,12 +1047,12 @@ SceneCopy{action: UPDATE, from_index: 0, to_index: 3, is_swap: false}
 ```
 
 `color` is ARGB; a pinkish scene was `0xFFFF02C2`, and it round-trips exactly.
-On any scene edit performed on the unit, the unit re-broadcasts all 8 labels and
+On any scene edit performed on the unit, the unit re-sends all 8 labels and
 colours. A host label write was observed echoing only the index it wrote, as two
 identical messages (one capture).
 
 `SceneCopy`'s action is `UPDATE`, not `COPY`. Cortex Control cannot copy a scene,
-so the shape was read off the unit's own broadcast when a scene was copied on the
+so the shape was read off the unit's own push when a scene was copied on the
 touchscreen, and sending it host to unit is confirmed. `from_index` is honoured
 (copying B onto D produced B, not A, on a preset whose A and B differ), `is_swap`
 exchanges the two scenes, and **the label and colour travel with the state** in
@@ -1373,7 +1373,7 @@ name}}` against the setlist's own key.
 `CREATE` for the destination and then narrates itself through `BulkOperation`
 (`"Duplicating, please wait."`, a progress fraction, `finished`); doing the same
 from the host creates an empty destination. The unit's per-preset paste
-broadcasts the same shape as a Save As pointed at another folder. So copying a
+announces the same shape as a Save As pointed at another folder. So copying a
 preset is recall then save, and duplicating a setlist is that per preset, which is
 what `copy_preset()` and `duplicate_setlist()` do. Each one recalls the source on
 the unit.
@@ -1473,7 +1473,7 @@ library (`local_nc_root`) rather than the catalog, which cannot enumerate
 captures.
 
 **Creating a capture hands the flow to a connected host.** Choosing "New Neural
-Capture" on the unit broadcasts `NeuralCapture{try_to_show_dialog: true}` and
+Capture" on the unit announces `NeuralCapture{try_to_show_dialog: true}` and
 waits for the host to answer `NeuralCapture{show_dialog: true}` and present the
 UI itself. A connected host that stays silent suppresses the on-device wizard;
 disconnect to use it. Answering `show_dialog: true` without a UI puts the unit
@@ -1671,7 +1671,7 @@ are plain scalars.
 ### 11.5 Footswitch modes
 
 `Mode{UPDATE, mode}` selects a slot; `Mode.mode` is a slot index, not a named
-mode. Mode pushes are frequently partial (a mode switch broadcasts `mode` alone),
+mode. Mode pushes are frequently partial (a mode switch announces `mode` alone),
 so `mode_cycle()` waits for a push that contains `available_modes`.
 
 **A `HYBRID` slot is a composite value in `available_modes`.** Merging two modes on
@@ -1710,7 +1710,7 @@ included. Rejected writes revert to the previous value. The unit's own picker
 offers exactly those seven.
 
 **`Tuner.frequency` is the reference pitch as an offset in Hz from 440.** 442 on
-the unit broadcast `frequency: 1.99999809` and 445 broadcast `5`. `Tuner.mute` is
+the unit announced `frequency: 1.99999809` and 445 announced `5`. `Tuner.mute` is
 the menu's `MUTE` preference for silent tuning. `enable_meter` refuses a host
 write (it stays `false` and `meter` stays `0.0`), so the needle is not readable
 over USB.
@@ -1813,7 +1813,7 @@ cached preset. Echo latencies, from `tests/hardware/test_write_echo.py`:
 A type-only match on these writes produced a discredited 2 to 11 ms band, so a
 number in this range is only as good as the predicate behind it.
 
-A knob turn on the touchscreen broadcasts about 40 `Grid` messages for one edit,
+A knob turn on the touchscreen announces about 40 `Grid` messages for one edit,
 so edit-time traffic is far heavier than steady state.
 
 ### 12.4 `PresetDirty` announces a change of the flag, not an edit

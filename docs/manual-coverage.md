@@ -89,7 +89,7 @@ settled is in [capture.md](capture.md).
 | Expression pedal assignment to a parameter | yes | `set_expression(target, param, pedal, minimum, maximum)` and `clear_expression(target, param)`, against any target: a block, the lane output or input, the mixer, the splitter. The sweep ends take the parameter's own typed values. Read back with `protocol.expression_assignments()` or `grid.pedals` |
 | Expression pedal on a Lane Output MUTE or SOLO | no | the unit silently drops a host write of those two while accepting the same message on `VOLUME`, so they raise `ControlNotDrivable` (ADR-0007). The touchscreen writes the same field and the library reads it back |
 | Expression bypass (heel-toe / switch / stop) | yes | `set_expression_bypass()` with `ExpressionSwitchMode`: `STOP` 0, `SWITCH` 1, `HEEL_TOE` 2. `SWITCH` greys out SWITCH DELAY, `HEEL_TOE` greys out LATCH EMULATION |
-| Expression pedal calibration | partly | calibrating on the unit broadcasts `exp_port{exp_port_id, calibrating: true}` then `false`. Observed, never driven from the host |
+| Expression pedal calibration | partly | calibrating on the unit announces `exp_port{exp_port_id, calibrating: true}` then `false`. Observed, never driven from the host |
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | an ordinary catalog model |
 | Looper X: transport actions and parameters | partly | `looper()` reads the full status and `LooperState` names five states. The transport is not driven from here; MIDI CC#48 to 61 is the documented route |

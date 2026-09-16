@@ -195,8 +195,8 @@ name proves linkage, never meaning.
 - **Have them repeat the action for the whole window.** Overlap is then
   guaranteed rather than negotiated.
 - **Ask whether the change needs committing.** Some editors on the unit
-  broadcast only when a value is confirmed. If a drag produces nothing, have them
-  press the confirm control and watch again. The `HYBRID` mode merge broadcast
+  announce a change only when it is confirmed. If a drag produces nothing, have them
+  press the confirm control and watch again. The `HYBRID` mode merge announced
   nothing until `OK` was pressed.
 
 ## Reading what you get
@@ -208,7 +208,7 @@ operation. Differences that have each mattered at least once:
   (`models`, `splitter`, `combined_splitter`, `mixer`, `output_control`,
   `input_control`), and only some accept writes.
 - **Whether a model hash is present.** The unit usually omits it when
-  broadcasting a parameter change.
+  announcing a parameter change.
 - **Whether a `column` is present.** Grid blocks carry one; per-row elements do
   not.
 - **What else is in the message.** An empty sibling element can void the whole
