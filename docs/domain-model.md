@@ -1504,33 +1504,105 @@ to place it on a full grid, so an absent element is not a free block.
 So `Model.resources` publishes the numbers under the catalog's own names and
 claims nothing more. A caller still has to try the block and handle the refusal.
 
-### The unit does not transmit what it draws
+### The option names ARE conveyed, in the catalog, once per session
 
-The question was whether the screen text for a fixed list is conveyed somewhere
-we had not looked - which matters, because a downloadable model has to work on a
-unit that has never seen it, so its allowed values must travel somehow.
+The question was whether the words a person sees are sent anywhere - which
+matters, because if a model downloaded after Cortex Control shipped still shows
+the right names on a laptop, those names have to reach it somehow. Nobody here
+has watched a downloaded model, so that is the question rather than a finding.
 
-They do travel: `stepNames` gives the count, the order and an identifier per
-position, and that is enough for the control to FUNCTION. What does not travel is
-the rendered text. Measured three ways on 2026-09-15:
+They do, and it is observed rather than inferred. The reply Cortex Control
+receives was taken out of the capture and read:
 
-- The catalog container holds exactly one member, `ModelRepo.xml`. No icons, no
-  string table, no localisation.
-- On a 14-block preset, the only parameters populating `dynamic_steps`,
-  `dynamic_icons` or `dynamic_metadata` were the DYNAMIC ones it happened to
-  carry - three of them. No fixed list published any. (Twelve parameters in the
-  whole catalog are marked `dynamic`; a single preset reaches only the ones its
-  blocks bring.)
-- A 150-second capture recorded everything the unit sent while a human opened a
-  Mono Synth's Oscillator tab and stepped through all seven waveforms: **600
-  messages, every one the metronome tempo stream.** Not one waveform label - and
-  no notification that the value had changed either.
+- **Cortex Control fetches the catalog at connect, in every session.** It is
+  the THIRD message type of the session - after `ResetCommsBuffers` and
+  `Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198
+  / 1.186 seconds after the session's first message in the three captures. The
+  reply is 46,713 / 46,723 / 46,702 bytes.
+- **That reply contains the strings.** Reassembled independently from each of
+  the three captures and inflated, it is a 558,592-byte tar holding one member,
+  `ModelRepo.xml`, 556,732 bytes, carrying 539 `stepNames` attributes -
+  including `stepNames="Sine,Triang,Sawtooth,Square,Pulse,Pink NS,White NS"`.
 
-So the unit draws `PNK` from something it already holds, and a display question
-has no metadata answer. What remains open is whether a DOWNLOADED model could
-introduce an option label the firmware has never rendered. Comparing a 4.1.0
-catalog's `stepNames` against 4.0.1's would answer it offline; no 4.1.0 snapshot
-is in this repo.
+Three artifacts, three different answers about sameness, and they must not be
+run together. The compressed payloads on the wire DIFFER (46,713 / 46,723 /
+46,702 bytes; the gzip header alone carries a different MTIME each time). The
+inflated XML differs in 4,800 and 4,825 bytes against session 01 - and every
+one of those bytes is inside a `blob="..."` attribute, 338 of the 351 changing
+between fetches. Strip that one attribute and all three are byte-identical,
+551,715 bytes: the vocabulary does not differ at all, the same 539 `stepNames`,
+655 `id` and 4,374 `name` attributes byte for byte.
+
+The appendix below already carries that 338, from "two dumps of one unit taken
+minutes apart" which "differed on 338 models and on nothing else". Do not read
+that as a second, independent measurement: the appendix does not say how those
+two dumps were taken, and sessions 02 and 03 were captured sixteen minutes apart
+and differ on exactly 338 models and nothing else - so they may well BE that
+pair. What is added here is the third session and the pairwise detail: the
+changing set is the same 338 in all three comparisons, with the same thirteen
+holding still.
+
+The lab repo's `research/catalog/ModelRepo.xml` is NOT a fourth sample and must
+not be counted as one. It is byte-identical to session 02 - all 351 tokens, not
+just the vocabulary - so it is that same fetch, and its 2026-07-26 date is when
+the lab repo was reorganised, not when anything was dumped. What it is good for
+is checking the METHOD: the payload reassembled here out of the pcapng equals,
+byte for byte, a file committed seven weeks before this reassembly was written.
+
+So a host is handed the whole vocabulary before it does anything else: the
+reply starts at 1.204 / 1.198 / 1.186 seconds and its 371 reports finish at
+1.480 / 1.497 / 1.475. What was observed is the DELIVERY; nobody here watched
+Cortex Control draw from it.
+
+**How to repeat it.** `research/scripts/decode_capture.py` in the `quad-cortex`
+lab repo already does the reassembly - accumulate INPUT reports until
+`framing.is_complete`, resync on FIRST - and its committed timelines show the
+message; it needs tshark, and it predates `decode_reports` returning a `Frame`.
+With tshark absent, the same loop runs off the pcapng directly by keeping
+USBPcap records
+that are interrupt transfers, device-to-host, completion, carrying a 129-byte
+body, and no others. That last clause is the whole trick: an earlier attempt
+swept in the control-transfer records - endpoint 0x80, bodies of 8, 22 and 24
+bytes, against the reports' endpoint 0x81 - which split the FIRST..LAST runs and
+produced three large messages that do not exist. Reports
+dropped and runs left open, on the correct filter: zero, in all three captures.
+Then find the gzip magic inside the protobuf field, inflate, untar, grep.
+
+What is still INFERENCE: that a model added to the catalog brings its names
+with it, so a host that shipped before that model still names it correctly.
+Nothing here observed a downloaded or purchased model.
+
+An earlier version of this section argued the point by elimination, claiming
+nothing else crossing the wire was large enough to hold a label table. That was
+false and the captures disprove it: `File` reaches 885 reports in one message,
+more than twice `ModelRepo`'s 371, and its largest arrives about seven seconds
+AFTER it. `File` also carries preset bodies, and a preset body carries
+`dynamic_steps` - which is option-label text, for the twelve dynamic parameters.
+So label text crosses in at least two message families. The elimination argument
+was both unnecessary and wrong; the payload is the evidence.
+
+### The unit's screen is a second renderer over that same data
+
+What the 150-second capture actually showed is narrower, and still worth having.
+While a human opened a Mono Synth's Oscillator tab and stepped through all seven
+waveforms, the unit sent **600 messages, every one the metronome tempo stream** -
+not one waveform label, and no notice that the value had changed. It had no need
+to send anything: it holds the catalog too.
+
+So there are two renderers over one source, and they do not agree. The unit
+draws `SIN`, `TRI`, `WHT` and a row of icons where the catalog writes `Sine`,
+`Triang`, `White NS`. `SIN` and `TRI` are plainly truncations; `WHT` and `PNK`
+are not truncations of `White NS` and `Pink NS`, so no single transform explains
+both, and a firmware abbreviation table is at least as likely as a rule applied
+to `stepNames`. **Which it is has not been measured** - it would need either a
+catalog whose `stepNames` the firmware has never met, or a look inside the
+firmware. A 4.1.0 catalog compared against 4.0.1's would be the cheap first
+step, and no 4.1.0 snapshot is in this repo.
+
+The practical consequence is the one that matters: a reading taken off the
+unit's screen is a fact about the unit's screen. It is not automatically a fact
+about what a host shows, and - as the noise labels prove - not automatically a
+fact about what the device produces either.
 
 ### `hidden` on a parameter is the vendor's intent, not the glass
 
@@ -1696,9 +1768,89 @@ Six of those are just abbreviations. The last two are not:
 
 Both were driven at once, on the two oscillators of one Mono Synth, and read
 together - so neither can be a stale screen. **The catalog has pink and white
-swapped.** A caller asking for pink noise by the catalog's name gets white, which
-is the same shape of error as the metronome names and the reason this audit
-exists.
+swapped**, and that is now settled by measurement rather than by reading a
+label.
+
+#### Measured acoustically, 2026-09-15
+
+The screen reading said which label the unit draws. It could not say which
+signal comes out, and the catalog disagreeing with the screen leaves open which
+of the two is wrong. Noise settles it: white noise has a flat power spectrum, so
+measured in OCTAVE bands its energy rises about 3 dB per octave, because each
+band is twice as wide as the one below. Pink noise falls 3 dB per octave, so its
+octave-band energy is flat.
+
+A Mono Synth was placed at the head of a populated row, OSC 1 alone with OSC 2
+off, and the unit's own USB audio interface recorded at each position -
+`-t 5`, which avfoundation delivers a little short, so the two files are 4.47
+and 4.48 seconds.
+
+| octave band | position 5 | position 6 | difference |
+|---|---|---|---|
+| 125-250 Hz | -43.3 dB | -32.2 dB | -11.1 |
+| 250-500 Hz | -38.7 dB | -32.9 dB | -5.8 |
+| 500 Hz-1 kHz | -33.6 dB | -31.9 dB | -1.7 |
+| 1-2 kHz | -29.8 dB | -31.4 dB | +1.6 |
+| 2-4 kHz | -27.2 dB | -31.5 dB | +4.3 |
+| 4-8 kHz | -26.5 dB | -33.6 dB | +7.1 |
+| 8-16 kHz | -28.9 dB | -39.2 dB | +10.3 |
+
+**Read the difference column.** The rest of the row colours both recordings
+identically, so subtracting them removes it - and the result climbs
+monotonically across all seven bands, averaging +3.57 dB per octave. Position 5
+is the brighter, by the scale and in the direction that separates white from
+pink.
+
+The textbook separation is 3.01 dB per octave, and 3.57 is not that number. Do
+not read the difference as a precision match. The BAND ANALYSIS below is not
+exact - `sinc` filtering leaks across band edges - and on 2026-09-15 it was
+calibrated to say by how much. Synthetic noise of both kinds, put through the
+same per-band commands and the same subtraction, gave 3.69 to 3.84 dB per
+octave over ten runs (sox 14.4.2; the figure is random run to run, and no run
+came near 3.01):
+
+```
+sox -n -r 48000 -c 1 white.wav synth 5 whitenoise
+sox -n -r 48000 -c 1 pink.wav synth 5 pinknoise
+# then the same `sinc <band> stats` per band as below, and the slope of the
+# difference column across the seven bands
+```
+
+So this analysis returns about 3.75 for a pair that is exactly 3.01 apart. The
+unit's 3.57 is between the two, and below every calibration run; the
+calibration does not account for the gap, it moves it to the other side. That
+is the honest position, and the finding does not rest on it. What the
+measurement establishes is the SIGN and the order of magnitude, which is all
+that is needed to say which of two positions is the white one. Note also that
+the calibration exercised only the band analysis - synthetic files straight
+into `sox` - and not the unit, the USB capture or the amp row.
+
+Each column alone says the same thing less cleanly, because the chain's response
+is curved: position 6 is flat to about 2 dB from 125 Hz to 8 kHz, and position 5
+climbs about 3.4 dB per octave over that span, but neither is a straight line.
+The subtraction is what makes the comparison controlled.
+
+The catalog calls position 5 `Pink NS`. It is white, and the screen's `WHT` is
+right.
+
+Reproducing it needs no special tooling - the unit enumerates as an 8-in USB
+audio device. Find its index first, because the numbering is per machine and
+index 0 is often the built-in microphone:
+
+```
+ffmpeg -f avfoundation -list_devices true -i ""     # note the Quad Cortex index
+ffmpeg -f avfoundation -i ":N" -t 5 -ac 1 -ar 48000 pos5.wav
+sox pos5.wav -n sinc 2000-4000 stats                # read "RMS lev dB"; repeat per band
+```
+
+`-ac 1` sums the interface's eight inputs to mono, which is fine while only the
+measured signal is present and would not be otherwise. A quick check that the
+right device is being recorded: change the block's level and watch the RMS move.
+
+The recordings themselves are not committed. They are a few seconds of noise and
+the numbers above are the finding. A caller asking for pink noise by the
+catalog's name gets white, which is the same shape of error as the metronome
+names and the reason this audit exists.
 
 The enum members follow the screen, and `set_param_option` refuses the catalog's
 two strings rather than selecting the other noise. **The READ path is not fixed

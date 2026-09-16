@@ -93,7 +93,14 @@ A Mono Synth's oscillator waveform list is the first place the audit below found
 the device's catalog to be **wrong**, not merely differently worded. The catalog
 calls wire position 5 `Pink NS` and position 6 `White NS`. The unit's screen
 draws `WHT` at position 5 and `PNK` at position 6. Both were set at once, on the
-two oscillators of one Mono Synth, and read together.
+two oscillators of one Mono Synth, and read together - and the swap was then
+confirmed acoustically, by capturing each off the unit's own USB audio interface
+and measuring octave bands. Subtracting one recording from the other cancels the
+rest of the signal chain, and the difference climbs monotonically across all
+seven bands - about 3.6 dB per octave, in the direction that separates white
+from pink and at the right order of magnitude.
+Position 5 is the brighter, so it is the white one. So this is a fact about what
+the device produces, not about what one screen prints.
 
 So until now `Osc1Wave.PINK_NS` selected **white** noise and `.WHITE_NS` selected
 pink. The members now follow the screen, which means **existing code using either

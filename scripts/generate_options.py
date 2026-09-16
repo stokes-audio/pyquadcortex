@@ -115,13 +115,25 @@ SPELLING_FIXES = {
 MEANING_DISAGREEMENTS = {
     # Driven on a Mono Synth 2026-09-14, both oscillators set at once and read
     # together: wire position 5 draws WHT and position 6 draws PNK, while the
-    # catalog calls them "Pink NS" and "White NS". The catalog has the two
-    # noises swapped, so `PINK_NS = 5` would hand a caller white noise - the
-    # same shape of error as the metronome names, which is what this audit is
-    # for. The screen wins, per CLAUDE.md.
+    # catalog calls them "Pink NS" and "White NS".
+    #
+    # Confirmed acoustically 2026-09-15, which is what makes this a fact about
+    # the DEVICE rather than about one screen. Both positions were captured off
+    # the unit's USB audio interface and SUBTRACTED, which cancels the rest of
+    # the signal chain: the difference between them climbs monotonically
+    # across all seven octave bands, ~3.6 dB per octave, so position 5 is the
+    # brighter - the direction that separates white noise from pink, at the
+    # right order of magnitude. The catalog has the two swapped, so
+    # `PINK_NS = 5` would hand a caller white noise.
     ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS"): {
-        5: ("WHITE_NS", "position 5 drew 'WHT', which is 'White NS'"),
-        6: ("PINK_NS", "position 6 drew 'PNK', which is 'Pink NS'"),
+        5: ("WHITE_NS", "position 5 drew 'WHT', which is 'White NS' - and "
+            "recorded against position 6 the difference between them climbs "
+            "monotonically across the seven octave bands, ~3.6 dB per octave, "
+            "which makes it the brighter and so the white one; see "
+            "docs/domain-model.md"),
+        6: ("PINK_NS", "position 6 drew 'PNK', which is 'Pink NS' - and it is "
+            "the darker of the pair by that same measurement, so it is the "
+            "pink one; see docs/domain-model.md"),
     },
 }
 
