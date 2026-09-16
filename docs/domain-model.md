@@ -1610,15 +1610,21 @@ The short words are not in the file either:
 
 What the reading rules out is the catalog's TEXT. It does not rule out the
 catalog predicting the shortening some other way, and there is a candidate in
-plain sight: both controls that shorten are marked `hidden="true"`, and the
-Flanger's `WAVEFORM` is not. Of the nineteen controls read, the two that
-shorten are hidden, thirteen are not hidden and match the catalog, and four are
-the metronome's drawn cells. Five more hidden controls were looked for and were
-not on the screen at all.
+plain sight: both controls that shorten carry `hidden="true"` on the PARAMETER,
+and the Flanger's `WAVEFORM` does not. Of the nineteen controls read:
+
+- two shorten, and both are hidden parameters;
+- thirteen are not hidden and match the catalog exactly;
+- four are the metronome's cells, which are NOT hidden parameters and depart
+  from the catalog anyway, by drawing circles instead of words. Their model is
+  `internal` inside a hidden category, which is a different attribute again.
+
+Five more hidden parameters were looked for and were not on the screen at all.
 
 Do not turn that into a rule. It is two positives, on the exact flag ADR-0010
 caught this repo trusting once already - which is why a list is never marked
-`absent` from it. What the reading establishes is the narrow thing: the
+`absent` from it, and the metronome row above is a standing counterexample to
+the looser reading of it. What the reading establishes is the narrow thing: the
 catalog's WORDS do not predict the shortening, because the same word renders
 both ways.
 
@@ -1630,8 +1636,12 @@ four step cells draw circles instead of words, which is why that list is
 exactly.
 
 Two things are still unknown: whether some control nobody has looked at yet
-also draws its own words, and whether `hidden` is what marks the ones that do.
-The 94 unread lists below are where both get answered.
+also draws its own words, and whether `Parameter.hidden` marks the ones that
+do. The 94 unread lists below answer the first wherever you start. The second
+needs a hidden parameter, and only five of the 94 reach one - two of which are
+ranks 2 and 3 of the worklist, `Small,Med,Large` on a PCOM Core Cabsim's `SIZE`
+and `Off,Duck,Gate` on a Tape Delay's `DYN MODE`. Read either on a model where
+the parameter is hidden and the candidate gets its third data point.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact

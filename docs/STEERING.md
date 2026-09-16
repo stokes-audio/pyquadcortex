@@ -142,8 +142,8 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ### 2026-09-16 - The unit shortens one control's words, and the unread audit work is ranked
 
-**What changed:** two open questions moved without touching the unit, and
-`options.OPTION_USAGE` is published so the second one stops being prose.
+**What changed:** one open question was settled by a reading on the unit, and
+`options.OPTION_USAGE` is published so the second stops being prose.
 
 **Why - the abbreviations.** The question was whether the unit shortens every
 long name or just that one control. Just that one: a Flanger Engine's
@@ -155,9 +155,11 @@ as `Sine` on the Flanger, so the shortening belongs to that control.
 The short words are not in the catalog either - `WHT`, `PNK`, `SAW` and `SQR`
 appear zero times in the 556,732-byte file - so the catalog's TEXT does not
 predict a shortened control. Whether some other attribute does is open: both
-shortening controls are marked `hidden` and the Flanger's is not. That is two
-positives, on the flag ADR-0010 caught this repo trusting once already, so it
-is written down as a candidate and not as a rule.
+shortening controls carry `hidden` on the PARAMETER and the Flanger's does not.
+That is two positives, on the flag ADR-0010 caught this repo trusting once
+already, so it is written down as a candidate and not as a rule - and the
+metronome's cells, which are not hidden parameters and depart from the catalog
+anyway, sit against it.
 
 Nineteen controls have now been read - the readings fixture holds 24, but five
 are records of looking and finding no control. Two of the nineteen shorten a
