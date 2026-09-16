@@ -1592,8 +1592,9 @@ to send anything: it holds the catalog too.
 So there are two renderers over one source, and they do not always agree. On
 the Mono Synth's oscillator tab the screen shortens the catalog's words and
 draws a row of icons: `Sine` appears as `SIN`, `Pulse` as `PUL`. On two of the
-seven the CATALOG is the one that is wrong - it has pink and white noise the
-opposite way round from what the unit produces, measured further down.
+seven the catalog is the one that is wrong: it has pink and white noise the
+opposite way round from what the unit actually produces. The acoustic
+measurement that settled that is below.
 
 **The shortening is not about the words.** A Flanger Engine's `WAVEFORM` offers
 `Sine`, `Triangle`, `Square`, `Saw Up`, `Saw Dn`, `rndSmooth`, `rndStep`, and
@@ -1609,13 +1610,15 @@ The short words are not in the file either:
 control will be drawn short, so a caller cannot predict it and the library does
 not try.
 
-What is left unknown is small: which other controls the unit draws its own way.
-Nineteen have been read - the fixture holds 24 controls, but five of those are
+Nineteen controls have been read - the fixture holds 24, but five of those are
 records of looking and finding no control at all. Of the nineteen, the Mono
 Synth's two oscillators are the only ones that shorten a word. The metronome's
 four step cells draw circles instead of words, which is why that list is
 `drawn` rather than `audited` below. The other thirteen match the catalog
 exactly.
+
+So the only thing still unknown here is whether some control nobody has opened
+yet also draws its own words. There are 94 lists left to read.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact
@@ -1796,13 +1799,15 @@ overstatement in its purest form.
 | `Linear,Log` | 1 | a Volume block's CURVE, each position driven |
 | `Free,Sync` | 1 | a Looper X DUPLICATE MODE, each position driven |
 | `OSC1 WAVE` (7) | 2 | the tab in order, anchored at 0, 3, 5 and 6 |
+| `WAVEFORM` (7) | 1 | a Flanger Engine, in order, anchored at 0 and 3 |
 
-Twelve of the thirteen matched the catalog exactly, including spellings that
+Twelve of the fourteen matched the catalog exactly, including spellings that
 look like mistakes and are not: `In 1` carries a space and `Out1` does not, on
 the same control, and the screen draws both that way.
 
-**The thirteenth is a real disagreement, and it is the kind that changes what a
-caller gets.** A Mono Synth's oscillator waveform list reads, in the catalog,
+Two did not. The metronome's cells are drawn rather than written, which is the
+`drawn` row above. **The other is a real disagreement, and it is the kind that
+changes what a caller gets.** A Mono Synth's oscillator waveform list reads, in the catalog,
 `Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On screen the seven
 shapes are drawn as waveform icons labelled `SIN, TRI, SAW, SQR, PUL, WHT, PNK`.
 Six of those are just abbreviations. The last two are not:

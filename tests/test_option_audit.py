@@ -437,7 +437,8 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
 
     What this does NOT check, and cannot offline: column four, the model the
     control appears on. Confirming a model name needs the `ModelRepo` payload,
-    and no payload is committed here - the snapshot is generated constants. An
+    and no payload is committed here - the snapshot is generated constants.
+
     It also holds the sentence describing the tail below the table, because
     that sentence counts the same ranking starting from the row after the last
     one the table shows.
@@ -496,9 +497,9 @@ def test_the_reading_that_settled_the_shortening_is_still_in_the_fixture():
     The catalog says `Sine`. A Mono Synth's oscillator tab draws `SIN`; a
     Flanger Engine's WAVEFORM, offering the same word, draws `Sine`. That pair
     is what shows the shortening belongs to the control rather than to the
-    catalog's text, so both halves are asserted here - an earlier version of
-    this test checked only the SET of mismatched controls, which stayed green
-    if the Flanger rows were replaced by an invented control.
+    catalog's text, so both halves are asserted by name. Checking only the SET
+    of mismatched controls is not enough: that stays green if these readings
+    are replaced by some other control's.
     """
     rows = json.loads(READINGS.read_text(encoding="utf-8"))
 

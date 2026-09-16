@@ -34,8 +34,8 @@ catalog's text predicts it.
 Nineteen controls have now been read - the readings fixture holds 24, but five
 are records of looking and finding no control. Two of the nineteen shorten a
 word, four draw circles instead of words, and the other thirteen match the
-catalog exactly. `Osc1Wave` is the
-only enum whose names are known to differ from what the screen shows.
+catalog exactly. `Osc1Wave` is the only enum whose names are known to differ
+from what the screen shows.
 
 ### New: `options.OPTION_USAGE` says how many parameters each option list decides
 
@@ -52,12 +52,12 @@ from pyquadcortex.protocol import options
 
 unread = [labels for labels, status in options.OPTION_AUDIT.items()
           if status is None]
-unread.sort(key=lambda labels: -options.OPTION_USAGE[labels])
+unread.sort(key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
 options.OPTION_USAGE[unread[0]]   # 14 parameters - the biggest unread list
 ```
 
-On the 4.0.1 snapshot that is 527 parameters across 113 lists, of which 191
-across 95 lists are unread. Those numbers were being quoted in prose from
+On the 4.0.1 snapshot that is 527 parameters across 113 lists, of which 190
+across 94 lists are unread. Those numbers were being quoted in prose from
 one-off counts; now the document is held against the snapshot.
 
 ### Fixed: two guitar amps had no constant and could not be named
