@@ -1517,7 +1517,7 @@ receives was taken out of the capture and read:
 - **Cortex Control fetches the catalog at connect, in every session.** It is
   the THIRD message type of the session - after `ResetCommsBuffers` and
   `Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198
-  / 1.187 seconds after the session's first message in the three captures. The
+  / 1.186 seconds after the session's first message in the three captures. The
   reply is 46,713 / 46,723 / 46,702 bytes.
 - **That reply contains the strings.** Reassembled independently from each of
   the three captures and inflated, it is a 558,592-byte tar holding one member,
@@ -1533,21 +1533,26 @@ between fetches. Strip that one attribute and all three are byte-identical,
 551,715 bytes: the vocabulary does not differ at all, the same 539 `stepNames`,
 655 `id` and 4,374 `name` attributes byte for byte.
 
-That 338 is arrived at twice, independently. The appendix below records it from
-two LIVE dumps of one unit taken minutes apart, which "differed on 338 models
-and on nothing else"; this is three captured sessions, and the changing set is
-the same 338 in every pairwise comparison, with the same thirteen holding still.
+The appendix below already carries that 338, from "two dumps of one unit taken
+minutes apart" which "differed on 338 models and on nothing else". Do not read
+that as a second, independent measurement: the appendix does not say how those
+two dumps were taken, and sessions 02 and 03 were captured sixteen minutes apart
+and differ on exactly 338 models and nothing else - so they may well BE that
+pair. What is added here is the third session and the pairwise detail: the
+changing set is the same 338 in all three comparisons, with the same thirteen
+holding still.
 
 The lab repo's `research/catalog/ModelRepo.xml` is NOT a fourth sample and must
 not be counted as one. It is byte-identical to session 02 - all 351 tokens, not
 just the vocabulary - so it is that same fetch, and its 2026-07-26 date is when
 the lab repo was reorganised, not when anything was dumped. What it is good for
 is checking the METHOD: the payload reassembled here out of the pcapng equals,
-byte for byte, a file committed months before this reassembly was written.
+byte for byte, a file committed seven weeks before this reassembly was written.
 
-So a host is handed the whole vocabulary, in full, before it does anything
-else. What was observed is the DELIVERY; nobody here watched Cortex Control
-draw from it.
+So a host is handed the whole vocabulary before it does anything else: the
+reply starts at 1.204 / 1.198 / 1.186 seconds and its 371 reports finish at
+1.480 / 1.497 / 1.475. What was observed is the DELIVERY; nobody here watched
+Cortex Control draw from it.
 
 **How to repeat it.** `research/scripts/decode_capture.py` in the `quad-cortex`
 lab repo already does the reassembly - accumulate INPUT reports until
@@ -1557,8 +1562,9 @@ With tshark absent, the same loop runs off the pcapng directly by keeping
 USBPcap records
 that are interrupt transfers, device-to-host, completion, carrying a 129-byte
 body, and no others. That last clause is the whole trick: an earlier attempt
-swept in the control-transfer records on the same endpoint, which split the
-FIRST..LAST runs and produced three large messages that do not exist. Reports
+swept in the control-transfer records - endpoint 0x80, bodies of 8, 22 and 24
+bytes, against the reports' endpoint 0x81 - which split the FIRST..LAST runs and
+produced three large messages that do not exist. Reports
 dropped and runs left open, on the correct filter: zero, in all three captures.
 Then find the gzip magic inside the protobuf field, inflate, untar, grep.
 
@@ -1799,8 +1805,9 @@ The textbook separation is 3.01 dB per octave, and 3.57 is not that number. Do
 not read the difference as a precision match. The BAND ANALYSIS below is not
 exact - `sinc` filtering leaks across band edges - and on 2026-09-15 it was
 calibrated to say by how much. Synthetic noise of both kinds, put through the
-same per-band commands and the same subtraction, gave 3.72, 3.81 and 3.83 dB
-per octave over three runs (sox 14.4.2):
+same per-band commands and the same subtraction, gave 3.69 to 3.84 dB per
+octave over ten runs (sox 14.4.2; the figure is random run to run, and no run
+came near 3.01):
 
 ```
 sox -n -r 48000 -c 1 white.wav synth 5 whitenoise
@@ -1809,8 +1816,8 @@ sox -n -r 48000 -c 1 pink.wav synth 5 pinknoise
 # difference column across the seven bands
 ```
 
-So this analysis returns about 3.8 for a pair that is exactly 3.01 apart. The
-unit's 3.57 is between the two, and below all three calibration runs; the
+So this analysis returns about 3.75 for a pair that is exactly 3.01 apart. The
+unit's 3.57 is between the two, and below every calibration run; the
 calibration does not account for the gap, it moves it to the other side. That
 is the honest position, and the finding does not rest on it. What the
 measurement establishes is the SIGN and the order of magnitude, which is all

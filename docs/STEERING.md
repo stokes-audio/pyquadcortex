@@ -149,7 +149,7 @@ downloadable. That is wrong, and the captures we already had say so. Corrected i
 **Why.** The reply Cortex Control receives was read. It fetches `ModelRepo` as
 the third message type of every session - after `ResetCommsBuffers` and
 `Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198 /
-1.187 seconds in. Reassembled independently from each of the three captures and
+1.186 seconds in. Reassembled independently from each of the three captures and
 inflated, it is a 558,592-byte tar holding one 556,732-byte `ModelRepo.xml` with
 539 `stepNames` attributes, `stepNames="Sine,Triang,...,Pink NS,White NS"` among
 them. The three are not byte-identical and the doc says exactly where they
