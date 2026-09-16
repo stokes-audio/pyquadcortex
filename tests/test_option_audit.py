@@ -543,7 +543,13 @@ def test_only_the_mono_synth_shortens_a_word_on_screen():
     pairs = {(r["model"], r["param"]) for r in rows}
     looked = {(r["model"], r["param"]) for r in rows if r.get("method") == "looked"}
     read, matching = len(pairs - looked), len(pairs - looked) - len(differ)
-    words = {5: "five", 13: "thirteen", 19: "Nineteen"}
+    words = {2: "two", 4: "four", 5: "five", 13: "thirteen", 14: "fourteen",
+             19: "Nineteen", 20: "Twenty"}
+    for n in (read, len(looked), matching):
+        assert n in words, (
+            f"{n} has no spelling here, so this test cannot say what "
+            f"docs/domain-model.md should read. Add it, and update the "
+            f"document in the same commit")
     text = " ".join(
         (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
         .read_text(encoding="utf-8").split())
@@ -561,23 +567,31 @@ def test_only_the_mono_synth_shortens_a_word_on_screen():
 def test_the_ranking_recipe_the_changelog_publishes_actually_works():
     """`changelog.md` hands users a recipe for ranking the unread lists.
 
-    Same reason as `tests/test_catalog.py`'s sibling for the `display_pos`
-    recipe: `tests/test_docs.py` covers code blocks inside docstrings, not
-    `changelog.md`, so the snippet a reader is most likely to copy has no
-    guard. This one also publishes its own answer in a comment, which is the
-    part that rots.
+    The snippet is EXECUTED, not hand-copied. A copy in this file only stays
+    honest by convention: an earlier version of this test kept its own sort
+    key, the changelog's grew a tiebreak, the two orders diverged from index 9,
+    and the test passed anyway because it only ever read the first entry.
+
+    `tests/test_docs.py` covers the fences under `docs/`; `changelog.md` sits
+    at the repo root and is outside its glob, so the one snippet a reader is
+    most likely to copy had nothing running it.
     """
-    # Copied verbatim from changelog.md. If this stops matching, fix both -
-    # the single-key version this replaced diverged from the published one at
-    # index 9 and passed anyway, because it only ever read unread[0].
-    unread = [labels for labels, status in options.OPTION_AUDIT.items()
-              if status is None]
-    unread.sort(key=lambda labels: (-options.OPTION_USAGE[labels],
-                                    len(labels), labels))
-    biggest = options.OPTION_USAGE[unread[0]]
+    import re
 
     text = (pathlib.Path(__file__).parents[1] / "changelog.md").read_text(
         encoding="utf-8")
+    fences = [f for f in re.findall(r"```python\n(.*?)```", text, re.DOTALL)
+              if "OPTION_USAGE" in f]
+    assert len(fences) == 1, (
+        f"expected exactly one OPTION_USAGE snippet in changelog.md, found "
+        f"{len(fences)}")
+
+    scope: dict = {}
+    exec(fences[0], scope)                      # noqa: S102 - the point
+    assert scope["unread"], "the recipe produced no unread lists"
+
+    # The comment beside the last line publishes its own answer, which is the
+    # part that rots.
+    biggest = options.OPTION_USAGE[scope["unread"][0]]
     assert f"# {biggest} parameters - the biggest unread list" in text, (
-        f"changelog.md's ranking recipe claims an answer that is no longer "
-        f"{biggest}. The snapshot moved and the changelog did not.")
+        f"changelog.md's recipe claims an answer that is no longer {biggest}")

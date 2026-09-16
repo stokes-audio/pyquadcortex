@@ -149,10 +149,15 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 long name or just that one control. Just that one: a Flanger Engine's
 `WAVEFORM` offers seven waveform names and the screen spells all of them out
 (read 2026-09-16 on the unit, with positions 0 and 3 driven from a host and
-read back). The same word draws as `SIN` on a Mono Synth oscillator,
-so the shortening belongs to that control. The short words are not in the
-catalog either - `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the
-556,732-byte file - so nothing in it predicts a shortened control.
+read back). The same word `Sine` draws as `SIN` on a Mono Synth oscillator and
+as `Sine` on the Flanger, so the shortening belongs to that control.
+
+The short words are not in the catalog either - `WHT`, `PNK`, `SAW` and `SQR`
+appear zero times in the 556,732-byte file - so the catalog's TEXT does not
+predict a shortened control. Whether some other attribute does is open: both
+shortening controls are marked `hidden` and the Flanger's is not. That is two
+positives, on the flag ADR-0010 caught this repo trusting once already, so it
+is written down as a candidate and not as a rule.
 
 Nineteen controls have now been read - the readings fixture holds 24, but five
 are records of looking and finding no control. Two of the nineteen shorten a
@@ -169,7 +174,7 @@ regex and hand-copying the three lists that have no enum, which was a stated
 blind spot in its own docstring.
 
 **Scope of impact:**
-- **Updated:** `CLAUDE.md`, this file, `docs/domain-model.md`, `changelog.md`, `scripts/generate_options.py`, the 4.0.1 snapshot's `options.py`, `pyquadcortex/protocol/options.py` (the shim's explicit re-export), `tests/test_option_audit.py`, `tests/test_options.py`
+- **Updated:** `CLAUDE.md`, this file, `docs/domain-model.md`, `changelog.md`, `tests/fixtures/catalog/option_readings.json` (the seven Flanger readings), `scripts/generate_options.py`, the 4.0.1 snapshot's `options.py`, `pyquadcortex/protocol/options.py` (the shim's explicit re-export), `tests/test_option_audit.py`, `tests/test_options.py`
 - **Not updated (intentionally):** `ADR.md` - this settles a question recorded in the appendix rather than deciding anything new. No hardware test: the finding is a screen reading, and screen readings live in the readings fixture.
 
 ### 2026-09-15 - The catalog IS the conveyed vocabulary; the unit's screen is a second renderer

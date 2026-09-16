@@ -28,7 +28,7 @@ not known whether the unit shortens every long name or just that one control.
 It is that one control. A Flanger Engine's `WAVEFORM` offers `Sine`, `Triangle`,
 `Square`, `Saw Up`, `Saw Dn`, `rndSmooth` and `rndStep`, and the screen spells
 all seven out - read on the unit 2026-09-16, with positions 0 and 3 driven from
-a host. The same word draws two ways on two controls, so nothing about the
+a host. The same word `Sine` draws two ways on two controls, so nothing about the
 catalog's text predicts it.
 
 Nineteen controls have now been read - the readings fixture holds 24, but five

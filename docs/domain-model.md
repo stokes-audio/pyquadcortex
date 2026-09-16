@@ -1606,9 +1606,21 @@ the catalog's text.
 The short words are not in the file either:
 `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
 `ModelRepo.xml`, and the only hits for `SIN`, `TRI` and `PUL` are inside
-`SINGLE`, `TRIG`/`TRIM`/`TRIPLET` and `PULL`. Nothing in the catalog says a
-control will be drawn short, so a caller cannot predict it and the library does
-not try.
+`SINGLE`, `TRIG`/`TRIM`/`TRIPLET` and `PULL`.
+
+What the reading rules out is the catalog's TEXT. It does not rule out the
+catalog predicting the shortening some other way, and there is a candidate in
+plain sight: both controls that shorten are marked `hidden="true"`, and the
+Flanger's `WAVEFORM` is not. Of the nineteen controls read, the two that
+shorten are hidden, thirteen are not hidden and match the catalog, and four are
+the metronome's drawn cells. Five more hidden controls were looked for and were
+not on the screen at all.
+
+Do not turn that into a rule. It is two positives, on the exact flag ADR-0010
+caught this repo trusting once already - which is why a list is never marked
+`absent` from it. What the reading establishes is the narrow thing: the
+catalog's WORDS do not predict the shortening, because the same word renders
+both ways.
 
 Nineteen controls have been read - the fixture holds 24, but five of those are
 records of looking and finding no control at all. Of the nineteen, the Mono
@@ -1617,8 +1629,9 @@ four step cells draw circles instead of words, which is why that list is
 `drawn` rather than `audited` below. The other thirteen match the catalog
 exactly.
 
-So the only thing still unknown here is whether some control nobody has looked
-at yet also draws its own words. The 94 unread lists below are where to look.
+Two things are still unknown: whether some control nobody has looked at yet
+also draws its own words, and whether `hidden` is what marks the ones that do.
+The 94 unread lists below are where both get answered.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact
@@ -1808,8 +1821,9 @@ the same control, and the screen draws both that way.
 Two did not. The metronome's cells are drawn rather than written, which is the
 `drawn` row above. **The other is a real disagreement, and it is the kind that
 changes what a caller gets.** A Mono Synth's oscillator waveform list reads, in
-the catalog, `Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On screen the seven
-shapes are drawn as waveform icons labelled `SIN, TRI, SAW, SQR, PUL, WHT, PNK`.
+the catalog, `Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On
+screen the seven shapes are drawn as waveform icons labelled
+`SIN, TRI, SAW, SQR, PUL, WHT, PNK`.
 Six of those are just abbreviations. The last two are not:
 
 | wire position | catalog says | the screen shows |
