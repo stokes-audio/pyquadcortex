@@ -370,11 +370,9 @@ def test_the_document_quotes_the_same_parameter_counts():
     Derived here from `options.OPTION_USAGE`, which the generator emits from
     the catalog beside the audit. It used to be scraped out of the enums'
     docstrings with a regex, with the three lists that get no enum hand-copied
-    into this file - so an error in the split between the two Off/On spellings
-    would have cancelled out and nothing here could have seen it. The
-    hand-copied numbers were in fact right; what was wrong was that nothing
-    could tell. Now every list is counted the
-    same way, and this fails if the document drifts OR if the snapshot changes
+    into this file, where an error in the split between the two Off/On
+    spellings would have cancelled out unseen. Every list is counted the same
+    way now, and this fails if the document drifts or if the snapshot changes
     underneath it.
     """
     assert set(options.OPTION_USAGE) == set(options.OPTION_AUDIT), (
@@ -397,7 +395,7 @@ def test_the_document_quotes_the_same_parameter_counts():
 
 
 def test_the_unread_work_is_long_tailed_and_the_document_says_so():
-    """What is left is not 95 equal jobs, and planning one needs the shape.
+    """What is left is not 94 equal jobs, and planning one needs the shape.
 
     Ranked by how many parameters each decides, the unread lists fall away
     fast. The document names the biggest few so a session at the unit can be
@@ -440,13 +438,9 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     What this does NOT check, and cannot offline: column four, the model the
     control appears on. Confirming a model name needs the `ModelRepo` payload,
     and no payload is committed here - the snapshot is generated constants. An
-    earlier version of this test searched the whole document for the substring
-    ``"| 14 | 17 |"``, which read as checking the row and in fact checked
-    neither the order nor the other two columns.
-
-    It also holds the sentence that describes the tail BELOW the table, because
-    that sentence counts the same ranking from the row after the last one the
-    table shows.
+    It also holds the sentence describing the tail below the table, because
+    that sentence counts the same ranking starting from the row after the last
+    one the table shows.
     """
     unread = sorted(
         (labels for labels, status in options.OPTION_AUDIT.items()
@@ -496,16 +490,37 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     assert phrase in text, f"docs/domain-model.md does not say {phrase!r}."
 
 
+def test_the_reading_that_settled_the_shortening_is_still_in_the_fixture():
+    """The comparison the documentation rests on, held against the readings.
+
+    The catalog says `Sine`. A Mono Synth's oscillator tab draws `SIN`; a
+    Flanger Engine's WAVEFORM, offering the same word, draws `Sine`. That pair
+    is what shows the shortening belongs to the control rather than to the
+    catalog's text, so both halves are asserted here - an earlier version of
+    this test checked only the SET of mismatched controls, which stayed green
+    if the Flanger rows were replaced by an invented control.
+    """
+    rows = json.loads(READINGS.read_text(encoding="utf-8"))
+
+    def screen_for(model, param, word):
+        for r in rows:
+            if (r["model"], r["param"]) == (model, param) and \
+                    r["labels"][r["index"]] == word:
+                return r["screen"]
+        raise AssertionError(f"no reading of {model} / {param} at {word!r}")
+
+    assert screen_for("Mono Synth", "OSC1 WAVE", "Sine") == "SIN"
+    assert screen_for("Flanger Engine", "WAVEFORM", "Sine") == "Sine"
+    assert screen_for("Flanger Engine", "WAVEFORM", "Square") == "Square"
+
+
 def test_only_the_mono_synth_shortens_a_word_on_screen():
-    """The finding that replaced four paragraphs of argument.
+    """No second control has turned up that draws its own words.
 
-    The catalog says `Sine`. The Mono Synth's oscillator tab draws `SIN`; a
-    Flanger Engine's WAVEFORM, offering the same word, draws `Sine`. So the
-    shortening belongs to that control, not to the catalog's text - which is
-    what let the documentation stop speculating about which rule produces it.
-
-    Guarded here because it is a claim about the readings, and a later reading
-    that shortens a word somewhere else would make the document wrong.
+    A later reading that shortened a word somewhere else would make
+    `docs/domain-model.md` wrong rather than just incomplete, so the set is
+    pinned. The metronome's four cells are in it because they draw circles;
+    they do not shorten anything.
     """
     rows = json.loads(READINGS.read_text(encoding="utf-8"))
     differ = {(r["model"], r["param"]) for r in rows
@@ -520,5 +535,34 @@ def test_only_the_mono_synth_shortens_a_word_on_screen():
         "step cells, which draw circles. A new entry here means "
         "docs/domain-model.md needs rewriting, not this list extending")
 
-    both = {(r["model"], r["param"]) for r in rows} 
-    assert len(both) == 24, f"{len(both)} controls have been read, not 24"
+    # The document counts controls READ, which is not every control in the
+    # fixture: five are records of looking and finding nothing on screen.
+    pairs = {(r["model"], r["param"]) for r in rows}
+    looked = {(r["model"], r["param"]) for r in rows if r.get("method") == "looked"}
+    assert (len(pairs), len(looked)) == (24, 5), (
+        f"{len(pairs)} controls in the fixture, {len(looked)} of them looked-for "
+        f"and absent - docs/domain-model.md says 24 and 5")
+    assert len(pairs - looked) - len(differ) == 13, (
+        "docs/domain-model.md says thirteen read controls match the catalog "
+        "exactly")
+
+
+def test_the_ranking_recipe_the_changelog_publishes_actually_works():
+    """`changelog.md` hands users a recipe for ranking the unread lists.
+
+    Same reason as `tests/test_catalog.py`'s sibling for the `display_pos`
+    recipe: `tests/test_docs.py` covers code blocks inside docstrings, not
+    `changelog.md`, so the snippet a reader is most likely to copy has no
+    guard. This one also publishes its own answer in a comment, which is the
+    part that rots.
+    """
+    unread = [labels for labels, status in options.OPTION_AUDIT.items()
+              if status is None]
+    unread.sort(key=lambda labels: -options.OPTION_USAGE[labels])
+    biggest = options.OPTION_USAGE[unread[0]]
+
+    text = (pathlib.Path(__file__).parents[1] / "changelog.md").read_text(
+        encoding="utf-8")
+    assert f"# {biggest} parameters - the biggest unread list" in text, (
+        f"changelog.md's ranking recipe claims an answer that is no longer "
+        f"{biggest}. The snapshot moved and the changelog did not.")

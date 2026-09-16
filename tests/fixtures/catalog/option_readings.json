@@ -4020,7 +4020,7 @@
     "method": "driven",
     "model": "Flanger Engine",
     "model_id": 7014,
-    "note": "read on a Flanger Engine placed for this reading. The screen spells every choice the way the catalog does - which is what settles the Mono Synth question: the same word 'Sine' draws as SIN there and as Sine here, so the shortening is not about the words.",
+    "note": "anchor: driven from a host and read back. Position 0 is where a reversal would show - reversed, this position draws rndStep - and position 3 is the midpoint, which a reversal leaves fixed, so position 0 carries that burden alone. The reading settles the Mono Synth question: the same word 'Sine' draws as SIN there and as Sine here, so the shortening is not about the words.",
     "param": "WAVEFORM",
     "param_index": 8,
     "read_on": "2026-09-16",

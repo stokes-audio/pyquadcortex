@@ -1591,8 +1591,9 @@ to send anything: it holds the catalog too.
 
 So there are two renderers over one source, and they do not always agree. On
 the Mono Synth's oscillator tab the screen shortens the catalog's words and
-draws a row of icons: `Sine` appears as `SIN`, `Pulse` as `PUL`. It also gets
-two of them the wrong way round, which is the finding recorded further down.
+draws a row of icons: `Sine` appears as `SIN`, `Pulse` as `PUL`. On two of the
+seven the CATALOG is the one that is wrong - it has pink and white noise the
+opposite way round from what the unit produces, measured further down.
 
 **The shortening is not about the words.** A Flanger Engine's `WAVEFORM` offers
 `Sine`, `Triangle`, `Square`, `Saw Up`, `Saw Dn`, `rndSmooth`, `rndStep`, and
@@ -1601,7 +1602,7 @@ a host). The same word `Sine` draws as `SIN` on the synth and `Sine` on the
 Flanger, so whatever shortens it belongs to that oscillator control and not to
 the catalog's text.
 
-That also rules out finding the short words in the file. They are not there:
+The short words are not in the file either:
 `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
 `ModelRepo.xml`, and the only hits for `SIN`, `TRI` and `PUL` are inside
 `SINGLE`, `TRIG`/`TRIM`/`TRIPLET` and `PULL`. Nothing in the catalog says a
@@ -1609,10 +1610,12 @@ control will be drawn short, so a caller cannot predict it and the library does
 not try.
 
 What is left unknown is small: which other controls the unit draws its own way.
-Twenty-four have been read. The Mono Synth's two oscillators are the only ones
-that shorten a word; the metronome's four step cells draw circles instead of
-words, which is why that list is `drawn` rather than `audited` below. The other
-eighteen match the catalog exactly.
+Nineteen have been read - the fixture holds 24 controls, but five of those are
+records of looking and finding no control at all. Of the nineteen, the Mono
+Synth's two oscillators are the only ones that shorten a word. The metronome's
+four step cells draw circles instead of words, which is why that list is
+`drawn` rather than `audited` below. The other thirteen match the catalog
+exactly.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact
@@ -1742,7 +1745,7 @@ them. A list nobody has read says so where a caller will see it.
 parameters that carry a fixed list, because the ones in heaviest use were done
 first. The 94 unread cover 190.
 
-**What is left is not 95 equal jobs.** Ranked by how many parameters each list
+**What is left is not 94 equal jobs.** Ranked by how many parameters each list
 decides, the tail falls away fast: the biggest five cover 54 of the 190.
 `options.OPTION_USAGE` publishes the count for every list, so a session at the
 unit can be planned from the library rather than from a one-off count:
@@ -1760,14 +1763,15 @@ The two note lists are the cheap ones despite their length: a 21-entry
 reader knows what to expect and where an error would show. Of the remaining 89,
 83 decide one or two parameters each and 46 have only two positions.
 
-Eight of the 94 lists, 12 parameters between them, are carried only by models a
-user cannot PLACE: three lists and seven parameters on the Splitter family,
-whose category is hidden, and five lists and five parameters on `TempoControl`,
-which is internal and in a hidden category. That says where they sit and
-nothing about whether anyone can see them - the Tempo page is on the unit, and
-this fixture already carries four driven readings taken from it, so
-`TempoControl`'s five are a job to do rather than a dead end, and not `absent`,
-which is a record of having looked.
+Eight of the 94 lists, 12 parameters between them, sit on models a user cannot
+put on the grid: three lists and seven parameters on the Splitter family, five
+lists and five parameters on `TempoControl`.
+
+That is about where they live, not about whether anyone can see them. The Tempo
+page is on the unit and this fixture already holds four driven readings from it,
+so `TempoControl`'s five are a job still to do. None of the eight is marked
+`absent`, which this document uses only for a control somebody looked for and
+did not find.
 
 `drawn` is its own answer for one list. Every position of the metronome's
 `OFF,MUTE,DOWN,ON` was driven and read, so by position count it is complete -

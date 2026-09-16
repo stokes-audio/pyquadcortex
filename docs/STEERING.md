@@ -145,23 +145,24 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 **What changed:** two open questions moved without touching the unit, and
 `options.OPTION_USAGE` is published so the second one stops being prose.
 
-**Why - the abbreviations.** The question was whether the unit shortens the
-catalog's words by some rule, or keeps its own short words. It does neither in
-general: a Flanger Engine's `WAVEFORM` offers `Sine`, `Triangle`, `Square` and
+**Why - the abbreviations.** The question was whether the unit shortens every
+long name or just that one control. Just that one: a Flanger Engine's `WAVEFORM` offers `Sine`, `Triangle`, `Square` and
 the screen spells all of them out (read 2026-09-16 on the unit, positions 0 and
 3 driven from a host). The same word draws as `SIN` on a Mono Synth oscillator,
 so the shortening belongs to that control. The short words are not in the
 catalog either - `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the
 556,732-byte file - so nothing in it predicts a shortened control.
 
-Twenty-four controls have now been read. Two shorten, four draw circles instead
-of words, and the other eighteen match the catalog exactly.
+Nineteen controls have now been read - the readings fixture holds 24, but five
+are records of looking and finding no control. Two of the nineteen shorten a
+word, four draw circles instead of words, and the other thirteen match the
+catalog exactly.
 
-**Why - `OPTION_USAGE`.** "95 lists unread" is not 95 equal jobs: `Off,On`
+**Why - `OPTION_USAGE`.** "94 lists unread" is not 94 equal jobs: `Off,On`
 decides 222 parameters and `CHO1,CHO2` decides two. The generator now emits the
 per-list parameter count beside the audit status, so a session at the unit can
 be planned from the library. `tests/test_option_audit.py` holds the document to
-it, including that the biggest five unread lists cover 54 of the 191 - and the
+it, including that the biggest five unread lists cover 54 of the 190 - and the
 test that checked the parameter counts stopped scraping enum docstrings with a
 regex and hand-copying the three lists that have no enum, which was a stated
 blind spot in its own docstring.
