@@ -1,162 +1,123 @@
 # The hardware-in-the-loop suite
 
-Drives a real Quad Cortex over USB. This is ADR-0005's suite, and its contract is
-that **a successful run leaves the unit exactly as it found it**.
+> Purpose: how to run the hardware suite, what it promises about the unit, and the rules a test in this directory follows.
+
+This suite drives a real Quad Cortex over USB. Its contract (ADR-0005) is that a
+successful run leaves the unit exactly as it found it.
 
 ```bash
 pytest tests/hardware --hardware
 ```
 
-`pytest --hardware` from the repo root works too, since the rename described
-below, and it runs BOTH suites - the offline one and this one, against your unit.
-Name the directory unless you want that.
+`pytest --hardware` from the repo root also works, and runs both suites, the
+offline one and this one. Name the directory unless you want that.
 
-Two more options go with the flag, both from ADR-0020:
+Two more options go with the flag (ADR-0020):
 
 - `--verifies OPERATION` narrows the run to the tests marked
-  `verifies(OPERATION)`. pytest's own `-m` cannot match a marker's arguments.
+  `verifies(OPERATION)`. It refuses a name that is not an operation or that no
+  collected test names.
 - `--profile CLASSNAME` connects as that profile class instead of the one the
-  unit's identity resolves to:
+  unit's identity resolves to. That is how a unit the registry would refuse, an
+  unmeasured firmware or a Mini, gets measured. The name is a class in
+  `pyquadcortex.protocol.profiles`, or `QuadCortex` itself.
 
   ```bash
   pytest tests/hardware --hardware --profile QuadCortexMini
   ```
 
-  That is how a unit the registry would refuse - an unmeasured firmware, or a
-  Mini - gets measured by the suite that would measure it. The name is a class
-  in `pyquadcortex.protocol.profiles`, or `QuadCortex` itself; an unknown one
-  stops the run naming the real ones. Without `--hardware` it is ignored, since
-  nothing here runs at all.
+## The gate
 
-Without `--hardware` nothing here runs. A hardware test that reports itself as a
-skip in an offline run is a test nobody notices has stopped running, so it is
-never a skip - which of the two stronger things happens depends on how the path
-reached pytest:
+Without `--hardware` nothing here runs, and it is never a skip. A hardware test
+that reports itself skipped in an offline run is a test nobody notices has stopped
+running. Which of two stronger things happens depends on how pytest reached the
+path:
 
-- **Reached by walking the tree** (`pytest`, `pytest tests/`, `pytest tests/hardware`):
-  not collected at all. `pytest_ignore_collect` vetoes the file before it is even
-  imported.
-- **Named on the command line** (`pytest tests/hardware/test_write_echo.py`, or one
-  node id): the run stops with `ERROR: these tests drive a real Quad Cortex and
-  need --hardware`, naming every path it refused. pytest does not offer
-  command-line arguments to `pytest_ignore_collect` at all, so these are
-  collected first and then refused by `pytest_collection_modifyitems`; no test
-  runs, and `--collect-only` still prints the item list before it exits. The
-  refusal is loud rather than a silent deselect because you asked for those tests
-  by name and are owed the reason they did not run.
+- **Reached by walking the tree** (`pytest`, `pytest tests/`,
+  `pytest tests/hardware`): not collected at all. `pytest_ignore_collect` vetoes
+  the file before it is imported.
+- **Named on the command line** (`pytest tests/hardware/test_write_echo.py`):
+  the run stops with `ERROR: these tests drive a real Quad Cortex and need
+  --hardware`, naming every path it refused. pytest does not consult
+  `pytest_ignore_collect` for a path named on the command line, so these are
+  collected first and then refused by `pytest_collection_modifyitems`. The
+  refusal is loud because you asked for those tests by name.
 
-Both halves are pinned offline in `tests/test_hardware_gate.py`, in a subprocess
-running the developer's own command. The second half was missing until
-2026-08-28: pytest exempts an initial command-line path from
-`pytest_ignore_collect` (`Dir.collect` skips the hook for anything
-`Session.isinitpath` claims - `_pytest/main.py`, pytest 9.1.1), so a named path
-walked straight past the flag, and with a unit attached those tests ran and drove
-it. That exemption is observed in pytest's code and absent from its hookspec,
-which says the hook is consulted for every file and directory - so treat it as
-behaviour rather than a promise. Nothing here depends on which it is: if pytest
-ever closes the gap, a named path stops being collected and the tests in
-`tests/test_hardware_gate.py` fail on the exit code they assert.
+The gate is those two hooks in `conftest.py`, and it stays two. Folding them into
+one restores the bug for whichever half is dropped. `tests/test_hardware_gate.py`
+holds both halves in a subprocess. If collection itself fails first, pytest stops
+there and the refusal never speaks.
 
-One seam worth knowing, because it is not this gate's doing: if collection
-itself fails first, pytest stops there and the refusal never gets to speak.
-Nothing runs in that case either - you just get pytest's collection error
-instead of the message naming the flag.
+**A module here needs a basename no module under `tests/` owns**, which is why
+files end in `_on_unit`. pytest maps `tests/hardware/test_scales.py` and
+`tests/test_scales.py` to one module name and refuses the second, so the whole
+tree stops collecting. Rename; do not make `tests/` a package, because three
+offline modules do `from waiting import ...`, which works only while pytest puts
+`tests/` on `sys.path`.
 
-That is why files here end in `_on_unit`. **A module in this directory needs
-a basename no module under `tests/` already owns.** pytest maps
-`tests/hardware/test_scales.py` and `tests/test_scales.py` to one module name and
-refuses the second, which until 2026-08-28 meant `pytest --hardware` from the
-repo root could not collect this suite at all - two collection errors, exit 2 -
-and only the documented `pytest tests/hardware --hardware` worked. Renaming was
-the fix rather than making `tests/` a package, because three offline modules do
-`from waiting import ...`, which works only while pytest keeps putting `tests/`
-on `sys.path`. `tests/test_hardware_gate.py` now fails if the whole tree stops
-collecting under the flag, so the rule does not depend on being remembered.
+## What a test here does
+
+- **It names what it verifies.** `@pytest.mark.verifies(*operations)` lists the
+  `QuadCortex` operations the test both exercises and asserts on, checked against
+  `QuadCortex.operations()` at collection. An operation no test names has to
+  appear in `UNMARKED_OPERATIONS` in `tests/test_hardware_markers.py` with the
+  reason.
+- **It restores what it touched**, in teardown, pass or fail. The `restores`
+  fixture re-raises at the end naming every item it could not put back. Global
+  settings are the ones to check first after a failure, since they survive a
+  preset recall.
+- **It edits a scratch copy.** `scratch_preset` hands a test a disposable copy of
+  the loaded preset. Nothing here saves a preset, so if a run dies badly,
+  recalling any preset discards whatever it left on the grid.
 
 ## Before you run it
 
-- **Quit Cortex Control.** It holds the USB HID interface exclusively.
-- Expect the unit to be edited. Every test snapshots what it touches and restores
-  it in teardown, pass or fail, but the edits are real while they happen.
-- Nothing here saves a preset, so the unsaved-edit escape hatch still applies: if
-  a run dies badly, recalling any preset discards whatever it left on the grid.
+- Quit Cortex Control. It holds the USB HID interface exclusively.
+- Expect the unit to be edited. The edits are real while they happen.
+- `test_model_state.py` needs a loaded preset with no unsaved changes, because
+  `PresetDirty` announces a change of the flag rather than an edit, so only the
+  first edit of a run produces one. The test skips with a message if the preset
+  arrives already dirty. Save or reload the preset on the unit and run again.
 
-## If a restore fails
-
-The `restores` fixture re-raises at the end of the test naming **every** item it
-could not put back, rather than aborting on the first. That message is the list
-to fix by hand. Global settings are the ones worth checking first, since they
-survive a preset recall.
-
-## One connection, and why it records the connect burst
+## One connection, and the connect burst
 
 Every test shares one connection, because the unit lets only one process hold the
-HID interface - a test that opened a second one would fail on whatever order it
-happened to run in.
+HID interface.
 
 That connection attaches a listener before the handshake and records the type of
-every message the unit pushes. It is attached on every run, not only for the tests
-that read it, because it cannot be attached later: the burst happens during
-`connect()`.
+every message the unit pushes. It is attached on every run because it cannot be
+attached later: the burst happens during `connect()`. The fixture registers the
+model's cache before the recorder, then waits for the burst to finish before
+handing the connection to the first test, and stops the recorder there. The
+recording is therefore exactly the burst.
 
-The fixture then waits for the burst to finish before handing the connection to
-the first test, and stops the recorder there. The recording is therefore exactly
-the burst, whatever order the tests run in. The metronome's tempo stream never
-stops, so a recorder left running would hold the whole run's traffic and a test
-asserting on it would really be asserting on whatever other tests provoked first.
+The burst is waited for as a group. `HandshakeBurst.BURST_TAIL` names the four
+messages that close it: `RecallPreset`, `SetlistPosition`, `PresetDirty`,
+`Scene`. `RecallPreset` is the first of the four and the other three trail it by
+3.6 to 6.0 ms against a 100 ms poll, so waiting for `RecallPreset` alone lost one
+of the others a few runs in a hundred. `unfinished()` names what never arrived,
+in the run's own report and in the tests that guard on it.
 
-The wait costs about 9 seconds once per run and buys more than it costs.
-`connect()` returns roughly 3 seconds before the unit starts streaming several
-hundred messages, so without it every latency measurement below would be taken on
-a link still busy answering the handshake.
+A new cache entry comes through `BURST_TAIL`, `OUTSIDE_THE_BURST` or
+`NOT_WARMED_BY_THE_BURST` in `tests/test_handshake_burst_recorder.py`, with its
+reason. That file also pins offline the three ways a recorder can look like it is
+working and not be: setting its flag and recording on, stopping but staying
+attached, and stopping on the first message of the group.
 
-The burst test's `assert handshake_burst.closed` and `unfinished() is None` are
-what hold that up. They are not belt-and-braces: they are the only things that
-fail if the fixture stops waiting for the burst, since every other assertion in
-that test is a floor and contamination satisfies a floor. Do not delete them as
-redundant. `unfinished()` also prints once in the run's own report, so a cut-off
-burst is named even on a run that deselects all three tests that guard on it.
+The wait costs about 9 seconds once per run. `connect()` returns about 3 seconds
+before the unit starts streaming several hundred messages, so without it every
+latency measurement below would be taken on a busy link.
 
-What they cannot see is a recorder that sets its flag and keeps recording anyway,
-one that stops recording but stays attached to the transport, or one that stops
-on the FIRST message of the burst's closing group instead of the whole of it.
-All three read like a working recorder from the outside - the last of them on
-all but a few runs in a hundred - so all three are pinned offline in
-`tests/test_handshake_burst_recorder.py`.
-
-## The model's cache rides the same connection
-
-`test_model_state.py` covers the model's state layer, and the connection fixture
-attaches a `DeviceState` before the handshake for the same reason it attaches the
-burst recorder: that is the only moment early enough. It stays attached for the
-whole run and costs the RX thread one small message copy per `Version` or
-`PresetDirty` push - nothing at all for anything else, and orders of magnitude
-under the latencies measured below.
-
-It needs one thing of the unit that nothing else here does: **a loaded preset with
-no unsaved changes**. `PresetDirty` announces a CHANGE of the flag rather than an
-edit, so only the first edit of a run produces an announcement, and the test that
-proves an outside edit reaches the model needs that announcement. It skips with a
-message saying so if the preset arrives already dirty. If you see that skip, save
-or reload the preset on the unit and run again.
-
-## Why the control test exists
+## The control test
 
 `test_parameter_echo_latency_is_the_control` measures a write whose latency was
-already known from earlier work (113-116 ms) using the same harness as everything
-else, and asserts the answer. The first version of this file reported 2-11 ms for
-all five unmeasured write types, which looked like a discovery and was very nearly
-recorded as one. Any harness that measures something should measure a known
-quantity alongside it.
+already known (113 to 116 ms) with the same harness as everything else, and
+asserts the answer. A harness that measures something should measure a known
+quantity alongside it: an earlier harness reported 2 to 11 ms for five write
+types because its predicate matched the wrong message.
 
-The control only proves the harness matches the right message **for the write type
-it measures**, so it is not a blanket guarantee for the others. That is why every
-predicate in this file matches on CONTENT - the value written, at the index written
-- rather than on message type alone. A type-only match is what produced the 2-11 ms
-band, and the three fastest write types are the ones where it is most tempting,
-because their echoes are single messages that look unambiguous.
-
-Each measurement also asserts an upper bound derived from `set_block`'s timeout,
-which is the one echo watcher the library ships. These numbers exist to justify
-that timeout, so a latency creeping toward it has to fail here rather than leave
-the suite green and the documented figure stale.
+The control proves the harness only for the write type it measures. So every
+predicate in `test_write_echo.py` matches on content, the value written at the
+index written, rather than on message type alone. Each measurement also asserts an
+upper bound derived from `set_block`'s timeout, so a latency creeping toward it
+fails here rather than leaving the documented figure stale.
