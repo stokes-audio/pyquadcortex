@@ -1651,9 +1651,12 @@ holding constant even though the section above rules it OUT as a rule: ruling it
 out as SUFFICIENT is not ruling it out as necessary, and a `comboBox` reading
 would confound the two.
 
-What the read establishes is one thing. If `Sine` and `Square` draw `SIN` and
-`SQR` on a control with no other relationship to the Mono Synth, the
-abbreviation travels with the STRINGS. If they draw in full, it does not - and
+What the read establishes is narrower than it looks, and the paragraph above
+says why: `Flanger Engine`'s `WAVEFORM` is itself a waveform picker, and its
+widget type was held constant ON PURPOSE. So if `Sine` and `Square` draw `SIN`
+and `SQR` there, the abbreviation travels with something those two controls
+SHARE - the strings, or waveform pickers, or a `rotarySwitch` - and the read
+does not choose between them. If they draw in full, none of the three is it, and
 what it travels with instead stays open, because the two controls differ in more
 than the one variable held constant. `OSC1 WAVE` and `OSC2 WAVE` are `hidden`
 parameters and `Flanger Engine`'s `WAVEFORM` is not; the Mono Synth's list is
@@ -1814,12 +1817,11 @@ reader knows what to expect and where an error would show. Of the remaining 90,
 Eight of the 95 lists, 12 parameters between them, are carried only by models a
 user cannot PLACE: three lists and seven parameters on the Splitter family,
 whose category is hidden, and five lists and five parameters on `TempoControl`,
-which is internal and in a hidden category. None of the twelve is reached
-through a hidden parameter on a placeable model. That says where they sit and
+which is internal and in a hidden category. That says where they sit and
 nothing about whether anyone can see them - the Tempo page is on the unit, and
 this fixture already carries four driven readings taken from it, so
-`TempoControl`'s five are a job to do rather than a dead end. None of the eight
-is `absent`, which is a record of having looked.
+`TempoControl`'s five are a job to do rather than a dead end, and not `absent`,
+which is a record of having looked.
 
 `drawn` is its own answer for one list. Every position of the metronome's
 `OFF,MUTE,DOWN,ON` was driven and read, so by position count it is complete -

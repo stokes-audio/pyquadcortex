@@ -430,7 +430,10 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
     Column three is checked where the row quotes the label tuple literally,
     which three of the five do; the other two describe their list in prose
     (``a 17-entry `SYNC NOTE` ``) because quoting seventeen note values in a
-    table cell would be unreadable.
+    table cell would be unreadable. For those two only the COUNT in the
+    description is held against the snapshot - ``a 17-entry `PRE ROLL` `` would
+    pass, because the control name in a prose cell is the same kind of claim as
+    column four and needs the same payload to check.
 
     What this does NOT check, and cannot offline: column four, the model the
     control appears on. Confirming a model name needs the `ModelRepo` payload,
@@ -490,9 +493,10 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
 def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
     """What `docs/domain-model.md` points the next hardware session at.
 
-    Four answers are live for what the firmware scopes its abbreviations to,
-    and the document names the reads that narrow them. Those reads are only
-    available while the lists are unread, and only informative while they share
+    How widely the firmware applies its abbreviations is unmeasured, and the
+    document deliberately does not enumerate the possible scopes - it names one
+    read and says what that read can and cannot separate. The read is only
+    available while the list is unread, and only informative while it shares
     strings with the Mono Synth's - both properties of the snapshot, so they
     are checked rather than asserted in prose.
 
@@ -529,18 +533,25 @@ def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
         f"the Mono Synth's, which is why the confound cannot be designed away. "
         f"The snapshot has {sorted(sharing)}")
 
-    text = " ".join(
-        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
-        .read_text(encoding="utf-8").split())
+    doc = (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+    text = " ".join(doc.read_text(encoding="utf-8").split())
     assert f"`{','.join(tremolo)}`" in text, (
         "docs/domain-model.md no longer quotes the shared list it points the "
         "next read at")
-    for model in ("Tremolo", "Harmonic Tremolo", "Flanger Engine"):
+    for model in ("`Tremolo`", "`Harmonic Tremolo`", "`Flanger Engine`"):
         assert model in text, (
             f"docs/domain-model.md no longer names {model}, one of the three "
             f"controls carrying a list that shares a string with the Mono "
-            f"Synth's")
-    assert "Read `Flanger Engine` first" in text, (
-        "docs/domain-model.md must point the read at `Flanger Engine`, whose "
-        "`WAVEFORM` holds the widget type constant against `OSC1 WAVE`. It "
-        "named `Tremolo` for two rounds, which is a `comboBox`")
+            f"Synth's. Backticked on purpose - a bare \"Tremolo\" is satisfied "
+            f"by \"Harmonic Tremolo\" alone")
+
+    # Both documents have drifted back to `Tremolo` once, so both are pinned.
+    steering = (pathlib.Path(__file__).parents[1] / "docs" / "STEERING.md")
+    for path, phrase in ((doc, "Read `Flanger Engine` first"),
+                         (steering, "`Flanger Engine` `WAVEFORM` read")):
+        body = " ".join(path.read_text(encoding="utf-8").split())
+        assert phrase in body, (
+            f"{path.name} must point the read at `Flanger Engine`, whose "
+            f"`WAVEFORM` holds the widget type constant against `OSC1 WAVE`. "
+            f"It said `Tremolo` for two rounds, and `Tremolo`'s is a "
+            f"`comboBox`")
