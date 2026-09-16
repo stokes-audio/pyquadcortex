@@ -142,8 +142,9 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ### 2026-09-16 - The unit shortens one control's words, and the unread audit work is ranked
 
-**What changed:** one open question was settled by a reading on the unit, and
-`options.OPTION_USAGE` is published so the second stops being prose.
+**What changed:** the abbreviation question was settled by a reading on the
+unit, and `options.OPTION_USAGE` is published so the size of the remaining
+audit work stops being prose.
 
 **Why - the abbreviations.** The question was whether the unit shortens every
 long name or just that one control. Just that one: a Flanger Engine's

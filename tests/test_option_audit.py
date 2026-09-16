@@ -572,9 +572,10 @@ def test_the_ranking_recipe_the_changelog_publishes_actually_works():
     key, the changelog's grew a tiebreak, the two orders diverged from index 9,
     and the test passed anyway because it only ever read the first entry.
 
-    `tests/test_docs.py` covers the fences under `docs/`; `changelog.md` sits
-    at the repo root and is outside its glob, so the one snippet a reader is
-    most likely to copy had nothing running it.
+    `tests/test_docs.py` does read `changelog.md`'s fences - it is in that
+    file's `SNIPPET_SOURCES` - but it only `ast.parse`s them, looking for wrong
+    keywords and bare numbers. Nothing RAN the one snippet a reader is most
+    likely to copy, or checked the answer it publishes in a comment.
     """
     import re
 

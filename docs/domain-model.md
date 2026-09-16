@@ -1611,22 +1611,18 @@ The short words are not in the file either:
 What the reading rules out is the catalog's TEXT. It does not rule out the
 catalog predicting the shortening some other way, and there is a candidate in
 plain sight: both controls that shorten carry `hidden="true"` on the PARAMETER,
-and the Flanger's `WAVEFORM` does not. Of the nineteen controls read:
+and the Flanger's `WAVEFORM` does not. Five more hidden parameters were looked
+for and were not on the screen at all.
 
-- two shorten, and both are hidden parameters;
-- thirteen are not hidden and match the catalog exactly;
-- four are the metronome's cells, which are NOT hidden parameters and depart
-  from the catalog anyway, by drawing circles instead of words. Their model is
-  `internal` inside a hidden category, which is a different attribute again.
+Do not turn that into a rule. Two positives is not a rule, and `Parameter.hidden`
+is the exact flag ADR-0010 caught this repo trusting once already, which is why
+a list is never marked `absent` from it. The metronome's four cells argue the
+other way: they are NOT hidden parameters and they depart from the catalog
+anyway, drawing circles instead of words. Their model is `internal` inside a
+hidden category, which is a third attribute again.
 
-Five more hidden parameters were looked for and were not on the screen at all.
-
-Do not turn that into a rule. It is two positives, on the exact flag ADR-0010
-caught this repo trusting once already - which is why a list is never marked
-`absent` from it, and the metronome row above is a standing counterexample to
-the looser reading of it. What the reading establishes is the narrow thing: the
-catalog's WORDS do not predict the shortening, because the same word renders
-both ways.
+What the reading establishes is the narrow thing: the catalog's WORDS do not
+predict the shortening, because the same word renders both ways.
 
 Nineteen controls have been read - the fixture holds 24, but five of those are
 records of looking and finding no control at all. Of the nineteen, the Mono
