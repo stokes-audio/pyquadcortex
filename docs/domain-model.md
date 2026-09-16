@@ -1519,20 +1519,33 @@ receives was taken out of the capture and read:
   `Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198
   / 1.187 seconds after the session's first message in the three captures. The
   reply is 46,713 / 46,723 / 46,702 bytes.
-- **That reply contains the strings.** Reassembled out of all three pcapng
-  files and inflated, it is a 558,592-byte tar holding one member,
+- **That reply contains the strings.** Reassembled independently from each of
+  the three captures and inflated, it is a 558,592-byte tar holding one member,
   `ModelRepo.xml`, 556,732 bytes, carrying 539 `stepNames` attributes -
   including `stepNames="Sine,Triang,Sawtooth,Square,Pulse,Pink NS,White NS"`.
-  The three sessions give byte-identical XML.
 
-So the vocabulary a host renders is handed to it, in full, before the host
-does anything else. The same file is what this library reads live through
-`research/scripts/dump_model_repo.py` in the `quad-cortex` lab repo.
+Three artifacts, three different answers about sameness, and they must not be
+run together. The compressed payloads on the wire DIFFER (46,713 / 46,723 /
+46,702 bytes; the gzip header alone carries a different MTIME each time). The
+inflated XML differs in 4,800 and 4,825 bytes against session 01 - and every
+one of those bytes is inside a `blob="..."` attribute, 338 of the 351 changing
+between fetches, which is what the appendix below already records about `blob`.
+Strip that one attribute and all three are byte-identical, 551,715 bytes,
+and so is the catalog this library dumped live off the unit on 2026-07-26
+(`research/catalog/ModelRepo.xml` in the lab repo). The vocabulary itself is
+identical in all four: the same 539 `stepNames`, 655 `id` and 4,374 `name`
+attributes, byte for byte.
 
-**How to repeat it.** `research/scripts/decode_capture.py` in that repo already
-does the reassembly - accumulate INPUT reports until `framing.is_complete`,
-resync on FIRST - and its committed timelines show the message. With tshark
-absent, the same loop runs off the pcapng directly by keeping USBPcap records
+So a host is handed the whole vocabulary, in full, before it does anything
+else. What was observed is the DELIVERY; nobody here watched Cortex Control
+draw from it.
+
+**How to repeat it.** `research/scripts/decode_capture.py` in the `quad-cortex`
+lab repo already does the reassembly - accumulate INPUT reports until
+`framing.is_complete`, resync on FIRST - and its committed timelines show the
+message; it needs tshark, and it predates `decode_reports` returning a `Frame`.
+With tshark absent, the same loop runs off the pcapng directly by keeping
+USBPcap records
 that are interrupt transfers, device-to-host, completion, carrying a 129-byte
 body, and no others. That last clause is the whole trick: an earlier attempt
 swept in the control-transfer records on the same endpoint, which split the

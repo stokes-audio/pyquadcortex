@@ -149,10 +149,12 @@ downloadable. That is wrong, and the captures we already had say so. Corrected i
 **Why.** The reply Cortex Control receives was read. It fetches `ModelRepo` as
 the third message type of every session - after `ResetCommsBuffers` and
 `Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198 /
-1.187 seconds in. Reassembled out of all three pcapng files and inflated, it is
-a 558,592-byte tar holding one 556,732-byte `ModelRepo.xml` with 539 `stepNames`
-attributes, `stepNames="Sine,Triang,...,Pink NS,White NS"` among them, identical
-in all three. Two earlier drafts got this wrong in opposite directions: one
+1.187 seconds in. Reassembled independently from each of the three captures and
+inflated, it is a 558,592-byte tar holding one 556,732-byte `ModelRepo.xml` with
+539 `stepNames` attributes, `stepNames="Sine,Triang,...,Pink NS,White NS"` among
+them. The three are not byte-identical and the doc says exactly where they
+differ: only inside the 338 changing `blob` tokens, with the vocabulary the same
+in all three and in the catalog dumped live off the unit. Two earlier drafts got this wrong in opposite directions: one
 argued it by elimination - nothing else is big enough - which is false, since
 `File` carries 885-report messages and preset bodies carry `dynamic_steps`; the
 other called the reassembly unachievable, when the lab repo's own
