@@ -1644,22 +1644,21 @@ is a waveform picker.
 
 Read `Flanger Engine` first, because it holds the WIDGET TYPE constant: its
 `WAVEFORM` is a `rotarySwitch` like `OSC1 WAVE`, while `Tremolo`'s is a
-`comboBox`, a type nothing in the readings fixture has ever been read on - 129
-of its 133 rows are 115 `rotarySwitch` and 14 `switch`, and the last four are
-the Tempo page's `STEPSTATE0..3`, which are `type="empty"` - catalog parameters
-like the rest, findable only by parameter index because the fixture records no
-`model_id` for that page. Widget type needs
-holding constant even though the section above rules it OUT as a rule: ruling it
-out as SUFFICIENT is not ruling it out as necessary, and a `comboBox` reading
-would confound the two.
+`comboBox`, a type nothing in the readings fixture has ever been read on. Its
+133 rows are 115 `rotarySwitch`, 14 `switch` and four `type="empty"` - the last
+being the Tempo page's `STEPSTATE0..3`, catalog parameters like the rest,
+findable only by parameter index because the fixture records no `model_id` for
+that page. Widget type needs holding constant even though the section above
+rules it OUT as a rule: ruling it out as SUFFICIENT is not ruling it out as
+necessary, and a `comboBox` reading would confound the two.
 
 What the read establishes is narrower than it looks, and the paragraph above
 says why: `Flanger Engine`'s `WAVEFORM` is itself a waveform picker, and its
 widget type was held constant ON PURPOSE. So it cuts one way only.
 
-`SIN`/`SQR` there rules out every scope PRIVATE to the Mono Synth - this model,
-these `hidden` parameters, this list - and leaves whatever the two controls
-share. That is not a set anyone can close from here. The strings and
+`SIN`/`SQR` there rules out every scope the Flanger's control does NOT satisfy -
+this model, `hidden` parameters, this list - and leaves whatever the two
+controls share. That is not a set anyone can close from here. The strings and
 waveform-picker-ness are the two worth naming; both lists are also seven
 positions long; and nothing says those are all. The widget type is NOT on that
 list, because a `rotarySwitch` on its own is already disproved: `Looper X`'s
@@ -1669,9 +1668,9 @@ a CONDITION on one of the others, which is the only reason the read holds it
 constant.
 
 Drawing in FULL cuts the other way, and only that far: the scope keys on
-something the two controls DIFFER on. Which one stays open, and do not read that
-as "private to the Mono Synth" - two of the three differences are not private at
-all. `OSC1 WAVE` and `OSC2 WAVE` are `hidden` parameters and `Flanger Engine`'s
+something the two controls DIFFER on. Which one stays open, and do not collapse
+that into "private to the Mono Synth" - two of the three differences are not
+private at all. `OSC1 WAVE` and `OSC2 WAVE` are `hidden` parameters and `Flanger Engine`'s
 `WAVEFORM` is not, and `hidden` marks 132 list-carrying parameters across 54
 models, so "the firmware abbreviates hidden list parameters" is a catalog-wide
 scope a verbatim reading leaves entirely intact. The Mono Synth's list is drawn
