@@ -364,34 +364,24 @@ def test_the_document_quotes_the_same_parameter_counts():
 
     `docs/domain-model.md` states how many PARAMETERS each part of the audit
     covers, and those are the numbers a reader cares about - 12 lists sounds
-    small and 287 parameters does not. They were wrong twice on this branch,
+    small and 287 parameters does not. They were wrong twice on one branch,
     once as a silent regression, because nothing derived them.
 
-    Derived here from the generated enums' own docstrings, which state how many
-    parameters use each list, plus the three lists that get no enum. So this
-    fails if the document drifts OR if the snapshot changes underneath it.
+    Derived here from `options.OPTION_USAGE`, which the generator emits from
+    the catalog beside the audit. It used to be scraped out of the enums'
+    docstrings with a regex, with the three lists that get no enum hand-copied
+    into this file - so an error in the split between the two Off/On spellings
+    cancelled out and nothing here could see it. Now every list is counted the
+    same way, and this fails if the document drifts OR if the snapshot changes
+    underneath it.
     """
-    import re
-
-    source = pathlib.Path(generated.__file__).read_text(encoding="utf-8")
-    uses = {}
-    for match in re.finditer(
-            r"class (\w+)\(IntEnum\):\n    \"\"\"(\d+) parameters? use this list",
-            source):
-        uses[tuple(options.OPTION_LABELS[getattr(options, match.group(1))])] = \
-            int(match.group(2))
-    # The three with no enum. These three are HAND-COUNTED - they have no
-    # generated docstring to read them off - so only their total is load
-    # bearing: an error in the split between the two Off/On spellings cancels
-    # out and nothing here would see it. Both are audited, so the split
-    # contributes to no assertion today.
-    uses[("Off", "On")] = 222
-    uses[("OFF", "ON")] = 25
-    uses[("OFF", "MUTE", "DOWN", "ON")] = 13
+    assert set(options.OPTION_USAGE) == set(options.OPTION_AUDIT), (
+        "every fixed list is in both tables, or one of them is not about all "
+        "of them")
 
     per_status = collections.defaultdict(int)
     for labels, status in options.OPTION_AUDIT.items():
-        per_status[status] += uses[labels]
+        per_status[status] += options.OPTION_USAGE[labels]
     assert sum(per_status.values()) == 527
 
     text = " ".join(
@@ -402,3 +392,28 @@ def test_the_document_quotes_the_same_parameter_counts():
         assert phrase in text, (
             f"docs/domain-model.md does not say {phrase!r}. The parameter "
             f"counts moved and the document did not.")
+
+
+def test_the_unread_work_is_long_tailed_and_the_document_says_so():
+    """What is left is not 95 equal jobs, and planning one needs the shape.
+
+    Ranked by how many parameters each decides, the unread lists fall away
+    fast. The document names the biggest few so a session at the unit can be
+    planned; without a derived check that ranking rots the first time the
+    snapshot moves.
+    """
+    unread = sorted(
+        (labels for labels, status in options.OPTION_AUDIT.items()
+         if status is None),
+        key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
+    total = sum(options.OPTION_USAGE[labels] for labels in unread)
+    top5 = sum(options.OPTION_USAGE[labels] for labels in unread[:5])
+    assert (len(unread), total) == (95, 191)
+
+    text = " ".join(
+        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+        .read_text(encoding="utf-8").split())
+    phrase = f"biggest five cover {top5} of the {total}"
+    assert phrase in text, (
+        f"docs/domain-model.md does not say {phrase!r}. The ranking moved and "
+        f"the document did not.")

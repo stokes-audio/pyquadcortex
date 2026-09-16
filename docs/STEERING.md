@@ -140,6 +140,38 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-15 - The abbreviations are not in the file, and the unread audit work is ranked
+
+**What changed:** two open questions moved without touching the unit, and
+`options.OPTION_USAGE` is published so the second one stops being prose.
+
+**Why - the abbreviations.** The question recorded was whether `SIN`/`WHT` are a
+rule applied to `stepNames` or a firmware table. Neither needed hardware to
+narrow. `WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
+`ModelRepo.xml`, and the `SIN`/`TRI`/`PUL` hits are all inside `SINGLE`,
+`TRIG`/`TRIM` and `PULL` - so there is no unparsed short-label attribute, and
+whatever holds those words is in the firmware. And it is not a general rule over
+`stepNames`: the readings already in the fixture rule that out on length and on
+widget type at once, since `RECORD MODE` draws `Momentary` at nine characters
+where `White NS` is eight and draws `WHT`, and `PRE ROLL`, `TAP PRESET` and
+`SYNC NOTE` are `rotarySwitch` exactly like `OSC1 WAVE` yet draw `2 BARS`,
+`4 Alt` and `1/64T` verbatim. What is left unmeasured is narrower: whether the
+firmware keys a table on those strings or transforms them. A 4.1.0 catalog is
+still the cheap first step.
+
+**Why - `OPTION_USAGE`.** "95 lists unread" is not 95 equal jobs: `Off,On`
+decides 222 parameters and `CHO1,CHO2` decides two. The generator now emits the
+per-list parameter count beside the audit status, so a session at the unit can
+be planned from the library. `tests/test_option_audit.py` holds the document to
+it, including that the biggest five unread lists cover 54 of the 191 - and the
+test that checked the parameter counts stopped scraping enum docstrings with a
+regex and hand-copying the three lists that have no enum, which was a stated
+blind spot in its own docstring.
+
+**Scope of impact:**
+- **Updated:** `CLAUDE.md`, this file, `docs/domain-model.md`, `changelog.md`, `scripts/generate_options.py`, the 4.0.1 snapshot's `options.py`, `pyquadcortex/protocol/options.py` (the shim's explicit re-export), `tests/test_option_audit.py`, `tests/test_options.py`
+- **Not updated (intentionally):** `ADR.md` - this narrows two questions already recorded in the appendix rather than deciding anything. No hardware test: both findings are about a file and about readings already taken, and neither has a hook on the wire.
+
 ### 2026-09-15 - The catalog IS the conveyed vocabulary; the unit's screen is a second renderer
 
 **What changed:** the rule added earlier the same day said presentation is not

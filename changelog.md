@@ -20,6 +20,29 @@ correction.
 
 ## Unreleased
 
+### New: `options.OPTION_USAGE` says how many parameters each option list decides
+
+`OPTION_AUDIT` tells you whether anybody has held a list against the unit's
+screen. It does not tell you how much rides on the answer, and that is the other
+half of the question: `Off,On` decides 222 parameters and `CHO1,CHO2` decides
+two, so "95 lists unread" is not 95 equal jobs.
+
+`OPTION_USAGE` publishes the count for every fixed list, keyed by the labels
+exactly as the audit is, generated from the catalog in the same pass:
+
+```python
+from pyquadcortex.protocol import options
+
+unread = [labels for labels, status in options.OPTION_AUDIT.items()
+          if status is None]
+unread.sort(key=lambda labels: -options.OPTION_USAGE[labels])
+options.OPTION_USAGE[unread[0]]   # 14 - the biggest list nobody has read
+```
+
+On the 4.0.1 snapshot that is 527 parameters across 113 lists, of which 191
+across 95 lists are unread. Those numbers were being quoted in prose from
+one-off counts; now the document is held against the snapshot.
+
 ### Fixed: two guitar amps had no constant and could not be named
 
 `Bogna Uber Clean` and `Bogna Uber Lead` are ordinary amps your unit will place

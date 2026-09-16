@@ -1593,10 +1593,31 @@ So there are two renderers over one source, and they do not agree. The unit
 draws `SIN`, `TRI`, `WHT` and a row of icons where the catalog writes `Sine`,
 `Triang`, `White NS`. `SIN` and `TRI` are plainly truncations; `WHT` and `PNK`
 are not truncations of `White NS` and `Pink NS`, so no single transform explains
-both, and a firmware abbreviation table is at least as likely as a rule applied
-to `stepNames`. **Which it is has not been measured** - it would need either a
-catalog whose `stepNames` the firmware has never met, or a look inside the
-firmware. A 4.1.0 catalog compared against 4.0.1's would be the cheap first
+both.
+
+Two things about that are now settled, both off the catalog and the readings
+already recorded, neither needing the unit.
+
+**The abbreviations are not in the file.** `WHT`, `PNK`, `SAW` and `SQR` appear
+zero times in the 556,732-byte `ModelRepo.xml`; the only hits for `SIN`, `TRI`
+and `PUL` are inside `SINGLE`, `TRIG`/`TRIM` and `PULL`, and not one of the
+seven is a standalone attribute value or list entry anywhere. So there is no
+unparsed short-label attribute waiting to be found: whatever holds these words
+is in the firmware.
+
+**And it is not a rule the firmware applies to `stepNames` generally.** The
+readings rule that out on length and on widget type at once. `RECORD MODE`
+draws `Momentary` - nine characters, driven and read back - where `White NS` is
+eight and draws `WHT`, so nothing length-driven is happening. And `PRE ROLL`,
+`TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"` exactly like `OSC1 WAVE`,
+and all three render their catalog strings verbatim: `2 BARS`, `4 Alt`, `1/64T`.
+Whatever abbreviates this list is scoped to this control - the one the unit also
+draws as icons - and not to a type or a length.
+
+**What is still unmeasured** is whether the firmware holds a table keyed on
+those exact strings or applies some transform of its own to them, and that needs
+either a catalog whose `stepNames` the firmware has never met, or a look inside
+the firmware. A 4.1.0 catalog compared against 4.0.1's would be the cheap first
 step, and no 4.1.0 snapshot is in this repo.
 
 The practical consequence is the one that matters: a reading taken off the
@@ -1726,6 +1747,27 @@ them. A list nobody has read says so where a caller will see it.
 95 unread**, of 113 fixed lists. Those thirteen read lists cover 300 of the 527
 parameters that carry a fixed list, because the ones in heaviest use were done
 first. The 95 unread cover 191.
+
+**What is left is not 95 equal jobs.** Ranked by how many parameters each list
+decides, the tail falls away fast: the biggest five cover 54 of the 191, and
+most of the rest are two-position lists deciding one or two controls each.
+`options.OPTION_USAGE` publishes the count for every list, so a session at the
+unit can be planned from the library rather than from a one-off count:
+
+| parameters | positions | list | somewhere it appears |
+|---|---|---|---|
+| 14 | 17 | a 17-entry `SYNC NOTE` | Vibrato / `SYNC NOTE` |
+| 12 | 3 | `Small,Med,Large` | Ambience / `SIZE` |
+| 11 | 3 | `Off,Duck,Gate` | Digital Delay (ST) / `DYN MODE` |
+| 9 | 14 | a 14-entry `SYNC NOTE` | Dual Chorus / `SYNC NOTE` |
+| 8 | 3 | `Normal,Thick,Thicker` | CA 1Star Clean 50W Normal / `EQ` |
+
+The two note lists are the cheap ones despite their length: a 21-entry
+`SYNC NOTE` is already audited, and these two are its shorter siblings, so a
+reader knows what to expect and where an error would show. Eight of the 95
+lists, 12 parameters between them, are carried only by models a user cannot
+place or by parameters marked hidden - so nobody has a way to look at them yet,
+and they are NOT `absent`, which is a record of having looked.
 
 `drawn` is its own answer for one list. Every position of the metronome's
 `OFF,MUTE,DOWN,ON` was driven and read, so by position count it is complete -
