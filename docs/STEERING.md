@@ -157,18 +157,21 @@ set: first-three gives `SIN`/`TRI`/`SAW`/`PUL` from `Sine`/`Triang`/`Sawtooth`/
 that draws `WHT` carries the string `Pink NS`, the one the catalog gets WRONG,
 so no shortening of it arrives at `WHT` at all. Length is not the rule either -
 `RECORD MODE` draws `Momentary`
-at nine characters while `Sawtooth` at eight draws `SAW` - nor the widget type,
-since `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `rotarySwitch` on the models
-they were read on, exactly like `OSC1 WAVE`, yet draw `2 BARS`, `4 Alt` and
-`1/64T` verbatim. What is left unmeasured is what the firmware scopes the
-abbreviation to, and FOUR answers are live: the strings, waveform selectors, the
-widget type, or that one control. There IS a hook, already inside the ranking
-below - `Flanger Engine`'s `WAVEFORM` is placeable, unread, shares `Sine` and
-`Square` with the Mono Synth's, and is a `rotarySwitch` like `OSC1 WAVE`, which
-holds the widget type constant. It narrows rather than chooses, because every
-list sharing a string is also a waveform picker. All four answers and what each
-read can conclude are written into `docs/domain-model.md` before the read rather
-than after it.
+at nine characters while `Sawtooth` at eight draws `SAW`. And the widget type is
+not SUFFICIENT - `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `rotarySwitch` on
+the models they were read on, exactly like `OSC1 WAVE`, yet draw `2 BARS`,
+`4 Alt` and `1/64T` verbatim - which does not rule it out as necessary.
+
+How widely the firmware applies the abbreviation is unmeasured, and the document
+deliberately does NOT enumerate the possible scopes and call the list closed;
+ADR-0010's lesson is that plausible rules lose to measured ones, and this
+paragraph's enumeration was reopened twice while the branch was in review. There
+IS a hook, already inside the ranking below: `Flanger Engine`'s `WAVEFORM` is
+placeable, unread, shares `Sine` and `Square` with the Mono Synth's, and is a
+`rotarySwitch` like `OSC1 WAVE`, so it holds the widget type constant. What that
+read establishes and what it leaves open - the two controls also differ on
+`Parameter.hidden`, on whether the list is drawn as icons, and on the model - is
+written into `docs/domain-model.md` before the read rather than after it.
 
 **Why - `OPTION_USAGE`.** "95 lists unread" is not 95 equal jobs: `Off,On`
 decides 222 parameters and `CHO1,CHO2` decides two. The generator now emits the
@@ -181,7 +184,7 @@ blind spot in its own docstring.
 
 **Scope of impact:**
 - **Updated:** `CLAUDE.md`, this file, `docs/domain-model.md`, `changelog.md`, `scripts/generate_options.py`, the 4.0.1 snapshot's `options.py`, `pyquadcortex/protocol/options.py` (the shim's explicit re-export), `tests/test_option_audit.py`, `tests/test_options.py`
-- **Not updated (intentionally):** `ADR.md` - this narrows two questions already recorded in the appendix rather than deciding anything. No hardware test: both findings are about a file and about readings already taken. What remains of the abbreviation question DOES have a hook - the `Tremolo` `WAVEFORM` read named above - and it belongs to the next session at the unit, not to this change.
+- **Not updated (intentionally):** `ADR.md` - this narrows two questions already recorded in the appendix rather than deciding anything. No hardware test: both findings are about a file and about readings already taken. What remains of the abbreviation question DOES have a hook - the `Flanger Engine` `WAVEFORM` read named above - and it belongs to the next session at the unit, not to this change.
 
 ### 2026-09-15 - The catalog IS the conveyed vocabulary; the unit's screen is a second renderer
 

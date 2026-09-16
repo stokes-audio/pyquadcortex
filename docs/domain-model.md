@@ -1617,40 +1617,53 @@ draws `PNK`, so nothing derived from either string arrives at what is drawn
 beside it (`options.OPTION_CONTESTED`).
 
 Length is not the rule either: `RECORD MODE` draws `Momentary` at nine
-characters while `Sawtooth` at eight draws `SAW`. Nor is the widget type -
-`PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"` on the models
-they were read on, exactly like `OSC1 WAVE`, and all three render their catalog
-strings verbatim: `2 BARS`, `4 Alt`, `1/64T`. Mind the evidence grades in that
+characters while `Sawtooth` at eight draws `SAW`. Nor is the widget type
+SUFFICIENT - `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"`
+on the models they were read on, exactly like `OSC1 WAVE`, and all three render
+their catalog strings verbatim: `2 BARS`, `4 Alt`, `1/64T`. That rules the type
+out as a rule on its own; it does not rule it out as a condition, which is why
+the read below still has to hold it constant. Mind the evidence grades in that
 sentence: `Momentary`, `2 BARS`, `4 Alt` and `1/64T` were each DRIVEN and read
 back, while `Sawtooth`'s `SAW` comes from transcribing the waveform list, whose
 driven anchors are positions 0, 3, 5 and 6.
 
-**What is still unmeasured** is what the firmware scopes the abbreviation to.
-Four answers are live, and writing them down BEFORE the read is the point -
-this repo's precedent is three plausible rules tried against hardware and all
-three false. The firmware may key on the STRINGS; or on WAVEFORM SELECTORS; or
-on the WIDGET TYPE; or on that one control.
+**What is still unmeasured** is how widely the firmware applies the
+abbreviation. Resist enumerating the possible scopes and calling the list
+closed: ADR-0010's lesson is that plausible rules lose to measured ones, and
+this paragraph's own enumeration has been reopened twice already. Say instead
+what a read can separate and what it cannot.
 
-Three catalog lists share any string with the Mono Synth's, and no others do:
-`Tremolo` and `Harmonic Tremolo` `WAVEFORM` (`Sine,Triangle,Square,Saw Up,Saw
-Dn`), and `Flanger Engine` `WAVEFORM` (the same plus `rndSmooth,rndStep`). All
-three share exactly `Sine` and `Square`, all three are placeable with the
-parameter not hidden, and all three lists are unread. So the strings-versus-
-selectors confound cannot be designed away: every control that shares a string
-is also a waveform picker.
+TWO catalog lists share any string with the Mono Synth's, carried by three
+controls, and no others do: `Sine,Triangle,Square,Saw Up,Saw Dn` on `Tremolo`
+and `Harmonic Tremolo` `WAVEFORM`, and that plus `rndSmooth,rndStep` on
+`Flanger Engine` `WAVEFORM`. All three share exactly `Sine` and `Square`, all
+three are placeable with the parameter not hidden, and both lists are unread. So
+no choice of control separates "the firmware keys on the strings" from "the
+firmware abbreviates waveform pickers" - every control carrying a shared string
+is a waveform picker.
 
-The widget type CAN be held constant, and must be, because this section has
-just used widget type as a discriminator. `OSC1 WAVE` is a `rotarySwitch`, and
-so is `Flanger Engine`'s `WAVEFORM` - while `Tremolo`'s is a `comboBox`, a type
-NOTHING in the readings fixture has ever been read on. So point the read at
-`Flanger Engine` first. Reading both is better still: `SIN`/`SQR` on the
-`rotarySwitch` and verbatim on the `comboBox` is a result none of the other
-three answers predicts, and would name the widget type outright.
+Read `Flanger Engine` first, because it holds the WIDGET TYPE constant: its
+`WAVEFORM` is a `rotarySwitch` like `OSC1 WAVE`, while `Tremolo`'s is a
+`comboBox`, a type nothing in the readings fixture has ever been read on - 129
+of its 133 rows resolve to a catalog parameter, 114 `rotarySwitch` and 15
+`switch`, and the other four are the Tempo page's symbols. Widget type needs
+holding constant even though the section above rules it OUT as a rule: ruling it
+out as SUFFICIENT is not ruling it out as necessary, and a `comboBox` reading
+would confound the two.
 
-What the reads can do: verbatim on `Flanger Engine` leaves only "that one
-control"; `SIN`/`SQR` there narrows to strings-or-selectors without choosing.
-Both lists are among the 95 nobody has read - one parameter and two - so either
-read lands in the audit as well.
+What the read establishes is one thing. If `Sine` and `Square` draw `SIN` and
+`SQR` on a control with no other relationship to the Mono Synth, the
+abbreviation travels with the STRINGS. If they draw in full, it does not - and
+what it travels with instead stays open, because the two controls differ in more
+than the one variable held constant. `OSC1 WAVE` and `OSC2 WAVE` are `hidden`
+parameters and `Flanger Engine`'s `WAVEFORM` is not; the Mono Synth's list is
+drawn as a row of waveform ICONS and nothing records whether the Flanger's is;
+and they sit on different models. Note also that the scope, if it is narrow, is
+not "that one control" - `OSC1 WAVE` and `OSC2 WAVE` both abbreviate, and both
+are in the fixture. Write the reading down and leave the scope open rather than
+picking whichever candidate the outcome flatters. Both lists are among the 95
+nobody has read - one parameter and two - so either read lands in the audit as
+well.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact

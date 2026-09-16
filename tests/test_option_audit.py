@@ -470,10 +470,11 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
         if cells[2] == f"`{','.join(labels)}`":
             quoted += 1
         else:
-            assert "-entry" in cells[2], (
+            assert cells[2].startswith(f"a {len(labels)}-entry "), (
                 f"worklist row {cells[0]} describes its list as {cells[2]!r}, "
                 f"which is neither the snapshot's labels "
-                f"`{','.join(labels)}` nor an \"N-entry\" description")
+                f"`{','.join(labels)}` nor a description naming its "
+                f"{len(labels)} entries")
     assert quoted == 3, (
         f"three of the five rows quote their label tuple; {quoted} do")
 
@@ -495,9 +496,16 @@ def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
     strings with the Mono Synth's - both properties of the snapshot, so they
     are checked rather than asserted in prose.
 
-    The load-bearing claim is the last one: that NO OTHER list shares a string.
-    The whole residual rests on it, because it is why the strings-versus-
-    selectors confound cannot be designed away.
+    The load-bearing claim is that NO OTHER list shares a string. The whole
+    residual rests on it, because it is why the strings-versus-selectors
+    confound cannot be designed away.
+
+    NOT checked here, and not checkable offline: that `Flanger Engine`'s
+    `WAVEFORM` is a `rotarySwitch` and `Tremolo`'s is a `comboBox`, which is
+    the reason the document points the read at one and not the other. Widget
+    type is not in the generated snapshot, and no `ModelRepo` payload is
+    committed. What IS checked is that the document still says which one to
+    read, because it named the wrong one for two rounds.
     """
     mono = ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS",
             "White NS")
@@ -530,5 +538,9 @@ def test_the_reads_that_would_narrow_the_abbreviations_are_still_available():
     for model in ("Tremolo", "Harmonic Tremolo", "Flanger Engine"):
         assert model in text, (
             f"docs/domain-model.md no longer names {model}, one of the three "
-            f"models carrying a list that shares a string with the Mono "
+            f"controls carrying a list that shares a string with the Mono "
             f"Synth's")
+    assert "Read `Flanger Engine` first" in text, (
+        "docs/domain-model.md must point the read at `Flanger Engine`, whose "
+        "`WAVEFORM` holds the widget type constant against `OSC1 WAVE`. It "
+        "named `Tremolo` for two rounds, which is a `comboBox`")
