@@ -1589,15 +1589,55 @@ waveforms, the unit sent **600 messages, every one the metronome tempo stream** 
 not one waveform label, and no notice that the value had changed. It had no need
 to send anything: it holds the catalog too.
 
-So there are two renderers over one source, and they do not agree. The unit
-draws `SIN`, `TRI`, `WHT` and a row of icons where the catalog writes `Sine`,
-`Triang`, `White NS`. `SIN` and `TRI` are plainly truncations; `WHT` and `PNK`
-are not truncations of `White NS` and `Pink NS`, so no single transform explains
-both, and a firmware abbreviation table is at least as likely as a rule applied
-to `stepNames`. **Which it is has not been measured** - it would need either a
-catalog whose `stepNames` the firmware has never met, or a look inside the
-firmware. A 4.1.0 catalog compared against 4.0.1's would be the cheap first
-step, and no 4.1.0 snapshot is in this repo.
+So there are two renderers over one source, and they do not always agree. On
+the Mono Synth's oscillator tab the screen shortens the catalog's words and
+draws a row of icons: `Sine` appears as `SIN`, `Pulse` as `PUL`. On two of the
+seven the catalog is the one that is wrong: it has pink and white noise the
+opposite way round from what the unit actually produces. The acoustic
+measurement that settled it is further down.
+
+**The shortening is not about the words.** A Flanger Engine's `WAVEFORM` offers
+`Sine`, `Triangle`, `Square`, `Saw Up`, `Saw Dn`, `rndSmooth`, `rndStep`, and
+the screen spells all seven out (read 2026-09-16, positions 0 and 3 driven from
+a host). The same word `Sine` draws as `SIN` on the synth and `Sine` on the
+Flanger, so whatever shortens it belongs to that oscillator control and not to
+the catalog's text.
+
+The short words are not in the file either:
+`WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
+`ModelRepo.xml`, and the only hits for `SIN`, `TRI` and `PUL` are inside
+`SINGLE`, `TRIG`/`TRIM`/`TRIPLET` and `PULL`.
+
+What the reading rules out is the catalog's TEXT. It does not rule out the
+catalog predicting the shortening some other way, and there is a candidate in
+plain sight: both controls that shorten carry `hidden="true"` on the PARAMETER,
+and the Flanger's `WAVEFORM` does not. Five more hidden parameters were looked
+for and were not on the screen at all.
+
+Do not turn that into a rule. Two positives is not a rule, and `Parameter.hidden`
+is the exact flag ADR-0010 caught this repo trusting once already, which is why
+a list is never marked `absent` from it. The metronome's four cells argue the
+other way: they are NOT hidden parameters and they depart from the catalog
+anyway, drawing circles instead of words. Their model is `internal` inside a
+hidden category, which is a third attribute again.
+
+What the reading establishes is the narrow thing: the catalog's WORDS do not
+predict the shortening, because the same word renders both ways.
+
+Nineteen controls have been read - the fixture holds 24, but five of those are
+records of looking and finding no control at all. Of the nineteen, the Mono
+Synth's two oscillators are the only ones that shorten a word. The metronome's
+four step cells draw circles instead of words, which is why that list is
+`drawn` rather than `audited` below. The other thirteen match the catalog
+exactly.
+
+Two things are still unknown: whether some control nobody has looked at yet
+also draws its own words, and whether `Parameter.hidden` marks the ones that
+do. The 94 unread lists below answer the first wherever you start. The second
+needs a hidden parameter, and only five of the 94 reach one - two of which are
+ranks 2 and 3 of the worklist, `Small,Med,Large` on a PCOM Core Cabsim's `SIZE`
+and `Off,Duck,Gate` on a Tape Delay's `DYN MODE`. Read either on a model where
+the parameter is hidden and the candidate gets its third data point.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact
@@ -1722,10 +1762,38 @@ The readings are in `tests/fixtures/catalog/option_readings.json`, one row per
 POSITION, and `scripts/generate_options.py` stamps each enum's docstring from
 them. A list nobody has read says so where a caller will see it.
 
-**Where it stands (2026-09-14, CorOS 4.0.1): 12 audited, 1 drawn, 5 not drawn,
-95 unread**, of 113 fixed lists. Those thirteen read lists cover 300 of the 527
+**Where it stands (2026-09-16, CorOS 4.0.1): 13 audited, 1 drawn, 5 not drawn,
+94 unread**, of 113 fixed lists. Those fourteen read lists cover 301 of the 527
 parameters that carry a fixed list, because the ones in heaviest use were done
-first. The 95 unread cover 191.
+first. The 94 unread cover 190.
+
+**What is left is not 94 equal jobs.** Ranked by how many parameters each list
+decides, the tail falls away fast: the biggest five cover 54 of the 190.
+`options.OPTION_USAGE` publishes the count for every list, so a session at the
+unit can be planned from the library rather than from a one-off count:
+
+| parameters | positions | list | somewhere it appears |
+|---|---|---|---|
+| 14 | 17 | a 17-entry `SYNC NOTE` | Vibrato / `SYNC NOTE` |
+| 12 | 3 | `Small,Med,Large` | Ambience / `SIZE` |
+| 11 | 3 | `Off,Duck,Gate` | Digital Delay (ST) / `DYN MODE` |
+| 9 | 14 | a 14-entry `SYNC NOTE` | Dual Chorus / `SYNC NOTE` |
+| 8 | 3 | `Normal,Thick,Thicker` | CA 1Star Clean 50W Normal / `EQ` |
+
+The two note lists are the cheap ones despite their length: a 21-entry
+`SYNC NOTE` is already audited, and these two are its shorter siblings, so a
+reader knows what to expect and where an error would show. Of the remaining 89,
+83 decide one or two parameters each and 46 have only two positions.
+
+Eight of the 94 lists, 12 parameters between them, sit on models a user cannot
+put on the grid: three lists and seven parameters on the Splitter family, five
+lists and five parameters on `TempoControl`.
+
+That is about where they live, not about whether anyone can see them. The Tempo
+page is on the unit and this fixture already holds four driven readings from it,
+so `TempoControl`'s five are a job still to do. None of the eight is marked
+`absent`, which this document uses only for a control somebody looked for and
+did not find.
 
 `drawn` is its own answer for one list. Every position of the metronome's
 `OFF,MUTE,DOWN,ON` was driven and read, so by position count it is complete -
@@ -1750,15 +1818,18 @@ overstatement in its purest form.
 | `Linear,Log` | 1 | a Volume block's CURVE, each position driven |
 | `Free,Sync` | 1 | a Looper X DUPLICATE MODE, each position driven |
 | `OSC1 WAVE` (7) | 2 | the tab in order, anchored at 0, 3, 5 and 6 |
+| `WAVEFORM` (7) | 1 | a Flanger Engine, in order, anchored at 0 and 3 |
 
-Twelve of the thirteen matched the catalog exactly, including spellings that
+Twelve of the fourteen matched the catalog exactly, including spellings that
 look like mistakes and are not: `In 1` carries a space and `Out1` does not, on
 the same control, and the screen draws both that way.
 
-**The thirteenth is a real disagreement, and it is the kind that changes what a
-caller gets.** A Mono Synth's oscillator waveform list reads, in the catalog,
-`Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On screen the seven
-shapes are drawn as waveform icons labelled `SIN, TRI, SAW, SQR, PUL, WHT, PNK`.
+Two did not. The metronome's cells are drawn rather than written, which is the
+`drawn` row above. **The other is a real disagreement, and it is the kind that
+changes what a caller gets.** A Mono Synth's oscillator waveform list reads, in
+the catalog, `Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On
+screen the seven shapes are drawn as waveform icons labelled
+`SIN, TRI, SAW, SQR, PUL, WHT, PNK`.
 Six of those are just abbreviations. The last two are not:
 
 | wire position | catalog says | the screen shows |

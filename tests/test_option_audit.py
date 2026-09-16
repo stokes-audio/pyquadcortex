@@ -38,7 +38,7 @@ READINGS = (pathlib.Path(__file__).parent / "fixtures" / "catalog"
 #: and looks for them. An earlier version of this comment claimed the two moved
 #: together while the test only compared the code against the literal here -
 #: which would have passed happily with the document saying anything at all.
-EXPECTED = {"audited": 12, "drawn": 1, "absent": 5, None: 95}
+EXPECTED = {"audited": 13, "drawn": 1, "absent": 5, None: 94}
 
 #: Lists somebody looked for on the unit and did not find, so no reading of them
 #: is possible. Named rather than counted, because "absent" is the one status a
@@ -363,35 +363,25 @@ def test_the_document_quotes_the_same_parameter_counts():
     """The counts in prose that the status counts do not cover.
 
     `docs/domain-model.md` states how many PARAMETERS each part of the audit
-    covers, and those are the numbers a reader cares about - 12 lists sounds
-    small and 287 parameters does not. They were wrong twice on this branch,
-    once as a silent regression, because nothing derived them.
+    covers, and those are the numbers a reader cares about: a list count sounds
+    small where a parameter count does not. Derived rather than written down,
+    because a number typed into prose goes stale the next time a reading lands.
 
-    Derived here from the generated enums' own docstrings, which state how many
-    parameters use each list, plus the three lists that get no enum. So this
-    fails if the document drifts OR if the snapshot changes underneath it.
+    Derived here from `options.OPTION_USAGE`, which the generator emits from
+    the catalog beside the audit. It used to be scraped out of the enums'
+    docstrings with a regex, with the three lists that get no enum hand-copied
+    into this file, where an error in the split between the two Off/On
+    spellings would have cancelled out unseen. Every list is counted the same
+    way now, and this fails if the document drifts or if the snapshot changes
+    underneath it.
     """
-    import re
-
-    source = pathlib.Path(generated.__file__).read_text(encoding="utf-8")
-    uses = {}
-    for match in re.finditer(
-            r"class (\w+)\(IntEnum\):\n    \"\"\"(\d+) parameters? use this list",
-            source):
-        uses[tuple(options.OPTION_LABELS[getattr(options, match.group(1))])] = \
-            int(match.group(2))
-    # The three with no enum. These three are HAND-COUNTED - they have no
-    # generated docstring to read them off - so only their total is load
-    # bearing: an error in the split between the two Off/On spellings cancels
-    # out and nothing here would see it. Both are audited, so the split
-    # contributes to no assertion today.
-    uses[("Off", "On")] = 222
-    uses[("OFF", "ON")] = 25
-    uses[("OFF", "MUTE", "DOWN", "ON")] = 13
+    assert set(options.OPTION_USAGE) == set(options.OPTION_AUDIT), (
+        "every fixed list is in both tables, or one of them is not about all "
+        "of them")
 
     per_status = collections.defaultdict(int)
     for labels, status in options.OPTION_AUDIT.items():
-        per_status[status] += uses[labels]
+        per_status[status] += options.OPTION_USAGE[labels]
     assert sum(per_status.values()) == 527
 
     text = " ".join(
@@ -402,3 +392,207 @@ def test_the_document_quotes_the_same_parameter_counts():
         assert phrase in text, (
             f"docs/domain-model.md does not say {phrase!r}. The parameter "
             f"counts moved and the document did not.")
+
+
+def test_the_unread_work_is_long_tailed_and_the_document_says_so():
+    """What is left is not 94 equal jobs, and planning one needs the shape.
+
+    Ranked by how many parameters each decides, the unread lists fall away
+    fast. The document names the biggest few so a session at the unit can be
+    planned; without a derived check that ranking rots the first time the
+    snapshot moves.
+    """
+    unread = sorted(
+        (labels for labels, status in options.OPTION_AUDIT.items()
+         if status is None),
+        key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
+    total = sum(options.OPTION_USAGE[labels] for labels in unread)
+    top5 = sum(options.OPTION_USAGE[labels] for labels in unread[:5])
+    assert (len(unread), total) == (94, 190)
+
+    text = " ".join(
+        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+        .read_text(encoding="utf-8").split())
+    phrase = f"biggest five cover {top5} of the {total}"
+    assert phrase in text, (
+        f"docs/domain-model.md does not say {phrase!r}. The ranking moved and "
+        f"the document did not.")
+
+
+def test_the_worklist_table_is_the_snapshots_own_ranking():
+    """The five rows the document names, in the order it names them.
+
+    The point of `OPTION_USAGE` is to stop these being carried in prose from a
+    one-off count, so the table is parsed out of the document by its header and
+    its first two columns are compared, IN ORDER, against the snapshot's own
+    ranking of the unread lists.
+
+    Column three is checked where the row quotes the label tuple literally,
+    which three of the five do; the other two describe their list in prose
+    (``a 17-entry `SYNC NOTE` ``) because quoting seventeen note values in a
+    table cell would be unreadable. For those two only the COUNT in the
+    description is held against the snapshot - ``a 17-entry `PRE ROLL` `` would
+    pass, because the control name in a prose cell is the same kind of claim as
+    column four and needs the same payload to check.
+
+    What this does NOT check, and cannot offline: column four, the model the
+    control appears on. Confirming a model name needs the `ModelRepo` payload,
+    and no payload is committed here - the snapshot is generated constants.
+
+    This test also holds the sentence describing the tail below the table,
+    because that sentence counts the same ranking starting from the row after
+    the last one the table shows.
+    """
+    unread = sorted(
+        (labels for labels, status in options.OPTION_AUDIT.items()
+         if status is None),
+        key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
+
+    doc = (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+    lines = doc.read_text(encoding="utf-8").splitlines()
+    header = "| parameters | positions | list | somewhere it appears |"
+    assert lines.count(header) == 1, (
+        f"docs/domain-model.md must carry exactly one worklist table with the "
+        f"header {header!r}; it has {lines.count(header)}")
+    parsed = []
+    for line in lines[lines.index(header) + 2:]:
+        if not line.startswith("|"):
+            break
+        parsed.append([cell.strip() for cell in line.strip("|").split("|")])
+    rows = [(int(cells[0]), int(cells[1])) for cells in parsed]
+
+    assert rows == [(options.OPTION_USAGE[labels], len(labels))
+                    for labels in unread[:len(rows)]], (
+        f"the worklist table is {rows}, and the snapshot's five biggest unread "
+        f"lists are "
+        f"{[(options.OPTION_USAGE[l], len(l)) for l in unread[:len(rows)]]}. "
+        f"The ranking moved and the table did not.")
+    assert len(rows) == 5, f"the worklist table has {len(rows)} rows, not five"
+
+    quoted = 0
+    for cells, labels in zip(parsed, unread):
+        if cells[2] == f"`{','.join(labels)}`":
+            quoted += 1
+        else:
+            assert cells[2].startswith(f"a {len(labels)}-entry "), (
+                f"worklist row {cells[0]} describes its list as {cells[2]!r}, "
+                f"which is neither the snapshot's labels "
+                f"`{','.join(labels)}` nor a description naming its "
+                f"{len(labels)} entries")
+    assert quoted == 3, (
+        f"three of the five rows quote their label tuple; {quoted} do")
+
+    text = " ".join(doc.read_text(encoding="utf-8").split())
+    rest = unread[len(rows):]
+    few = sum(1 for labels in rest if options.OPTION_USAGE[labels] <= 2)
+    two = sum(1 for labels in rest if len(labels) == 2)
+    phrase = (f"Of the remaining {len(rest)}, {few} decide one or two "
+              f"parameters each and {two} have only two positions")
+    assert phrase in text, f"docs/domain-model.md does not say {phrase!r}."
+
+
+def test_the_reading_that_settled_the_shortening_is_still_in_the_fixture():
+    """The comparison the documentation rests on, held against the readings.
+
+    The catalog says `Sine`. A Mono Synth's oscillator tab draws `SIN`; a
+    Flanger Engine's WAVEFORM, offering the same word, draws `Sine`. That pair
+    is what shows the shortening belongs to the control rather than to the
+    catalog's text, so both halves are asserted by name. Checking only the SET
+    of mismatched controls is not enough: that stays green if these readings
+    are replaced by some other control's.
+    """
+    rows = json.loads(READINGS.read_text(encoding="utf-8"))
+
+    def screen_for(model, param, word):
+        for r in rows:
+            if (r["model"], r["param"]) == (model, param) and \
+                    r["labels"][r["index"]] == word:
+                return r["screen"]
+        raise AssertionError(f"no reading of {model} / {param} at {word!r}")
+
+    assert screen_for("Mono Synth", "OSC1 WAVE", "Sine") == "SIN"
+    assert screen_for("Flanger Engine", "WAVEFORM", "Sine") == "Sine"
+    assert screen_for("Flanger Engine", "WAVEFORM", "Square") == "Square"
+
+
+def test_only_the_mono_synth_shortens_a_word_on_screen():
+    """No second control has turned up that draws its own words.
+
+    A later reading that shortened a word somewhere else would make
+    `docs/domain-model.md` wrong rather than just incomplete, so the set is
+    pinned. The metronome's four cells are in it because they draw circles;
+    they do not shorten anything.
+    """
+    rows = json.loads(READINGS.read_text(encoding="utf-8"))
+    differ = {(r["model"], r["param"]) for r in rows
+              if r["screen"] and r["screen"] != r["labels"][r["index"]]}
+    assert differ == {
+        ("Mono Synth", "OSC1 WAVE"), ("Mono Synth", "OSC2 WAVE"),
+        ("Tempo page", "STEPSTATE0"), ("Tempo page", "STEPSTATE1"),
+        ("Tempo page", "STEPSTATE2"), ("Tempo page", "STEPSTATE3"),
+    }, (
+        "the screen matches the catalog everywhere it has been read except the "
+        "Mono Synth's two oscillators, which shorten, and the metronome's four "
+        "step cells, which draw circles. A new entry here means "
+        "docs/domain-model.md needs rewriting, not this list extending")
+
+    # The document counts controls READ, which is not every control in the
+    # fixture: five are records of looking and finding nothing on screen. Held
+    # against the document rather than against a literal, because the sentence
+    # is the thing that goes stale.
+    pairs = {(r["model"], r["param"]) for r in rows}
+    looked = {(r["model"], r["param"]) for r in rows if r.get("method") == "looked"}
+    read, matching = len(pairs - looked), len(pairs - looked) - len(differ)
+    words = {2: "two", 4: "four", 5: "five", 13: "thirteen", 14: "fourteen",
+             19: "Nineteen", 20: "Twenty"}
+    for n in (read, len(looked), matching):
+        assert n in words, (
+            f"{n} has no spelling here, so this test cannot say what "
+            f"docs/domain-model.md should read. Add it, and update the "
+            f"document in the same commit")
+    text = " ".join(
+        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+        .read_text(encoding="utf-8").split())
+    phrase = (f"{words[read]} controls have been read - the fixture holds "
+              f"{len(pairs)}, but {words[len(looked)]} of those are records of "
+              f"looking")
+    assert phrase in text, (
+        f"docs/domain-model.md does not say {phrase!r}. The readings moved and "
+        f"the document did not.")
+    assert f"The other {words[matching].lower()} match the catalog" in text, (
+        f"docs/domain-model.md must say {words[matching].lower()} read controls "
+        f"match the catalog exactly")
+
+
+def test_the_ranking_recipe_the_changelog_publishes_actually_works():
+    """`changelog.md` hands users a recipe for ranking the unread lists.
+
+    The snippet is EXECUTED, not hand-copied. A copy in this file only stays
+    honest by convention: an earlier version of this test kept its own sort
+    key, the changelog's grew a tiebreak, the two orders diverged from index 9,
+    and the test passed anyway because it only ever read the first entry.
+
+    `tests/test_docs.py` does read `changelog.md`'s fences - it is in that
+    file's `SNIPPET_SOURCES` - but it only `ast.parse`s them, looking for wrong
+    keywords and bare numbers. Nothing RAN the one snippet a reader is most
+    likely to copy, or checked the answer it publishes in a comment.
+    """
+    import re
+
+    text = (pathlib.Path(__file__).parents[1] / "changelog.md").read_text(
+        encoding="utf-8")
+    fences = [f for f in re.findall(r"```python\n(.*?)```", text, re.DOTALL)
+              if "OPTION_USAGE" in f]
+    assert len(fences) == 1, (
+        f"expected exactly one OPTION_USAGE snippet in changelog.md, found "
+        f"{len(fences)}")
+
+    scope: dict = {}
+    exec(fences[0], scope)                      # noqa: S102 - the point
+    assert scope["unread"], "the recipe produced no unread lists"
+
+    # The comment beside the last line publishes its own answer, which is the
+    # part that rots.
+    biggest = options.OPTION_USAGE[scope["unread"][0]]
+    assert f"# {biggest} parameters - the biggest unread list" in text, (
+        f"changelog.md's recipe claims an answer that is no longer {biggest}")

@@ -20,6 +20,46 @@ correction.
 
 ## Unreleased
 
+### The unit shortens one control's words, and it is not about the words
+
+A Mono Synth's oscillator tab draws `SIN` where the catalog says `Sine`. It was
+not known whether the unit shortens every long name or just that one control.
+
+It is that one control. A Flanger Engine's `WAVEFORM` offers `Sine`, `Triangle`,
+`Square`, `Saw Up`, `Saw Dn`, `rndSmooth` and `rndStep`, and the screen spells
+all seven out - read on the unit 2026-09-16, with positions 0 and 3 driven from
+a host. The same word `Sine` draws two ways on two controls, so nothing about the
+catalog's text predicts it.
+
+Nineteen controls have now been read - the readings fixture holds 24, but five
+are records of looking and finding no control. Two of the nineteen shorten a
+word, four draw circles instead of words, and the other thirteen match the
+catalog exactly. `Osc1Wave` is the only enum whose names are known to differ
+from what the screen shows.
+
+### New: `options.OPTION_USAGE` says how many parameters each option list decides
+
+`OPTION_AUDIT` tells you whether anybody has held a list against the unit's
+screen. It does not tell you how much rides on the answer, and that is the other
+half of the question: `Off,On` decides 222 parameters and `CHO1,CHO2` decides
+two, so "94 lists unread" is not 94 equal jobs.
+
+`OPTION_USAGE` publishes the count for every fixed list, keyed by the labels
+exactly as the audit is, generated from the catalog in the same pass:
+
+```python
+from pyquadcortex.protocol import options
+
+unread = [labels for labels, status in options.OPTION_AUDIT.items()
+          if status is None]
+unread.sort(key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
+options.OPTION_USAGE[unread[0]]   # 14 parameters - the biggest unread list
+```
+
+On the 4.0.1 snapshot that is 527 parameters across 113 lists, of which 190
+across 94 lists are unread. Those numbers were being quoted in prose from
+one-off counts; now the document is held against the snapshot.
+
 ### Fixed: two guitar amps had no constant and could not be named
 
 `Bogna Uber Clean` and `Bogna Uber Lead` are ordinary amps your unit will place
@@ -132,10 +172,11 @@ whose list the device builds from your preset, the catalog writes `In 1` and
 So a new `options.OPTION_AUDIT` tells you, per list, whether anybody has held it
 against a real unit: `"audited"`, `"drawn"` (read, but the unit draws pictures
 rather than words), `"absent"` (someone looked and the control is not on screen)
-or `None` for the 95 nobody has checked yet. Each enum's docstring says the same
-thing in words. Thirteen lists covering 300 parameters have been read on a Quad
+or `None` for the 94 nobody has checked yet. Each enum's docstring says the same
+thing in words. Fourteen lists covering 301 parameters have been read on a Quad
 Cortex running CorOS 4.0.1, including the `Off`/`On` pair that 247 parameters
-use. Twelve matched the catalog exactly; the thirteenth did not, which is the
+use. Twelve matched the catalog exactly. Two did not: the metronome, which draws
+circles rather than words, and a Mono Synth's oscillator waveforms, which is the
 breaking change above.
 
 Nothing about existing names changes. This only tells you how much to trust

@@ -140,6 +140,46 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 
 ## Change Log
 
+### 2026-09-16 - The unit shortens one control's words, and the unread audit work is ranked
+
+**What changed:** the abbreviation question was settled by a reading on the
+unit, and `options.OPTION_USAGE` is published so the size of the remaining
+audit work stops being prose.
+
+**Why - the abbreviations.** The question was whether the unit shortens every
+long name or just that one control. Just that one: a Flanger Engine's
+`WAVEFORM` offers seven waveform names and the screen spells all of them out
+(read 2026-09-16 on the unit, with positions 0 and 3 driven from a host and
+read back). The same word `Sine` draws as `SIN` on a Mono Synth oscillator and
+as `Sine` on the Flanger, so the shortening belongs to that control.
+
+The short words are not in the catalog either - `WHT`, `PNK`, `SAW` and `SQR`
+appear zero times in the 556,732-byte file - so the catalog's TEXT does not
+predict a shortened control. Whether some other attribute does is open: both
+shortening controls carry `hidden` on the PARAMETER and the Flanger's does not.
+That is two positives, on the flag ADR-0010 caught this repo trusting once
+already, so it is written down as a candidate and not as a rule - and the
+metronome's cells, which are not hidden parameters and depart from the catalog
+anyway, sit against it.
+
+Nineteen controls have now been read - the readings fixture holds 24, but five
+are records of looking and finding no control. Two of the nineteen shorten a
+word, four draw circles instead of words, and the other thirteen match the
+catalog exactly.
+
+**Why - `OPTION_USAGE`.** "94 lists unread" is not 94 equal jobs: `Off,On`
+decides 222 parameters and `CHO1,CHO2` decides two. The generator now emits the
+per-list parameter count beside the audit status, so a session at the unit can
+be planned from the library. `tests/test_option_audit.py` holds the document to
+it, including that the biggest five unread lists cover 54 of the 190 - and the
+test that checked the parameter counts stopped scraping enum docstrings with a
+regex and hand-copying the three lists that have no enum, which was a stated
+blind spot in its own docstring.
+
+**Scope of impact:**
+- **Updated:** `CLAUDE.md`, this file, `docs/domain-model.md`, `changelog.md`, `tests/fixtures/catalog/option_readings.json` (the seven Flanger readings), `scripts/generate_options.py`, the 4.0.1 snapshot's `options.py`, `pyquadcortex/protocol/options.py` (the shim's explicit re-export), `tests/test_option_audit.py`, `tests/test_options.py`
+- **Not updated (intentionally):** `ADR.md` - this settles a question recorded in the appendix rather than deciding anything new. No hardware test: the finding is a screen reading, and screen readings live in the readings fixture.
+
 ### 2026-09-15 - The catalog IS the conveyed vocabulary; the unit's screen is a second renderer
 
 **What changed:** the rule added earlier the same day said presentation is not
