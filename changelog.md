@@ -1,757 +1,23 @@
 # changelog
 
-What changed between released versions, from the point of view of someone
-installing the package. The git history has the detail and the reasoning; this
-file answers the narrower question "I upgraded, what is different for me?".
+> Purpose: what changed between released versions, for someone who installs the package.
+
+The git history has the detail and the reasoning. This file answers "I
+upgraded, what is different for me?". What breaks, and what to change in your
+code, is in [docs/migration.md](docs/migration.md).
 
 Versions follow the usual 0.x convention: the minor number moves for new
 capability and the patch number for fixes. While the major number is 0, a
-breaking change moves the **minor** too - it does not move the major, because
-that number is reserved for the 1.0.0 conditions below. Anything may still
-change while the major number is 0.
-
-That is a deliberate signal, not neglect. Everything here is verified against ONE
-unit on one firmware, protocol facts are still being corrected at a live rate, and
-the roadmap plans a reshape of the public API (the domain model in
-`docs/roadmap.md`). 1.0.0 happens when all three stop being true: the domain model
-has landed or been deliberately dropped, the library has been verified on a second
-unit or firmware, and the protocol record has gone a sustained stretch without a
-correction.
+breaking change moves the minor too. 1.0.0 happens when three things stop being
+true: the domain model has landed or been deliberately dropped, the library has
+been verified on a second unit or firmware, and the protocol record has gone a
+sustained stretch without a correction.
 
 ## Unreleased
 
-### Fixed: two guitar amps had no constant and could not be named
+### Breaking: the protocol API moved to `pyquadcortex.protocol`
 
-`Bogna Uber Clean` and `Bogna Uber Lead` are ordinary amps your unit will place
-on request, and neither had an entry in `protocol.models` - the generated
-constants skipped straight from `UK_C15_TOPBOOST = 1128` to
-`US_HP_TWEED_TWN_NORMAL = 1132`.
-
-`catalog.Model.hidden` was reading the catalog's `hidden` attribute by PRESENCE.
-Thirteen models say `hidden="true"`; these two say `hidden="false"`, and both
-were being reported as hidden, which dropped them from `Model.is_factory` and so
-from the generated set. `Parameter.hidden` already read `== "true"` and had a
-test saying why; the model-level one never got the same treatment.
-
-`models.ALL` now holds 414 rather than 412. Settled by asking the unit rather
-than by reading the attribute again: `set_block` was sent for each and the unit
-placed both.
-
-### `catalog.Parameter` now tells you the order the unit draws its controls
-
-New `Parameter.display_pos`. The parameters a model gives you are in WIRE order,
-and that is not always the order the unit puts them on screen. A Solo 100 Lead
-draws GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT; the wire lists MASTER
-before PRESENCE.
-
-Of the 503 models you can place, **338 never carry it at all** - for those the
-wire order is all there is. 165 carry it somewhere, and on 144 of those the
-result disagrees with wire order.
-
-If you are showing a block's controls to a person, sort by `display_pos` and put
-the unplaced ones last. `None` does not compare, so the key has to say so:
-
-```python
-ordered = sorted(model.parameters,
-                 key=lambda p: (p.display_pos is None, p.display_pos))
-```
-
-The first element of that key is what makes it safe: placed controls all sort
-ahead of unplaced ones, so a `None` is never compared against a number. Two
-unplaced ones compare equal and keep their catalog order.
-
-Do **not** drop the `None` ones instead. Across every parameter a model gives
-you, 43 models place only some of them and 5 place two at the same number, so a
-sort is not a complete layout and dropping hides real controls. What the unit
-does with an unplaced control has not been measured. (Counting only the controls
-the catalog does not mark hidden, those figures are 23 and 1 - but the key above
-sorts everything `model.parameters` hands you, so the larger pair is what you
-will meet.)
-
-This rests on two screen readings - a cab on 2026-09-11 and a Solo 100 Lead on
-2026-09-15 - not on a recurring check. It is the catalog's prediction of the
-layout, confirmed twice, and a third reading that disagreed would unseat it.
-
-If you are addressing a parameter, keep using the index. This says where a
-control is drawn, not what selects it.
-
-### `catalog.Model` now tells you what a block reserves
-
-New `Model.resources`, from the catalog's `<Padding>`: `cpu`, `dm_heap`,
-`pm_heap`, `sw` and a few rarer ones, under the device's own names, as pairs
-(`dict(model.resources)` for a mapping). 331 of 533 models carry them.
-
-**It is not a capacity model and cannot tell you whether a block will fit.** A
-ceiling clearly exists - filling a preset's free row with a 0.15-`cpu` amp fitted
-two and was refused a third - but four of the fourteen blocks on that
-grid publish no `<Padding>` at all, so nothing here adds up to a budget. Keep trying the block
-and handling the refusal.
-
-### Breaking: `Osc1Wave.PINK_NS` and `.WHITE_NS` were swapped, and are now fixed
-
-A Mono Synth's oscillator waveform list is the first place the audit below found
-the device's catalog to be **wrong**, not merely differently worded. The catalog
-calls wire position 5 `Pink NS` and position 6 `White NS`. The unit's screen
-draws `WHT` at position 5 and `PNK` at position 6. Both were set at once, on the
-two oscillators of one Mono Synth, and read together - and the swap was then
-confirmed acoustically, by capturing each off the unit's own USB audio interface
-and measuring octave bands. Subtracting one recording from the other cancels the
-rest of the signal chain, and the difference climbs monotonically across all
-seven bands - about 3.6 dB per octave, in the direction that separates white
-from pink and at the right order of magnitude.
-Position 5 is the brighter, so it is the white one. So this is a fact about what
-the device produces, not about what one screen prints.
-
-So until now `Osc1Wave.PINK_NS` selected **white** noise and `.WHITE_NS` selected
-pink. The members now follow the screen, which means **existing code using either
-one changes behaviour** - and changes it to what the name always claimed. If you
-were compensating for this, stop.
-
-Selecting by the catalog's string is now refused rather than silently wrong:
-both `set_param_option(block, "OSC1 WAVE", "Pink NS")` and the exported
-`protocol.option_value(names, "Pink NS")` raise and tell you why. The strings
-stay in `OPTION_LABELS`, because they are what the device publishes.
-
-**This breaks a read-modify-write round trip on those two positions.** Reading
-still reports the catalog's name - `option_at` gives you `"Pink NS"` for the
-position that draws WHT - and feeding that name straight back now raises instead
-of quietly selecting it. That is deliberate: the alternative is a silent wrong
-answer. Fixing the read side means deciding whether a reader may overrule the
-device's own string, which is more than one finding should settle; pass the
-index or an `options.Osc1Wave` member in the meantime.
-
-### You can now tell which option names have been checked against the screen
-
-`pyquadcortex.protocol.options` names the choices a list-valued parameter
-offers - `SyncNote21.N1_4`, `RoutingMode.GRID` and 108 more. Those names come
-from the device's catalog, and **the catalog is not always what the screen
-says.** Where the two can be compared directly they differ: for the parameters
-whose list the device builds from your preset, the catalog writes `In 1` and
-`Ret 1/2` where the device itself writes `Input 1` and `Return 1/2`.
-
-So a new `options.OPTION_AUDIT` tells you, per list, whether anybody has held it
-against a real unit: `"audited"`, `"drawn"` (read, but the unit draws pictures
-rather than words), `"absent"` (someone looked and the control is not on screen)
-or `None` for the 95 nobody has checked yet. Each enum's docstring says the same
-thing in words. Thirteen lists covering 300 parameters have been read on a Quad
-Cortex running CorOS 4.0.1, including the `Off`/`On` pair that 247 parameters
-use. Twelve matched the catalog exactly; the thirteenth did not, which is the
-breaking change above.
-
-Nothing about existing names changes. This only tells you how much to trust
-them, which until now you had no way to know.
-
-### `catalog.Parameter` reports whether the unit keeps a parameter off the screen
-
-New `Parameter.hidden`, from the catalog's own `hidden` attribute. **Treat it as
-a hint, not a fact:** 649 parameters carry it, and at least one of them - a Mono
-Synth's `OSC1 WAVE` - is plainly on the screen. No library code branches on it.
-
-### Fixed: three places told you to use metronome names that do not exist
-
-`docs/api.md`, `docs/manual-coverage.md` and `QuadCortex.set_beat`'s own
-docstring all used `MetronomeBeat.ACCENT` and `MetronomeBeat.NORMAL`. Those
-members were replaced by the device's own words - `OFF`, `MUTE`, `DOWN`, `ON` -
-and the example in the API document would have raised `AttributeError` if you
-copied it.
-
-### Initial file enumeration can be deferred
-
-Both connect layers accept `initial_file_listing=False`, omitting only the
-handshake's eager `File` READ. The default remains eager, and listing operations
-still fetch explicitly when called on a profile that verifies them.
-
-Deferring costs the enumeration and nothing else a save announces. Measured
-2026-09-09 on CorOS 4.0.1: a preset saved on the unit is announced identically
-whether or not the `File` READ was sent, so a listener does not go deaf by
-setting this. A delete, a rename and an IR import were not measured. That also
-corrects a general statement in [docs/protocol.md](docs/protocol.md) section
-4.2, which had every READ in the connect burst acting as a subscription.
-
-### Where a knob's numbers start comes from the device now, not a table
-
-The Quad Cortex has knobs whose bottom position shows a word - usually `OFF` -
-instead of a number. The library kept a hand-measured table of where the numbers
-started on such knobs. **That table is gone.** It was wrong twice, and everything
-it tried to hold turned out to be in the device's own catalog.
-
-**What changed for you, concretely:**
-
-* **`Db(-30.0)` on a cab used to raise. It now writes.** That guard was wrong by
-  16 dB - the knob reaches far below where the table claimed, and is audibly
-  passing signal there.
-* **Asking for the exact bottom of a range now raises**, on any knob whose
-  screen shows a word there. `Db(-60.0)` on an amp OUTPUT, `Db(-40.0)` on a cab
-  or a lane VOLUME, `Hertz(20.0)` on a cab HPF. Every one of those used to
-  convert to wire 0.0 - the Off position, not the value you named - and look
-  like a successful write. Write `Encoded(0.0)` if the Off position is what you
-  mean.
-* **The lowest real value on such a knob is one step above its minimum**: `+1`
-  on a whole-number knob, `+0.01` on a decimal one. So a lane VOLUME reaches
-  -39.99 dB, a cab HPF reaches 21 Hz, and the library now knows that for all 218
-  of them rather than the three somebody had measured.
-
-**How it was settled**, since three previous attempts got it wrong: by typing
-values into the unit. Turning the knob cannot reach below 1% of travel, and the
-screen ROUNDS - a lane output prints `-40.0 dB` at its lowest real position and
-`OFF` one step below, so no amount of reading the display separates them. The
-numeric entry box does, and it states exactly the catalog's own `min`..`max`
-every time.
-
-**If you read expression sweeps**, one end of a sweep reads as `Off` when it
-sits below the knob's floor - and that floor moved, so the band did too. On a
-lane VOLUME it was the bottom 1% of the wire and is now the bottom 0.02%. A
-sweep heel at wire 0.005 used to report `Off` and now reports -39.74 dB, which
-is what the unit shows there.
-
-One consequence worth knowing about: `Db(-40.0)` is refused on most cabs and
-accepted on 14 of them (the PCOM variants and Parallax), which omit the `OFF`
-label the other 160 carry. That is not a bug in the library or the catalog - a
-Parallax cab LEVEL really does display -40.0 dB where a labelled cab shows
-`OFF`, measured on the unit. Same law, different controls.
-
-### The Global EQ band offsets have names
-
-`QuadCortex` already named the Global EQ's stride, its band count and the three
-OUT tab indices. The five offsets WITHIN a band were bare digits inside
-`set_global_eq`. They are now `GLOBAL_EQ_BAND_GAIN`, `_FREQUENCY`, `_Q`, `_TYPE`
-and `_ENABLED`.
-
-**Nothing you wrote needs to change**, and there is no new thing to call: every
-one of those five controls is already reachable through
-`set_global_eq(band, gain=..., frequency=..., q=..., filter_type=...,
-enabled=...)`, which validates the band and does the arithmetic. The constants
-are for reading a wire index the unit reported, or checking one you are about to
-pass to `set_global_eq_band`'s raw-index door - they say which control within a
-band you are looking at without counting in fives. (Slots 25 to 27 are the OUT
-tab and have their own absolute constants.)
-
-### The Global EQ gain span is measured, not taken from the manual
-
-`set_global_eq(band, gain=Db(...))` converts over -12..+12 dB, which is what it
-already did. What changed is the evidence: the span is now read off the unit's
-own screen at both ends (wire 0.0 shows -12.0 dB, wire 1.0 shows +12.0), plus
-both quartiles, which show the control is linear rather than tapered.
-
-**Nothing you wrote needs to change.** The numbers are the same. This entry is
-here because the docs said this span was the weaker of the two the library
-knows, and it is not weaker any more - if you avoided `Db` on a Global EQ band
-for that reason, the reason is gone.
-
-### A pan reads 50 L to 50 R, whatever the catalog declares
-
-36 parameters carry `min_string`, `mid_string` and `max_string` together. Those
-are pan-style controls, and the unit draws all of them as a bipolar scale from
-50 on one side to 50 on the other. The catalog declares that span four different
-ways and none of them matches, so `Real` was not speaking the numbers on screen:
-reaching hard left meant `Real(0.0)` on a mono cab and `Real(-1.0)` on a stereo
-one, for the same knob.
-
-`units.LABELLED_END_SPAN` now holds the drawn span, measured on CorOS 4.0.1
-across three of the four declared spans, and `Parameter.mid_label` carries the
-middle label. A declared default moves onto the drawn span with everything
-else, so a pan's default reports the position the screen shows. `mid_string` leaves the unexplained list in
-[docs/domain-model.md](docs/domain-model.md): it is the label at wire 0.5.
-
-### The first hardware run of the profile seam, and what it corrected
-
-Run 2026-09-07 on Quad Cortex, CorOS 4.0.1 / d14e, straight after the seam
-merged: 93 passed, 4 skipped, and two tests failed on records the seam itself
-made stale. `connect()` now reads `Version` before the handshake, so a listener
-registered through `before_handshake` sees three inbound `Version` messages, not
-one: the full reply to that read, the unit's own `Version{READ}` a millisecond
-behind it, and the answer to our announce. The same reply leaves the identity
-entry holding serial and firmware ahead of the burst. Both tests and
-`docs/protocol.md` section 4 now say so, with the measurement.
-
-The run also showed the report calling a SKIPPED test a regression: the bypass
-echo test declined to run (no stored bypass entry on the loaded preset) and
-`set_bypass` landed on the "regressions by name" line. A skip measured nothing.
-That line now counts failures only and is labelled "VERIFIED and claimed by a
-test, failed"; skipped operations stay on the "failed or skipped" line.
-
-### BREAKING: the generators take `--snapshot`, and constants moved
-
-`scripts/generate_models.py`, `generate_params.py` and `generate_options.py`
-require `--snapshot coros_x_y_z` and write `pyquadcortex/protocol/catalogs/<snapshot>/`;
-`--out` is gone. The generated modules moved there; `pyquadcortex.protocol.models`,
-`params` and `options` still import and still mean CorOS 4.0.1, as shims.
-
-### The connection knows which unit it is talking to (ADR-0020)
-
-`connect()` reads the unit's `Version` first and picks the profile class for
-`(device_type, zenos_git_hash)`: `QuadCortex` for a Quad Cortex on 4.0.1,
-`QuadCortex41` for 4.1.0, and `UnsupportedDevice` for anything else, before
-the handshake. `connect(profile=...)` names a class deliberately for a unit
-nobody has measured. `connect(support=Support.EXPERIMENTAL)` runs operations
-a profile has not verified, with one warning each; the default
-`Support.VERIFIED` refuses them. `qc.models`, `qc.params`, `qc.options` are the
-connection's own constants; `qc.unverified_operations` says what its profile
-has not verified. `set_block` refuses a model id the unit's catalog lacks.
-The Quad Cortex Mini is recognised and refused with instructions.
-
-### The repo describes device profiles, not one baseline (ADR-0020)
-
-A profile is what the unit reports in its `Version` reply: `device_type` and
-`zenos_git_hash`, the CorOS version. Everything that differs by firmware or
-model lives on the profile, connect resolves it before the handshake, and an
-unknown profile refuses to connect rather than borrowing the nearest one. This
-entry records the rules; the entry above is the seam that implements them. No
-module tests a version string on its own, and `protocol.models`, `params` and
-`options` still mean the Quad Cortex 4.0.1 snapshot, as shims over it. See
-`docs/ADR.md`.
-
-### `version()` no longer answers with the unit's own question
-
-The unit answers a `Version` READ twice: the full reply, and 1 ms later its own
-`Version{READ}` carrying `action` alone. `version()` waited by message type, so
-two calls close together alternated between them - full, empty, full, empty -
-and a caller reading `custom_name` or the serial got `""` every second time
-with no error. It now accepts only a `Version` carrying an identity field, the
-serial or the firmware, so the unit's question is never returned as the answer.
-A partial reply carrying one of the two is still returned; the state cache
-keeps what the unit sent and re-reads for the rest. Measured on Quad Cortex,
-CorOS 4.0.1 / d14e.
-
-### You can read back which expression pedals are assigned
-
-`set_expression` could always write an assignment. Nothing could read one back:
-
-```python
-protocol.expression_assignments(preset)   # the wire's rows, columns and 0..1
-device.preset.blocks.pedals               # the screen's rows, slots and dB
-```
-
-The model reads it the way the unit shows it - `<EXP 2 on VOLUME (row 1):
-Off to 3.2 dB>` - with rows and slots numbered from 1 and the sweep in the
-knob's own units. `block.pedals` narrows it to one cell.
-
-Three things it will not fake. `minimum` above `maximum` **reverses** the
-pedal, which is a setting, so the pair is reported rather than sorted and
-`reversed` is the question to ask. An end at the **OFF detent** prints `Off`
-rather than a number - on the level family wire `0.0` is a word on the screen,
-not -40 dB, and reporting the law's bottom there would hand you a value
-`set_param` refuses. And with no device attached there is no catalog to ask for
-a knob's scale, so the sweep stays the wire's 0..1 and `in_real_units` says so.
-
-Two wire facts are handled and worth knowing if you read the raw preset
-yourself. `params[].index` is proto3-optional, so it HAS presence and the
-device simply never sends it - absent on all 576 parameters across the
-committed fixtures - which makes the POSITION the index. And `expression: 0`
-means unassigned, is what `clear_expression` writes, and IS sent.
-
-Reading only. Assigning through the model is M2.
-
-### `framing.decode_reports` returns a `Frame`, not a tuple
-
-```python
-# before
-message_type, payload = framing.decode_reports(reports)
-
-# after
-frame = framing.decode_reports(reports)
-frame.message_type, frame.payload, frame.encrypted, frame.compressed, frame.device_bytes
-```
-
-**Breaking**, for anyone calling the codec directly. `framing` is the lowest
-layer and has never been part of the documented API surface in this file or in
-`docs/api.md`, so in practice this reaches nobody; it is written down because
-`docs/architecture.md` does call it public. Nothing else changed shape, and
-`encode_message` puts exactly the same bytes on the wire it always did.
-
-The reason is that the 8-byte frame trailer says more than the message type. Two
-bytes we used to skip as zeros are flags: one marks a payload that is encrypted
-and cannot be read, the other marks a gzip stream. A tuple had nowhere to put
-them. See `docs/protocol.md` section 2.3 for the evidence and ADR-0019 for what
-the library does and does not do with it.
-
-### Encrypted and corrupt inbound frames are no longer the same log line
-
-The receive path printed one debug line for three unrelated situations: a
-payload it could not decrypt, a message type it does not handle, and a payload
-that was genuinely corrupt. Each has its own line now, so real corruption is
-visible instead of hidden among ordinary device chatter. Nothing decrypts; an
-encrypted frame is named and dropped.
-
-Fixed alongside it: a damaged gzip payload could raise `EOFError` or
-`zlib.error`, neither of which was caught, so it was reported as an unexpected
-internal error rather than as the damaged payload it is.
-
-### The wrong unit is now caught before the code runs
-
-```python
-qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Db(-3.1))    # fine
-qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, Hertz(217))  # mypy: rejected
-qc.set_param(LaneOutput(0), params.LaneOutputParam.PAN, Db(0.5))        # mypy: PAN has no unit
-```
-
-A generated constant now carries its parameter's unit in its type, so a type
-checker refuses the mismatch without running anything. The runtime check is
-unchanged and still covers every other caller - a string, a bare index, or
-anyone not running a checker.
-
-**`params.py`'s constants are no longer `IntEnum` members.** An enum member's
-type is the enum class, so it cannot carry a per-member unit. Iteration,
-`__members__`, lookup by name, `len()`, `in` and `.name` all still work, so
-call sites are unaffected; `issubclass(X, IntEnum)` is not, and `BY_MODEL`'s
-values are `ParamSet` subclasses now.
-
-**One narrowing, deliberate:** `set_param(target, 21, Real(3))` is a static
-error although it runs. A `Param` is an `int`, so an int overload that accepted
-real values would swallow every wrong-unit call. Address by index and say
-`Encoded`, or name the parameter to write real units.
-
-mypy also runs in CI now, over the whole package, blocking, with one
-suppression in the whole config - `hid` publishes no stubs. That needed the
-generated protobuf bindings to gain committed `*_pb2.pyi` stubs, with their
-cross-references rewritten package-relative so a checker can follow them. `py.typed` ships, so this reaches you and not just our CI.
-
-### Naming a hardware test on the command line walked past `--hardware`
-
-`tests/hardware/` drives a real unit and is gated on `--hardware`. The gate was
-one `pytest_ignore_collect` hook, and pytest does not consult that hook for a
-path given as a command-line argument - only for paths it reaches by walking a
-directory. So `pytest` and `pytest tests/` collected nothing from there, exactly
-as documented, and `pytest tests/hardware/test_write_echo.py` collected all of it:
-with a unit attached those tests ran and drove it, and with none attached they
-failed rather than being absent. A developer narrowing a run to one file lost the
-flag that means "yes, touch my unit" without being told.
-
-An explicitly named hardware path now stops the run with an error naming the flag
-and every path it refused. The offline suite's guarantee (ADR-0002) was never
-affected: no hardware test has ever run in CI, which passes no paths.
-
-`tests/hardware/readme.md` claimed the stronger "not collected at all" for every
-invocation. It now says which shape gets which, since a named path is collected
-before it is refused, and `tests/test_hardware_gate.py` holds both halves up in a
-subprocess running the developer's own command.
-
-Two files in that directory are renamed on the way past: `test_scales.py` and
-`test_values.py` become `test_scales_on_unit.py` and `test_values_on_unit.py`.
-They shared a basename with their offline counterparts, so pytest mapped each
-pair to one module name and refused the second - which meant `pytest --hardware`
-from the repo root could not collect the suite at all, and only
-`pytest tests/hardware --hardware` worked. Pre-existing, and unrelated to the
-gate except that a gate is worth nothing if what it opens cannot be collected.
-
-**Withdrawn:** the 0.39.0 entry below, "A hardware-in-the-loop test suite", makes
-the same too-strong claim - "nothing in `tests/hardware/` is collected at all -
-not skipped, not collected". True of the paths pytest reaches by recursion, and
-never true of a path named on the command line. `tests/` ships in the sdist, so
-that entry is read by people who installed the package.
-
-### BREAKING: every setting takes a typed value too, not just `set_param`
-
-```python
-qc.set_input_level(Input.INPUT_1, Db(24.0))       # -12..+60 dB, measured
-qc.set_global_eq(2, gain=Db(-3.0))                # -12..+12 dB
-qc.set_master_volume(Encoded(0.30))               # no known screen scale
-qc.set_hold_timing(Milliseconds(800))             # no wire scale at all
-qc.set_expression(LaneOutput(0), "VOLUME", pedal=1,
-                  minimum=Encoded(0.0), maximum=Db(3.2))
-```
-
-The previous release made `set_param` refuse a bare number and left ten sibling
-methods taking a bare wire float, so the rule described one method rather than
-the library. The sharpest case was outside it: the unit displays master volume
-as 0-100 while the wire is 0..1, so `set_master_volume(30)` meaning "30 on
-screen" writes full output to whatever is plugged in.
-
-Three cases, and they are deliberately not blurred together:
-
-- **A known scale.** An input port's gain and a Global EQ band's gain take
-  `Db` and convert.
-- **No known scale.** Output level, USB level, master volume, Global EQ
-  frequency/Q/output level: `Encoded` only. A `Db` raises `ControlNotDrivable`
-  saying what would have to be measured, rather than converting against a
-  number somebody made up.
-- **No wire scale at all.** The HOLD threshold is milliseconds and the tuner
-  reference is an Hz offset - the wire carries the real number. `Encoded` is
-  refused there, because it has nothing to mean.
-
-`set_expression` gained the most. Its sweep ends are positions of the parameter
-being assigned, so they now take the same typed values a write to that knob
-takes: `maximum=Db(3.2)` replaces `maximum=db_to_lane_level(3.2)`.
-
-Selectors are unchanged - impedance, input type, ground lift, hp_select,
-dry_wet, filter type, mute and bypass still take an enum or a bool.
-
-See `docs/migration.md` for the table.
-
-### BREAKING: a parameter value now says which scale it is on
-
-```python
-qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))     # dB, checked
-qc.set_param(block, "GAIN", Real(5.0))              # 5 of 0..10, no unit
-qc.set_param(block, 21, Encoded(0.5))               # the device's own 0..1
-qc.set_param(ir, params.SingleM.IR_1_PATH, "/media/...")  # a string is itself
-```
-
-`value=`, `real=` and `text=` are replaced by one positional value. A bare
-number is refused.
-
-The reason is a pair that used to be indistinguishable. Every knob has two
-number lines - the one the screen shows and the one the device stores - and on
-a lane volume, zero on the screen's line is **unity** while zero on the
-device's line is **silence**. `real=0.0` and `value=0.0` were opposite ends of
-the same knob, told apart only by a keyword nobody reads twice.
-
-Naming the unit gets it checked. `Db` on a parameter the catalog calls Hz is a
-`TypeError` before anything reaches the wire, and the two units the catalog
-spells twice - `Cents`/`cents` and `Semitones`/`st` - are one type each.
-
-Reads come back the same way, so `to_real` hands you `Db(12.0)` rather than
-`12.0`.
-
-See `docs/migration.md` for the table, and `docs/api.md` for the picture.
-
-### `has_unsaved_changes` could stay true through a recall
-
-A read of the model's cache threw away anything that had marked the same part of
-it while the read was in flight, unless the unit had SENT a message about it. A
-recall marks the unsaved-changes flag without one - the unit clears the flag and
-says nothing, which is why the model re-reads instead of waiting - so a recall
-landing inside a `has_unsaved_changes` read (the read takes 2 to 11 ms) left
-`has_unsaved_changes` reporting edits the recall had discarded. It stayed wrong
-until something else marked it: the unit announces every CHANGE of the flag, so
-the first edit to the recalled preset puts it right, and so does the next
-recall. Saving, or reading it to decide whether to warn somebody, happens inside
-the wrong window.
-
-The other way in is a write whose echo never arrives: the timeout marks the part
-of the cache the write touched, and a read in flight discarded that mark too.
-Nothing in the package writes through the cache yet, so this half was reachable
-only by a caller using `DeviceState` directly.
-
-### BREAKING: the metronome beat names were wrong, two of them backwards
-
-`MetronomeBeat` is now the device's own `OFF`, `MUTE`, `DOWN`, `ON`, replacing
-`NORMAL`, `OFF`, `ACCENT`, `QUIET`.
-
-```python
-qc.set_beat(1, MetronomeBeat.DOWN)    # the big accent, as a factory 4/4 has
-qc.set_beat(3, MetronomeBeat.MUTE)    # silence beat 3 - this used to be OFF
-```
-
-The old names were chosen by ear. Driving all four states in one bar and both
-listening and looking showed two were the wrong way round: what was called
-`NORMAL` is the plain click and what was called `QUIET` is a small accent -
-louder, not quieter. `OFF` and `ON` turn out to be about the ACCENT rather than
-about whether the beat sounds, which is why `OFF` is audible and `MUTE` is the
-one that silences.
-
-**`MetronomeBeat.OFF` survives the rename with its meaning inverted**, so it is
-the one to search for. See `docs/migration.md`.
-
-### The device was publishing every parameter's scale, and we were not reading it
-
-`catalog.py` read 8 of the 24 attributes the unit puts on each parameter. Four of
-the seventeen it discarded carry facts this project had spent days measuring off
-the screen.
-
-**`skew` is the taper, and 615 parameters converted wrongly without it.** One law
-covers the whole catalog:
-
-```
-real = min + (max - min) * wire ** (1 / skew)
-```
-
-Confirmed on hardware over three unrelated blocks in two different units. A
-Low-High Cut's `HPF FREQ` at wire 0.25 reads **217 Hz** on the unit; this library
-used to say 5015.
-
-**There is no such thing as a placeholder range.** Zero parameters are published
-as `0..1` with a real unit. What happens is that `min` and `max` are sometimes a
-NAME - `min="MIN_CABSIM_DB"` - and the parser fell back to `0.0` and `1.0` for
-anything it could not read. Eight families, 55 parameters. Seven families have
-numbers with their evidence; the eighth is the recorder, whose block crashes the
-unit when placed, so it refuses rather than converting against a guess.
-
-`units.MEASURED_SPANS` - 44 hand-measured entries covering 19 models - becomes 14
-numbers covering all 533. The readings that built it are now the tests that prove
-the catalog reproduces the screen, exactly at the display's own precision.
-
-**Option names were in the catalog all along.** `set_param_option` said they were
-not; that is true of 12 dynamic lists and false for the other 527. Those use 113
-distinct lists, so there are now enums:
-
-```python
-qc.set_param_option(block, "DYN MODE", options.DynMode3.GATE)
-qc.set_param_option(block, "HPF SLOPE", options.HpfSlope.MINUS_12)
-qc.set_param(block, "SYNC", True)          # 247 parameters are just Off/On
-```
-
-`source=` is needed only for a dynamic list now. The device's own spelling still
-goes on the wire: 16 `INVERT` parameters offer `Noral`, so the member reads
-`NORMAL` and `options.OPTION_LABELS` keeps `Noral`.
-
-**Three behaviour changes worth checking your code against**, all in
-`docs/migration.md`: conversions return different numbers for 615 parameters, an
-out-of-range value is refused rather than clamped, and `real=` now needs a
-catalog where a few parameters used to work without one.
-
-`expAssignable` marks 14 parameters and turned out not to govern a host write at
-all - both halves of a differential capture took the pedal - so it is published
-as information and nothing acts on it. See ADR-0015.
-
-
-### The measurement campaign that found it
-
-Three entries stood here describing a months-long effort to measure, off the
-unit's screen, the spans of 52 parameters the catalog was thought not to
-describe. That effort produced the right numbers by the wrong route, and none of
-it shipped, so the entries are collapsed into this one rather than left to
-contradict the section above.
-
-What it established, and what survives:
-
-| family | span | now sourced from |
-|---|---|---|
-| lane / mixer / splitter / FX-return LEVEL | -40..+12 dB | `MIN_MIXER_DB`, `MIN_FXLOOP_IN_GAIN_DB` |
-| FX-loop SEND side | -40..0 dB, cannot boost | `MIN_FXLOOP_OUT_GAIN_DB` |
-| block EQ band GAIN | -12..+12 dB | `MIN_EQ_DB` |
-| cab per-mic LEVEL | -40..+6 dB, tapered | `MIN_CABSIM_DB` and `skew` |
-| per-preset TEMPO | 40..240 bpm | `MIN_TEMPO` |
-
-Every reading taken is now a row in `tests/test_scales.py`, asserting that the
-catalog reproduces what the display showed. They are better tests than they were
-a source.
-
-Two findings from it are worth keeping in their own right, because the catalog
-does NOT supply them:
-
-**Wire 0.0 is an OFF detent, not the bottom of the scale.** `min_string="OFF"`
-says the bottom shows a word, so asking for the very bottom of such a range
-returns a wire value the unit reads as OFF rather than the value you named, and
-that is refused. Where the numbers RESUME above the detent only measurement
-says, and `units.FLOOR_WIRE` holds the two families where a gap has been found.
-
-The cab LEVEL used to be the example here and is no longer one of them: it was
-driven below the encoder's reach later in this same release cycle and turned out
-to have no gap at all. See "A cab's LEVEL no longer refuses values it can
-actually reach" above, which supersedes this paragraph's original claim.
-
-**One parameter will not be measured.** `NC_Recorder`'s `OUT LEVEL` is reachable
-only by placing the internal Neural Capture recorder on the grid, and that
-**crashes the unit**. It is in `units.DO_NOT_PROBE` with the reason, so it does
-not look merely unmeasured to whoever reads the table next.
-
-And one warning the cab earned. Three well-separated points in its upper half fit
-a straight line beautifully and are **12 dB wrong at wire 0.01**. It was written
-up as having no closed form, on eight points and three failed laws, before four
-more points produced a taper - which the catalog had been publishing all along as
-`skew="4.9594844"`. Take the extremes, and read the source before fitting.
-
-Also established while measuring, and unaffected: a band's TYPE decides whether
-its GAIN does anything (Lo Pass and Hi Pass disable it, and a gain written there
-is stored and ignored), and `N BYPASS = 1` means the band is **ON**.
-
-
-### BREAKING: one `set_param` for everything, addressed by a target
-
-Six ways to set a parameter became one. Say WHERE it lives:
-
-```python
-from pyquadcortex.protocol import Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo
-
-qc.set_param(Block(0, 2, model_id), "GAIN", real=-6.0)
-qc.set_param(LaneOutput(0), "VOLUME", real=-3.1)
-qc.set_param(LaneInput(0), "INPUT GAIN", real=12.0)
-qc.set_param(Mixer(0), "LEVEL A", value=UNITY_LEVEL)
-qc.set_param(Splitter(0), "LEVEL TO B", value=0.25)
-qc.set_param(Tempo(), "TEMPO", real=120)
-```
-
-`set_lane_output`, `set_input_gate`, `set_mixer_param`, `set_splitter_param`,
-`set_tempo_param` and `set_lane_output_scene_mode` are gone, and so are
-`set_lane_output_expression` / `clear_lane_output_expression`, which existed
-only in this same unreleased window. Every grid operation now names its cell
-with a `Block`. **[docs/migration.md](docs/migration.md) has the full before /
-after table.**
-
-`blocks()` already returned `Block(row, column, model_id)`, so what you read is
-now what you write to:
-
-```python
-for block in protocol.blocks(preset):
-    qc.set_param(block, "GAIN", real=-6.0)      # model_id is already on it
-```
-
-### Parameter names are constants now, not string literals
-
-`pyquadcortex.protocol.params` is generated from the device catalog, as
-`models.py` already was, with one `IntEnum` per model:
-
-```python
-from pyquadcortex.protocol import params
-
-qc.set_param(LaneOutput(0), params.LaneOutputParam.VOLUME, real=-3.1)
-qc.set_param(Tempo(), params.TempoParam.TEMPO, real=120)
-qc.set_param(LaneInput(0), params.LaneInputParam.INPUT_GAIN, real=12.0)
-```
-
-A member IS its wire index, so passing one **skips the catalog fetch a name
-needs** - the typed route is also the cheapest. Names still work; nothing is
-forced.
-
-Two things the catalog could not have told you, both measured:
-
-- **A cab's repeated parameters are two MICROPHONES**, not IR slots or channels,
-  so they are `MIC_1_DISTANCE` / `MIC_2_DISTANCE`. Confirmed against the unit's
-  own editor: mic 1 showed POSITION 2.9 / DIST 3.0 against wire 0.29 / 0.30, and
-  mic 2 showed 5.6 / 3.3 against 0.56 / 0.33.
-- **The catalog UNDER-DESCRIBES cabs** - it lists 2 parameters where the wire
-  carries 22. All 140 cab models share the one `Default Cabsim` layout, measured
-  across Bass/Guitar and mono/stereo, so a cab is chosen by its `models.*` id and
-  driven through `params.Cabsim`:
-
-  ```python
-  qc.set_block(Block(0, 5, models.CabsimBassM.N212_DARKGLASS_NEO))
-  qc.set_param(Block(0, 5), params.Cabsim.MIC_1_DISTANCE, real=3.0)
-  ```
-
-An IR Loader's repeated block genuinely IS two IR slots, so those read `IR_1_PATH`
-/ `IR_2_PATH` - and they agree with the `IR_PATH_PARAMS` that `set_ir(slot=)` was
-already using. Where a name repeats, BOTH occurrences are numbered: an unnumbered
-first member would read like the real one and hide that it is one of a pair.
-
-A hardware test regenerates from the connected unit and fails if the committed
-file has drifted, since a generated-and-committed file is otherwise its own
-yardstick.
-
-### An expression pedal reaches every parameter, not just a block's
-
-`set_expression(target, param, ...)` and `clear_expression(target, param)` work
-against any target. Measured on hardware one write at a time: blocks, the input
-gate, the mixer, the splitter and the lane output all accept an assignment, on
-float **and** `switch`-typed parameters. So a pedal can now drive a noise gate's
-INPUT GAIN or a mixer's LEVEL A, neither of which had ever been tried.
-
-Parameter TYPE turned out to be irrelevant - the manual gives every assignable
-parameter a MIN/MAX sweep, and a block's BYPASS is the separate feature
-`set_expression_bypass` drives.
-
-**Two parameters still refuse**, and they are the only refusal in the library: a
-Lane Output Control's MUTE and SOLO raise `ControlNotDrivable`.
-
-### Also
-
-- **`ControlNotDrivable`, `BlockRefused`** now live in `protocol.errors`, the
-  unit converters and `UNITY_LEVEL` in `protocol.units`, and the targets in
-  `protocol.targets`. Public import paths are unchanged -
-  `from pyquadcortex.protocol import X` still works for all of them.
-- **`Block` is a frozen dataclass**, not a `NamedTuple`, so it no longer unpacks
-  as a tuple. Attribute access is unchanged.
-- **`QuadCortex.TEMPO_PARAMS`** is now `targets.Tempo.NAMES`.
-- **`set_param` no longer defaults `value` to 0.0.** A call that names no value
-  raises instead of silently writing zero.
-
-### BREAKING: the protocol API moved to `pyquadcortex.protocol`
-
-> Every breaking change in this release is listed side by side in
-> [docs/migration.md](docs/migration.md), if a table is what you want.
-
-**Change one import line.** `from pyquadcortex import X` becomes
+Change one import line. `from pyquadcortex import X` becomes
 `from pyquadcortex.protocol import X`, and `pyquadcortex.connect()` becomes
 `protocol.connect()`:
 
@@ -762,189 +28,260 @@ with protocol.connect() as qc:      # was: pyquadcortex.connect()
     qc.switch_scene(1)
 ```
 
-That is the whole migration for the names the package exported. Every one of them
-is reachable under `pyquadcortex.protocol`, with the same behaviour - same
-classes, same methods, same arguments, same results. Nothing about the protocol
-API changed except where it is imported from. A test enumerates the old export
-list and proves it.
+Every name the package exported is reachable under `pyquadcortex.protocol` with
+the same behaviour; a test enumerates the old export list and proves it.
+Submodule paths took the same step: `pyquadcortex.proto`, `.client`, `.enums` and
+`.session` become `pyquadcortex.protocol.proto` and so on. `qcctl` is unchanged.
+If you installed in editable mode before this change, reinstall so the console
+script points at the new module path. The decision is ADR-0006.
 
-One name has since been renamed on purpose, in this same unreleased window:
-`ExpressionBypassMode` is now `ExpressionSwitchMode` (below). That is a separate
-break from the move, and the test records it as a deliberate rename rather than
-letting the name quietly vanish.
-
-**Submodule paths took the same step**, and no test can prove that part for you
-because those were never top-level exports. If you import a submodule directly,
-add `protocol.` to it:
-
-| before | after |
-|---|---|
-| `pyquadcortex.proto` | `pyquadcortex.protocol.proto` |
-| `pyquadcortex.client` | `pyquadcortex.protocol.client` |
-| `pyquadcortex.enums` | `pyquadcortex.protocol.enums` |
-| `pyquadcortex.session` | `pyquadcortex.protocol.session` |
-
-`pyquadcortex.proto` is the one to check for: decoding a capture with the shipped
-protobuf bindings is the documented way to do it, and the line in
-`docs/capture.md` used to read `from pyquadcortex.proto import
-ProductionAutomation_pb2 as pa`.
-
-`qcctl` is unchanged. If you installed the package in editable mode before this
-change, reinstall it so the console script points at the new module path.
-
-### BREAKING: `ExpressionBypassMode` is now `ExpressionSwitchMode`
-
-Rename the import; nothing else changes. Same values, same numbering, same
-meaning:
-
-```python
-from pyquadcortex.protocol import ExpressionSwitchMode   # was ExpressionBypassMode
-```
-
-There is deliberately **no alias**. The old name described one of the three
-things this enum governs. It is the unit's **SWITCH ON** control, and it applies
-to a block's bypass *and* to a Lane Output Control's MUTE and SOLO, which store
-their settings in the same `expression_bypass_info`. Only the bypass is a bypass.
-
-While renaming it, two behaviours of the unit got written down that were not
-recorded before: the mode decides which of the other controls exist, and the two
-are mutually exclusive in the modes measured. `SWITCH` greys out SWITCH DELAY;
-`HEEL_TOE` greys out LATCH EMULATION. The library still lets you send either, so
-a combination the touchscreen cannot produce is reachable from the host and has
-never been tested - worth knowing before you rely on one.
-
-### An expression pedal can be assigned to a Lane Output Control
-
-- **`set_lane_output_expression(row, param, pedal, minimum, maximum)`** assigns a
-  pedal to a lane's VOLUME or PAN, and **`clear_lane_output_expression(row,
-  param)`** unassigns it. `set_expression` never could: the Lane Output Control
-  has no column, which is the same reason `set_param` cannot reach it and
-  `set_lane_output` exists.
-
-  A pedal used as a volume and mute control, silent at the heel:
-
-  ```python
-  qc.set_lane_output_expression(row=0, param="VOLUME", pedal=1,
-                                minimum=0.0, maximum=db_to_lane_level(3.2))
-  ```
-
-  The sweep ends are the normalized 0..1 the wire carries, which the unit
-  displays as a percentage - 0.830769 shows as 83.08%.
-
-- **`clear_expression(row, column, param)`** does the same for a block parameter.
-  `set_expression` has never had a counterpart.
-
-- **MUTE and SOLO refuse, and that is the device's doing.** They are the ONLY
-  two parameters in the library a host cannot assign a pedal to. Measured with
-  four message shapes, including the byte-identical message VOLUME accepts in
-  the same session, plus a `Grid` DELETE - none landed, in either direction.
-  The touchscreen writes the very same field, so the control is understood and
-  not drivable, and these methods raise rather than failing quietly the way the
-  device does (ADR-0007). Assign it on the unit; the library reads it back.
-
-  It is a **measured list, not a rule**, and three tempting rules are false:
-  switch-typed parameters are not refused (the Jewel's HIGH CUT, the Mixer's
-  PHASE and the Splitter's TYPE all take one), bypass-like parameters are not
-  refused (the input gate's BYPASS takes one, and takes a clear), and
-  `output_control` does not reject `expression` in general (VOLUME and PAN, in
-  the same block, take one).
-
-- **Expression assignment is confirmed on every other collection.** Blocks, the
-  input gate, the mixer and the splitter all accept one, on both float and
-  switch parameters - so a pedal can now drive a noise gate's INPUT GAIN or a
-  mixer's LEVEL A, neither of which had ever been tried. The coverage table
-  records what was measured.
-
-- **`scene_mode` is not sent.** An early probe carried it and worked, which made
-  it look required. Assigning on the touchscreen settled it: the unit leaves the
-  flag alone, and the manual excludes an expression-assigned parameter from Scene
-  data anyway.
-
-### `set_lane_output(real=)` now speaks dB for VOLUME
-
-```python
-qc.set_lane_output(row=0, param="VOLUME", real=-3.1)     # was: raises
-```
-
-The lane VOLUME publishes the placeholder range `0..1 "dB"`, so `real=` used to
-refuse it. Its TRUE span is measured at both ends - -40..+12 dB, unity at 10/13 -
-so the conversion now goes through that instead of through the catalog.
-
-It was the first placeholder parameter to convert; the entries below add the EQ
-band gains, the mixer and splitter levels, and a cab's per-mic LEVEL. The 27 not
-yet measured still refuse, because their spans have never been measured and they
-are demonstrably not all the same scale - the cab LEVEL turned out to be a
-different scale AND a different shape from the lane levels it shares a
-placeholder bucket with. Recovering the rest is tracked separately.
-
-**Why now.** `import pyquadcortex` should hand you the Quad Cortex, not the wire.
-The model of the unit is being built, and it takes the top-level name; the protocol
-layer keeps everything it had, one import deeper. This library is deliberately 0.x
-with roughly no users, so the break is as cheap today as it will ever be. The
-decision is ADR-0006.
-
-### `pyquadcortex.connect()` now returns a `Device`
-
-The model's front door. Today it tells you what you are connected to and not much
-else:
+### `pyquadcortex.connect()` now returns a `Device`, the model of the unit
 
 ```python
 import pyquadcortex
 
 with pyquadcortex.connect() as device:
     print(device.firmware, device.serial)
+    print(device.preset.name, device.preset.scenes.active.letter)
 ```
 
-Presets, scenes, the grid and the rest are being added story by story - see
-[docs/domain-model.md](https://github.com/stokes-audio/pyquadcortex/blob/main/docs/domain-model.md)
-for where it is going. Nothing is stubbed out to look finished, so if it is not
-there yet, use the protocol layer.
+`Device` gives you the unit's identity, the loaded preset with its rows, slots,
+blocks, splits, routing and eight scenes, `has_unsaved_changes`, `is_current`,
+and `device.events`. Rows are 1 to 4 and slots 1 to 8, as on the screen. Nothing
+is stubbed out to look finished; use the protocol layer for the rest. To use
+both layers in one script, wrap a connection you already have with
+`Device.from_client(qc)`, which does not take ownership of it. Where the model
+is going is [docs/domain-model.md](docs/domain-model.md).
 
-To use both layers in one script, wrap a connection you already have with
-`Device.from_client(qc)`. It does not take ownership: closing the `Device` leaves
-your connection open.
+**The model keeps up with the unit on its own.** Anything a `Device` tells you is
+what the unit is doing now, including changes made on its touchscreen while your
+script runs. The unit says when things change and the model listens from the
+moment it connects, so the connect burst warms the cache for free. Where the unit
+says nothing (its firmware version), the model asks once, the first time you want
+it. If the unit mentions something the model does not understand, the model stops
+trusting that part and asks again next time you read it. A field the unit never
+sent raises rather than coming back as an empty string, and a closed `Device`
+refuses to answer at all. `device.state` shows what it holds and what it is about
+to re-read. Reconnecting after the unit sleeps or the cable comes out is still
+your code's job.
 
-### The model keeps up with the unit on its own
+**`device.events`** publishes `Changed` and `Invalidated` on a thread the model
+owns, so a subscriber may read from the unit in response.
 
-Anything a `Device` tells you is what the unit is doing now, including changes you
-make on its touchscreen while your script is running. You do not have to re-read
-anything, and nothing you read comes with a "this might be out of date" warning.
+Three value types come with it, exported from `pyquadcortex`: `PresetAddress`
+(`PresetAddress.parse("28C")`, refusing a malformed address at parse time),
+`FootswitchLetter` and `SceneLetter`. A footswitch is a letter, never a number,
+because a footswitch index and a block's column are different numbers that
+usually agree.
 
-It works because the unit says when things change, and the model listens from the
-moment it connects. Connecting is also when the unit volunteers most of what it
-knows, in one burst, so the model usually has your answer before you ask for it.
-Where the unit says nothing - its firmware version, for one - the model asks, once,
-the first time you want it.
+**Fixed:** `has_unsaved_changes` could stay true through a recall. A recall
+clears the flag and the unit says nothing, so the model re-reads; a recall landing
+inside that read (2 to 11 ms) threw the mark away. A write whose echo never
+arrived had the same window.
+
+### The connection knows which unit it is talking to (ADR-0020)
+
+`connect()` reads the unit's `Version` before the handshake and picks the
+profile class for `(device_type, zenos_git_hash)`: `QuadCortex` for a Quad Cortex
+on CorOS 4.0.1, `QuadCortex41` for 4.1.0, and `UnsupportedDevice` for anything
+else. There is no fallback to the nearest profile. `connect(profile=...)` names a
+class deliberately for a unit nobody has measured. `connect(support=Support.EXPERIMENTAL)`
+runs operations a profile has not verified, with one warning each; the default
+`Support.VERIFIED` refuses them. `qc.models`, `qc.params` and `qc.options` are the
+connection's own constants, and `qc.unverified_operations` says what its profile
+has not verified. `set_block` refuses a model id the unit's catalog lacks. The
+Quad Cortex Mini is recognised and refused with instructions.
+
+**Breaking:** the generators take `--snapshot coros_x_y_z` and write
+`pyquadcortex/protocol/catalogs/<snapshot>/`; `--out` is gone.
+`pyquadcortex.protocol.models`, `params` and `options` still import and still
+mean CorOS 4.0.1.
+
+**Fixed:** `version()` no longer answers with the unit's own question. The unit
+answers a `Version` read twice, the full reply and 1 ms later its own
+`Version{READ}` carrying `action` alone, so two calls close together alternated
+between them. `version()` accepts only a reply carrying the serial or the
+firmware.
+
+The first hardware run of the seam (2026-09-07, CorOS 4.0.1) corrected two
+records: a listener registered before the handshake now sees three inbound
+`Version` messages, and the suite's report counts failures only on its
+"regressions" line, since a skipped test measured nothing.
+
+### Breaking: a parameter value says which scale it is on
 
 ```python
-import pyquadcortex
-
-with pyquadcortex.connect() as device:
-    print(device.firmware)      # asks the unit
-    print(device.firmware)      # free
+qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))     # dB, checked
+qc.set_param(block, "GAIN", Real(5.0))              # 5 of 0..10, no unit
+qc.set_param(block, 21, Encoded(0.5))               # the device's own 0..1
+qc.set_param(ir, params.SingleM.IR_1_PATH, "/media/...")  # a string is itself
 ```
 
-Two things it will not do. It will not hand you a value the unit never sent: a
-field the unit left out raises rather than coming back as an empty string, and
-asking again can still succeed. And it will not answer at all once you close the
-`Device` - what it remembers stopped being true of the unit the moment the
-connection went away.
+`value=`, `real=` and `text=` are replaced by one positional value, and a bare
+number is refused. Every knob has two number lines, the screen's and the
+device's, and on a lane volume zero on the screen's line is unity while zero on
+the device's line is silence. Naming the unit gets it checked: `Db` on a
+parameter the catalog calls Hz is a `TypeError`. Reads come back the same way, so
+`to_real` hands you `Db(12.0)` rather than `12.0`, and `str()` of one shows the
+type name. `scene` and `promote` are keyword-only. See
+[docs/api.md](docs/api.md) for the picture and `docs/migration.md` for the table.
 
-If the unit mentions something the model does not yet understand, the model stops
-trusting that part of what it remembers and asks the unit next time you read it.
-Slower, and right. `device.state` shows you what it currently holds and what it is
-about to re-read.
+**Every setting takes a typed value too**, not just `set_param`: the I/O port
+levels, the USB level, master volume, the Global EQ, the `HOLD` threshold, the
+tuner reference and `set_expression`'s sweep ends. A known scale (an input port's
+gain, a Global EQ band's gain) converts `Db`. An unknown scale (output level, USB
+level, master volume, Global EQ frequency, Q and output level) takes `Encoded`
+only, and a `Db` raises `ControlNotDrivable` saying what would have to be
+measured. A setting with no wire scale (the `HOLD` threshold in `Milliseconds`, the
+tuner reference in `Hertz`) refuses `Encoded`. Selectors still take an enum or a
+bool. `set_expression`'s sweep ends take the assigned parameter's own typed
+values: `maximum=Db(3.2)` replaces `maximum=db_to_lane_level(3.2)`.
 
-Presets, the grid and the Directory are not in the cache yet - they arrive with the
-surfaces that read them. Nor is reconnecting after the unit sleeps or the cable
-comes out; that is still your code's job for now.
+**A generated constant carries its unit in its type**, so a type checker refuses
+`set_param(VOLUME, Hertz(217))` before anything runs. `params.py`'s constants are
+`Param[Unit]` instances rather than `IntEnum` members; iteration, `__members__`,
+`.name`, `len()` and `in` still work, and `issubclass(X, IntEnum)` does not. One
+narrowing: `set_param(target, 21, Real(3))` is a static error although it runs.
+Address by index and say `Encoded`, or name the parameter. mypy runs in CI,
+blocking, and `py.typed` ships (ADR-0018).
+
+### Breaking: one `set_param` for everything, addressed by a target
+
+Six ways to set a parameter became one. Say where it lives:
+
+```python
+from pyquadcortex.protocol import Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo
+
+qc.set_param(Block(0, 2, model_id), "GAIN", Db(-6.0))
+qc.set_param(LaneOutput(0), "VOLUME", Db(-3.1))
+qc.set_param(LaneInput(0), "INPUT GAIN", Db(12.0))
+qc.set_param(Mixer(0), "LEVEL A", Encoded(UNITY_LEVEL))
+qc.set_param(Splitter(0), "LEVEL TO B", Encoded(0.25))
+qc.set_param(Tempo(), "TEMPO", Bpm(120))
+```
+
+`set_lane_output`, `set_input_gate`, `set_mixer_param`, `set_splitter_param`,
+`set_tempo_param` and `set_lane_output_scene_mode` are gone. Every grid
+operation names its cell with a `Block`, which is a frozen dataclass and no longer
+unpacks as a tuple; `blocks()` returns `Block(row, column, model_id)`, so what you
+read is what you write to. `ControlNotDrivable` and `BlockRefused` live in
+`protocol.errors`, the unit converters in `protocol.units`, the targets in
+`protocol.targets`; public import paths are unchanged. `QuadCortex.TEMPO_PARAMS`
+is `targets.Tempo.NAMES`. `set_param` no longer defaults its value to 0.0
+(ADR-0014).
+
+### Parameter names are constants
+
+`pyquadcortex.protocol.params` is generated from the unit's catalog:
+`params.LaneOutputParam.VOLUME`, `params.TempoParam.TEMPO`. A constant is its wire
+index, so passing one skips the catalog fetch a name needs. Two things the catalog
+could not have told you: a cab's repeated parameters are two microphones
+(`MIC_1_DISTANCE`, `MIC_2_DISTANCE`), and all 140 cab models share the one
+`Default Cabsim` layout, so a cab is driven through `params.Cabsim`. An IR
+Loader's repeated block is two IR slots (`IR_1_PATH`, `IR_2_PATH`). A hardware
+test regenerates from the connected unit and fails if the committed file has
+drifted.
+
+### The unit publishes every parameter's scale, and the library now reads it
+
+`catalog.py` read 8 of the 24 attributes the unit puts on each parameter. Now it
+reads `skew`, `stepNames`, `dynamic`, `min_string`, `mid_string`,
+`showAsInteger`, `expAssignable`, `hidden` and `displayPos`, and resolves the
+symbolic bounds (`min="MIN_CABSIM_DB"`) through `units.FIRMWARE_CONSTANTS`.
+
+**`skew` is the taper, and 615 parameters converted wrongly without it.** One law
+covers the catalog: `real = min + (max - min) * wire ** (1 / skew)`. A Low-High
+Cut's `HPF FREQ` at wire 0.25 reads 217 Hz on the unit; this library said
+5015. **There is no such thing as a placeholder range**: `min` and `max` are
+sometimes a name, and the parser fell back to 0..1 for anything it could not
+read. `units.MEASURED_SPANS`, 44 hand-measured entries, becomes 14 numbers
+covering all 533 models, and the readings that built it are now tests
+(ADR-0015). An out-of-range value is refused rather than clamped. Converting real
+units needs a catalog, which comes from the unit; `protocol.bpm_to_tempo` and the
+other standalone helpers still work without one.
+
+**Option names were in the catalog all along.** 527 parameters use 113 distinct
+lists, so `pyquadcortex.protocol.options` publishes them as enums
+(`options.DynMode3.GATE`, `options.HpfSlope.MINUS_12`); 247 parameters are plain
+Off/On and take a `bool`. `set_param_option` needs `source=` only for the twelve
+dynamic lists. The unit's own spelling stays on the wire (`Noral`).
+
+**Where a knob's numbers start comes from the catalog, not a table.** Knobs whose
+bottom shows a word (`OFF`) refuse the exact bottom of their range: `Db(-40.0)` on
+a lane `VOLUME` used to convert to wire 0.0, the Off position, and now raises.
+Write `Encoded(0.0)` for Off. The lowest real value is one step above the minimum
+(`-39.99` dB on a lane `VOLUME`, 21 Hz on a cab `HPF`), derived for all 218 such
+knobs from `min_string`, `min`, `max` and `showAsInteger`. `Db(-30.0)` on a cab
+used to raise and now writes; the old hand-measured floor was wrong by 16 dB.
+`Db(-40.0)` is accepted on the 14 cabs (the PCOM variants and Parallax) whose
+catalog entry omits the `OFF` label, because those really display -40.0 dB there.
+
+**A pan reads 50 L to 50 R, whatever the catalog declares.** The 36 parameters
+carrying `min_string`, `mid_string` and `max_string` together are drawn as a
+bipolar scale from 50 on one side to 50 on the other, and the catalog declares
+that span four different ways. `units.LABELLED_END_SPAN` holds the drawn span and
+`Parameter.mid_label` the middle label, so `Real(-50.0)` is hard left on every
+such knob.
+
+**`expAssignable` does not govern a host write**, so it is published as
+`Parameter.exp_assignable` and nothing acts on it.
+
+### The catalog's option names now say whether anyone has checked them
+
+`options.OPTION_AUDIT` tells you, per list, whether a person has held the
+catalog's names against a real unit: `"audited"`, `"drawn"` (read, but the unit
+draws pictures rather than words), `"absent"` (someone looked and the control is
+not on screen), or `None` for the 95 nobody has checked. Each enum's docstring
+says the same. Thirteen lists covering 300 parameters have been read on CorOS
+4.0.1. Twelve matched the catalog; the thirteenth did not:
+
+**Breaking: `Osc1Wave.PINK_NS` and `.WHITE_NS` were swapped, and are now fixed.**
+The catalog calls wire position 5 `Pink NS` and position 6 `White NS`. The unit's
+screen draws `WHT` at 5 and `PNK` at 6, and an acoustic measurement off the unit's
+own USB audio interface confirms position 5 is the brighter, white one. The
+members now follow the screen, so code using either one changes behaviour, to
+what the name always claimed. `set_param_option(block, "OSC1 WAVE", "Pink NS")`
+and `protocol.option_value(names, "Pink NS")` now raise rather than select the
+other noise. Reading still reports the catalog's name (`option_at` gives
+`"Pink NS"` for the position that draws `WHT`), so a read-modify-write round trip
+on those two positions raises; pass the index or an `options.Osc1Wave` member.
+
+**`Parameter.hidden`** is published from the catalog's `hidden` attribute. Treat
+it as a hint: 649 parameters carry it, and a Mono Synth's `OSC1 WAVE` is plainly
+on the screen. No library code branches on it.
+
+### `catalog.Parameter` tells you the order the unit draws its controls
+
+New `Parameter.display_pos`. A model's parameters come in wire order, and that is
+not always the order the unit puts them on screen: a Solo 100 Lead draws `GAIN`,
+`BASS`, `MID`, `TREBLE`, `PRESENCE`, `MASTER`, `OUTPUT`, while the wire lists
+`MASTER` before `PRESENCE`. Of the 503 models you can place, 338 never carry it;
+165 carry it somewhere, and on 144 of those the result disagrees with wire order.
+If you are showing a block's controls to a person, sort by it and put the
+unplaced ones last:
+
+```python
+ordered = sorted(model.parameters,
+                 key=lambda p: (p.display_pos is None, p.display_pos))
+```
+
+Placed controls all sort ahead of unplaced ones, so a `None` is never compared
+against a number. Do not drop the `None` ones instead: 43 models place only some
+of their parameters and 5 place two at the same number, so a sort is not a
+complete layout and dropping hides real controls. This rests on two screen
+readings (a cab on 2026-09-11, a Solo 100 Lead on 2026-09-15), not on a
+recurring check. If you are addressing a parameter, keep using the index.
+
+**New `Model.resources`**, from the catalog's `<Padding>`: `cpu`, `dm_heap`,
+`pm_heap`, `sw` and a few rarer ones, under the unit's own names, as pairs. 331 of
+533 models carry them. It is not a capacity model and cannot tell you whether a
+block will fit; keep trying the block and handling the refusal.
+
+**Fixed: two guitar amps had no constant.** `Bogna Uber Clean` and `Bogna Uber
+Lead` ship `hidden="false"`, and `Model.hidden` read the attribute by presence, so
+both were dropped from `models.ALL`. It holds 414 now, not 412.
 
 ### New: listen to everything the unit sends
-
-The unit talks without being asked. Turn a knob on its touchscreen, recall a
-preset, let the metronome run, and it pushes messages about it. Until now those
-messages were only reachable if you happened to be waiting for that exact one,
-and anything else was dropped. `add_listener` hands you all of them:
 
 ```python
 from pyquadcortex import protocol
@@ -958,140 +295,116 @@ with protocol.connect() as qc:
     stop()                     # or qc.remove_listener(watch)
 ```
 
-Your function is called for every message, and it takes nothing away from the
-rest of the library: a call that was waiting for a reply still gets it.
+Your function is called for every message the unit sends, and it takes nothing
+away from the rest of the library. Three rules, because it runs on the thread that
+reads from the USB device: do not block in it; do not read from the unit in it
+(the library raises `RuntimeError` if you try); treat the message as read-only.
+To hear the burst of state the unit sends when a client connects, register before
+the handshake: `protocol.connect(before_handshake=lambda t: t.add_listener(watch))`
+(ADR-0009).
 
-Two rules, because your function runs on the thread that reads from the USB
-device:
+**Initial file enumeration can be deferred.** Both connect layers accept
+`initial_file_listing=False`, omitting the handshake's eager `File` read. A preset
+saved on the unit is announced identically either way (measured 2026-09-09), so a
+listener does not go deaf by setting this.
 
-- **Do not block in it.** Whatever it does delays the next message being read.
-- **Do not read from the device in it.** That thread is the one that would have to
-  deliver the answer, so the call could never be answered - and the connection
-  would stall behind it for as long as it waited. Rather than let that happen, the
-  library raises `RuntimeError` if you try. Note what you need and read it from
-  your own thread.
-- **Treat the message as read-only.** It is the same object the rest of the
-  library sees, not a copy.
+### The Tempo menu's `MODE` switch is readable and writable
 
-To hear the burst of state the unit sends when a client connects - nearly
-everything it knows, including the preset currently loaded - register before the
-handshake, because it arrives seconds after `connect()` returns:
+`qc.tempo_mode()` returns `TempoMode.PRESET` or `TempoMode.GLOBAL`, and
+`qc.set_tempo_mode(...)` moves the switch. It is the device tempo block's
+parameter 1, carried in `GlobalTempo.params`, and it is a global setting: it
+affects every preset and there is nothing to save. It moves neither tempo block;
+the unit keeps the preset's and the device's at the same time and `MODE` picks
+which plays. `GlobalTempo` alternates a clock shape with a 25-parameter shape, so
+a reader waits for a reply that carries parameters.
+
+This withdraws the 0.23.0 claim, carried through 0.40.0, that `MODE` is not on
+the wire. What was measured is that the unit never announces a change; three
+listening runs established that correctly. The value rides the tempo stream the
+unit sends anyway. The method that found it, capturing the whole readable state
+in each position and diffing, is what ADR-0010 now requires before any control
+is recorded as having no wire path.
+
+### Breaking: the metronome beat names were wrong, two of them backwards
+
+`MetronomeBeat` is now the unit's own `OFF`, `MUTE`, `DOWN`, `ON`, replacing
+`NORMAL`, `OFF`, `ACCENT`, `QUIET`. The old names were chosen by ear. `OFF` and
+`ON` are about the accent rather than whether the beat sounds, so `OFF` is
+audible and `MUTE` silences. **`MetronomeBeat.OFF` survives the rename with its
+meaning inverted**, so it is the one to search for. `docs/api.md`,
+`docs/manual-coverage.md` and `set_beat`'s docstring had kept using the old
+names; fixed.
+
+### You can read back which expression pedals are assigned
 
 ```python
-with protocol.connect(before_handshake=lambda t: t.add_listener(watch)) as qc:
-    ...
+protocol.expression_assignments(preset)   # the wire's rows, columns and 0..1
+device.preset.blocks.pedals               # the screen's rows, slots and dB
 ```
 
-The decision behind the two rules is ADR-0009. This is the groundwork for the
-model keeping itself current without asking twice.
+The model reads it the way the unit shows it, for example
+`<EXP 2 on VOLUME (row 1): Off to 3.2 dB>`. `minimum` above `maximum` reverses the pedal, so the pair is reported
+rather than sorted; an end at the `OFF` detent prints `Off` rather than a number;
+with no unit attached the sweep stays the wire's 0..1 and `in_real_units` says
+so. Reading only; assigning through the model is M2.
 
-### Groundwork: the model will talk in the numbers on your screen
+### An expression pedal reaches every parameter, not just a block's
 
-Rows will be 1 to 4, slots 1 to 8, scenes and footswitches letters, levels the dB
-the unit displays, and the tempo the bpm it displays. The wire counts from zero
-and stores raw scales, and the model now converts in exactly one place so nothing
-else has to remember to.
+`set_expression(target, param, ...)` and `clear_expression(target, param)` work
+against any target: blocks, the input gate, the mixer, the splitter and the lane
+output, on float and `switch`-typed parameters alike. Two parameters refuse, and
+they are the only refusal in the library: a Lane Output Control's `MUTE` and
+`SOLO` raise `ControlNotDrivable`, because the unit silently drops a host write
+of them in both directions while accepting the byte-identical message on
+`VOLUME`. Assign those on the unit; the library reads them back.
 
-**Nothing that reads a row or a level exists yet** - the preset and grid surfaces
-are still being built - so what you can use today is the three value types this
-groundwork brought with it, exported from `pyquadcortex`:
+**Breaking: `ExpressionBypassMode` is now `ExpressionSwitchMode`.** Same values,
+same meaning. The enum is the unit's `SWITCH ON` control and applies to a block's
+bypass and to a lane output's `MUTE` and `SOLO`, so the old name described one of
+three things. No alias.
+
+### `framing.decode_reports` returns a `Frame`, not a tuple
 
 ```python
-from pyquadcortex import PresetAddress, FootswitchLetter, SceneLetter
+# before
+message_type, payload = framing.decode_reports(reports)
 
-PresetAddress.parse("28C")          # bank 28, position C
-PresetAddress.parse("28X")          # ValueError, here rather than at write time
-FootswitchLetter.E                  # a footswitch is a letter, never a number
+# after
+frame = framing.decode_reports(reports)
+frame.message_type, frame.payload, frame.encrypted, frame.compressed, frame.device_bytes
 ```
 
-The footswitch rule is worth the sentence it costs. A footswitch index and a
-block's column are different numbers that agree most of the time, which is how a
-bug hid for months: a block in column 3 assigned to footswitch E is stored under
-key 4. No model API takes a bare footswitch number, so a column cannot be passed
-where a footswitch belongs.
+Breaking for anyone calling the codec directly, which the documented API never
+covered. The 8-byte trailer says more than the message type: two bytes mark an
+encrypted payload and a gzip stream. The receive path now logs an encrypted
+payload, an unregistered type and a corrupt payload on separate lines, and a
+damaged gzip payload is reported as damaged rather than as an internal error.
+Nothing decrypts (ADR-0019).
 
-Until the Directory arrives, `PresetAddress` is most useful for checking an
-address before you hand it to the protocol layer.
+### The Global EQ gain span is measured, and its band offsets have names
 
-### Withdrawn: the Tempo menu's MODE is "not on the wire"
+`set_global_eq(band, gain=Db(...))` converts over -12..+12 dB as before; the
+evidence is now four screen readings across the whole travel, ends included, so
+the span is no longer the weaker of the two the library knows. The five offsets
+within a band are `GLOBAL_EQ_BAND_GAIN`, `_FREQUENCY`, `_Q`, `_TYPE` and
+`_ENABLED`, for reading a wire index the unit reported; `set_global_eq` does the
+arithmetic for you.
 
-The 0.23.0 entry below records, under **Settled**, that the Tempo menu's MODE
-(global vs per-preset) is not on the wire. **That claim is withdrawn.** It was
-carried in the documentation from 0.33.0 through 0.40.0 and is wider than the
-evidence behind it.
+### The hardware suite's `--hardware` gate covers a path named on the command line
 
-What was actually measured is that MODE is never BROADCAST. Three independent
-tests watched for a broadcast when the switch was changed and saw nothing, and
-the instrument in the later two is worth trusting - 70 of the device's 72 message
-types decoded, with a liveness heartbeat proving the link was up. But all three
-listened, and none of them asked. **A control the device never announces may
-still answer a READ.** Nothing has tried one.
-
-So MODE is an open protocol investigation rather than a settled dead end. **It was
-asked, and it answered** - see the next entry.
-
-### The Tempo menu's MODE switch is readable and writable
-
-`qc.tempo_mode()` returns a `TempoMode` - `PRESET` or `GLOBAL` - and
-`qc.set_tempo_mode(TempoMode.GLOBAL)` moves the switch. It is the DEVICE tempo
-block's parameter 1, carried in `GlobalTempo.params`.
-
-**This is a global setting**, despite riding a tempo message. It affects every
-preset and there is nothing to save afterwards, so read it first if you intend to
-put it back. It does not move either tempo block: the unit keeps the preset's
-settings and the device's at the same time, and MODE only picks which one plays.
-
-The entry above withdrew the claim that this control was not on the wire. It was
-on the wire the whole time - though not via a naive READ, see the caveat below. The three tests that found nothing were measuring
-something real and narrower - the unit emits no CHANGE EVENT when the switch moves -
-and the mistake was reading that as "cannot be asked". The current value in fact
-rides the tempo stream the unit sends anyway. Confirmed on the wire, on the unit's
-own screen, and by the tempo actually in effect, which switched between the two
-blocks' stored values.
-
-The method that found it - capture the whole readable state in each position
-and diff, rather than looking for the field you expect - is now what ADR-0010
-requires before any control is written down as having no wire path.
-
-Watch out for one thing if you read `GlobalTempo` yourself: it alternates two
-message shapes, one carrying the running clock and one carrying the 25
-parameters. Wait for a reply that actually has parameters. Taking the first
-`GlobalTempo` to arrive is what produced the original dead end.
-
-### `TEMPO` takes bpm: the span is 40 to 240
-
-`set_tempo_param("TEMPO", real=120)` now works, and `tempo_bpm()` /
-`bpm_to_tempo()` convert if you want the numbers directly. Previously `real=`
-was refused here, because the catalog publishes a placeholder range for this
-parameter and converting against it gives a number that means something else.
-
-The span was measured off the screen instead: 59 bpm at `0.095`, 111 at `0.355`,
-120 at `0.400`, each exact to the displayed integer. The endpoints are the fit's
-rather than driven, and they land on the 40-240 range the unit's manual
-documents.
+`pytest tests/hardware/test_write_echo.py` used to collect and run the suite
+with no flag. An explicitly named hardware path now stops the run with an error
+naming the flag. `test_scales.py` and `test_values.py` in that directory gained
+an `_on_unit` suffix so `pytest --hardware` from the repo root collects the
+whole tree. This withdraws the 0.39.0 claim that nothing in `tests/hardware/` is
+collected without the flag; that was true of paths reached by recursion only.
 
 ### Regenerating the protobuf bindings can no longer walk the pin backwards
 
-Nothing you install changes. This is about the generated bindings that ship in
-the wheel, and it matters to anyone who regenerates them.
-
-`grpcio-tools` carries its own copy of protoc, so whichever version is installed
-decides the gencode written into the bindings. The dev extra's floor was
-`>=1.68`, low enough that `pip install -e ".[dev]"` could resolve to a generator
-emitting gencode 7.35.0 against bindings committed at 7.35.1 - and lower still
-through a venv that picked up `grpcio-tools` some other way, or the script's
-fallback to a system `protoc`, which no floor constrains. So regenerating could
-silently downgrade them. Nothing caught it: the protobuf runtime only checks
-`runtime >= gencode`, so older bindings import cleanly and pass the whole suite
-while `pyproject.toml`'s pin no longer describes them.
-
-The floor is now `grpcio-tools>=1.83.0`, the oldest release whose protoc emits
-gencode 7.35.1, and it moves in the same commit as any gencode bump.
+Nothing you install changes. The dev extra's `grpcio-tools` floor is `>=1.83.0`,
+the oldest release whose protoc emits the committed gencode 7.35.1, and
 `scripts/compile_protos.sh` refuses to install bindings older than the committed
-ones and leaves the tree untouched when it does; `tests/test_packaging.py`
-checks on every PR that the committed gencode and the pin floor are the same
-number. The bindings themselves are unchanged - regenerating is its own change
-with its own pin bump (ADR-0001, ADR-0008).
+ones (ADR-0008).
 
 ## 0.40.0 - 2026-08-10
 

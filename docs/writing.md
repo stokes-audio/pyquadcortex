@@ -111,7 +111,9 @@ the one place they may appear, because it lists them.
 
 Governed documents are every `.md` file in the repository except
 `code_of_conduct.md` and the released entries of `changelog.md`, which are a
-record of what was said at release time.
+record of what was said at release time. `docs/ADR.md` is exempt from the
+paragraph limit only: a decided record is append-only and is not edited for
+length. New records follow the limit.
 
 ## Glossary
 

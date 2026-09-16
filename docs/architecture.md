@@ -136,7 +136,7 @@ timeout_ms)` and `close()`. It owns everything time-dependent and concurrent:
 - listeners: `add_listener()` registers a callable that sees every decoded
   message for the life of the connection. It consumes nothing;
 - a keepalive thread;
-- the unit's benign write STALL ([protocol.md](protocol.md#the-benign-write-stall)):
+- the unit's benign write stall ([protocol.md](protocol.md#the-benign-write-stall)):
   write errors are logged at debug and swallowed, and a dead unit is detected by
   `request()` timeouts.
 

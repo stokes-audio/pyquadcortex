@@ -279,7 +279,7 @@ behind each one is in the lab repository,
 - **Why:** the number was right and the evidence was the manual plus two close
   interior points, which cannot tell one span from a wider one.
 - **Scope:** `units.py`, `tests/test_scales.py`, the hardware suite, `api.md`.
-  `FREQUENCY`, `Q` and the OUT level still take `Encoded`.
+  `FREQUENCY`, `Q` and the `OUT` level still take `Encoded`.
 
 ### 2026-09-11 - A pan's drawn span is measured, not declared (ADR-0015)
 
@@ -433,7 +433,7 @@ behind each one is in the lab repository,
 - **Why:** M1 story #9; every later story imports through the new layout.
 - **Scope:** the whole package, CI, `scripts/`, every document.
 
-### 2026-08-06 - Domain model Part II: state tracking and save behaviour
+### 2026-08-06 - Domain model Part 2: state tracking and save behaviour
 
 - **What changed:** `domain-model.md` sections 9 to 13.
 - **Why:** M0 story #4; both empirical questions answered on hardware.

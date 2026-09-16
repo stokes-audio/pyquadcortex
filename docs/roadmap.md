@@ -96,9 +96,9 @@ investigation got, so picking one up does not start from zero. Nobody is working
 on these.
 
 - **Import an Impulse Response from the host.** Everything but the payload is
-  mapped: `File{CREATE, type: 1, total_bulk_create_count: 1, folder{key: "2_q"},
-  ir_payload}` makes the unit start a real "Importing IRs" operation and report it
-  finished, but nothing is imported. Eight encodings were tried (16- and 24-bit
+  mapped: a `File` `CREATE` with `type: 1`, `total_bulk_create_count: 1`, the
+  folder `2_q` and an `ir_payload` makes the unit start a real "Importing IRs"
+  operation and report it finished, but nothing is imported. Eight encodings were tried (16- and 24-bit
   PCM WAV at 48 and 44.1 kHz, 1024 and 4096 samples, an IEEE-float32 WAV, raw
   int24, raw float32, with and without a `.wav` name and a sha256 key). Outbound
   fragmentation is proven sound to 26 reports, so the transport is not the

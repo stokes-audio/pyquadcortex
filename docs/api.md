@@ -324,7 +324,7 @@ wrong value is kept rather than rejected and reads back cleanly.
 ## Scenes, and how factory presets build them
 
 Factory presets often produce their scenes with the **mixer**, not with bypass.
-In "Darkglass AO900 1" nothing is bypassed in any scene: all eight come from
+In the factory preset "Darkglass AO900 1" nothing is bypassed in any scene: all eight come from
 per-scene `LEVEL A` and `LEVEL B` across two rows, giving four amp paths.
 
 ```python

@@ -10,7 +10,7 @@ on the unit and read what arrives.
 Reach for this when an operation is undocumented, or when a write you believe is
 correct has no effect. Guessing is unreliable because a write the unit does not
 understand is accepted and ignored. There is no error to learn from (see
-[the benign write STALL](protocol.md#the-benign-write-stall)).
+[the benign write stall](protocol.md#the-benign-write-stall)).
 
 ## The listener
 
@@ -105,8 +105,7 @@ listener comes back silent, do not reach for a longer window. Ask, and diff what
 comes back (next section).
 
 **3. A predicate that tests a field the reply never sets rejects every valid
-answer.** Reading the Favorites list needs `RecentsFavorites{READ, is_favorites:
-true}`, and the reply comes back with `is_favorites` absent: the flag selects
+answer.** Reading the Favorites list needs `RecentsFavorites{READ, is_favorites: true}`, and the reply comes back with `is_favorites` absent: the flag selects
 which list you get and is not repeated in the answer. Waiting with
 
 ```python
@@ -197,7 +196,7 @@ name proves linkage, never meaning.
   guaranteed rather than negotiated.
 - **Ask whether the change needs committing.** Some editors on the unit
   broadcast only when a value is confirmed. If a drag produces nothing, have them
-  press the confirm control and watch again. The HYBRID mode merge broadcast
+  press the confirm control and watch again. The `HYBRID` mode merge broadcast
   nothing until `OK` was pressed.
 
 ## Reading what you get

@@ -100,11 +100,10 @@ small documentation fixes.
 ### Parameters and scales
 
 - A parameter's scale comes from the catalog: `min`, `max`, `skew`, one law.
-  Only the numbers the catalog names but does not spell out live in
-  `units.FIRMWARE_CONSTANTS`, each with evidence. An unknown name raises; never
-  add a fallback. The one measured override is `units.LABELLED_END_SPAN`, keyed
-  by the label triple. A second override needs a new ADR. Screen readings are
-  tests in `tests/test_scales.py`. (ADR-0015)
+  The numbers the catalog names but does not spell out live in
+  `units.FIRMWARE_CONSTANTS`, each with evidence; an unknown name raises. The
+  one measured override is `units.LABELLED_END_SPAN`; a second needs a new ADR.
+  Screen readings are tests in `tests/test_scales.py`. (ADR-0015)
 - The catalog is trusted for structure (option count, wire index of each option,
   parameter index) and not for what the unit draws (option names, drawn order,
   `display_pos`). A two-position list is read by driving each position. Readings
@@ -127,12 +126,12 @@ small documentation fixes.
 ### Profiles and the wire
 
 - `connect()` resolves a device profile from `device_type` and `zenos_git_hash`
-  before the handshake and refuses an unknown pair. Everything that differs by
-  firmware or model lives on the profile class; nothing else tests a version
-  string. Name a profile by CorOS version. `protocol.models`, `params` and
-  `options` are the 4.0.1 snapshot; a connection's own is `qc.models`. An
-  observation from another profile goes beside the 4.0.1 record in
-  `docs/protocol.md`, dated. (ADR-0020)
+  and refuses an unknown pair. Everything that differs by firmware or model
+  lives on the profile class, named by CorOS version; nothing else tests a
+  version string. `protocol.models` is the 4.0.1 snapshot; a connection's own is
+  `qc.models`. (ADR-0020)
+- An observation from another profile goes beside the 4.0.1 record in
+  `docs/protocol.md`, dated and named.
 - A docstring states its evidence: confirmed on hardware, or inferred from the
   schema. Record a hardware verification in the docstring and in
   `docs/protocol.md`'s coverage table in the same change.
