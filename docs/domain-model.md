@@ -1607,19 +1607,23 @@ zero times in the 556,732-byte `ModelRepo.xml`. `SIN` occurs once, inside
 of one, anywhere in the file. So there is no unparsed short-label attribute
 waiting to be found: whatever holds these words is in the firmware.
 
-**And two of the seven are not reachable from their catalog string at all.**
-Four are: `Sine`, `Triang`, `Sawtooth` and `Pulse` give `SIN`, `TRI`, `SAW` and
-`PUL` by taking the first three letters. `Square` does not - that rule gives
-`SQU` and the screen draws `SQR`. And the seventh is the one this repo has
-already had to measure twice: the position that draws `WHT` carries the catalog
-string `Pink NS`, so no shortening of it arrives anywhere near `WHT`, because
-the catalog has that position's MEANING wrong (`options.OPTION_CONTESTED`).
-Length is not the rule either:
-`RECORD MODE` draws `Momentary`, nine characters, driven and read back, while
-`Sawtooth` at eight draws `SAW`. Nor is the widget type - `PRE ROLL`,
-`TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"` on the models they were
-read on, exactly like `OSC1 WAVE`, and all three render their catalog strings
-verbatim: `2 BARS`, `4 Alt`, `1/64T`.
+**And no one transform covers the set.** Take the seven in three groups. Four
+yield to the first three letters: `Sine`, `Triang`, `Sawtooth` and `Pulse` give
+`SIN`, `TRI`, `SAW` and `PUL`. `Square` does not - that rule makes `SQU` and the
+screen draws `SQR`. And the last two are the pair this repo has already had to
+measure twice, where the question cannot even be asked of the string: the
+position carrying `Pink NS` draws `WHT` and the position carrying `White NS`
+draws `PNK`, so nothing derived from either string arrives at what is drawn
+beside it (`options.OPTION_CONTESTED`).
+
+Length is not the rule either: `RECORD MODE` draws `Momentary` at nine
+characters while `Sawtooth` at eight draws `SAW`. Nor is the widget type -
+`PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `type="rotarySwitch"` on the models
+they were read on, exactly like `OSC1 WAVE`, and all three render their catalog
+strings verbatim: `2 BARS`, `4 Alt`, `1/64T`. Mind the evidence grades in that
+sentence: `Momentary`, `2 BARS`, `4 Alt` and `1/64T` were each DRIVEN and read
+back, while `Sawtooth`'s `SAW` comes from transcribing the waveform list, whose
+driven anchors are positions 0, 3, 5 and 6.
 
 **What is still unmeasured** is whether the firmware keys a table on those exact
 strings or scopes the abbreviation to this one control. Do not write down either
@@ -1630,6 +1634,16 @@ with the Mono Synth's. If those two draw `SIN` and `SQR` there as well, the
 firmware keys on the strings; if they draw in full, the abbreviation belongs to
 the Mono Synth's oscillator control. That list is one of the 95 nobody has read,
 at two parameters, so the read lands in the audit too.
+
+Write the residual down before taking it, because this repo's own precedent is
+three plausible rules tried against hardware and all three false. A third answer
+survives that read: an abbreviation scoped to WAVEFORM SELECTORS rather than to
+either the strings or that one control, which produces `SIN` and `SQR` on the
+Tremolo exactly as keying on the strings would. Nothing can design the confound
+away - `Tremolo`/`Harmonic Tremolo` `WAVEFORM` and `Flanger Engine` `WAVEFORM`
+are the only lists in the whole catalog sharing any string with the Mono
+Synth's, and all of them are waveform pickers. So the read narrows to two
+answers, and does not choose between them.
 
 The practical consequence is the one that matters: a reading taken off the
 unit's screen is a fact about the unit's screen. It is not automatically a fact

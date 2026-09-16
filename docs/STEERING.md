@@ -161,10 +161,13 @@ at nine characters while `Sawtooth` at eight draws `SAW` - nor the widget type,
 since `PRE ROLL`, `TAP PRESET` and `SYNC NOTE` are `rotarySwitch` on the models
 they were read on, exactly like `OSC1 WAVE`, yet draw `2 BARS`, `4 Alt` and
 `1/64T` verbatim. What is left unmeasured is whether the firmware keys a table
-on those strings or scopes the abbreviation to that control - and there IS a
-hook for it, one read, already inside the ranking below: a `Tremolo`'s
-`WAVEFORM` is placeable and its list shares `Sine` and `Square` verbatim with
-the Mono Synth's.
+on those strings, scopes the abbreviation to waveform selectors, or scopes it to
+that one control - and there IS a hook for it, already inside the ranking below:
+a `Tremolo`'s `WAVEFORM` is placeable and its list shares `Sine` and `Square`
+verbatim with the Mono Synth's. That read NARROWS to two answers rather than
+choosing one, because the only lists in the catalog sharing any string with the
+Mono Synth's are waveform pickers. The residual is written down in
+`docs/domain-model.md` before the read rather than after it.
 
 **Why - `OPTION_USAGE`.** "95 lists unread" is not 95 equal jobs: `Off,On`
 decides 222 parameters and `CHO1,CHO2` decides two. The generator now emits the

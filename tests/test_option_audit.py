@@ -420,28 +420,48 @@ def test_the_unread_work_is_long_tailed_and_the_document_says_so():
 
 
 def test_the_worklist_table_is_the_snapshots_own_ranking():
-    """The five rows the document names, and the two numbers beside them.
+    """The five rows the document names, in the order it names them.
 
     The point of `OPTION_USAGE` is to stop these being carried in prose from a
-    one-off count, so every figure in that table is checked against the
-    snapshot: the parameter count, the position count, and that the five are
-    in fact the five biggest unread lists in that order.
+    one-off count, so the table is parsed out of the document by its header and
+    its first two columns are compared, IN ORDER, against the snapshot's own
+    ranking of the unread lists.
+
+    What this does NOT check, and cannot offline: columns three and four, which
+    name the list and a model the control appears on. Confirming those needs
+    the `ModelRepo` payload, and no payload is committed here - the snapshot is
+    generated constants. An earlier version of this test searched the whole
+    document for the substring ``"| 14 | 17 |"``, which read as checking the
+    row and in fact checked neither the order nor the other two columns.
     """
     unread = sorted(
         (labels for labels, status in options.OPTION_AUDIT.items()
          if status is None),
         key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
 
-    text = " ".join(
-        (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
-        .read_text(encoding="utf-8").split())
-    for labels in unread[:5]:
-        row = f"| {options.OPTION_USAGE[labels]} | {len(labels)} |"
-        assert row in text, (
-            f"docs/domain-model.md has no worklist row {row!r} for "
-            f"{','.join(labels)!r}. The ranking moved and the table did not.")
+    doc = (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
+    lines = doc.read_text(encoding="utf-8").splitlines()
+    header = "| parameters | positions | list | somewhere it appears |"
+    assert lines.count(header) == 1, (
+        f"docs/domain-model.md must carry exactly one worklist table with the "
+        f"header {header!r}; it has {lines.count(header)}")
+    rows = []
+    for line in lines[lines.index(header) + 2:]:
+        if not line.startswith("|"):
+            break
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        rows.append((int(cells[0]), int(cells[1])))
 
-    rest = unread[5:]
+    assert rows == [(options.OPTION_USAGE[labels], len(labels))
+                    for labels in unread[:len(rows)]], (
+        f"the worklist table is {rows}, and the snapshot's five biggest unread "
+        f"lists are "
+        f"{[(options.OPTION_USAGE[l], len(l)) for l in unread[:len(rows)]]}. "
+        f"The ranking moved and the table did not.")
+    assert len(rows) == 5, f"the worklist table has {len(rows)} rows, not five"
+
+    text = " ".join(doc.read_text(encoding="utf-8").split())
+    rest = unread[len(rows):]
     few = sum(1 for labels in rest if options.OPTION_USAGE[labels] <= 2)
     two = sum(1 for labels in rest if len(labels) == 2)
     phrase = (f"Of the remaining {len(rest)}, {few} decide one or two "
@@ -452,11 +472,11 @@ def test_the_worklist_table_is_the_snapshots_own_ranking():
 def test_the_read_that_would_settle_the_abbreviations_is_still_available():
     """A `Tremolo`'s WAVEFORM is what the document offers as the next step.
 
-    It is only the next step while it is unread, and only decisive while its
-    list shares strings with the Mono Synth's. Both are properties of the
-    snapshot, so they are checked rather than asserted in prose - if a later
-    catalog renames either list, or somebody audits this one, the document is
-    pointing at a read that no longer settles anything.
+    It is only the next step while it is unread, and only useful while its list
+    shares strings with the Mono Synth's. Both are properties of the snapshot,
+    so they are checked rather than asserted in prose - if a later catalog
+    renames either list, or somebody audits this one, the document is pointing
+    at a read that settles nothing.
     """
     tremolo = ("Sine", "Triangle", "Square", "Saw Up", "Saw Dn")
     mono = ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS",
@@ -472,4 +492,6 @@ def test_the_read_that_would_settle_the_abbreviations_is_still_available():
     text = " ".join(
         (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
         .read_text(encoding="utf-8").split())
-    assert f"`{','.join(tremolo)}`" in text
+    assert f"`{','.join(tremolo)}`" in text, (
+        f"docs/domain-model.md no longer quotes the list it points the next "
+        f"read at, {','.join(tremolo)!r}")
