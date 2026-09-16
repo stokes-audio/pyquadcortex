@@ -127,8 +127,9 @@ MEANING_DISAGREEMENTS = {
     # `PINK_NS = 5` would hand a caller white noise.
     ("Sine", "Triang", "Sawtooth", "Square", "Pulse", "Pink NS", "White NS"): {
         5: ("WHITE_NS", "position 5 drew 'WHT', which is 'White NS' - and "
-            "recorded against position 6 it is brighter by ~3.6 dB per octave "
-            "band, monotonically, which makes it the white one; see "
+            "recorded against position 6 the difference between them climbs "
+            "monotonically across the seven octave bands, ~3.6 dB per octave, "
+            "which makes it the brighter and so the white one; see "
             "docs/domain-model.md"),
         6: ("PINK_NS", "position 6 drew 'PNK', which is 'Pink NS' - and it is "
             "the darker of the pair by that same measurement, so it is the "
