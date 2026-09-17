@@ -50,6 +50,14 @@ dependencies = [
 # Ask the compiler, never the metadata: grpcio-tools versions do not track
 # protobuf ones, and 1.82.1 declares `protobuf>=7.35.1` while still emitting
 # gencode 7.35.0.
+#
+# The `<2` on mypy is a gate rather than a guess: a major version of the
+# checker does not enter a BLOCKING CI job unreviewed (ADR-0018). mypy 2.3.1
+# was run against this tree on 2026-09-16 and both halves of that job were
+# clean - no issues in 46 source files, and `tests/test_typing.py` passed, so
+# the unit checking still bites. Raising the ceiling is therefore open, not
+# blocked, and it is a change of its own: this pin decides which checker every
+# contributor runs, and one green run on one tree is not that decision.
 dev = ["pytest>=8", "grpcio-tools>=1.83.0", "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
 
 [project.scripts]

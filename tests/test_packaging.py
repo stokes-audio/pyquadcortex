@@ -5,11 +5,14 @@ module rename ships a `qcctl` that dies on first use and is never noticed until
 someone installs the wheel. This resolves it the way the installed script does.
 """
 import importlib
+import importlib.metadata
 import pathlib
 import re
 import subprocess
 import sys
 import tomllib
+
+from packaging.requirements import Requirement
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -216,3 +219,63 @@ def test_the_protobuf_pin_stops_below_the_next_gencode_major():
     assert ceiling.split(".")[0] == expected, (
         f"the committed bindings are gencode {gencode}, so the pin should stop "
         f"below protobuf {expected}, not {ceiling}")
+
+
+# -- the pins and the environment that claims to satisfy them -----------------
+
+
+def _declared_requirements():
+    """The runtime pins and the dev-extra pins, parsed, as two lists."""
+    project = PYPROJECT["project"]
+    runtime = [Requirement(r) for r in project["dependencies"]]
+    dev = [Requirement(r) for extra in project["optional-dependencies"].values()
+           for r in extra]
+    return runtime, dev
+
+
+def test_the_pins_reach_the_check_that_reads_them():
+    """A renamed key in `pyproject.toml` leaves the check below reading nothing.
+
+    Finding nothing to compare and passing is the failure mode every check in
+    this file is written against. Held structurally rather than by naming the
+    packages, so removing one is not a false alarm: both lists must parse to
+    something, and at least one pin must carry a CEILING, because a pin with
+    only a floor can never disagree with a newer install.
+    """
+    runtime, dev = _declared_requirements()
+    assert runtime and dev
+    assert any(spec.operator.startswith("<")
+               for req in runtime + dev for spec in req.specifier)
+
+
+def test_no_installed_dependency_sits_outside_the_pin_that_declares_it():
+    """CI installs from these pins; a working copy is installed by hand.
+
+    So the two drift, and nothing said so. This checkout ran mypy 2.3.1 against
+    a `mypy>=1.15,<2` pin for an unknown number of pull requests, which made
+    every local "mypy clean" a claim about a checker CI does not run. Nothing
+    turned out to be broken. Nothing would have reported it if it had been.
+
+    Only the protobuf and mypy pins carry a ceiling, so this bites on a major
+    version and is quiet otherwise. Trialing one means moving the pin in the
+    same change, which is the point rather than the cost.
+    """
+    runtime, dev = _declared_requirements()
+    outside = []
+    for req in runtime + dev:
+        try:
+            installed = importlib.metadata.version(req.name)
+        except importlib.metadata.PackageNotFoundError:
+            continue  # not in this environment, so it disagrees with nothing
+        # `prereleases=True` so an installed prerelease is COMPARED rather than
+        # reported as outside every pin, which is the obvious way to cry wolf.
+        if not req.specifier.contains(installed, prereleases=True):
+            outside.append(f"{req.name} {installed} installed, pinned "
+                           f"{req.name}{req.specifier}")
+    assert not outside, (
+        "the installed packages disagree with pyproject.toml:\n  "
+        + "\n  ".join(outside)
+        + "\nCI installs from the pins, so anything checked against these "
+          "versions was checked against something else. Reinstall with "
+          "`uv pip install -e \".[dev]\"`, or move the pin in this commit if "
+          "the newer version is the one this project now wants.")

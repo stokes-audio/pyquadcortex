@@ -1618,8 +1618,8 @@ Do not turn that into a rule. Two positives is not a rule, and `Parameter.hidden
 is the exact flag ADR-0010 caught this repo trusting once already, which is why
 a list is never marked `absent` from it. The metronome's four cells argue the
 other way: they are NOT hidden parameters and they depart from the catalog
-anyway, drawing circles instead of words. Their model is `internal` inside a
-hidden category, which is a third attribute again.
+anyway, drawing circles instead of words. Their model is `internal` and sits in
+a hidden category - two more flags, and neither one is `Parameter.hidden`.
 
 What the reading establishes is the narrow thing: the catalog's WORDS do not
 predict the shortening, because the same word renders both ways.

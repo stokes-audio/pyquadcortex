@@ -70,6 +70,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 - **Runtime dependencies are exactly `hid` and `protobuf`.** The wheel installs with no compiler, no protoc, no build step.
 - **The protobuf runtime pin is coupled to the committed gencode, and so is the generator floor.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001). The generator is `grpcio-tools`, which carries its own protoc and so decides the gencode by which version is installed, hence the `grpcio-tools>=1.83.0` floor in the dev extra. Older gencode still imports, so both guards are explicit: `scripts/compile_protos.sh` refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode and the pin floor are the same number (see ADR-0008).
 - **Python >= 3.11.**
+- **The environment is held to the pins, not just CI's.** `tests/test_packaging.py` compares every version installed in the running interpreter against the requirement that declares it, and skips what is not installed. CI installs from `pyproject.toml` and so always agrees; a working copy is installed by hand and drifted once - mypy 2.3.1 against a `<2` pin, for an unknown number of pull requests, which made every local "mypy clean" a claim about a checker CI does not run. Only the protobuf and mypy pins carry a ceiling, so the check is quiet unless a major version arrives.
 - **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - lives in `tests/hardware/` and runs only under `pytest --hardware` (see ADR-0005). That gate is TWO hooks in `tests/hardware/conftest.py`, not one: pytest offers `pytest_ignore_collect` only the paths it reaches by walking a directory, so a path named on the command line is caught instead by `pytest_collection_modifyitems`, which stops the run with an error naming the flag. `tests/test_hardware_gate.py` holds both halves up through a subprocess. Its modules must stay import-safe offline, and two offline tests hold that: `tests/test_hardware_gate.py` collects the whole tree under `--hardware` with `hid` poisoned, which imports every module in the directory, and `tests/test_scene_echo_predicates.py` imports `tests/hardware/test_write_echo.py` to exercise its predicates with no unit attached - the only way a predicate that can never match gets caught cheaply.
 - **Wire behaviour is stated per device profile, and a profile is named by CorOS version, never by `app_fw`** (ADR-0020). The measured baseline is Quad Cortex, CorOS 4.0.1, firmware d14e; a contributor reports d14e on 4.1.0 too (PR #44), so the app firmware string distinguishes nothing. An unknown profile refuses to connect rather than borrow the nearest one. An observation from another profile is recorded beside the 4.0.1 record in `protocol.md`, dated and named. The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
 - **A hardware test names what it verifies, and it must actually verify it.** `@pytest.mark.verifies(*operations)` names the `QuadCortex` operations a test both exercises and asserts on - checked against `QuadCortex.operations()` at collection, so a renamed operation is a collection error rather than a marker that quietly stops naming anything. `pytest tests/hardware --hardware --verifies NAME` narrows a run to the tests that name it, and refuses a name that is not an operation or that no collected test names. `--profile CLASSNAME` connects as that profile class instead of the one the unit resolves to, which is how a unit the registry would refuse gets measured by the suite that measures it. `scratch_preset` is the fixture a test uses to get a disposable copy of the loaded preset to edit, rather than touching the owner's own library. An operation no hardware test names has to appear in `tests/test_hardware_markers.py`'s `UNMARKED_OPERATIONS`, with the reason beside it - there is no third way.
@@ -104,7 +105,9 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 
 ## 8. Open Questions
 
-None yet. Protocol unknowns (the splitter write path, the IR import payload format, and the rest) are investigation gaps tracked in [`roadmap.md`](roadmap.md) and [`architecture.md`](architecture.md), not deferred decisions.
+- **Whether the mypy pin should allow 2.x.** It is `mypy>=1.15,<2`, and the ceiling is deliberate (ADR-0018). mypy 2.3.1 was run against this tree on 2026-09-16 and both halves of CI's blocking job were clean - no issues in 46 source files, and `tests/test_typing.py` passed, so the unit checking still bites. That is one green run on one tree: it says raising the ceiling is open, not that it should be raised. The pin decides which checker every contributor runs, which makes it a change of its own.
+
+Protocol unknowns (the splitter write path, the IR import payload format, and the rest) are investigation gaps tracked in [`roadmap.md`](roadmap.md) and [`architecture.md`](architecture.md), not deferred decisions.
 
 ## 9. Pointers
 
@@ -139,6 +142,48 @@ Single-device, single-connection USB HID at interactive rates (129-byte reports)
 ---
 
 ## Change Log
+
+### 2026-09-16 - The environment is now held to the pins it claims to satisfy
+
+**What changed:** `tests/test_packaging.py` compares the installed version of
+every declared dependency against the requirement that declares it. Two stale
+records were corrected at the same time.
+
+**Why.** This checkout had mypy 2.3.1 installed against a `mypy>=1.15,<2` pin.
+CI installs from `pyproject.toml`, so CI's blocking mypy job had been running a
+different checker from the local one for an unknown number of pull requests, and
+every local "mypy clean" was a claim about the wrong tool. Nothing turned out to
+be broken - mypy 1.20.2 and 2.3.1 are both clean on this tree - but nothing in
+the repo could have said so either way. The protobuf pin already has this shape
+of guard against a committed artifact (ADR-0008); a pin with no artifact behind
+it can only be checked against the environment, so that is what this does.
+
+The venv was brought back inside the pin rather than the pin raised to admit
+2.x. Raising it decides which checker every contributor runs, and the evidence
+for 2.x is one green run on one tree - recorded in section 8 rather than acted
+on.
+
+**Why - the two stale records.** A test docstring said `changelog.md` had no
+guard because `tests/test_docs.py` covers only docstrings. It has covered
+`changelog.md` since 3dea2f2. The test still earns its place - those checks
+`ast.parse` a fence and never run one - so the reason was corrected and the
+test left alone. Separately, `domain-model.md` named two attributes
+(`Model.internal`, and the category's own `hidden`) while calling them "a
+third"; `Parameter.hidden`, `Model.internal` and `category_hidden` are three
+distinct flags and the prose has to say so, because reading one for another is
+a mistake this repo has already made.
+
+**Scope of impact:**
+- **Updated:** `pyproject.toml` (a comment on the mypy pin, no version moved);
+  `tests/test_packaging.py`; `CLAUDE.md`; this file's sections 6 and 8;
+  `tests/test_catalog.py` and `tests/test_option_audit.py` (a docstring that
+  said `changelog.md` was unguarded when it is in `SNIPPET_SOURCES`);
+  `docs/domain-model.md` (a sentence naming two attributes and calling them a
+  third)
+- **Not updated (intentionally):** `ADR.md` - no decision was made or reversed;
+  the mypy ceiling stands where ADR-0018 put it. `changelog.md` - that file
+  answers "I upgraded, what is different for me?" and nothing here reaches an
+  installed package.
 
 ### 2026-09-16 - The unit shortens one control's words, and the unread audit work is ranked
 
