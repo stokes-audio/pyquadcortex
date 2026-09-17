@@ -107,7 +107,7 @@ ADR-0012.
 | One translation boundary | Screen values become wire values in one package, and a source-reading test proves no other module in the package does it | A wrong row is silent: the write lands on a real row and reads back perfectly (design principle 5 in [`domain-model.md`](domain-model.md); ADR-0013) | `pyquadcortex/device/translate/` | The protocol layer keeps zero-based coordinates and quotes the catalog's own units (ADR-0016) |
 | Model state goes through the cache | A property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py` | One account of what the model believes and how it learned it (ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry compute from `value()` instead of caching beside it |
 | Catalog for structure, a reading for presentation | Option count, wire index and parameter index come from the catalog; anything a person sees needs a reading | Every fixed list the loaded preset reaches lands where the catalog says, re-driven each hardware run. The drawn order of three lists and one list's option names disagreed with the file; `display_pos` has matched twice and rests on those two readings | `tests/hardware/test_option_structure_on_unit.py` | Anything drawn |
-| Evidence-stamped option lists | Each option list carries a status saying whether a person read its names off the unit | The catalog's `stepNames` differ from the unit's own `dynamic_steps` at 18 of 20 shared positions, and one of thirteen lists read on the screen disagreed, so an unchecked list must not look checked | `options.OPTION_AUDIT` and `tests/fixtures/catalog/option_readings.json` | A list the unit does not draw is `absent` by observation |
+| Evidence-stamped option lists | Each option list carries a status saying whether a person read its names off the unit | The catalog's `stepNames` differ from the unit's own `dynamic_steps` at 18 of 20 shared positions, and two of the fourteen lists read on the screen did not match it, so an unchecked list must not look checked | `options.OPTION_AUDIT` and `tests/fixtures/catalog/option_readings.json` | A list the unit does not draw is `absent` by observation |
 | The profile is the class | `connect()` resolves `(device_type, zenos_git_hash)` to a client class before the handshake; a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is what polymorphism removes (ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
 
 ## 6. Constraints
@@ -219,6 +219,17 @@ behind each one is in the lab repository,
   `writing.md`. Narrative history moved to the lab repository.
 - **Why:** the documents had become transcripts of review arguments.
 - **Scope:** all `.md` files; `tests/test_writing.py` added. ADR decisions unchanged.
+
+### 2026-09-16 - The screen's shortening is one control's, and the unread audit is ranked
+
+- **What changed:** a Flanger Engine's `WAVEFORM` spells `Sine` out where a Mono
+  Synth draws `SIN`, so the shortening belongs to the control.
+  `options.OPTION_USAGE` publishes how many parameters each list decides.
+- **Why:** the catalog's words do not predict a shortened control, and 94 unread
+  lists are not 94 equal jobs.
+- **Scope:** the generator, the options snapshot, the readings fixture, tests,
+  and four documents. `ADR.md` unchanged: this settles a question in its
+  appendix rather than deciding one.
 
 ### 2026-09-15 - The catalog carries the option vocabulary; the screen is a second renderer
 

@@ -15,6 +15,45 @@ sustained stretch without a correction.
 
 ## Unreleased
 
+### The screen shortens one control's words, and not because of the words
+
+A Mono Synth's oscillator tab draws `SIN` where the catalog says `Sine`. Whether
+the unit shortens every long name, or only that one control, was unknown.
+
+It is that one control. A Flanger Engine's `WAVEFORM` offers `Sine`, `Triangle`,
+`Square`, `Saw Up`, `Saw Dn`, `rndSmooth` and `rndStep`, and the screen spells
+all seven out, read on the unit 2026-09-16 with positions 0 and 3 driven from a
+host. The same word draws two ways on two controls, so nothing in the catalog's
+text predicts which.
+
+Nineteen controls have now been read. Two shorten a word, four draw circles
+instead of words, and the other thirteen match the catalog. `Osc1Wave` is still
+the only enum whose names are known to differ from what the screen shows.
+
+### New: `options.OPTION_USAGE` says how many parameters each option list decides
+
+`OPTION_AUDIT` tells you whether anybody has held a list against the unit's
+screen. It does not tell you how much rides on the answer, and that is the other
+half of the question: `Off,On` decides 222 parameters and `CHO1,CHO2` decides
+two, so 94 unread lists are not 94 equal jobs.
+
+`OPTION_USAGE` publishes the count for every fixed list, keyed by the labels
+exactly as the audit is, and generated from the catalog in the same pass:
+
+```python
+from pyquadcortex.protocol import options
+
+unread = [labels for labels, status in options.OPTION_AUDIT.items()
+          if status is None]
+unread.sort(key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
+options.OPTION_USAGE[unread[0]]   # 14 parameters - the biggest unread list
+```
+
+On the CorOS 4.0.1 snapshot that is 527 parameters across 113 lists, of which
+190 across 94 lists are unread. `tests/test_option_audit.py` holds
+`docs/domain-model.md` to those numbers, so they cannot be carried in prose from
+a count taken once.
+
 ### Breaking: the protocol API moved to `pyquadcortex.protocol`
 
 Change one import line. `from pyquadcortex import X` becomes
@@ -47,11 +86,11 @@ with pyquadcortex.connect() as device:
 
 `Device` gives you the unit's identity, the loaded preset with its rows, slots,
 blocks, splits, routing and eight scenes, `has_unsaved_changes`, `is_current`,
-and `device.events`. The Directory is not in the model yet. Rows are 1 to 4 and slots 1 to 8, as on the screen. Nothing
-is stubbed out to look finished; use the protocol layer for the rest. To use
-both layers in one script, wrap a connection you already have with
-`Device.from_client(qc)`, which does not take ownership of it. Where the model
-is going is [docs/domain-model.md](docs/domain-model.md).
+and `device.events`. The Directory is not in the model yet. Rows are 1 to 4 and
+slots 1 to 8, as on the screen. Nothing is stubbed out to look finished; use the
+protocol layer for the rest. To use both layers in one script, wrap a connection
+you already have with `Device.from_client(qc)`, which does not take ownership of
+it. Where the model is going is [docs/domain-model.md](docs/domain-model.md).
 
 **The model keeps up with the unit on its own.** Anything a `Device` tells you is
 what the unit is doing now, including changes made on its touchscreen while your
@@ -85,8 +124,9 @@ arrived had the same window.
 profile class for `(device_type, zenos_git_hash)`: `QuadCortex` for a Quad Cortex
 on CorOS 4.0.1, `QuadCortex41` for 4.1.0, and `UnsupportedDevice` for anything
 else. There is no fallback to the nearest profile. `connect(profile=...)` names a
-class deliberately for a unit nobody has measured. `connect(support=Support.EXPERIMENTAL)`
-runs operations a profile has not verified, with one warning each; the default
+class deliberately for a unit nobody has measured.
+`connect(support=Support.EXPERIMENTAL)` runs operations a profile has not
+verified, with one warning each; the default
 `Support.VERIFIED` refuses them. `qc.models`, `qc.params` and `qc.options` are the
 connection's own constants, and `qc.unverified_operations` says what its profile
 has not verified. `set_block` refuses a model id the unit's catalog lacks. The
@@ -234,9 +274,10 @@ such knob.
 `options.OPTION_AUDIT` tells you, per list, whether a person has held the
 catalog's names against a real unit: `"audited"`, `"drawn"` (read, but the unit
 draws pictures rather than words), `"absent"` (someone looked and the control is
-not on screen), or `None` for the 95 nobody has checked. Each enum's docstring
-says the same. Thirteen lists covering 300 parameters have been read on CorOS
-4.0.1. Twelve matched the catalog; the thirteenth did not:
+not on screen), or `None` for the 94 nobody has checked. Each enum's docstring
+says the same. Fourteen lists covering 301 parameters have been read on CorOS
+4.0.1. Twelve matched the catalog. Two did not: the metronome, which draws
+circles rather than words, and a Mono Synth's oscillator waveforms.
 
 **Breaking: `Osc1Wave.PINK_NS` and `.WHITE_NS` were swapped, and are now fixed.**
 The catalog calls wire position 5 `Pink NS` and position 6 `White NS`. The unit's
@@ -347,10 +388,11 @@ device.preset.blocks.pedals               # the screen's rows, slots and dB
 
 The model reads it the way the unit shows it, for example
 `<EXP 2 on VOLUME (row 1): Off to 3.2 dB>`, and `block.pedals` narrows it to one
-cell. `minimum` above `maximum` reverses the pedal, so the pair is reported rather
-than sorted and `reversed` says so; an end at the `OFF` detent prints `Off` rather than a number;
-with no unit attached the sweep stays the wire's 0..1 and `in_real_units` says
-so. Reading only; assigning through the model is M2.
+cell. `minimum` above `maximum` reverses the pedal, so the pair is reported
+rather than sorted and `reversed` says so. An end at the `OFF` detent prints
+`Off` rather than a number. With no unit attached the sweep stays the wire's
+0..1 and `in_real_units` says so. Reading only; assigning through the model is
+M2.
 
 ### An expression pedal reaches every parameter, not just a block's
 

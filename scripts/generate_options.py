@@ -775,11 +775,39 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
         lines.append(f"    {labels!r}: {tag},{note}")
     lines.append("}")
 
+    unread = sorted((labels for labels in every if status[labels] is None),
+                    key=lambda l: (-len(every[l]), len(l), l))
+    unread_params = sum(len(every[l]) for l in unread)
+    lines += ["", "",
+              "#: How many PARAMETERS each fixed list decides, as",
+              "#: ``{labels: count}``.",
+              "#:",
+              "#: Published beside ``OPTION_AUDIT`` because the two are read",
+              "#: together: a list nobody has looked at matters in proportion to",
+              "#: how many controls it governs, and the numbers were being quoted",
+              "#: in prose from one-off counts before this existed. Keyed by the",
+              "#: LABELS, like the audit, so the three lists with no enum are in",
+              "#: it too.",
+              "#:",
+              f"#: Totals on this snapshot: {sum(len(u) for u in every.values())}",
+              f"#: parameters across {len(every)} lists, of which"
+              f" {unread_params} across",
+              f"#: {len(unread)} lists nobody has read. The work is long-tailed -"
+              " the",
+              f"#: five biggest unread lists cover"
+              f" {sum(len(every[l]) for l in unread[:5])} of those"
+              f" {unread_params}.",
+              "OPTION_USAGE = {"]
+    for labels in sorted(every, key=lambda l: (names.get(l, ""), l)):
+        note = f"  # {names[labels]}" if labels in names else "  # no enum"
+        lines.append(f"    {labels!r}: {len(every[labels])},{note}")
+    lines.append("}")
+
     lines += ["", "", "__all__ = ["]
     for labels, _ in sorted(lists.items(), key=lambda kv: names[kv[0]]):
         lines.append(f'    "{names[labels]}",')
     lines += ['    "OPTION_LABELS",', '    "OPTION_AUDIT",',
-              '    "OPTION_CONTESTED",', "]", ""]
+              '    "OPTION_USAGE",', '    "OPTION_CONTESTED",', "]", ""]
     return "\n".join(lines)
 
 

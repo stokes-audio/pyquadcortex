@@ -122,6 +122,13 @@ small documentation fixes.
   go in `tests/fixtures/catalog/option_readings.json`, one row per position;
   `absent` means someone looked and did not find the control. Detail:
   `docs/domain-model.md`, "Catalog attributes".
+- A screen that shortens a word is a fact about that control, not about the
+  catalog's text: a Flanger Engine spells `Sine` out where a Mono Synth draws
+  `SIN`. What predicts a shortened control is unknown. `Parameter.hidden` is a
+  candidate on two readings, and two readings are not a rule.
+- `options.OPTION_USAGE` says how many parameters each option list decides.
+  Quote it rather than counting again; `tests/test_option_audit.py` holds
+  `docs/domain-model.md` to the snapshot's own numbers.
 - A value says which scale it is on: `Real` or a unit type for the screen's line,
   `Encoded` for the device's 0..1, a string for a string parameter. A bare number
   is refused. `Encoded` is accepted everywhere and advertised nowhere a unit type

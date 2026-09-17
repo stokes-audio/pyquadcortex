@@ -258,8 +258,9 @@ on the same cell, sharing the payload underneath; they compare equal, and `is` i
 not the test.
 
 Writing through a non-active scene's binding is refused, because the unit cannot
-do it without switching scenes, which changes what you hear ([section 10](#writing-to-a-scene-you-are-not-in)).
-Reads through such a binding are fine.
+do it without switching scenes, which changes what you hear
+([section 10](#writing-to-a-scene-you-are-not-in)). Reads through such a binding
+are fine.
 
 The default scene follows the unit's rule: it is set by saving while that scene
 is active, surfaced as the `default_scene` argument on the save methods.
@@ -729,7 +730,8 @@ answered in full by the next.
 back, and the echo confirms it. Because we already applied it, a matching echo
 changes nothing. If a write is wrong, the echo disagrees and we have written a
 bug; the place to catch that is the hardware suite, which performs every
-supported write and asserts the read-back ([section 10](#10-writing-and-knowing-a-write-landed)).
+supported write and asserts the read-back
+([section 10](#10-writing-and-knowing-a-write-landed)).
 
 ### What we track, and how each part stays current
 
@@ -1271,11 +1273,38 @@ bodies carry `dynamic_steps`.
 The unit renders the same data its own way. A 150-second capture while a person
 stepped through a Mono Synth's seven waveforms recorded 600 messages, every one
 the metronome tempo stream, and not one label: the unit holds the catalog too and
-had no need to send anything. It draws `SIN`, `TRI`, `WHT` and icons where the
-catalog writes `Sine`, `Triang`, `White NS`. `SIN` truncates `Sine`; `WHT` does not
-truncate `White NS`; so no single rule explains both, and whether the
-abbreviations are a rule or a firmware table is unmeasured. A reading taken off
-the unit's screen is a fact about the unit's screen.
+had no need to send anything. On that tab the screen shortens the catalog's words
+and draws icons: `Sine` appears as `SIN` and `Pulse` as `PUL`.
+
+**The shortening belongs to the control, not to the catalog's words.** A Flanger
+Engine's `WAVEFORM` offers `Sine`, `Triangle`, `Square`, `Saw Up`, `Saw Dn`,
+`rndSmooth` and `rndStep`, and the screen spells all seven out (read 2026-09-16,
+positions 0 and 3 driven from a host). The same word draws as `SIN` on the synth
+and as `Sine` on the Flanger. The short words are not in the file either: `WHT`,
+`PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte `ModelRepo.xml`, and
+the only hits for `SIN`, `TRI` and `PUL` are inside `SINGLE`,
+`TRIG`/`TRIM`/`TRIPLET` and `PULL`.
+
+That rules out the catalog's text. It leaves open that the catalog predicts the
+shortening some other way, and there is one candidate: both controls that shorten
+carry `hidden="true"` on the parameter, and the Flanger's `WAVEFORM` does not.
+Two readings are not a rule. `hidden` is also the flag that marks a control which
+is plainly on screen (see below), which is why a list is never marked `absent`
+from it (ADR-0010). The metronome's four cells argue the other way. They are not
+hidden, and they depart from the catalog anyway by drawing circles instead of
+words.
+
+Nineteen controls have been read - the fixture holds 24, but five of those are
+records of looking and finding no control. Two shorten a word and four draw
+circles. The other thirteen match the catalog exactly.
+
+Two things stay unknown: whether a control nobody has looked at yet draws its own
+words, and whether `Parameter.hidden` marks the ones that do. The 94 unread lists
+below answer the first wherever you start. The second needs a hidden parameter.
+Five of the 94 reach one, and two of those are ranks 2 and 3 of the worklist
+below.
+
+A reading taken off the unit's screen is a fact about the unit's screen.
 
 The reassembly method and the byte counts are in the lab repository,
 `doc/model-repo-vocabulary-reassembly.md`.
@@ -1334,13 +1363,37 @@ against `Return 1/2`, `USB 5` against `USB input 5`).
 So every list's names are a hypothesis until a person reads them off the unit.
 `options.OPTION_AUDIT` publishes which have been, keyed by the labels rather than
 by the enum so the two Off/On lists and the metronome list, which get no enum
-and are 260 parameters between them, can be recorded too. The readings are in `tests/fixtures/catalog/option_readings.json`,
-one row per position, and `scripts/generate_options.py` stamps each enum's
-docstring from them.
+and are 260 parameters between them, can be recorded too. The readings are in
+`tests/fixtures/catalog/option_readings.json`, one row per position, and
+`scripts/generate_options.py` stamps each enum's docstring from them.
 
-**Where it stands (2026-09-14, CorOS 4.0.1): 12 audited, 1 drawn, 5 not drawn,
-95 unread**, of 113 fixed lists. The thirteen read lists cover 300 of the 527
-parameters that carry a fixed list. The 95 unread cover 191.
+**Where it stands (2026-09-16, CorOS 4.0.1): 13 audited, 1 drawn, 5 not drawn,
+94 unread**, of 113 fixed lists. The fourteen read lists cover 301 of the 527
+parameters that carry a fixed list. The 94 unread cover 190.
+
+What is left is not 94 equal jobs. Ranked by how many parameters each list
+decides, the tail falls away fast: the biggest five cover 54 of the 190.
+`options.OPTION_USAGE` publishes the count for every list, so a session at the
+unit can be planned from the library rather than from a count taken once.
+
+| parameters | positions | list | somewhere it appears |
+|---|---|---|---|
+| 14 | 17 | a 17-entry `SYNC NOTE` | Vibrato / `SYNC NOTE` |
+| 12 | 3 | `Small,Med,Large` | Ambience / `SIZE` |
+| 11 | 3 | `Off,Duck,Gate` | Digital Delay (ST) / `DYN MODE` |
+| 9 | 14 | a 14-entry `SYNC NOTE` | Dual Chorus / `SYNC NOTE` |
+| 8 | 3 | `Normal,Thick,Thicker` | CA 1Star Clean 50W Normal / `EQ` |
+
+The two note lists are cheap despite their length: a 21-entry `SYNC NOTE` is
+already audited, so a reader knows what to expect and where an error would show.
+Of the remaining 89, 83 decide one or two parameters each and 46 have only two
+positions.
+
+Eight of the 94 lists, 12 parameters between them, sit on models a user cannot
+place on the grid: three lists and seven parameters on the Splitter family, five
+lists and five parameters on `TempoControl`. That is about where they live, not
+about whether anyone can see them. The Tempo page is on the unit, and this
+fixture already holds four driven readings from it.
 
 | list | parameters | how it was read |
 |---|---|---|
@@ -1357,13 +1410,15 @@ parameters that carry a fixed list. The 95 unread cover 191.
 | `Linear,Log` | 1 | a Volume block's `CURVE`, each position driven |
 | `Free,Sync` | 1 | a Looper X `DUPLICATE MODE`, each position driven |
 | `OSC1 WAVE` (7) | 2 | the tab in order, anchored at 0, 3, 5 and 6 |
+| `WAVEFORM` (7) | 1 | a Flanger Engine, in order, anchored at 0 and 3 |
 
 The statuses:
 
 - **audited**: every position read, and the enum's names follow the screen.
-  Twelve of the thirteen read lists. Eleven match the catalog's words, including
-  spellings that look like mistakes and are not (`In 1` carries a space and `Out1`
-  does not, on the same control); the twelfth, `OSC1 WAVE`, is the swap below.
+  Thirteen of the fourteen read lists. Twelve match the catalog's words,
+  including spellings that look like mistakes and are not (`In 1` carries a space
+  and `Out1` does not, on the same control); the thirteenth, `OSC1 WAVE`, is the
+  swap below.
 - **drawn**: every position driven and read, and the unit draws a picture rather
   than a word. The metronome's `OFF,MUTE,DOWN,ON` is the case: the screen shows a
   filled or empty circle with an optional dot and never writes `MUTE`, so the
@@ -1384,15 +1439,16 @@ position 0 showed all three matched the catalog.
 
 Some controls are greyed out until another is set: `SYNC NOTE` until `SYNC` is
 On, `PRE ROLL` and `REC. LENGTH` while `QUANTIZE` is `OFF`. One control cannot be
-audited though it is not hidden: a Looper X's `METRONOME MUTE` offers `MUTE,UNMUTE`, and the screen
-shows a button whose label names what pressing it will do, so the two vocabularies
-cannot be held against each other.
+audited though it is not hidden: a Looper X's `METRONOME MUTE` offers
+`MUTE,UNMUTE`, and the screen shows a button whose label names what pressing it
+will do, so the two vocabularies cannot be held against each other.
 
 **The catalog can be wrong about its own meaning.** A Mono Synth's oscillator
-waveform list reads, in the catalog, `Sine`, `Triang`, `Sawtooth`, `Square`, `Pulse`, `Pink NS`,
-`White NS`. On screen the seven are drawn as icons labelled `SIN`, `TRI`, `SAW`,
-`SQR`, `PUL`, `WHT`, `PNK`: position 5 is `WHT` and position 6 is `PNK`, both driven at
-once on the two oscillators of one Mono Synth. Measured acoustically on
+waveform list reads, in the catalog, `Sine`, `Triang`, `Sawtooth`, `Square`,
+`Pulse`, `Pink NS`, `White NS`. On screen the seven are drawn as icons labelled
+`SIN`, `TRI`, `SAW`, `SQR`, `PUL`, `WHT`, `PNK`: position 5 is `WHT` and position
+6 is `PNK`, both driven at once on the two oscillators of one Mono Synth.
+Measured acoustically on
 2026-09-15 by recording each position off the unit's own USB audio interface and
 comparing octave bands: subtracting the two recordings cancels the rest of the
 signal chain, and the difference climbs across all seven bands at about 3.6 dB

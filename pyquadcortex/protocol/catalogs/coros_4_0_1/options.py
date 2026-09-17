@@ -30,9 +30,9 @@ the device RENDERS it does not match - the catalog writes ``In 1`` and
 ``Ret 1/2`` where the device writes ``Input 1`` and ``Return 1/2``. So
 each enum says whether a human has read it off the unit, and
 ``OPTION_AUDIT`` publishes that for all 113 fixed lists:
-12 audited, 1 drawn (read, but the unit draws pictures
+13 audited, 1 drawn (read, but the unit draws pictures
 rather than words), 5 not drawn at all, 0 partly, and
-95 that nobody has looked at.
+94 that nobody has looked at.
 """
 from enum import IntEnum
 
@@ -573,9 +573,7 @@ class FlangerEngineWaveform(IntEnum):
 
     On Flanger Engine.
 
-    NOT audited against the screen. These names are the
-    catalog's ``stepNames``, which is not known to be the
-    wording the unit draws.
+    Audited against the unit's screen 2026-09-16: all 7 positions read.
     """
 
     SINE = 0
@@ -2116,7 +2114,7 @@ OPTION_AUDIT = {
     ('4-POLE', '2-POLE'): None,  # Filter
     ('Low', 'A', 'B', 'High'): None,  # FilterCutoff
     ('Lowpass', 'Bandpass', 'Highpass'): None,  # FilterType
-    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn', 'rndSmooth', 'rndStep'): None,  # FlangerEngineWaveform
+    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn', 'rndSmooth', 'rndStep'): 'audited',  # FlangerEngineWaveform
     ('ON', 'OFF'): None,  # Focus
     ('1', '2', '3', '4', '5'): None,  # Frequency
     ('Normal', 'Inverted'): None,  # GainPolarity
@@ -2192,6 +2190,137 @@ OPTION_AUDIT = {
     ('1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D'): None,  # VibNote
     ('Chorus', 'Vibrato'): None,  # VintageChorusMode
     ('Full', 'Thick', 'Open', 'Broad'): None,  # VoiceMode
+}
+
+
+#: How many PARAMETERS each fixed list decides, as
+#: ``{labels: count}``.
+#:
+#: Published beside ``OPTION_AUDIT`` because the two are read
+#: together: a list nobody has looked at matters in proportion to
+#: how many controls it governs, and the numbers were being quoted
+#: in prose from one-off counts before this existed. Keyed by the
+#: LABELS, like the audit, so the three lists with no enum are in
+#: it too.
+#:
+#: Totals on this snapshot: 527
+#: parameters across 113 lists, of which 190 across
+#: 94 lists nobody has read. The work is long-tailed - the
+#: five biggest unread lists cover 54 of those 190.
+OPTION_USAGE = {
+    ('OFF', 'MUTE', 'DOWN', 'ON'): 13,  # no enum
+    ('OFF', 'ON'): 25,  # no enum
+    ('Off', 'On'): 222,  # no enum
+    ('Bypass', '90°', '180°'): 2,  # Adjust
+    ('1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1'): 2,  # AnalogDelayMSyncNote
+    ('Up', 'Down', 'Up & Down', 'Down & Up', 'Random'): 1,  # ArpPattern
+    ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16'): 2,  # BitDepth
+    ('HOT', 'COOL'): 2,  # Boost
+    ('Normal', 'Bright 1', 'Bright 2'): 1,  # Bright
+    ('Lo Freq', 'Hi Freq'): 2,  # Center
+    ('Normal', 'OD'): 1,  # ChannelNormal
+    ('CE2-C', 'CE1-C', 'CE1-V'): 2,  # ChiefCe2wMType
+    ('1', '2', '3', '4', '1+2', '1+3', '1+4', '2+3', '2+4', '3+4'): 2,  # ChiefDc2wMMode
+    ('S', 'SDD-320'): 2,  # ChiefDc2wMType
+    ('Natural', 'Warm', 'Dark', 'Bright', 'Sparkle', 'Dusty', 'Spiky', 'Twangy'): 1,  # Color
+    ('Fast', 'Slow'): 1,  # CoryWongDIFunkConsoleAttack
+    ('Single', 'Dual'): 1,  # CoryWongDelayYYMode
+    ('Clean', 'Crunch'): 1,  # Crunch
+    ('Linear', 'Log'): 1,  # Curve
+    ('-', '+'): 1,  # DCellHisbertCh2Mode
+    ('Fast', 'Smooth'): 1,  # Decay
+    ('Neg', 'Pos'): 1,  # DigitalFlangerPolarity
+    ('Unison', 'Multiplier'): 1,  # DivSource
+    ('2', '3', '4', '5', '6', '7', '8'): 1,  # Divider
+    ('CHO1', 'CHO2'): 2,  # DreamChorusMMode
+    ('Soft', 'Edgy', 'Hard', 'Off'): 2,  # DriveType
+    ('Chorus', 'Vibe'): 1,  # DualChorusMode
+    ('Clean', 'OD'): 1,  # DumbbellOdsChannel
+    ('Jazz', 'Rock'): 1,  # DumbbellOdsEq
+    ('Free', 'Sync'): 1,  # DuplicateMode
+    ('Duck', 'Gate'): 9,  # DynMode2
+    ('Off', 'Duck', 'Gate'): 11,  # DynMode3
+    ('Normal', 'Thick', 'Thicker'): 8,  # Eq3
+    ('Reverse', 'Flip'): 2,  # FeedbackMode
+    ('4-POLE', '2-POLE'): 1,  # Filter
+    ('Low', 'A', 'B', 'High'): 1,  # FilterCutoff
+    ('Lowpass', 'Bandpass', 'Highpass'): 1,  # FilterType
+    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn', 'rndSmooth', 'rndStep'): 1,  # FlangerEngineWaveform
+    ('ON', 'OFF'): 2,  # Focus
+    ('1', '2', '3', '4', '5'): 2,  # Frequency
+    ('Normal', 'Inverted'): 3,  # GainPolarity
+    ('Blade 2', 'Blade 1', 'FATSO'): 1,  # GojiraWowMode
+    ('4 kHz', '2.5 kHz'): 1,  # HighsFreq
+    ('Flat', '-6', '-12', '-18', '-24', '-30', '-36', '-42', '-48'): 2,  # HpfSlope
+    ('Low', 'High'): 2,  # Input
+    ('Guitar', 'Bass'): 1,  # Instrument
+    ('Noral', 'Inverted'): 16,  # Invert
+    ('4', '8', '12', '20', 'All'): 3,  # Legendary87MRatio
+    ('225 Hz', '150 Hz'): 1,  # LowsFreq
+    ('Off', 'Boost'): 3,  # Mid
+    ('900 Hz', '600 Hz'): 1,  # MidsFreq
+    ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', 'Omni'): 1,  # MinivoicerMidiCh
+    ('Major', 'Minor', 'Chrom'): 2,  # MinivoicerMode
+    ('A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'): 2,  # MinivoicerRoot
+    ('nolly', 'nollySkewed', 'nollySkewedPlug'): 6,  # MixLaw
+    ('LFO', 'LFO Stereo', '+Envelope', '-Envelope'): 1,  # ModSource
+    ('Off', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', 'Omni'): 1,  # MonoSynthMidiCh
+    ('OFF', 'A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'): 1,  # MonoSynthRoot
+    ('Unison', '-1 Octave', '-2 Octaves'): 1,  # MulSource
+    ('x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8'): 1,  # Multiplier
+    ('Block', 'Script'): 1,  # MxPhase95Mode
+    ('90', '45'): 1,  # MxPhase95Type
+    ('Smooth', 'Snappy'): 1,  # NollyCompressorAttack
+    ('QUARTER', 'EIGHTH', 'TRIPLET', 'SIXTEENTH'): 1,  # Notelength
+    ('-2', '-1', '0', '1', '2'): 1,  # Octave
+    ('RELEASE', 'FREEZE'): 1,  # OnOff
+    ('Sine', 'Triang', 'Sawtooth', 'Square', 'Pulse', 'Pink NS', 'White NS'): 2,  # Osc1Wave
+    ('Mono', 'Wet/Dry'): 1,  # OutMode
+    ('LP', 'HP'): 1,  # Peak
+    ('HB', 'SINGLE'): 1,  # Pickup
+    ('Spatial', 'Vintage'): 1,  # PliniChorusMode
+    ('FZ', 'OD'): 1,  # PliniDriveMode
+    ('OFF', '1 BAR', '2 BARS', '4 BARS'): 1,  # PreRoll
+    ('Momentary', 'Toggle'): 3,  # PunchMode
+    ('0', '1', '2', '3'): 4,  # Quality
+    ('OFF', '1 Beat', '2 Beats', '3 Beats', '4 Beats', '5 Beats', '6 Beats', '7 Beats', '8 Beats', '16 Beats'): 1,  # Quantize
+    ('2', '4', '10'): 6,  # Ratio3
+    ('OFF', '1 BAR', '2 BARS', '3 BARS', '4 BARS', '5 BARS', '6 BARS', '7 BARS', '8 BARS', '9 BARS', '10 BARS', '11 BARS', '12 BARS', '13 BARS', '14 BARS', '15 BARS', '16 BARS', '17 BARS', '18 BARS', '19 BARS', '20 BARS', '21 BARS', '22 BARS', '23 BARS', '24 BARS', '25 BARS', '26 BARS', '27 BARS', '28 BARS', '29 BARS', '30 BARS', '31 BARS', '32 BARS'): 1,  # RecLength
+    ('LOW', 'HIGH'): 2,  # RedDriveMode
+    ('Full', 'Hollow', 'Rich', 'Intense'): 1,  # Resonance
+    ('MULTI', 'HP', 'OUT 1/2', 'OUT 3/4', 'SEND 1/2'): 1,  # Routing
+    ('Grid', 'In 1', 'In 2', 'Ret 1', 'Ret 2', 'In 1/2', 'Ret 1/2', 'Out1', 'Out2', 'Out3', 'Out4', 'Out1/2', 'Out3/4', 'Multi'): 1,  # RoutingMode
+    ('Major', 'Minor'): 1,  # Scale
+    ('Small', 'Med', 'Large'): 12,  # Size
+    ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8'): 2,  # SlapbackDelayMSyncNote
+    ('6dB/Oct', '12dB/Oct', '18dB/Oct', '24dB/Oct'): 1,  # Slope
+    ('Clean', 'Crunch', 'Lead'): 1,  # SoldanoSlo100Channel
+    ('BLIP', 'BLOCK', 'COWBELL', 'DIGITAL', 'DRUM KIT', 'SOFT KIT'): 1,  # Sound
+    ('Slow', 'Fast'): 2,  # Speed
+    ('Regular', 'Invert'): 2,  # SplitterMode
+    ('Balance', 'A/B', 'Crossover'): 1,  # SplitterType
+    ('MUTE', 'UNMUTE'): 2,  # Start
+    ('Normal', 'Split'): 4,  # Stereo
+    ('Unlinked', 'Linked'): 1,  # StereoLink
+    ('1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 5,  # SyncNote11
+    ('1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 9,  # SyncNote14
+    ('1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 14,  # SyncNote17
+    ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 28,  # SyncNote21
+    ('Lows', 'Highs'): 1,  # SyncOn
+    ('Vintage', 'Short', 'Mid', 'Long'): 2,  # TankType
+    ('1', '2', '3', '4', '4 Alt', '5', '5 Alt', '6', '6 Alt'): 1,  # TapPreset
+    ('Preset', 'Global'): 1,  # TempocontrolType
+    ('2/4', '3/4', '4/4', '5/4', '6/4', '7/4', '8/4', '9/4', '10/4', '11/4', '12/4', '13/4', '3/8', '6/8', '9/8', '12/8', '5/8 (3+2)', '5/8 (2+3)', '7/8 (3+2+2)', '7/8 (2+3+2)', '7/8 (2+2+3)'): 1,  # TimeSignature
+    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn'): 2,  # TremoloWaveform
+    ('Down', 'Up'): 1,  # TrigDirection
+    ('Off', 'Full', '1/2'): 1,  # TriggerMode
+    ('6L6', 'EL34'): 2,  # Tube
+    ('OFF', 'OSC 1', 'OSC 2', 'OSC 1 + 2'): 1,  # UnisonSource
+    ('Normal', 'Vibrato', 'Vibrato Bright Off'): 2,  # UsDlx64VintageMode
+    ('-15th', '-14th', '-13th', '-12th', '-11th', '-10th', '-9th', '-8th', '-7th', '-6th', '-5th', '-4th', '-3rd', '-2nd', 'Root', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th'): 2,  # V1Inter
+    ('1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D'): 2,  # VibNote
+    ('Chorus', 'Vibrato'): 2,  # VintageChorusMode
+    ('Full', 'Thick', 'Open', 'Broad'): 1,  # VoiceMode
 }
 
 
@@ -2308,5 +2437,6 @@ __all__ = [
     "VoiceMode",
     "OPTION_LABELS",
     "OPTION_AUDIT",
+    "OPTION_USAGE",
     "OPTION_CONTESTED",
 ]
