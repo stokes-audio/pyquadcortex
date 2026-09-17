@@ -951,6 +951,10 @@ returns the current one.
   undo: true}`, measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0
   in PR #42). Whether the recall that follows carries `reason: UNDO` was not
   captured in either session.
+- **Whether `Parameter.hidden` predicts writability.** The flag was tested
+  against the screen and predicts it most of the time, not always (see "Catalog
+  attributes"). Nobody has tried writing a hidden parameter, so that half of the
+  question is untested.
 - **Bypass persistence over MIDI.** The unit's own `SCENE BYPASS BEHAVIOR` wording
   groups MIDI with footswitches, not with the touchscreen. A USB HID write behaves
   like the touchscreen; the MIDI half is untested because this library has no MIDI
@@ -1292,7 +1296,8 @@ Two readings are not a rule. `hidden` is also the flag that marks a control whic
 is plainly on screen (see below), which is why a list is never marked `absent`
 from it (ADR-0010). The metronome's four cells argue the other way. They are not
 hidden, and they depart from the catalog anyway by drawing circles instead of
-words.
+words. Their model is `internal` inside a hidden category, which is a third
+attribute again.
 
 Nineteen controls have been read - the fixture holds 24, but five of those are
 records of looking and finding no control. Two shorten a word and four draw
@@ -1302,7 +1307,11 @@ Two things stay unknown: whether a control nobody has looked at yet draws its ow
 words, and whether `Parameter.hidden` marks the ones that do. The 94 unread lists
 below answer the first wherever you start. The second needs a hidden parameter.
 Five of the 94 reach one, and two of those are ranks 2 and 3 of the worklist
-below.
+below: `Small,Med,Large` on a PCOM Core Cabsim's `SIZE`, and `Off,Duck,Gate` on a
+Tape Delay's `DYN MODE`. Read either on one of those models, where the parameter
+is hidden, and the candidate gets its third data point. The worklist names a
+different model for each, because it names one place the list appears rather than
+a hidden one.
 
 A reading taken off the unit's screen is a fact about the unit's screen.
 
@@ -1325,8 +1334,10 @@ page (2026-09-14):
 | `Sine,Triang,...` | a Mono Synth's `OSC1 WAVE` | **yes** |
 
 The Mono Synth's `OSC1 WAVE` is marked `hidden="true"` and is on the screen, on a
-tab called Oscillator, drawn as waveform icons. So the flag predicts the screen
-most of the time and not always. `options.OPTION_AUDIT` does not use it, and
+tab called Oscillator, drawn as waveform icons, and so is `OSC1 ACTIVE` beside
+it, which the flag also marks. So the flag predicts the screen most of the time
+and not always. Whether it predicts writability is untested; see
+[section 13](#13-still-open). `options.OPTION_AUDIT` does not use it, and
 nothing in the library branches on it. It is also not a boolean: 649 parameters
 say `"true"` and one says `"atma"` (the Freeze block's `MOMENTARY`), the Quad
 Cortex Mini's `device_type`, so the catalog names the model a parameter is hidden
@@ -1393,7 +1404,9 @@ Eight of the 94 lists, 12 parameters between them, sit on models a user cannot
 place on the grid: three lists and seven parameters on the Splitter family, five
 lists and five parameters on `TempoControl`. That is about where they live, not
 about whether anyone can see them. The Tempo page is on the unit, and this
-fixture already holds four driven readings from it.
+fixture already holds four driven readings from it, so `TempoControl`'s five are
+a job still to do. None of the eight is `absent`, which this document uses only
+for a control somebody looked for and did not find.
 
 | list | parameters | how it was read |
 |---|---|---|
@@ -1464,6 +1477,9 @@ The metronome's per-beat names were the earlier case of the catalog beating our
 own words: `stepNames="OFF,MUTE,DOWN,ON"` against a hand-chosen `NORMAL`, `OFF`,
 `ACCENT`, `QUIET`, two of which were backwards. `OFF` and `ON` are about the accent
 ([`protocol.md`](protocol.md) section 8).
+
+How a list is chosen, driven and recorded is in the lab repository,
+`doc/option-audit-method.md`.
 
 ### `expAssignable` does not govern a host write
 

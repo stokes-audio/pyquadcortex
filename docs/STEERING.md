@@ -223,13 +223,12 @@ behind each one is in the lab repository,
 ### 2026-09-16 - The screen's shortening is one control's, and the unread audit is ranked
 
 - **What changed:** a Flanger Engine's `WAVEFORM` spells `Sine` out where a Mono
-  Synth draws `SIN`, so the shortening belongs to the control.
-  `options.OPTION_USAGE` publishes how many parameters each list decides.
-- **Why:** the catalog's words do not predict a shortened control, and 94 unread
-  lists are not 94 equal jobs.
-- **Scope:** the generator, the options snapshot, the readings fixture, tests,
-  and four documents. `ADR.md` unchanged: this settles a question in its
-  appendix rather than deciding one.
+  Synth draws `SIN`. The shortening belongs to the control, not to the catalog's
+  text. `options.OPTION_USAGE` says how many parameters each list decides.
+- **Why:** 94 unread lists are not 94 equal jobs.
+- **Scope:** the generator, the snapshot, the readings fixture, tests, four
+  documents. No ADR: this settles a question in its appendix. No hardware test:
+  a screen reading lives in the fixture.
 
 ### 2026-09-15 - The catalog carries the option vocabulary; the screen is a second renderer
 
