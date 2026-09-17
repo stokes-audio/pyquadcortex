@@ -54,8 +54,9 @@ dependencies = [
 # The `<2` on mypy has a reason, and it is not in an ADR. ADR-0018 put mypy in CI
 # as a BLOCKING job and says nothing about a bound. The bound arrived in b726d3e
 # (2026-08-28), whose commit message gives it - "mypy is pinned below 2 so the
-# enforcer cannot change under CI" - and that is where it stayed. It landed one
-# day after ADR-0016 recorded that the static unit checking was VERIFIED with
+# enforcer cannot change under CI" - which until these lines was the only place
+# it was written down. It landed one day after ADR-0016 recorded that the static
+# unit checking was VERIFIED with
 # mypy 2.3.1, the version the bound excludes, which is the likeliest source of
 # the drift this repo just found. mypy 2.3.1 was run against this tree on
 # 2026-09-16 and both halves of that job were clean - no issues in 46 source
@@ -66,7 +67,9 @@ dependencies = [
 # `packaging` arrives with pytest either way, and is named here because
 # `tests/test_packaging.py` parses these requirement strings with it - the
 # module that holds every declared dependency to its pin should not itself
-# rest on one nothing declares.
+# rest on one nothing declares. The floor is pytest's own declared floor, so
+# naming it can never force an install pytest would not have made anyway; every
+# API used predates it, and 22.0 is only where `LegacyVersion` went.
 dev = ["pytest>=8", "packaging>=22", "grpcio-tools>=1.83.0",
        "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
 

@@ -1134,6 +1134,17 @@ checks on every PR that the committed gencode and the pin floor are the same
 number. The bindings themselves are unchanged - regenerating is its own change
 with its own pin bump (ADR-0001, ADR-0008).
 
+### A third runtime dependency: `typing-extensions`
+
+New since 0.40.0, and until now recorded nowhere. It is there for PEP 696
+TypeVar defaults, which `typing` gained in 3.13 while this package supports
+3.11: without it, binding a bare `Real` is a type error for every downstream
+user, and `py.typed` invites exactly those users.
+
+Nothing to do on upgrade - `pip install` resolves it. It is written down here
+because two documents still described the runtime dependencies as `hid` and
+`protobuf`, and both are corrected in the same change.
+
 ## 0.40.0 - 2026-08-10
 
 ### The lane/mixer level span is -40..+12 dB, not -100..+30

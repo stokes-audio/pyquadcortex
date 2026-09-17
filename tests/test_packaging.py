@@ -285,6 +285,11 @@ def test_the_steering_document_names_the_pins_that_cap_an_upgrade():
     `tests/test_option_audit.py` already holds `docs/domain-model.md` to the
     counts it quotes, for the same reason: a document that can drift from the
     thing it describes will.
+
+    BOTH directions, because both have a trigger queued. A pin that gains a
+    ceiling leaves the sentence naming too few. And section 8 asks whether to
+    raise the mypy ceiling - doing so leaves it naming one too many, which a
+    check that only looked for what was missing would have passed.
     """
     bullet = next(
         (line for line in (ROOT / "docs" / "STEERING.md")
@@ -293,12 +298,20 @@ def test_the_steering_document_names_the_pins_that_cap_an_upgrade():
     assert bullet, (
         "docs/STEERING.md section 6 no longer carries the bullet about holding "
         "the environment to the pins, which is where this check is explained")
-    missing = sorted(canonicalize_name(n) for n in PINS_WITH_A_CEILING
-                     if f"`{canonicalize_name(n)}`" not in bullet)
+    capping = {canonicalize_name(n) for n in PINS_WITH_A_CEILING}
+    missing = sorted(n for n in capping if f"`{n}`" not in bullet)
     assert not missing, (
         f"docs/STEERING.md section 6 does not name {missing}, which can refuse "
-        f"an installed version. The sentence claims which pins can bite; it has "
-        f"to name all of them.")
+        f"a newer release. The sentence claims which pins cap an upgrade; it "
+        f"has to name all of them.")
+    runtime, dev = _declared_requirements()
+    stale = sorted({canonicalize_name(req.name) for req in runtime + dev
+                    if canonicalize_name(req.name) not in capping
+                    and f"`{canonicalize_name(req.name)}`" in bullet})
+    assert not stale, (
+        f"docs/STEERING.md section 6 still names {stale}, which no longer caps "
+        f"an upgrade. Raising a ceiling has to move the sentence too, or it "
+        f"goes on claiming a bound that is gone.")
 
 
 def test_the_sdist_still_does_not_ship_the_documents_this_suite_reads():
@@ -312,12 +325,18 @@ def test_the_sdist_still_does_not_ship_the_documents_this_suite_reads():
     change that, and this is what trips when someone does, rather than a comment
     asking to be remembered.
     """
-    include = PYPROJECT["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
-    assert not [p for p in include if p.strip("/").split("/")[0] == "docs"], (
-        f"the sdist include list is now {include}, so this suite can be run "
-        f"from an unpacked sdist - where a repackager's own protobuf and mypy "
-        f"are versions they chose and cannot swap, and not the drift the "
-        f"comparison below is about. Revisit the gate this replaced.")
+    sdist = PYPROJECT["tool"]["hatch"]["build"]["targets"]["sdist"]
+    named = list(sdist["include"]) + list(sdist.get("force-include", {}))
+    assert not [p for p in named if p.strip("/").split("/")[0] == "docs"], (
+        f"the sdist now names {named}, so this suite can be run from an "
+        f"unpacked sdist - where a repackager's own protobuf and mypy are "
+        f"versions they chose and cannot swap, and not the drift the comparison "
+        f"below is about. Revisit the gate this replaced.")
+    # What it cannot see: a glob that happens to reach `docs/` (`/*`, `/doc*`),
+    # a build hook that writes files in, or the directory renamed. It reads the
+    # two lists hatchling takes paths in, not hatchling's own answer - which
+    # would mean building an sdist in an offline test. A wider net here would
+    # be guessing at spellings rather than reading a declaration.
 
 
 def test_no_installed_dependency_sits_outside_the_pin_that_declares_it():
