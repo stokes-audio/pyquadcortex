@@ -112,13 +112,22 @@ ADR-0012.
 
 ## 6. Constraints
 
-- **Runtime dependencies are `hid` and `protobuf`.** The wheel installs with no
-  compiler, no protoc and no build step.
+- **Runtime dependencies are `hid`, `protobuf` and `typing-extensions`.** The
+  wheel installs with no compiler, no protoc and no build step.
+  `typing-extensions` carries the `TypeVar` defaults that `typing` gained in
+  3.13, while this package supports 3.11.
 - **The protobuf pin, the committed gencode and the `grpcio-tools` floor move
   together.** Gencode 7.35.1, pinned `>=7.35.1,<8`, floor `grpcio-tools>=1.83.0`.
   `scripts/compile_protos.sh` refuses to write a downgrade and
   `tests/test_packaging.py` proves the pin equals the gencode (ADR-0001, ADR-0008).
 - **Python 3.11 or newer.**
+- **The environment is held to the pins.** `tests/test_packaging.py` compares
+  each installed version against the requirement that declares it, and skips what
+  is not installed. CI installs from `pyproject.toml` and always agrees; a working
+  copy is installed by hand and drifted once, running mypy 2.3.1 against a `<2`
+  pin. Any pin refuses an install beneath its floor. Only the `protobuf` and
+  `mypy` pins can refuse a newer release, so upgrading anything else stays quiet
+  however far it goes, and upgrading those two past their bound does not.
 - **The default test suite runs offline.** No test imports `hid`, touches a unit
   or needs `DYLD_LIBRARY_PATH` (ADR-0002). The hardware suite in
   `tests/hardware/` runs only under `--hardware`, is state-neutral on success and
@@ -162,7 +171,16 @@ Decisions are recorded in [`ADR.md`](ADR.md):
 
 ## 8. Open Questions
 
-None yet. Protocol unknowns are tracked in [`protocol.md`](protocol.md), "Open
+- **Whether the mypy pin should allow 2.x.** The pin is `mypy>=1.15,<2`. No
+  decision record holds the bound; its reason is in b726d3e (2026-08-28), "mypy
+  is pinned below 2 so the enforcer cannot change under CI". It landed one day
+  after ADR-0016 recorded the static unit checking as verified with mypy 2.3.1,
+  the version the bound excludes. mypy 2.3.1 ran clean on this tree on
+  2026-09-16, both halves of the blocking job. One run does not settle
+  which checker every contributor runs. Trying 2.x puts the environment outside
+  the pin, so `tests/test_packaging.py` fails until the pin moves with it.
+
+Protocol unknowns are tracked in [`protocol.md`](protocol.md), "Open
 questions", and [`roadmap.md`](roadmap.md).
 
 ## 9. Pointers
@@ -212,6 +230,18 @@ access to the unit, not compute.
 Entries are short by design ([`writing.md`](writing.md)). The full narrative
 behind each one is in the lab repository,
 `doc/pyquadcortex/history/steering-change-log.md`, and in the pull requests.
+
+### 2026-09-17 - The environment is held to the pins it claims to satisfy
+
+- **What changed:** `tests/test_packaging.py` compares each installed version
+  against the requirement that declares it. Three stale records were corrected:
+  a test docstring, a sentence in [`domain-model.md`](domain-model.md), and the
+  runtime-dependency count here.
+- **Why:** this checkout ran mypy 2.3.1 against a `<2` pin, so the local check
+  and CI's were different tools and nothing said so.
+- **Scope:** `pyproject.toml`, `uv.lock`, `CLAUDE.md`, `contributing.md`,
+  `changelog.md`, [`domain-model.md`](domain-model.md), sections 6 and 8 here,
+  three test files. No decision record.
 
 ### 2026-09-16 - Documents rewritten for readability
 
