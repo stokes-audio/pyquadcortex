@@ -67,7 +67,7 @@ The model layer holds the state (design in [`domain-model.md`](domain-model.md) 
 
 ## 6. Constraints
 
-- **Runtime dependencies are exactly `hid` and `protobuf`.** The wheel installs with no compiler, no protoc, no build step.
+- **Runtime dependencies are exactly `hid`, `protobuf` and `typing-extensions`.** The wheel installs with no compiler, no protoc, no build step. `typing-extensions` is there for PEP 696 TypeVar defaults, which `typing` gained in 3.13 and this package supports 3.11; without it `gain = Real(5.0)` is a type error for every downstream user, and `py.typed` invites exactly those users.
 - **The protobuf runtime pin is coupled to the committed gencode, and so is the generator floor.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001). The generator is `grpcio-tools`, which carries its own protoc and so decides the gencode by which version is installed, hence the `grpcio-tools>=1.83.0` floor in the dev extra. Older gencode still imports, so both guards are explicit: `scripts/compile_protos.sh` refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode and the pin floor are the same number (see ADR-0008).
 - **Python >= 3.11.**
 - **The environment is held to the pins, not just CI's.** `tests/test_packaging.py` compares every version installed in the running interpreter against the requirement that declares it, and skips what is not installed. CI installs from `pyproject.toml` and so always agrees; a working copy is installed by hand and drifted once - mypy 2.3.1 against a `<2` pin, for an unknown number of pull requests, which made every local "mypy clean" a claim about a checker CI does not run. Only the protobuf and mypy pins carry a ceiling, so the check is quiet unless a major version arrives.
@@ -176,8 +176,10 @@ a mistake this repo has already made.
 **Scope of impact:**
 - **Updated:** `pyproject.toml` (a comment on the mypy pin, no version moved);
   `tests/test_packaging.py`; `CLAUDE.md`; this file's sections 6 and 8;
-  `tests/test_catalog.py` and `tests/test_option_audit.py` (a docstring that
-  said `changelog.md` was unguarded when it is in `SNIPPET_SOURCES`);
+  `tests/test_catalog.py` (a docstring that said `changelog.md` was
+  unguarded when it is in `SNIPPET_SOURCES`); `tests/test_option_audit.py`
+  (the sibling docstring, which had the right reason but named two of the
+  three snippet checks); `contributing.md`;
   `docs/domain-model.md` (a sentence naming two attributes and calling them a
   third)
 - **Not updated (intentionally):** `ADR.md` - no decision was made or reversed;

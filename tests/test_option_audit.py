@@ -573,10 +573,10 @@ def test_the_ranking_recipe_the_changelog_publishes_actually_works():
     and the test passed anyway because it only ever read the first entry.
 
     `tests/test_docs.py` does read `changelog.md`'s fences - it is in that
-    file's `SNIPPET_SOURCES` - but every check there is an `ast.parse`, so it
-    catches only shapes it recognises in the source. Nothing RAN the one
-    snippet a reader is most likely to copy, or checked the answer it publishes
-    in a comment.
+    file's `SNIPPET_SOURCES` - but everything it does to a code fence is an
+    `ast.parse`, so it catches only shapes it recognises in the source. Nothing
+    RAN the one snippet a reader is most likely to copy, or checked the answer
+    it publishes in a comment.
     """
     import re
 

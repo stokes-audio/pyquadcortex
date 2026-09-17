@@ -483,8 +483,9 @@ from.
 it is on purpose:
 
 - `pip install pyquadcortex` then needs **no protoc toolchain and no build
-  step**. A user gets a working wheel with only `hid` and `protobuf` as runtime
-  dependencies.
+  step**. A user gets a working wheel with three runtime dependencies: `hid`,
+  `protobuf`, and `typing-extensions` for a typing feature `typing` did not
+  gain until 3.13.
 - The wheel stays self-contained: the bindings are inside the package, not
   produced at install time, so there is nothing to go wrong on a user's machine
   and nothing platform-specific to get wrong.

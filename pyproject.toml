@@ -58,7 +58,13 @@ dependencies = [
 # the unit checking still bites. Raising the ceiling is therefore open, not
 # blocked, and it is a change of its own: this pin decides which checker every
 # contributor runs, and one green run on one tree is not that decision.
-dev = ["pytest>=8", "grpcio-tools>=1.83.0", "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
+#
+# `packaging` arrives with pytest either way, and is named here because
+# `tests/test_packaging.py` parses these requirement strings with it - the
+# module that holds every declared dependency to its pin should not itself
+# rest on one nothing declares.
+dev = ["pytest>=8", "packaging>=22", "grpcio-tools>=1.83.0",
+       "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
 
 [project.scripts]
 qcctl = "pyquadcortex.protocol.cli:main"
