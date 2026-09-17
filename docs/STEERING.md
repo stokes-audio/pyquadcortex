@@ -172,9 +172,11 @@ Decisions are recorded in [`ADR.md`](ADR.md):
 ## 8. Open Questions
 
 - **Whether the mypy pin should allow 2.x.** The pin is `mypy>=1.15,<2`. No
-  decision record holds the bound; its reason is in b726d3e, "mypy is pinned
-  below 2 so the enforcer cannot change under CI". mypy 2.3.1 ran clean on this
-  tree on 2026-09-16, both halves of the blocking job. One run does not settle
+  decision record holds the bound; its reason is in b726d3e (2026-08-28), "mypy
+  is pinned below 2 so the enforcer cannot change under CI". It landed one day
+  after ADR-0016 recorded the static unit checking as verified with mypy 2.3.1,
+  the version the bound excludes. mypy 2.3.1 ran clean on this tree on
+  2026-09-16, both halves of the blocking job. One run does not settle
   which checker every contributor runs. Trying 2.x puts the environment outside
   the pin, so `tests/test_packaging.py` fails until the pin moves with it.
 

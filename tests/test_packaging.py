@@ -291,12 +291,13 @@ def _steering_bullet(lead):
     indent = len(lines[start]) - len(lines[start].lstrip())
     out = [lines[start]]
     for line in lines[start + 1:]:
-        if not line.strip() or line.lstrip().startswith("#"):
+        if not line.strip():
             break
-        # Only a bullet at the lead's own indent ends it. A continuation line
-        # may itself begin with `- `, which this repository uses as a separator.
+        # Only a bullet or heading at the lead's own indent ends it. A
+        # continuation line may begin with `- `, which this repository uses as a
+        # sentence separator, or with `#75`, which is a pull request.
         here = len(line) - len(line.lstrip())
-        if here <= indent and re.match(r"[-*]\s", line.lstrip()):
+        if here <= indent and re.match(r"([-*]\s|#{1,6}\s)", line.lstrip()):
             break
         out.append(line.strip())
     return " ".join(out)
@@ -345,10 +346,11 @@ def test_the_sdist_still_does_not_ship_the_documents_this_suite_reads():
     change that, and this is what trips when someone does, rather than a comment
     asking to be remembered.
     """
-    sdist = PYPROJECT["tool"]["hatch"]["build"]["targets"]["sdist"]
-    assert "include" in sdist, (
+    targets = PYPROJECT["tool"]["hatch"]["build"]["targets"]
+    assert "sdist" in targets and "include" in targets["sdist"], (
         "the sdist declares no include list, so hatchling ships the whole tree "
         "and `docs/` with it. Revisit the gate this replaced.")
+    sdist = targets["sdist"]
     forced = sdist.get("force-include", {})
     # Both sides of `force-include`: the key is the source path and the value is
     # where it lands, so either one can be `docs/`.
