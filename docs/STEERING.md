@@ -1,83 +1,140 @@
 # Steering: pyquadcortex
 
-> **What this is:** durable technical context for the pyquadcortex library - what the system is and why it is shaped this way.
-> **What this is not:** coding rules (see the repo-root `CLAUDE.md`) or decision rationale (see [`ADR.md`](ADR.md)).
-> **Last reviewed:** 2026-08-14 by Stokes
-> **Owners:** Stokes
+> Purpose: what the pyquadcortex library is and why it is shaped this way.
+
+> Coding rules are in the repo-root `CLAUDE.md`. Decisions and their rationale are in [`ADR.md`](ADR.md).
+> **Last reviewed:** 2026-09-16 by Stokes. **Owners:** Stokes.
 
 ## 1. Purpose
 
-pyquadcortex is an unofficial Python library for controlling the Neural DSP Quad Cortex over USB HID, speaking the device's own protobuf control protocol. Explicit context matters here because nearly every fact in this codebase is empirical: the schema was recovered from Cortex Control, behavior was verified by observing and driving real hardware, and the device accepts-and-ignores writes it does not understand rather than rejecting them. The written record (docstrings, [`protocol.md`](protocol.md), the coverage table) is the only trail of what is actually known, so work that ignores it can look correct while doing the wrong thing on the unit.
+pyquadcortex is an unofficial Python library that controls the Neural DSP Quad
+Cortex over USB HID, speaking the unit's own protobuf protocol. Nearly every fact
+in the codebase is empirical. The schema was recovered from Cortex Control, the
+behaviour was measured on a real unit, and the unit accepts and ignores a write
+it does not understand instead of rejecting it. The written record (docstrings,
+[`protocol.md`](protocol.md), the coverage table) is the only trail of what is
+known, so work that ignores it can look correct and still do the wrong thing on
+the unit.
 
 ## 2. Scope and Boundaries
 
 ### In scope
 
-The whole repository: the `pyquadcortex/` package (including the committed generated bindings in `pyquadcortex/protocol/proto/`), the recovered schema in `protocol/`, tests, examples, docs, and tooling.
+The whole repository: the `pyquadcortex/` package (including the committed
+generated bindings in `pyquadcortex/protocol/proto/`), the recovered schema in
+`protocol/`, tests, examples, docs and tooling.
 
 ### Out of scope
 
-- The device's firmware update path (`Updater`): permanently out of scope, not pending (see [`roadmap.md`](roadmap.md)).
-- The owner's cloud account surfaces (`CloudLogin`, `CloudBackup`, capture sharing): parked; driving them needs the owner's explicit permission first.
+- The firmware update path (`Updater`). Permanently, not pending. See
+  [`roadmap.md`](roadmap.md).
+- The owner's cloud account surfaces (`CloudLogin`, `CloudBackup`, capture
+  sharing). Parked. Driving them needs the owner's explicit permission first.
 
 ### Integration points
 
-- **The device itself:** wire behavior is verified per DEVICE PROFILE (ADR-0020), a profile being `device_type` plus `zenos_git_hash` (the CorOS version) as the unit reports them in its `Version` reply. One profile is measured by the maintainer: Quad Cortex, CorOS 4.0.1, firmware d14e. Quad Cortex 4.1.0 has contributed evidence the maintainer cannot verify; the Quad Cortex Mini (`device_type` ATMA - inferred from the schema's `atma_*` field names; no Mini has been measured) has none. The protocol carries no version number, so the profile read at connect is the only version information there is.
-- **hidapi:** the `hid` pip package is a ctypes binding to the OS-level hidapi C library, which users install themselves (see README).
-- **PyPI:** published as `pyquadcortex` with the `qcctl` console script; release process in [`releasing.md`](releasing.md).
-- **Planning notes:** the maintainer's planning material for future work (including the domain model) lives in a separate private repo; this repo carries only the library and its engineering docs.
+- **The unit.** Wire behaviour is measured per device profile (ADR-0020): a
+  `device_type` plus a `zenos_git_hash` (the CorOS version), read from the unit's
+  own `Version` reply. One profile is measured by the maintainer: Quad Cortex,
+  CorOS 4.0.1, firmware `d14e`. Quad Cortex 4.1.0 has contributed evidence the
+  maintainer cannot check. The Quad Cortex Mini (`device_type` `ATMA`) has none.
+  The protocol carries no version number, so the profile is the only version
+  information there is.
+- **hidapi.** The `hid` pip package is a ctypes binding to the hidapi C library,
+  which users install themselves (see the README).
+- **PyPI.** Published as `pyquadcortex` with the `qcctl` console script. Release
+  process in [`releasing.md`](releasing.md).
+- **The lab repository.** Planning material, raw USB captures, the catalog dump,
+  and the narrative history behind the documents here live in the private
+  `quad-cortex` repository. This repository carries the library and its
+  engineering documents.
 
 ## 3. Architecture Overview
 
 ### System shape
 
-Two public namespaces in one package (see ADR-0006). `pyquadcortex` is the model of the unit - what `import pyquadcortex` hands back - and `pyquadcortex.protocol` is the message-level API it is built on. The model calls the protocol layer and never the reverse.
+Two public namespaces in one package (ADR-0006). `pyquadcortex` is the model of
+the unit, which `import pyquadcortex` hands back. `pyquadcortex.protocol` is the
+message-level API it is built on. The model calls the protocol layer, never the
+reverse.
 
-Inside the protocol layer, a strict one-concern-per-file layering: `cli` → `session` → `client` → `transport` → `registry`/`framing` → hidapi, where each layer knows only the layer directly below it. `QuadCortex` (`protocol/client.py`) is the message-level API and knows nothing about HID reports, framing, or bytes; everything time-dependent and concurrent lives in `protocol/transport.py`. The full layer map, message flow, and the recipe for adding an operation are in [`architecture.md`](architecture.md) - that document is the deep reference and is not duplicated here.
+Inside the protocol layer, one concern per file: `cli` -> `session` -> `client`
+-> `transport` -> `registry` and `framing` -> hidapi. Each layer knows only the
+layer below it. `QuadCortex` in `protocol/client.py` builds protobuf messages and
+knows nothing about HID reports or bytes. Everything time-dependent and
+concurrent lives in `protocol/transport.py`. The full layer map and the recipe for
+adding an operation are in [`architecture.md`](architecture.md).
 
 ### Data and state
 
-The protocol layer is stateless between calls: every read is a live exchange, and the unit is the source of truth. It does carry one hook for a caller who wants to be told rather than to ask - `Transport.add_listener`, a subscription that sees every message the unit pushes for the life of the connection (ADR-0009) - but the transport stores none of it.
+The protocol layer is stateless between calls. Every read is a live exchange and
+the unit is the source of truth. Its one hook for being told rather than asking
+is `Transport.add_listener`, which sees every message the unit pushes for the
+life of the connection (ADR-0009). The transport stores none of it.
 
-The model layer holds the state (design in [`domain-model.md`](domain-model.md) sections 9 and 10, decided in ADR-0011). `pyquadcortex/device/state.py` is a write-through cache above `protocol/client.py`, fed by one persistent listener registered before the connect handshake so it hears the handshake's burst. It applies what the unit pushes as data rather than as an invalidation signal, asks the unit directly for what the unit never announces, and stops trusting a part of its copy when a message names a field the model does not keep. Reads happen on the caller's thread; the RX thread only ever merges and marks. What is tracked is a registry in `device/entries.py` rather than code, and it currently holds five of section 9's rows - the unit's identity, the unsaved-changes flag, which preset is loaded, what is on the grid, and the active scene. The rest arrive with the surfaces that read them, so callers still hold whatever state the model does not yet cover.
+The model layer holds the state. `pyquadcortex/device/state.py` is a
+write-through cache fed by one listener registered before the connect handshake,
+so it hears the handshake's burst. A push merges into its copy; a message naming
+a field the model does not keep marks the entry for one re-read; the caller's
+thread does the reading. What is tracked is a table in `device/entries.py`, and it
+holds five entries today: the unit's identity, the unsaved-changes flag, the
+loaded preset's position, the preset on the grid, and the active scene. The design
+is [`domain-model.md`](domain-model.md) sections 9 and 10, decided in ADR-0011 and
+ADR-0012.
 
 ## 4. Owned Paths
 
-- `pyquadcortex/` - the package. Two namespaces: `pyquadcortex/device/` (the model of the unit) and `pyquadcortex/protocol/` (the message-level API, including the committed generated bindings in `pyquadcortex/protocol/proto/`)
-- `protocol/` - the recovered `.proto` schema and its tooling
-- `tests/` - the fully offline suite and its fixtures
-- `examples/` - runnable scripts, also used as hardware-verification shapes
-- `docs/` - protocol record, architecture, coverage, this file
-- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, `generate_models.py`, `generate_params.py`, `generate_options.py`, `_snapshots.py` (the snapshot package all three generators write, in one copy), `extract_scale_fixture.py`
+- `pyquadcortex/` - the package: `pyquadcortex/device/` (the model) and
+  `pyquadcortex/protocol/` (the message API and the committed bindings in
+  `pyquadcortex/protocol/proto/`)
+- `protocol/` - the recovered `.proto` schema
+- `tests/` - the offline suite and its fixtures; `tests/hardware/` is the
+  hardware suite
+- `examples/` - runnable scripts
+- `docs/` - the documents listed in [`writing.md`](writing.md)
+- `scripts/` - `compile_protos.sh`, `check_artifacts.py`, the three generators
+  and `_snapshots.py`, `extract_scale_fixture.py`
 - `.github/workflows/` - CI
 
 ## 5. Patterns in Use
 
-| Pattern | What | Why (or `see ADR-000N`) | Canonical example | When the pattern does not apply |
-|---------|------|-------------------------|-------------------|----------------------------------|
-| Layered message flow | New operations are a registry entry plus a thin `QuadCortex` method that builds a protobuf and picks `send`/`request`/`await_broadcast` | Wire concerns stay below `client.py`, which keeps the whole API testable with a fake transport (see ADR-0002) | `QuadCortex.switch_scene` in `pyquadcortex/protocol/client.py` | `cli.py`'s `version` subcommand deliberately bypasses the connect handshake (`_open_unconnected`) |
-| Fake-per-layer offline tests | Each layer has a purpose-built double: golden captured frames for `framing`, `FakeHid` for `transport`, `FakeTransport` for `client` | see ADR-0002 | `FakeTransport` in `tests/test_client.py` | Hardware verification is `tests/hardware` behind `--hardware` (ADR-0005), run on every pull request before it is marked ready (contributing.md) |
-| Evidence-bearing docstrings | Each operation's docstring states what is confirmed on hardware vs inferred from the schema | The device gives no errors for wrong writes, so recorded evidence is the only trail | `QuadCortex.read_preset` in `pyquadcortex/protocol/client.py` | Non-protocol helpers (pure functions) carry ordinary docstrings |
-| Keyed grid edits | Mutations are row/column-keyed `Grid` UPDATEs | The device applies grid updates by key; wholesale preset writes are silently ignored (see [`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` in `pyquadcortex/protocol/client.py` | Read paths, and non-grid operations |
-| One translation boundary | Screen values become wire values in exactly one PACKAGE, and a source-reading test proves no other module in the package does it - the whole package outside `protocol/`, not just `device/`. The exemption covers a directory, so a test names the package's modules and a new one has to come through that list | An off-by-one row is silent - the write lands on a real row and reads back perfectly - so a convention cannot be trusted to hold (design principle 5 in [`domain-model.md`](domain-model.md)) | `pyquadcortex/device/translate/` | The protocol layer, which keeps its zero-based COORDINATES. Its scales come from the catalog, and quoting the device's own units is not translating - see ADR-0016 |
-| Model state goes through the cache | A model property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py`, not an attribute the property fills in itself | One account of what the model believes and how it learned it. A property with its own cached attribute answers from a copy nothing invalidates, and a closed connection cannot take it away (see ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry rather than read from the unit, which compute from `value()` rather than caching alongside it |
-| Catalog for structure, eyes for what the unit DRAWS | Structural facts about a control - option count, which wire index each choice sits at, parameter index - come from the catalog with no hardware; anything about what a person SEES needs a reading | Every position of every fixed list a preset reaches lands where the catalog says, re-driven on each hardware run; the reply Cortex Control receives at connect was reassembled independently from each of the three captures and inflated, and it carries the `stepNames` strings, so a host is handed the whole vocabulary about 1.2 seconds into a session, before it does anything else; and the catalog can be wrong about its own meaning, measured acoustically on the one list where it is | `tests/hardware/test_option_structure_on_unit.py` | Anything DRAWN. The order the unit shows a list's choices in - `RECORD MODE`, `DUPLICATE MODE` and `CURVE` each read back reversed - and `Parameter.display_pos` itself, which is published on two screen readings rather than taken from the file. And the list where the catalog is wrong about its own MEANING, `Pink NS` naming the position that draws WHT |
-| Evidence-stamped option lists | An option list's names carry a status saying whether a human has read them off the unit, generated from a per-position readings fixture | The catalog's `stepNames` is demonstrably not the screen's wording, so an unchecked list must not look like a checked one | `options.OPTION_AUDIT` plus `tests/fixtures/catalog/option_readings.json` | Lists the unit does not draw, which are `absent` by observation rather than unread |
-| Profile is the class | A connection resolves `(device_type, zenos_git_hash)` to a client class before the handshake; `QuadCortex` is 4.0.1 and the base, a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is the smell polymorphism removes; the decision is made once, by which class is instantiated (see ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
+| Pattern | What | Why | Canonical example | When it does not apply |
+|---|---|---|---|---|
+| Layered message flow | A new operation is a registry entry plus a thin `QuadCortex` method that builds a protobuf and picks `send`, `request` or `await_broadcast` | Wire concerns stay below `client.py`, so the whole API is testable with a fake transport (ADR-0002) | `QuadCortex.switch_scene` in `pyquadcortex/protocol/client.py` | `cli.py`'s `version` subcommand bypasses the connect handshake on purpose (`_open_unconnected`) |
+| A fake per layer | Golden captured frames for `framing`, `FakeHid` for `transport`, `FakeTransport` for `client` | ADR-0002 | `FakeTransport` in `tests/test_client.py` | Hardware verification is `tests/hardware` behind `--hardware` (ADR-0005), run before every pull request is marked ready |
+| Evidence in docstrings | Each operation's docstring says what is confirmed on hardware and what is inferred from the schema | The unit gives no error for a wrong write, so the record is the only trail | `QuadCortex.read_preset` in `pyquadcortex/protocol/client.py` | Pure helpers carry ordinary docstrings |
+| Keyed grid edits | A mutation is a row/column-keyed `Grid` `UPDATE` | The unit applies grid updates by key and ignores a wholesale preset write ([`architecture.md`](architecture.md), "write_preset is a trap") | `QuadCortex.set_bypass` | Reads, and operations outside the grid |
+| One translation boundary | Screen values become wire values in one package, and a source-reading test proves no other module in the package does it | A wrong row is silent: the write lands on a real row and reads back perfectly (design principle 5 in [`domain-model.md`](domain-model.md); ADR-0013) | `pyquadcortex/device/translate/` | The protocol layer keeps zero-based coordinates and quotes the catalog's own units (ADR-0016) |
+| Model state goes through the cache | A property reads `Device.state.value(entry, field)`; what it tracks is a `StateEntry` in `device/entries.py` | One account of what the model believes and how it learned it (ADR-0011) | `Device.firmware` in `pyquadcortex/device/device.py` | Values derived from an entry compute from `value()` instead of caching beside it |
+| Catalog for structure, a reading for presentation | Option count, wire index and parameter index come from the catalog; anything a person sees needs a reading | Every fixed list the loaded preset reaches lands where the catalog says, re-driven each hardware run. The drawn order of three lists and one list's option names disagreed with the file; `display_pos` has matched twice and rests on those two readings | `tests/hardware/test_option_structure_on_unit.py` | Anything drawn |
+| Evidence-stamped option lists | Each option list carries a status saying whether a person read its names off the unit | The catalog's `stepNames` differ from the unit's own `dynamic_steps` at 18 of 20 shared positions, and two of the fourteen lists read on the screen did not match it, so an unchecked list must not look checked | `options.OPTION_AUDIT` and `tests/fixtures/catalog/option_readings.json` | A list the unit does not draw is `absent` by observation |
+| The profile is the class | `connect()` resolves `(device_type, zenos_git_hash)` to a client class before the handshake; a subclass declares what differs and refuses what it has not verified | One `if firmware ==` in a method body is what polymorphism removes (ADR-0020) | `QuadCortex41` in `pyquadcortex/protocol/profiles.py` | `ALWAYS`: the lifecycle methods every profile needs to connect and clean up |
 
 ## 6. Constraints
 
-- **Runtime dependencies are exactly `hid` and `protobuf`.** The wheel installs with no compiler, no protoc, no build step.
-- **The protobuf runtime pin is coupled to the committed gencode, and so is the generator floor.** The runtime validates `runtime >= gencode` at import time; a mismatch is a hard `ImportError` for every user. Currently gencode 7.35.1, pinned `>=7.35.1,<8` (see ADR-0001). The generator is `grpcio-tools`, which carries its own protoc and so decides the gencode by which version is installed, hence the `grpcio-tools>=1.83.0` floor in the dev extra. Older gencode still imports, so both guards are explicit: `scripts/compile_protos.sh` refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode and the pin floor are the same number (see ADR-0008).
-- **Python >= 3.11.**
-- **The default test suite runs fully offline.** No test imports `hid`, touches hardware, or needs `DYLD_LIBRARY_PATH`; CI runs the real suite on plain runners for every PR (see ADR-0002). A separate hardware-in-the-loop suite - state-neutral on success, best-effort restore on failure, never run in CI - lives in `tests/hardware/` and runs only under `pytest --hardware` (see ADR-0005). That gate is TWO hooks in `tests/hardware/conftest.py`, not one: pytest offers `pytest_ignore_collect` only the paths it reaches by walking a directory, so a path named on the command line is caught instead by `pytest_collection_modifyitems`, which stops the run with an error naming the flag. `tests/test_hardware_gate.py` holds both halves up through a subprocess. Its modules must stay import-safe offline, and two offline tests hold that: `tests/test_hardware_gate.py` collects the whole tree under `--hardware` with `hid` poisoned, which imports every module in the directory, and `tests/test_scene_echo_predicates.py` imports `tests/hardware/test_write_echo.py` to exercise its predicates with no unit attached - the only way a predicate that can never match gets caught cheaply.
-- **Wire behaviour is stated per device profile, and a profile is named by CorOS version, never by `app_fw`** (ADR-0020). The measured baseline is Quad Cortex, CorOS 4.0.1, firmware d14e; a contributor reports d14e on 4.1.0 too (PR #44), so the app firmware string distinguishes nothing. An unknown profile refuses to connect rather than borrow the nearest one. An observation from another profile is recorded beside the 4.0.1 record in `protocol.md`, dated and named. The protocol is unversioned, so no behavior is guaranteed across firmware updates; [`architecture.md`](architecture.md) has the re-verification checklist.
-- **A hardware test names what it verifies, and it must actually verify it.** `@pytest.mark.verifies(*operations)` names the `QuadCortex` operations a test both exercises and asserts on - checked against `QuadCortex.operations()` at collection, so a renamed operation is a collection error rather than a marker that quietly stops naming anything. `pytest tests/hardware --hardware --verifies NAME` narrows a run to the tests that name it, and refuses a name that is not an operation or that no collected test names. `--profile CLASSNAME` connects as that profile class instead of the one the unit resolves to, which is how a unit the registry would refuse gets measured by the suite that measures it. `scratch_preset` is the fixture a test uses to get a disposable copy of the loaded preset to edit, rather than touching the owner's own library. An operation no hardware test names has to appear in `tests/test_hardware_markers.py`'s `UNMARKED_OPERATIONS`, with the reason beside it - there is no third way.
-- **Exclusive device access.** Cortex Control holds the HID interface exclusively, so the library and Cortex Control cannot be connected at the same time.
+- **Runtime dependencies are `hid` and `protobuf`.** The wheel installs with no
+  compiler, no protoc and no build step.
+- **The protobuf pin, the committed gencode and the `grpcio-tools` floor move
+  together.** Gencode 7.35.1, pinned `>=7.35.1,<8`, floor `grpcio-tools>=1.83.0`.
+  `scripts/compile_protos.sh` refuses to write a downgrade and
+  `tests/test_packaging.py` proves the pin equals the gencode (ADR-0001, ADR-0008).
+- **Python 3.11 or newer.**
+- **The default test suite runs offline.** No test imports `hid`, touches a unit
+  or needs `DYLD_LIBRARY_PATH` (ADR-0002). The hardware suite in
+  `tests/hardware/` runs only under `--hardware`, is state-neutral on success and
+  never runs in CI (ADR-0005). Its gate and its rules are in
+  `tests/hardware/readme.md`. Its modules stay importable offline:
+  `tests/test_hardware_gate.py` collects the whole tree with `hid` poisoned, and
+  `tests/test_scene_echo_predicates.py` imports `test_write_echo.py`.
+- **Wire behaviour is stated per profile, named by CorOS version.** An unknown
+  profile refuses to connect. An observation from another profile is recorded
+  beside the 4.0.1 record in `protocol.md`, dated (ADR-0020).
+- **Exclusive device access.** Cortex Control holds the HID interface, so the
+  library and Cortex Control cannot be connected at the same time.
 
 ## 7. Decision Records
 
-Decisions for this area are recorded in [`ADR.md`](ADR.md):
+Decisions are recorded in [`ADR.md`](ADR.md):
 
 | ADR | Title |
 |---|---|
@@ -101,904 +158,312 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 | ADR-0018 | A parameter constant carries its unit, and CI runs a type checker |
 | ADR-0019 | The frame trailer's flags are read and reported; an encrypted payload is labelled, not decrypted |
 | ADR-0020 | Connect resolves a device profile, and nothing else branches on firmware or model |
+| ADR-0021 | An approval stops counting once the pull request's code changes |
 
 ## 8. Open Questions
 
-None yet. Protocol unknowns (the splitter write path, the IR import payload format, and the rest) are investigation gaps tracked in [`roadmap.md`](roadmap.md) and [`architecture.md`](architecture.md), not deferred decisions.
+None yet. Protocol unknowns are tracked in [`protocol.md`](protocol.md), "Open
+questions", and [`roadmap.md`](roadmap.md).
 
 ## 9. Pointers
 
-- Repo: <https://github.com/stokes-audio/pyquadcortex> · PyPI: <https://pypi.org/project/pyquadcortex/>
-- Deep references: [`architecture.md`](architecture.md) (code), [`protocol.md`](protocol.md) (wire), [`capture.md`](capture.md) (observing device traffic), [`domain-model.md`](domain-model.md) (the object model design)
-- Status: [`manual-coverage.md`](manual-coverage.md) (feature audit), [`roadmap.md`](roadmap.md) (direction), [`../changelog.md`](../changelog.md)
-- Operations: [`releasing.md`](releasing.md), [`troubleshooting.md`](troubleshooting.md), [`api.md`](api.md)
+- Repo: <https://github.com/stokes-audio/pyquadcortex>. PyPI:
+  <https://pypi.org/project/pyquadcortex/>
+- Deep references: [`architecture.md`](architecture.md) (code),
+  [`protocol.md`](protocol.md) (wire), [`capture.md`](capture.md) (observing the
+  unit), [`domain-model.md`](domain-model.md) (the model's design)
+- Status: [`manual-coverage.md`](manual-coverage.md), [`roadmap.md`](roadmap.md),
+  [`../changelog.md`](../changelog.md)
+- Operations: [`releasing.md`](releasing.md), [`troubleshooting.md`](troubleshooting.md),
+  [`api.md`](api.md)
 - Device reference: the [Quad Cortex manual](https://neuraldsp.com/manual/quad-cortex)
 
 ## 10. Infrastructure Dependencies
 
 ### Reused infrastructure
 
-- **PyPI** for releases (process and credentials handling in [`releasing.md`](releasing.md))
-- **GitHub Actions** for the offline suite on every PR (`.github/workflows/ci.yml`)
-- **hidapi** as the OS-level native library on any machine that talks to hardware
-- **One physical Quad Cortex** (CorOS 4.0.1 / d14e) - the scarce resource; the hardware suite runs on it before every pull request is marked ready, so runs are serialized
+- **PyPI** for releases ([`releasing.md`](releasing.md))
+- **GitHub Actions** for the offline suite, mypy and a packaging build on every
+  pull request (`.github/workflows/ci.yml`)
+- **hidapi** on any machine that talks to a unit
+- **One physical Quad Cortex** (CorOS 4.0.1, `d14e`). The hardware suite runs on
+  it before each pull request is marked ready, so runs are serialized.
 
 ### Workload characteristics
 
-Single-device, single-connection USB HID at interactive rates (129-byte reports); no server components, no persistent storage, no capacity planning. The binding constraint is hardware access, not compute.
+Single-device, single-connection USB HID at interactive rates (129-byte reports).
+No server, no persistent storage, no capacity planning. The binding constraint is
+access to the unit, not compute.
 
-## What goes elsewhere (not here)
+## What goes elsewhere
 
-| If you're writing...           | Put it in...                          |
-|---                             |---                                    |
-| Imperatives ("always use X")   | repo-root `CLAUDE.md`                 |
-| Decision rationale             | [`ADR.md`](ADR.md)                    |
-| Per-Epic plan                  | the Epic's implementation plan        |
-| Architecture / current state   | here, or [`architecture.md`](architecture.md) for code-level depth |
+| If you are writing... | Put it in... |
+|---|---|
+| A rule ("always use X") | the repo-root `CLAUDE.md` |
+| A decision and its rationale | [`ADR.md`](ADR.md) |
+| A fact about the wire | [`protocol.md`](protocol.md) |
+| Code-level architecture | [`architecture.md`](architecture.md) |
+| How a finding was reached | the pull request, or the lab repository |
 
 ---
 
 ## Change Log
 
-### 2026-09-16 - The unit shortens one control's words, and the unread audit work is ranked
+Entries are short by design ([`writing.md`](writing.md)). The full narrative
+behind each one is in the lab repository,
+`doc/pyquadcortex/history/steering-change-log.md`, and in the pull requests.
 
-**What changed:** the abbreviation question was settled by a reading on the
-unit, and `options.OPTION_USAGE` is published so the size of the remaining
-audit work stops being prose.
+### 2026-09-16 - Documents rewritten for readability
 
-**Why - the abbreviations.** The question was whether the unit shortens every
-long name or just that one control. Just that one: a Flanger Engine's
-`WAVEFORM` offers seven waveform names and the screen spells all of them out
-(read 2026-09-16 on the unit, with positions 0 and 3 driven from a host and
-read back). The same word `Sine` draws as `SIN` on a Mono Synth oscillator and
-as `Sine` on the Flanger, so the shortening belongs to that control.
+- **What changed:** every document gained a purpose line and was rewritten to
+  `writing.md`. Narrative history moved to the lab repository.
+- **Why:** the documents had become transcripts of review arguments.
+- **Scope:** all `.md` files; `tests/test_writing.py` added. ADR decisions unchanged.
 
-The short words are not in the catalog either - `WHT`, `PNK`, `SAW` and `SQR`
-appear zero times in the 556,732-byte file - so the catalog's TEXT does not
-predict a shortened control. Whether some other attribute does is open: both
-shortening controls carry `hidden` on the PARAMETER and the Flanger's does not.
-That is two positives, on the flag ADR-0010 caught this repo trusting once
-already, so it is written down as a candidate and not as a rule - and the
-metronome's cells, which are not hidden parameters and depart from the catalog
-anyway, sit against it.
+### 2026-09-16 - The screen's shortening is one control's, and the unread audit is ranked
 
-Nineteen controls have now been read - the readings fixture holds 24, but five
-are records of looking and finding no control. Two of the nineteen shorten a
-word, four draw circles instead of words, and the other thirteen match the
-catalog exactly.
+- **What changed:** a Flanger Engine's `WAVEFORM` spells `Sine` out where a Mono
+  Synth draws `SIN`, so the shortening is the control's.
+  `options.OPTION_USAGE` counts the parameters each list decides.
+- **Why:** the catalog's words do not predict the shortening, and 94 unread
+  lists are not 94 equal jobs.
+- **Scope:** the generator, the options snapshot, the readings fixture, tests,
+  four documents. No ADR: this settles a question in
+  [`domain-model.md`](domain-model.md)'s appendix. No hardware test: screen
+  readings live in the fixture.
 
-**Why - `OPTION_USAGE`.** "94 lists unread" is not 94 equal jobs: `Off,On`
-decides 222 parameters and `CHO1,CHO2` decides two. The generator now emits the
-per-list parameter count beside the audit status, so a session at the unit can
-be planned from the library. `tests/test_option_audit.py` holds the document to
-it, including that the biggest five unread lists cover 54 of the 190 - and the
-test that checked the parameter counts stopped scraping enum docstrings with a
-regex and hand-copying the three lists that have no enum, which was a stated
-blind spot in its own docstring.
+### 2026-09-15 - The catalog carries the option vocabulary; the screen is a second renderer
 
-**Scope of impact:**
-- **Updated:** `CLAUDE.md`, this file, `docs/domain-model.md`, `changelog.md`, `tests/fixtures/catalog/option_readings.json` (the seven Flanger readings), `scripts/generate_options.py`, the 4.0.1 snapshot's `options.py`, `pyquadcortex/protocol/options.py` (the shim's explicit re-export), `tests/test_option_audit.py`, `tests/test_options.py`
-- **Not updated (intentionally):** `ADR.md` - this settles a question recorded in the appendix rather than deciding anything new. No hardware test: the finding is a screen reading, and screen readings live in the readings fixture.
-
-### 2026-09-15 - The catalog IS the conveyed vocabulary; the unit's screen is a second renderer
-
-**What changed:** the rule added earlier the same day said presentation is not
-downloadable. That is wrong, and the captures we already had say so. Corrected in
-`CLAUDE.md`, this file and `docs/domain-model.md`.
-
-**Why.** The reply Cortex Control receives was read. It fetches `ModelRepo` as
-the third message type of every session - after `ResetCommsBuffers` and
-`Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198 /
-1.186 seconds in. Reassembled independently from each of the three captures and
-inflated, it is a 558,592-byte tar holding one 556,732-byte `ModelRepo.xml` with
-539 `stepNames` attributes, `stepNames="Sine,Triang,...,Pink NS,White NS"` among
-them. The three are not byte-identical and the doc says exactly where they
-differ: only inside the 338 changing `blob` tokens, with the vocabulary the same
-in all three. The lab repo's committed `research/catalog/ModelRepo.xml` is not a
-fourth sample - it is byte-identical to session 02, which makes it a check on
-the reassembly method rather than more evidence about the vocabulary. Two earlier drafts got this wrong in opposite directions: one
-argued it by elimination - nothing else is big enough - which is false, since
-`File` carries 885-report messages and preset bodies carry `dynamic_steps`; the
-other called the reassembly unachievable, when the lab repo's own
-`decode_capture.py` does it and the failure was a bad USBPcap filter.
-The question was "there must be some way it is conveyed", and the answer is that
-it is conveyed once, upfront, in the file this library already parses.
-
-The earlier capture watched the UNIT draw on its own touchscreen, which proves
-nothing about conveyance - the unit holds the catalog too. What it does show is
-that the unit renders the same data differently: `SIN`, `WHT`, and icons, none of
-which exist in any file. Two renderers over one source.
-
-**And the pink/white finding is now measured rather than read.** The breaking
-rename in #72 rested on the unit's screen showing `WHT` at wire position 5, which
-could not say which signal comes out. Captured off the unit's own USB audio
-interface: subtracting the two recordings cancels the rest of the
-signal chain, and the difference climbs monotonically across all seven bands at
-about 3.6 dB per octave - the direction that separates white from pink, and the
-right order of magnitude. The catalog calls position 5
-`Pink NS`. It is white. The numbers and the two commands that reproduce them are
-in `docs/domain-model.md`; the recordings are not committed, being a few seconds
-of noise whose finding is the numbers.
-
-**Scope of impact:**
-- **Updated:** `CLAUDE.md`, `docs/STEERING.md` section 5, `docs/domain-model.md`, `changelog.md`, `scripts/generate_options.py` (the rename's recorded reason)
-- **Not updated (intentionally):** no code behaviour changes - the rename shipped in #72 was correct and the measurement confirms it, so nothing under `pyquadcortex/` moves at all - the evidence strings live in the generator's table, not in what it emits, and regenerating produces no diff. `ADR.md` - this narrows a rule written two days ago rather than deciding something new. No new test: the claim is about what crosses the wire in a capture the lab repo holds, and the library has no hook to assert it.
+- **What changed:** Cortex Control reads `ModelRepo` third in every session,
+  and the reply carries every `stepNames` string. The unit draws its own
+  abbreviations over the same data. Pink and white noise were confirmed swapped by
+  an acoustic measurement.
+- **Why:** an earlier rule said presentation was not downloadable. The captures
+  said otherwise.
+- **Scope:** `CLAUDE.md`, this file, `domain-model.md`, `changelog.md`,
+  `scripts/generate_options.py`. No code change; `ADR.md` unchanged.
 
 ### 2026-09-15 - The catalog is trusted for structure and never for presentation
 
-**What changed:** the on-hardware rule is split by the kind of claim being made.
-Structural facts about a control now come from the catalog without a screen
-reading; anything about what a person sees still needs eyes. `Parameter.display_pos`
-and `Model.resources` are published. `displayPos` leaves the appendix's
-unexplained-attributes table; `<Padding>` was never in it, being a child element
-rather than an attribute. Both now have a written-up section there instead.
+- **What changed:** structural facts (option count, wire index, parameter index)
+  come from the catalog without a screen reading. `Parameter.display_pos` and
+  `Model.resources` are published as the catalog's own claims. `Model.hidden`
+  now reads the attribute's value, which restored two amps to `models.ALL` (414).
+- **Why:** every fixed list the loaded preset reaches landed where the catalog
+  said, 156 positions with no mismatch.
+- **Scope:** `catalog.py`, the regenerated 4.0.1 snapshot, tests, `CLAUDE.md`,
+  `domain-model.md`, `api.md`, `protocol.md`, `changelog.md`; new
+  `tests/hardware/test_option_structure_on_unit.py`. `ADR.md` unchanged.
 
-**Why, and what was measured.** The question was whether the audit rule was
-costing hardware time to confirm things a file already knew. Three experiments:
+### 2026-09-14 - An option list says whether anyone has checked its names
 
-- Every position of every fixed list the loaded preset could reach was driven,
-  checking each stored `index / (count - 1)`. Zero mismatches, 156 positions on
-  the preset the recorded run used. A new hardware test does exactly this on
-  each run, so the claim keeps being tested rather than remembered - and it
-  proves the WIRE mapping only. The order the unit draws the choices in is
-  presentational and this repo has three counterexamples.
-- A Solo 100 Lead was placed and its knobs read off the screen. They came back
-  in `displayPos` order, not wire order. That is the SECOND such reading - a cab
-  on 2026-09-11 was the first - and two models out of the 163 that place a
-  visible control is all this rests on, with nothing re-driving it. So
-  `Parameter.display_pos` is published as the catalog's prediction, not as a
-  measured fact, and it is NOT one of the structural facts above. 142 of the 163
-  disagree with wire order in some way, of which only 17 are the single adjacent
-  swap this reading was; the other 125 are other reorderings.
-- A 150-second capture recorded everything the unit sent while a human opened a
-  Mono Synth's Oscillator tab and stepped through all seven waveforms. 600
-  messages, every one the metronome tempo stream. Not one waveform label, and
-  no notification that the value had changed at all.
+- **What changed:** `options.OPTION_AUDIT` and a readings fixture record which
+  lists have been read on a unit; the generator stamps each enum from it.
+  `Parameter.hidden` is published and nothing branches on it.
+- **Why:** `stepNames` disagrees with the unit's own `dynamic_steps` at 18 of 20
+  shared positions.
+- **Scope:** generator, `catalog.py`, `client.py`, the options snapshot, tests,
+  five documents. `ADR.md` unchanged: the convention moved three times in one
+  session and is not settled enough to record.
 
-**What it turned up on the way.** Putting the population counts under a hardware
-pin exposed a real bug: `Model.hidden` read the catalog's `hidden` attribute by
-PRESENCE, and two amps carry `hidden="false"` - Bogna Uber Clean and Bogna Uber
-Lead. Both were reported hidden, dropped from `is_factory`, and had no generated
-constant at all. Settled by placing each on the unit rather than by re-reading
-the attribute. `models.ALL` is 414 now. The same presence read on a category and
-on `internal` is corrected too - latent on 4.0.1, where all nine hidden
-categories and all eight internal models say `"true"`, but a category shipping
-`"false"` would silently drop every model in it. A source-reading test now
-refuses any catalog attribute read that way.
+### 2026-09-14 - The connect burst is waited for as a group
 
-**The paragraph BELOW is superseded** by the 2026-09-15 entry at the top of
-this log, written later the same day. Its conclusion - that presentation is not
-downloadable - is wrong: the `ModelRepo` payload carries the `stepNames`
-strings, and Cortex Control fetches such a payload every session. What this
-capture actually showed is that the UNIT has no need to send them, holding the
-catalog itself. Left in place unedited, because a change log records what was
-believed when.
+- **What changed:** the hardware suite waits for all four messages in
+  `HandshakeBurst.BURST_TAIL`, and a new cache entry has to be listed in
+  `tests/test_handshake_burst_recorder.py` with a reason.
+- **Why:** the other three follow `RecallPreset` by 3.6 to 6.0 ms against a
+  100 ms poll, which failed two tests a few runs in a hundred.
+- **Scope:** `tests/hardware/`, `tests/test_handshake_burst_recorder.py`,
+  `protocol.md`, `CLAUDE.md`. No library change. `BURST_TAIL` stays off the
+  profile class until a second profile has measured its own burst.
 
-**What that settles.** The catalog container is a single XML file with no
-icons, no string table and no localisation. It carries other strings - `tooltip`
-on 126 parameters, a non-empty `units` on 1,494 of the 3,468 carrying it, the
-`min_string`/`mid_string`/`max_string`
-triple this library already reads - but none of them is a rendered option label. On a 14-block preset the only parameters
-publishing `dynamic_steps`, `dynamic_icons` or `dynamic_metadata` were the three
-DYNAMIC ones it carried; nine of the catalog's twelve have never been observed. And the
-unit does not transmit what it draws. So presentation is not downloadable, and a
-metadata explanation of a display question is not going to be found by reading
-the file more carefully. The catalog cannot even be trusted about its own
-meaning: `Pink NS` names the position that draws WHT.
-
-**Scope of impact:**
-- **Updated:** `CLAUDE.md`; `pyquadcortex/protocol/catalog.py` (new `Parameter.display_pos` and `Model.resources`, and the `hidden` / `category_hidden` / `internal` parses corrected from presence to `== "true"`); the regenerated `pyquadcortex/protocol/catalogs/coros_4_0_1/models.py` and `params.py` (two amps that had no constant); `tests/test_catalog.py`; `tests/test_models.py` (factory count 412 to 414); `docs/domain-model.md` appendix; `docs/api.md` and `docs/protocol.md` (the same count); `changelog.md`; `tests/hardware/readme.md` and this file's own hardware-suite note, which both said two files end `_on_unit` when there are four; STEERING.md sections 5 and 10
-- **New:** `tests/hardware/test_option_structure_on_unit.py`
-- **Not updated (intentionally):** `ADR.md` - this narrows how an existing rule is applied rather than deciding something new, and the option-audit convention it sits beside is still deliberately unrecorded. Nothing under `pyquadcortex/device/` - the model layer asks the protocol layer and is unaffected. `Model.resources` is deliberately NOT a capacity model: a ceiling was observed between 8.10 and 8.25 by the `cpu` column, but four of the fourteen blocks on the grid carry no `<Padding>` at all so the base is an undercount, and nothing establishes which column binds.
-
-### 2026-09-14 - An option list now says whether anyone has checked its names
-
-**What changed:** `options.OPTION_AUDIT` and a readings fixture record which of
-the 113 fixed option lists have been held against a real unit's screen, and
-`scripts/generate_options.py` stamps every generated enum from it. Thirteen lists
-covering 300 parameters were read on CorOS 4.0.1; 95 are unread, covering 191.
-One of the thirteen disagreed - a Mono Synth's oscillator waveforms, where the
-catalog has pink and white noise swapped. `Parameter.hidden` is published but no
-library code branches on it; the only thing that reads it is a hardware test,
-which treats the flag being REMOVED as a reason for a human to look at the
-control again.
-
-**Why:** the names come from the catalog's `stepNames`, and the catalog is not the
-screen. The proof was already offline in the repo and nobody had looked: for the
-twelve parameters whose list the device builds from the preset, `dynamic_steps`
-carries the device's own rendering and it disagrees with `stepNames` at 18 of 20
-shared positions.
-
-**What it cost to get right.** Two rules were adopted and then disproved on the
-unit in the same session. Reading a control's choices in order looked
-interchangeable with driving each position; on a two-position control it is not,
-and three lists came back reversed before driving showed the reading was wrong.
-And `hidden` looked like it meant "not on screen"; five of the six lists used
-only by hidden parameters really are not drawn, and the sixth is a Mono Synth's
-`OSC1 WAVE`, which is on a tab called Oscillator with its own icons. Both rules
-are now measurements instead: how a position was read is a field, and `absent` is
-an observation naming where somebody looked. ADR-0010 said this already.
-
-**Scope of impact:**
-- **Updated:** `scripts/generate_options.py`, `pyquadcortex/protocol/catalog.py` (new `Parameter.hidden`), `pyquadcortex/protocol/client.py` (`set_param_option` and `option_value` refuse two catalog names), the regenerated `pyquadcortex/protocol/catalogs/coros_4_0_1/options.py`, `pyquadcortex/protocol/options.py`, new `tests/fixtures/catalog/option_readings.json`, new `tests/test_option_audit.py`, new `tests/hardware/test_option_audit_on_unit.py`, `tests/test_generators.py`, `tests/test_catalog.py`, `tests/test_client.py`, `tests/test_options.py`, `docs/domain-model.md`, `docs/api.md`, `docs/manual-coverage.md`, `CLAUDE.md`, `changelog.md`, STEERING.md sections 5 and 10
-- **Not updated (intentionally):** `ADR.md` - the convention has been wrong three times in one session and corrected each time, which is a reason to let it cover more lists before it is written down as a decision, not to record it early. The READ path (`param_options`, `option_at`) still reports the catalog's name for the swapped positions: overruling the device's own string on a read is a wider decision than one finding should settle, and `docs/domain-model.md` records it rather than leaving it to be found. `docs/protocol.md` - nothing about the wire changed; this is about what the screen draws.
-
-### 2026-09-14 - The connect burst is waited for as a group, not a head message
-
-**What changed:** the hardware suite's burst recorder waits for every message in
-`HandshakeBurst.BURST_TAIL` - `RecallPreset`, `SetlistPosition`, `PresetDirty`,
-`Scene` - rather than for `RecallPreset` alone. The connection fixture registers
-the model cache BEFORE the recorder, so "the recorder has all four" implies "the
-cache has applied all four" rather than merely nearly. `unfinished()` names what
-never arrived, and prints once in the run's own report as well as in the three
-tests that guard on it. A new cache entry now has to come through `BURST_TAIL`,
-`OUTSIDE_THE_BURST` or `NOT_WARMED_BY_THE_BURST` in
-`tests/test_handshake_burst_recorder.py`, each with its reason - the same shape
-as `UNMARKED_OPERATIONS` and `BOUNDARY_MODULES`.
-
-**Why:** `RecallPreset` is the FIRST of those four on the wire and the other three
-follow within 3.6 to 6.0 ms, against a 100 ms poll. Two hardware tests failed
-together on 2026-09-11 and passed on a re-run of the same commit; simulating the
-poll's phase puts it at a few runs in a hundred. A gate that fails intermittently for reasons unrelated to
-the change teaches people to re-run until green, which is how a real regression
-gets waved through.
-
-**Scope of impact:**
-- **Updated:** tests/hardware/conftest.py, tests/hardware/test_model_state.py, tests/hardware/test_preset_surface.py, tests/hardware/test_broadcast_listener.py, tests/hardware/readme.md, tests/test_handshake_burst_recorder.py, docs/protocol.md "Connect burst, measured", CLAUDE.md, STEERING.md section 10
-- **Not updated (intentionally):** ADR.md - the stop condition is a bug fix in the suite, not an architectural choice; nothing under `pyquadcortex/` - the library never had this bug; `BURST_TAIL` stays off the profile class (ADR-0020) until a second profile has measured its own burst, and the timeout names the message it never saw, which is the evidence that would move it
 ### 2026-09-12 - The Off-detent table is deleted; the floor is derived (ADR-0015)
 
-**What changed:** `units.FLOOR_WIRE` is gone. `Parameter.floor` is derived from
-the catalog - `min_string` that the bottom is a word, `min`/`max` the range, and
-`showAsInteger` the step - leaving `units.OFF_STEP_INTEGER` and
-`OFF_STEP_DECIMAL` as the only numbers. Two behaviour changes: a cab accepts
-`Db(-30.0)` again, and the exact bottom of any such range is refused everywhere
-rather than silently writing the Off position.
-
-**What the session was for and what it found.** The task was to measure where
-the numbers resume on 189 parameters across 14 laws. Three laws covering 161 of
-them were driven and produced no entry: the amp OUTPUT family reaches nearly to
-its own bottom, the `-Inf` family is 20 `type="grMeter"` readouts rather than
-knobs, and the IR loader's HI PASS is an integer knob. Driving the rest showed
-the table was the wrong shape entirely.
-
-**The instrument was the finding.** Three attempts had gone wrong three ways.
-Turning the knob cannot reach below 1% of travel, which is why all three
-recorded floors read exactly wire 0.01 - a player's floor, not the knob's.
-Writing finer wire values and reading the screen fails too, because the display
-ROUNDS: a lane output prints "-40.0 dB" at its lowest real position and "OFF"
-one step below. Only the unit's numeric ENTRY separates them, and it states
-exactly the catalog's `min`..`max`, eight for eight, with `showAsInteger`
-predicting whole-number entry ten for ten.
-
-**The cost of the old table, stated because it is the argument for deriving.**
-The cab entry was wrong by 16 dB and had refused `Db(-30.0)` for two releases,
-on a record that misread its own evidence - "muted the microphone" was the level
-the caller asked for, arriving correctly. The other two were points somebody
-happened to measure rather than floors.
-
-**Why `min_string` is trusted per parameter rather than per law.** 14 cab LEVELs
-omit it where the other 160 carry it, on the same law - which looked like a
-catalog defect and is not: a `Parallax` cab LEVEL accepts -40 and displays
--40.0 dB where a labelled cab shows `OFF` at the same wire 0.0, measured
-2026-09-12. Unioning by law was the tempting repair and would have been wrong
-twice over: 559 parameters share a law with a labelled one without being
-labelled, and 474 of those are ordinary 0-100% controls whose 0% is a real
-value.
+- **What changed:** `Parameter.floor` is derived from `min_string`, `min`, `max`
+  and `showAsInteger`. `units.FLOOR_WIRE` is gone. A cab accepts `Db(-30.0)`
+  again, and the exact bottom of a labelled range is refused everywhere.
+- **Why:** the unit's numeric entry states exactly the catalog's range, and the
+  hand-measured table was wrong by 16 dB.
+- **Scope:** `catalog.py`, `units.py`, tests, `protocol.md`, `changelog.md`.
 
 ### 2026-09-11 - The Global EQ gain span is measured at its ends (ADR-0017)
 
-**What changed:** `units.SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]` is still
-`(-12.0, 12.0)`, and the evidence under it is no longer the manual's. Band 1's
-GAIN was written over the wire and the Global EQ page read each time, on CorOS
-4.0.1: wire 0.0/0.25/0.75/1.0 display -12.0/-6.0/+6.0/+12.0 dB. The four
-readings are in `tests/test_scales.py`, the hardware test drives all four back
-onto the unit, and every place that called this the weaker of the two known
-spans now says what it rests on instead.
-
-**Why:** the number was right and the evidence was not, which is the harder case
-to notice. It shipped on the manual's span plus two points 6 dB apart on a range
-claimed to be 24 dB wide - and two close points cannot tell one span from a
-wider one. That is exactly how `-100..+30` survived in `MIN_MIXER_DB` for two
-releases with a measured unity point sitting on it. So the measurement went
-after the ENDS, not a third interior point.
-
-**What the quartiles bought, which was not the plan:** they rule out a taper.
-At the display's own 0.1 dB rounding the two together admit only skews
-0.994..1.006, so "linear" is measured rather than assumed - and a cab LEVEL is
-the standing proof that shape hides from well-separated points (`protocol.md`).
-`test_the_global_eq_gain_quartiles_rule_out_a_taper` computes that intersection
-from the recorded readings and fails if they stop excluding a taper. The
-tolerance it holds them to is stated ahead of the data rather than fitted to it;
-the readings clear it with margin.
-
-**What did NOT change:** the Global EQ's FREQUENCY, Q and OUT level still take
-`Encoded` only. Nothing ties any of them to a reading on screen, and this run
-did not go looking.
-
+- **What changed:** `units.SETTING_SPANS["GLOBAL_EQ_GAIN_DB"]` rests on four
+  screen readings across the whole travel, ends included.
+- **Why:** the number was right and the evidence was the manual plus two close
+  interior points, which cannot tell one span from a wider one.
+- **Scope:** `units.py`, `tests/test_scales.py`, the hardware suite, `api.md`.
+  `FREQUENCY`, `Q` and the `OUT` level still take `Encoded`.
 
 ### 2026-09-11 - A pan's drawn span is measured, not declared (ADR-0015)
 
-**What changed:** `units.LABELLED_END_SPAN` holds `(-50.0, 50.0)`, the span the
-unit actually draws for the 36 parameters carrying `min_string`, `mid_string`
-and `max_string` together. `catalog._parameter` applies it to any parameter
-carrying all three, and `Parameter.mid_label` carries the middle label.
-`mid_string` leaves the unexplained appendix in `domain-model.md`.
-
-**Why:** the declared span was measurably wrong, not imprecise. A pan reads
-`50 L` at wire 0.0, `C` at 0.5 and `50 R` at 1.0, and the catalog declares that
-same drawn control four different ways - `-1..1` on 22 parameters, `0..10` on
-10, `0..1` on 3, `-50..50` on one. Reaching hard left therefore meant
-`Real(0.0)` on a mono cab and `Real(-1.0)` on a stereo one, for one physical
-knob. Three of the four declared spans were read off the screen and the fourth
-declares the drawn span itself, so nothing is inherited from a knob nobody
-drove. Readings in `tests/test_scales.py`, narrative in `protocol.md`.
-
-**The tension with ADR-0015, stated rather than buried:** that record makes the
-catalog the source of a scale and measurements the tests. Here the test failed
-and the finding is about the device. The catalog is still the source for every
-other parameter, and this is the first span the library overrides. If a second
-one appears, that is the point to stop and write a record rather than grow the
-table.
-
-**What did NOT change, on purpose:** the key is the label triple, not the law.
-`(0.0, 1.0, 1.0)` is one of the commonest laws in the catalog and almost none of
-those parameters is a pan, so keying by law would have swept in unrelated
-knobs. 267 parameters carry one or two of the three labels - almost always
-`min_string="OFF"` - and none of those is in the family. Granularity is also
-untouched: `steps` disagrees with itself here and nobody has measured the
-smallest move the screen will show.
-
+- **What changed:** `units.LABELLED_END_SPAN` holds -50..50 for the 36 parameters
+  carrying `min_string`, `mid_string` and `max_string`; `Parameter.mid_label`
+  carries the middle label.
+- **Why:** the catalog declares that one drawn control four different ways and
+  the screen shows none of them.
+- **Scope:** `catalog.py`, `units.py`, `tests/test_scales.py`, `protocol.md`,
+  `domain-model.md`. The first and only span the library overrides; a second
+  needs an ADR.
 
 ### 2026-09-07 - A pull request is a draft until the hardware suite has run on it
 
-**What changed:** `contributing.md` gains "Before you mark a pull request ready":
-a pull request opens as a draft, the hardware suite runs on its final commit, and
-the description records the commit hash, the CorOS version, pytest's summary line
-and the `operations on ...` block. A contributor with no unit says so and a
-maintainer runs the suite before merging; a maintainer may waive the run, in the
-description, for a change that cannot reach the wire. The pull request template
-gained a Hardware section with those three states, `CLAUDE.md` states the rule for
-the agent, and the section 5 pattern row that said hardware verification happens
-manually via `examples/` now names the suite.
-
-**Why:** the 2026-09-07 post-merge run (PR #53) found two stale records that a
-green offline suite had passed, and two pull requests that week were marked ready
-without the run. A rule that lives only in memory is skipped under time pressure;
-one that lives in the template and the contributor guide is not.
-
-**Scope of impact:**
-- **Updated:** contributing.md, CLAUDE.md, .github/PULL_REQUEST_TEMPLATE.md, STEERING.md sections 5 and 10
-- **Not updated (intentionally):** ADR.md - this is process, not an architectural decision; ci.yml - nothing enforces the description's contents mechanically yet
+- **What changed:** `contributing.md` gains "Before you mark a pull request
+  ready"; the template gains a Hardware section; `CLAUDE.md` states the rule.
+- **Why:** a post-merge run found two stale records that a green offline suite
+  had passed.
+- **Scope:** `contributing.md`, `CLAUDE.md`, the pull request template. `ADR.md`
+  unchanged: process, not architecture.
 
 ### 2026-09-06 - The profile seam is built (ADR-0020)
 
-**What changed:** `connect()` reads the unit's `Version` before the handshake,
-resolves `(device_type, zenos_git_hash)` in a registry of profile classes, and
-refuses an unknown pair with `UnsupportedDevice`. `QuadCortex` declares itself
-as the 4.0.1 profile; `QuadCortex41` connects and verifies only operations with
-recorded 4.1 evidence; a unit's suite run fills its `VERIFIED` set;
-`QuadCortexMini` is recognised and
-refused. An operation a profile has not verified refuses under the default
-`Support.VERIFIED` and runs with one warning under `Support.EXPERIMENTAL`.
-Generated constants live in `pyquadcortex/protocol/catalogs/coros_4_0_1/`;
-`protocol.models` and friends are shims over it. `set_block` checks the live
-catalog before sending. The hardware suite marks the operations each test
-verifies and prints, per profile, which passed.
-
-**Why:** the ADR-0020 entry below records the decision; this is the code.
-
-**What did NOT change, on purpose:** `protocol.models` still means 4.0.1;
-`CC_VERSION` still announces 4.0.1 on every profile; no 4.1 snapshot ships.
+- **What changed:** `connect()` reads `Version`, resolves the profile class, and
+  refuses an unknown pair. `QuadCortex41` and `QuadCortexMini` exist. Generated
+  constants live under `protocol/catalogs/coros_4_0_1/` with shims at the old
+  paths. The hardware suite reports which operations passed per profile.
+- **Why:** the decision below.
+- **Scope:** `session.py`, `client.py`, new `profiles.py` and `support.py`,
+  generators, tests, docs. `CC_VERSION` still announces 4.0.1 on every profile.
 
 ### 2026-09-03 - One baseline becomes a registry of device profiles (ADR-0020)
 
-**What changed:** the repo stops describing one firmware as "the" baseline and
-describes device profiles instead. A profile is `device_type` plus
-`zenos_git_hash` from the unit's own `Version` reply, and it owns everything
-that differs by firmware or model: the generated constants snapshot, the announce
-string, the hardware facts, and the operations measured to differ. Connect will
-resolve the profile before the handshake and refuse an unknown one. The
-`protocol.md` header, section 2 and section 6 here, and `CLAUDE.md` now say so.
-`version()` accepts only a `Version` carrying an identity field, because the unit
-answers a `Version` READ with the full reply AND its own `Version{READ}` 1 ms
-later, and a type-correlated wait returned the empty one every second call.
-
-**Why:** two contributions arrived from units the maintainer does not have - a
-Mini opened over USB (#31) and a CorOS 4.1.0 catalog (#42, then #44) - and
-neither could be verified on the unit that defines the baseline. Merging either
-would have failed the hardware suite on that unit and moved the baseline without
-a decision. The maintainer wants Quad Cortex 4.0.1, Quad Cortex 4.1 and the Mini
-supported at once, each measured on its own hardware, so the shape had to be
-decided before the seam is built.
-
-**What did NOT change, on purpose:** no code branches on a version string yet.
-`protocol.models`, `params` and `options` still mean the QC 4.0.1 snapshot, and
-`CC_VERSION` still announces 4.0.1. The seam, the registry and the per-profile
-namespaces are the next piece of work; this entry records the rules they follow.
+- **What changed:** the repo describes device profiles instead of one baseline.
+  `version()` accepts only a reply carrying an identity field.
+- **Why:** contributions from a Mini (#31) and a 4.1.0 unit (#42, #44) could not
+  be verified on the maintainer's unit.
+- **Scope:** `protocol.md`, this file, `CLAUDE.md`, `ADR.md`. No code branched on
+  a version yet.
 
 ### 2026-09-03 - The trailer's two unread bytes are named (ADR-0019)
 
-**What changed:** `framing.decode_reports` returns a frozen `Frame` instead of a
-`(type, payload)` tuple, naming the whole trailer: the message type, the
-ENCRYPTED byte at `n+4`, the COMPRESSED byte at `n+5`, and the two device bytes
-at `n+6` that still mean nothing. The RX path tells three cases apart that used
-to share one log line: an encrypted payload, an unregistered message type, and
-a payload that is genuinely corrupt.
-
-**Why:** `protocol.md` had an open question about a "raw payload flag" inferred
-from a nonzero byte somewhere after the message type. Reading the .NET library
-CortexUSB suggested the tidier shape, and the three USBPcap captures already in
-the lab repo could settle it without touching hardware. They did: 15,675
-logical messages on CorOS 4.0.1, both directions. A live session through our own
-client reproduced it afterwards, on the same firmware. ENCRYPTED appears 13 times and
-only on `License` and `CloudLogin`; COMPRESSED agrees with the gzip magic bytes
-every single time. Both flags vary within one message type, so a per-type table
-would have been wrong.
-
-**What did NOT change, on purpose:** compression is still detected by the gzip
-magic bytes, because a flag needs an exception list and magic bytes do not. And
-nothing decrypts. An encrypted frame is labelled and dropped. See ADR-0019 for
-why that is a decision rather than a gap.
+- **What changed:** `framing.decode_reports` returns a `Frame` naming the
+  message type, the `encrypted` and `compressed` flags, and the two device bytes.
+  The RX path tells an encrypted payload, an unregistered type and corruption apart.
+- **Why:** 15,675 captured messages settled the flags: `ENCRYPTED` only on
+  `License` and `CloudLogin`; `COMPRESSED` agreeing with the gzip magic every time.
+- **Scope:** `framing.py`, `transport.py`, tests, `protocol.md`, `ADR.md`.
+  Compression is still detected by the magic bytes, and nothing decrypts.
 
 ### 2026-08-28 - Constants carry their unit, and mypy runs in CI (ADR-0018)
 
-**What changed:** `params.py`'s constants are `Param[Unit]` rather than
-`IntEnum` members, so a type checker rejects `set_param(VOLUME, Hertz(217))`
-before it runs. mypy is a blocking CI job over the whole package, with one
-suppression in the whole config - `hid` publishes no stubs.
-
-**Why:** ADR-0016 verified this and deferred it. The blocker was that no
-checker could run here - mypy saw 269 errors, ~195 of them phantom, because it
-cannot read inside a generated `_pb2.py`. Committing `*_pb2.pyi` stubs from the
-same protoc run fixed that, once their cross-references were rewritten
-package-relative: protoc writes them flat, the bindings survive that through a
-sys.path shim and a checker cannot, so `msg.preset` and everything under it
-read as `Any` while mypy reported success.
-
-**What to watch:** the value unions on `set_param` - not their order, which was
-tried and does not matter. A `Param` IS an `int`, so an int overload that accepts real values swallows every
-wrong-unit call before the checker sees it - overload resolution takes the
-first MATCH, and a failing first overload just falls through. If you widen the
-int overload, the static check silently stops working, which is what
-`tests/test_typing.py` exists to catch. It holds both directions: every wrong
-unit rejected, and no correct call rejected.
+- **What changed:** `params.py` constants are `Param[Unit]`; mypy is a blocking
+  CI job; `*_pb2.pyi` stubs are committed with package-relative imports.
+- **Why:** ADR-0016 deferred static checking until a checker could run here.
+- **Scope:** generator, `values.py`, `client.py` overloads, `compile_protos.sh`,
+  CI, `tests/test_typing.py`.
 
 ### 2026-08-28 - The `--hardware` gate covers a path named on the command line
 
-**What changed:**
-- `tests/hardware/conftest.py`: a second hook, `pytest_collection_modifyitems`,
-  refuses the run when a hardware test is named on the command line without
-  `--hardware`, listing every path it refused. `pytest_ignore_collect` still
-  covers the paths pytest reaches by recursion.
-- `tests/test_hardware_gate.py`: both halves pinned through a subprocess running
-  the developer's own command, with `hid` poisoned so a broken gate fails at the
-  connection instead of driving the unit.
-- `tests/hardware/readme.md`: the guarantee now says which invocation gets which
-  treatment, because a named path is collected before it is refused.
-- `tests/hardware/test_scales.py` and `test_values.py` are renamed to
-  `test_scales_on_unit.py` and `test_values_on_unit.py`. They shared a basename
-  with their offline counterparts and no `__init__.py` told them apart, so pytest
-  mapped each pair to one module name and refused the second: `pytest --hardware`
-  from the repo root could not collect the suite at all, and only the documented
-  `pytest tests/hardware --hardware` worked. Renamed rather than made a package,
-  because `tests/test_state.py`, `test_events.py` and `test_preset.py` do
-  `from waiting import ...`, which works only while pytest keeps putting `tests/`
-  on `sys.path` - and it stops doing that the moment `tests/` becomes a package
-  or a namespace package.
-
-**Why:** the gate was one hook, and pytest does not consult it for command-line
-arguments. `pytest tests/hardware/test_write_echo.py` therefore collected and RAN
-the suite - driving the unit with no flag, or failing offline instead of being
-absent - while `pytest` and `pytest tests/` behaved exactly as documented. The readme told
-developers it could not happen.
-
-**What this constrains going forward:**
-- The gate stays two hooks. A tidy-up that folds them into one restores the bug
-  for whichever half it drops.
-- A refusal here is loud, not a silent deselect: the developer named those tests,
-  so the reason they did not run is owed to them.
-- A module in `tests/hardware/` needs a basename no module under `tests/` already
-  owns, hence the `_on_unit` names. The rule is enforced rather than
-  remembered: `tests/test_hardware_gate.py` fails if `pytest --hardware` stops
-  collecting the whole tree.
-
-**Scope of impact:**
-- **Updated:** `tests/hardware/conftest.py` (the second hook), `tests/conftest.py`
-  and `tests/hardware/readme.md` (the guarantee as enforced), this file and
-  CLAUDE.md (§ 6 and the test-command bullet), `changelog.md`
-- **Also updated:** ADR-0005's Open Questions, whose "how it is invoked" line had
-  been open since 2026-08-04 and is what this work settles; three offline
-  docstrings that described the gate as collection-only
-- **Renamed:** `tests/hardware/test_scales.py` and `test_values.py` gain an
-  `_on_unit` suffix, with the references in ADR-0015 and
-  `scripts/extract_scale_fixture.py` following them
-- **New:** `tests/test_hardware_gate.py`
-
-**Downstream to consider:**
-- Nothing outstanding. The basename collision above was pre-existing rather than
-  introduced here, and is fixed rather than recorded.
-
-**Not covered here:** the offline suite's own guarantee (ADR-0002), which was
-never affected - CI passes no paths, so no hardware test has ever run in it.
+- **What changed:** a second hook in `tests/hardware/conftest.py` refuses a
+  hardware test named on the command line without `--hardware`. Two files gained
+  an `_on_unit` suffix so the tree collects from the repo root.
+- **Why:** pytest does not consult `pytest_ignore_collect` for a named path, so
+  `pytest tests/hardware/test_write_echo.py` drove the unit with no flag.
+- **Scope:** `tests/hardware/`, `tests/test_hardware_gate.py`, the readme, this
+  file, `CLAUDE.md`, ADR-0005's open question.
 
 ### 2026-08-28 - Every setting takes a typed value (ADR-0017)
 
-**What changed:** ADR-0016 reached one method. It now reaches every method that
-writes a value - the I/O port levels, USB level, master volume, the Global EQ,
-the HOLD threshold, the tuner reference offset, and `set_expression`'s sweep
-ends. A bare number is refused everywhere.
-
-**Why:** the rule described `set_param` rather than the library, and the worst
-case was outside it. The unit shows master volume as 0-100 while the wire is
-0..1, so `set_master_volume(30)` meaning "30 on screen" writes full output to an
-amplifier - and the method already carried a hand-written guard for exactly
-that, which is what a real ambiguity being patched one method at a time looks
-like.
-
-**What to watch:** three cases, and blurring them is the failure mode. A wire
-0..1 with a MEASURED scale takes the unit type and converts. A wire 0..1 with no
-measured scale takes `Encoded` only, and a `Real` raises `ControlNotDrivable`
-naming what would settle it - never an invented span. A setting with no 0..1
-line at all, like the HOLD threshold in ms, refuses `Encoded` instead. Selectors
-are not values and stay plain.
-
-The two known spans are both measured now, and `units.SETTING_SPANS` still says
-what each rests on beside it: the input port has four points in the bottom half
-of its travel plus the spec sheet for the top, the Global EQ gain has four points
-driven on screen across the whole travel. The Global EQ gain shipped for two
-releases on the manual plus two points 6 dB apart on a 24 dB range; see the
-2026-09-11 entry. Two close points could not tell -40..+12 from -100..+30 for the
-lane family either, and that mistake shipped twice.
+- **What changed:** every method that writes a value takes a typed one, not only
+  `set_param`.
+- **Why:** `set_master_volume(30)` meaning "30 on screen" wrote full output.
+- **Scope:** `client.py`, `units.SETTING_SPANS`, tests, `migration.md`, `api.md`.
 
 ### 2026-08-27 - A parameter value carries its own scale (ADR-0016)
 
-**What changed:**
-- `pyquadcortex/protocol/values.py`: NEW public module. `Encoded` is the device's
-  0..1, `Real` is the parameter's own scale, and eight unit types subclass `Real`
-  with a claim checked against the catalog.
-- `pyquadcortex/protocol/client.py`: `set_param` takes ONE positional value.
-  `value=`, `real=` and `text=` are gone.
-- `docs/STEERING.md` §5: the translation-boundary row's exception now says the
-  protocol layer keeps raw COORDINATES. Its scales come from the catalog.
-
-**Why:** `real=-3.1` was dB on an EQ band and milliseconds on a delay, and
-nothing at the call site said which. The pair that forced the issue: on a lane
-VOLUME, `real=0.0` is unity and `value=0.0` is silence.
-
-**What to watch:** everything that asks "what sits at this wire index" must get
-the SAME answer. It did not at first, and the reason was deeper than a
-duplicated lookup: on 169 of the 174 cab models the model's OWN catalog entry is
-a LOCAL list, numbered from zero over the parameters that model contributes, and
-those numbers do not address the wire. Confirmed on hardware - wire index 2 on a
-`Plini Cab (M)` reads `LEVEL` in dB, which is the shared layout's answer, while
-the cab's own entry calls index 2 `POSITION`.
-
-Two rounds of triage found the same bug in three different callers before the
-cause was named. `ParamTarget.spec_at` now reads `ParamTarget.wire_model` and is
-the only answer; `index_of` resolves names through it too, because the index it
-returns is a wire index. Do not add a second resolver.
+- **What changed:** new `protocol/values.py` with `Encoded`, `Real` and eight
+  unit types; `set_param` takes one positional value.
+- **Why:** on a lane `VOLUME`, `real=0.0` was unity and `value=0.0` was silence.
+- **Scope:** `values.py`, `client.py`, `targets.py`, tests, docs. `ParamTarget.spec_at`
+  is the one resolver of "what sits at this wire index".
 
 ### 2026-08-27 - The catalog is the source of truth for scales (ADR-0015)
 
-**What changed:**
-- `pyquadcortex/protocol/catalog.py`: reads `skew`, `stepNames`, `dynamic`,
-  `min_string`, `expAssignable` and resolves symbolic `min`/`max` bounds.
-- `pyquadcortex/protocol/units.py`: `MEASURED_SPANS` removed; `FIRMWARE_CONSTANTS`
-  holds the 14 numbers the catalog names but does not spell out.
-- `pyquadcortex/protocol/options.py`: NEW generated module, 110 option enums.
-
-**Why:** the device publishes 24 attributes per parameter and the library read 7.
-`skew` is the taper, and 615 parameters were converting as straight lines.
-
-**What to watch:** a bound the catalog names needs a `FIRMWARE_CONSTANTS` entry
-with its evidence. An unknown name raises rather than falling back, because
-falling back is what created the "placeholder range" that never existed.
+- **What changed:** `catalog.py` reads `skew`, `stepNames`, `dynamic`,
+  `min_string` and `expAssignable`; `units.MEASURED_SPANS` is replaced by
+  `FIRMWARE_CONSTANTS`; `options.py` is generated.
+- **Why:** 615 parameters converted as straight lines because `skew` was unread.
+- **Scope:** `catalog.py`, `units.py`, new `options.py`, tests, `protocol.md`.
 
 ### 2026-08-14 - The model keeps its own copy of what the unit is doing (ADR-0011)
 
-**What changed:**
-- `pyquadcortex/device/state.py`: the write-through cache every model read now goes
-  through. One persistent listener (ADR-0009), registered before the connect handshake
-  so it hears the burst, applies what the unit pushes into a per-entry copy. Reads
-  happen on the caller's thread; the RX thread only merges and marks.
-- `pyquadcortex/device/entries.py`: what is tracked, as data rather than code - the
-  message types that carry each entry, the fields the model keeps from each, and the
-  read that fetches it. Two of `domain-model.md` section 9's rows so far.
-- `pyquadcortex/device/watch.py`: the write side - a watcher per write with section
-  10's three outcomes, and one watchdog thread per connection that does not start
-  until something is written.
-- `pyquadcortex/device/device.py`: `Device.firmware` and `.serial` read through the
-  cache instead of holding their own reply; `Device.state` exposes the layer;
-  `connect()` subscribes before the handshake and `close()` unsubscribes.
-- `tests/hardware/conftest.py`: the run's connection also carries a `DeviceState`
-  subscribed before the handshake, plus a snapshot of what the burst warmed, taken
-  before any test can read through it.
+- **What changed:** `device/state.py`, `device/entries.py` and `device/watch.py`
+  land. `Device.firmware` and `.serial` read through the cache.
+- **Why:** the model has to be right about a change made on the touchscreen while
+  a script is connected. Story #11, Epic #8.
+- **Scope:** the model package, `tests/hardware/conftest.py`, this file, `CLAUDE.md`.
 
-**Why:** the model has to be right about a change somebody made on the touchscreen
-while a script was connected, and no property may ship with a "might be stale"
-caveat. Story OM-M1.3 (#11), Epic #8.
+### 2026-08-15 - A grid push is re-read, not merged (ADR-0012)
 
-**What this constrains going forward:**
-- A model property reads through `Device.state`, and what it reads is a `StateEntry`.
-  A property that caches its own answer is a second account of the same fact, with
-  nothing to invalidate it and nothing to take it away when the connection closes.
-- An entry with no read is not an entry. Section 9's table is longer than the
-  registry on purpose; each row lands with the surface that reads it.
-- The RX thread's rule is now load-bearing in the model as well as the transport:
-  push-handling code merges and marks and returns, and never reads.
-- A field with no wire presence needs recorded evidence before the model keeps it,
-  and `tests/test_state.py` holds every such declaration against the schema.
-
-**Not covered here:** reconnect and device loss (#15), the Directory, presets, the
-grid and parameters (#12 and after), and the counters and event taxonomy (#16). The
-log events this code emits are named for #16 to pick up, but nothing reads them yet.
-
-### 2026-08-15 - ADR-0012: a grid push is re-read, not merged; the model publishes what it noticed
-
-**What changed:**
-- ADR.md: added ADR-0012 (a `Grid` or `SceneLabel` push voids the entry's copy and the next read fetches the whole live preset; `device.events` carries `Changed` and `Invalidated` on a thread the model owns)
-- domain-model.md: §9 gains the by-type rule, the no-merge decision with what merging would take written beside it, the complete-push rule, and the event surface; §2 and §3 record what is built and the four things deliberately omitted; the §9 table is corrected against hardware
-- CLAUDE.md: the translation boundary is a package with a named module list and a second allowlist for non-conversions; `Grid`'s `action` decision is recorded; submessages are cached by copy
-- STEERING.md: the "One translation boundary" pattern row now says package
-- architecture.md: the module map gains `preset.py`, `grid.py`, `blocks.py`, `events.py` and `errors.py`, and `translate.py` becomes `translate/`
-- protocol.md: `read_current_preset_push` and `loaded_position` added to the coverage table, with the measured shape of a recall and of the connect burst
-
-**Why:**
-- A hardware session contradicted three assumptions this work had been built on - the burst's seed preset push carries `reason`, a recall pushes no `PresetDirty`, and `SetlistPosition{READ}` really does answer - and the corrections belong where the next person meets them rather than in a commit message
-
-**Scope of impact:**
-- **Updated:** ADR.md, domain-model.md, CLAUDE.md, STEERING.md, protocol.md
-- **Also updated:** architecture.md - the module map gains the five new model modules and `translate/` is a package there too
-- **Not updated (intentionally):** api.md - it documents the protocol layer, whose two additions are in protocol.md's coverage table, and the model's surface is documented in domain-model.md
-
-**Downstream to consider:**
-- The Directory half of issue #12 needs `StateEntry` to carry how many messages a read expects, since a setlist listing answers with several hundred
-- Whether merging grid deltas is worth doing is now a recorded question rather than an omission; #13's parameter work is the first thing that would feel the cost
+- **What changed:** a `Grid`, `SceneLabel` or `SceneColor` push voids the preset
+  entry's copy; `device.events` publishes `Changed` and `Invalidated`. The
+  translation boundary became a package with two allowlists (ADR-0013).
+- **Why:** a hardware session corrected three assumptions about the burst and a
+  recall.
+- **Scope:** `ADR.md`, `domain-model.md`, `CLAUDE.md`, this file, `architecture.md`,
+  `protocol.md`.
 
 ### 2026-08-13 - One translation boundary, and the model package is `device/`
 
-**What changed:**
-- `pyquadcortex/device/translate.py`: the one module where a screen value becomes a wire
-  value and back - rows 1-4, slots 1-8, scene and footswitch letters, preset addresses,
-  and five display-unit mappings (input gain dB, lane and mixer dB, tempo bpm, tuner
-  reference Hz, hold timing ms). The two level scales and the tempo call the protocol
-  helper that carries the measurement; the other two have no helper to call, so they are
-  pinned against what the protocol write method expects, and the tuner's docstring says
-  how thin its evidence is - one observed pair. `PresetAddress`, `FootswitchLetter` and
-  `SceneLetter` are its public value types, re-exported from `pyquadcortex`
-- Section 5 gained the pattern row; section 4's owned-paths line and CLAUDE.md name the
-  new rule. `architecture.md` carries the module in its layer map and a section on it;
-  `domain-model.md` marks principle 5, `PresetAddress` and `FootswitchLetter` as built
-- **The model package directory is `pyquadcortex/device/`, renamed from `model/`.** Done
-  as its own commit so the story's diff stays readable
+- **What changed:** `pyquadcortex/device/translate.py` owns every screen-to-wire
+  conversion; `PresetAddress`, `FootswitchLetter` and `SceneLetter` are exported.
+  The model directory is `device/`, not `model/`.
+- **Why:** an off-by-one row is a silent failure, so the arithmetic lives in one
+  reviewable place. `model` collides with the protocol layer's word for a block.
+- **Scope:** the model package, `tests/test_translation.py`, this file, `CLAUDE.md`,
+  `architecture.md`, `domain-model.md`.
 
-**Why:**
-- M1 Epic (stokes-audio/pyquadcortex#8), Story #10. It ships before the surfaces that use
-  it so no later story invents its own conversion. The Intent Brief names off-by-one as a
-  silent failure mode, and the protocol layer's own header agrees: an edit to the wrong
-  row still succeeds and still reads back correctly, so nothing tells you. A centralized,
-  exhaustively tested boundary is the whole mitigation, which is why two of its tests read
-  the model package's source instead of calling it
-- The rename is an owner decision. In this codebase the identifier `model` means an amp or
-  pedal block - `protocol/models.py`, `catalog.Model`, `ModelCatalog`,
-  `set_block(model=...)`. `domain-model.md` §5 renamed that concept to *virtual device* in
-  the model's vocabulary, because that is what the screen calls it, but the protocol layer
-  still spells it `model` and will keep doing so. A directory named `model/` therefore
-  collides with real code a reader is looking at, whatever the design doc calls the
-  concept
+### 2026-08-12 - Tempo `MODE` closes, and ADR-0010
 
-**Scope of impact:**
-- **Updated:** STEERING.md, CLAUDE.md, architecture.md, domain-model.md, roadmap.md,
-  changelog.md, `pyquadcortex/device/`, `pyquadcortex/__init__.py`,
-  `scripts/check_artifacts.py`, `tests/test_translation.py` (new),
-  `tests/test_namespace.py`, `tests/test_import_cleanliness.py`, `tests/test_docs.py`
-- **Not updated (intentionally):** ADR.md - neither change reverses or refines a recorded
-  decision. The boundary IS design principle 5, already written and reviewed in
-  `domain-model.md`; the rename is a directory name, chosen to stop colliding with an
-  identifier the protocol layer uses. README.md and api.md - the new value types have
-  no surface handing them out yet (the Directory is story #12), and the readme tour should
-  show what a caller can do, not what exists. The protocol layer - it keeps its zero-based
-  indexes, its `Footswitch` enum and its measured scales, and nothing below the seam
-  changed
-- **No deprecation shim for the rename.** `pyquadcortex.__all__` lists `protocol` and never
-  listed `model`, and the model namespace has not been released - 0.40.0 predates the flip
-  - so nothing published points at the old path
+- **What changed:** `tempo_mode()` and `set_tempo_mode()` ship. ADR-0010 requires
+  a differential state capture before a control is recorded as having no wire path.
+  `docs/capture.md` gains "Diff the whole state".
+- **Why:** three tests had listened for an announcement and heard none; one `READ` found
+  the switch in `GlobalTempo.params[1]`.
+- **Scope:** `client.py`, `protocol.md`, `domain-model.md`, `manual-coverage.md`,
+  `capture.md`, `ADR.md`, `tests/hardware/state_snapshot.py`.
 
-**Downstream to consider:**
-- Stories #11 through #16 convert through this module rather than doing their own
-  arithmetic, and the source-reading tests will fail them if they do not
-- The conversions M1 does not need yet land here too, with the surface that needs them.
-  A parameter whose display mapping is unverified stays out of the model entirely
-  (principle 3), so no mapping is ever invented in this module
-- The arithmetic check is deliberately blunt and deliberately wide: a literal one in any
-  spelling (`1`, `1.0`, `True`, `-1`), `ord`/`chr`, the literal 65, a letter table as a
-  string, tuple, list or dict, `string.ascii_uppercase`, `divmod`, a one-based
-  `enumerate`, and `.index()` on `ROWS` or `SLOTS` all fail it, anywhere in the package
-  outside the boundary and the protocol layer. If a future module has a genuine counter,
-  narrowing the check is a deliberate edit with a reason, not a quiet one. What it cannot
-  see - a one behind a name, a table built at run time, arithmetic inside somebody else's
-  helper - is pinned as a failing-if-it-changes list in the same file, because a sample
-  table where every case passes reads like a completeness proof and is not one
-- The scan is scoped to the whole package rather than to `pyquadcortex/device/`, because
-  a rule scoped to a directory is satisfiable by moving the code one directory up - which
-  is precisely what a failure message naming a directory invites
-- A protocol conversion can be delegated to and still not be movable. `bpm_to_tempo`
-  (PR #22) is called by `QuadCortex.set_param(Tempo(), ...)` from inside the protocol layer, so
-  the helper stays there and the boundary wraps it, the same way it wraps the level
-  scales. Adding the name to the boundary's allowlist is the half that matters: without
-  it, a model module reaching for `protocol.tempo_bpm` passes the check
-- The allowlist is judgement, and its criterion is what a name HANDS OVER rather than
-  whether it reads like a conversion. `protocol.stomp_assignments` returns three raw wire
-  indexes including the footswitch one, so a model module could key a mapping by it and
-  reintroduce the exact bug `FootswitchLetter` exists to prevent, without writing a `- 1`
-  anywhere. The readers are therefore listed next to the converters
+### 2026-08-12 - A persistent listener at the protocol layer (ADR-0009)
 
-**Also in this branch:**
-- Merged main (PRs #19, #20, #22) up. The three change logs conflicted in the same place
-  and both sides were kept in the order they landed
-- The review found the boundary's own front door open: `translate.slot_to_position`
-  accepted non-ASCII digits, so `"٢٨C"` returned preset 218. Only `PresetAddress.parse`
-  carried the ASCII pattern, while a comment and a test both read as though the module
-  was covered. The two doors now share one pattern, and one list of malformed names is
-  run through both
-- Both source-reading checks were narrower than they read, again. The arithmetic check
-  now sees a letter table in a tuple, list or dict, `string.ascii_uppercase`, the literal
-  65, and `ROWS.index(row)` - a coordinate conversion written with the boundary's own
-  exported table and no arithmetic in it at all. The allowlist gained the protocol
-  readers that hand back wire coordinates. A file doing all of that at once passed both
-  checks before and fails both now
-- The backstop that proves the boundary still converts is anchored to the four converters
-  by name. It had been satisfied by an error-message formatter elsewhere in the file, so
-  the converters could have gone arithmetic-free with nothing failing
-- Each check now pins its KNOWN blind spots as blind spots. A sample table where every
-  "should be caught" case is caught reads like a completeness proof; these fail if a
-  listed gap ever closes, which is the edit where the prose gets corrected too
-- The layering check could not see `from pyquadcortex import PresetAddress`, a hole this
-  story opened by re-exporting the value types at top level. It reads `device.__all__`
-  now, so it follows the code
-
-### 2026-08-12 - TEMPO MODE closes, and ADR-0010
-
-**What changed:**
-- **The Tempo menu's MODE switch is readable and writable.** It is the DEVICE tempo block's parameter 1, carried in `GlobalTempo.params`: `0.0` PRESET, `1.0` GLOBAL. `QuadCortex.tempo_mode()` / `set_tempo_mode()` and the `TempoMode` enum ship at the protocol layer; `docs/protocol.md` gains "MODE is the DEVICE tempo block's parameter 1" and a coverage-table row
-- ADR.md: ADR-0010 - a control with no known wire path gets a differential state capture before it is recorded as having none. ADR-0007's rule is unchanged and now has no instance, which is the healthy state for it
-- `docs/domain-model.md`: `Tempo.mode` stops being refused and becomes an ordinary property; §13's *Genuinely open* loses its first entry and the *Closed* table records where the answer lives; both appendix tempo rows updated. `manual-coverage.md` gains a MODE row and its tally moves to 104 / 65 yes
-- `docs/capture.md` gains "Diff the whole state, do not hunt for a field" - the method that found it, and the four things in the harness that are load-bearing. Its listener chapter, which used this claim as its exemplar, now carries the ending
-- **`TEMPO`'s span fits 40..240 bpm**, from three INTERIOR screen-vs-wire points measured during the same session, exact to the displayed integer at each. The endpoints are the fit's, not driven. `real=` on that parameter now takes bpm, via `tempo_bpm()` / `bpm_to_tempo()`. SUPERSEDED by ADR-0015: the catalog names these bounds `MIN_TEMPO` / `MAX_TEMPO` and `steps=201` fixes the width, so the reading is now the test rather than the source. Splitter `FREQUENCY`, recorded here as unrecovered, was solved from the catalog's own `defaultValue` and one wire value
-- `tests/hardware/state_snapshot.py` is the harness, reusable for the next control of this kind. It subscribes through `Transport.add_listener` (ADR-0009), which landed in the same release and is exactly the hook it needs - the first version predated it and monkey-patched `_dispatch`; `tests/test_state_snapshot.py` proves offline that it can see an unknown field number, a presence-tracked zero, and a value in only one of two message shapes
-
-**Why:**
-- The wire path was a named dependency of Epic #8 and a prerequisite of M3's device-settings work. Three earlier tests had established that the unit never BROADCASTS the switch, which had been over-read as "not on the wire"; a READ found it in one session
-- The method is the durable part. Earlier attempts hunted for the field they expected, in the messages they expected; MODE was one index away inside a message shape the investigation had already written off. Diffing the whole answerable state finds a thing without knowing where to look
-
-### 2026-08-12 - A persistent broadcast subscription at the protocol layer, and ADR-0009
-
-**What changed:**
-- `Transport.add_listener` / `remove_listener`: a subscription that sees every decoded inbound message for the life of the connection, including the unsolicited pushes `_dispatch` used to drop for want of a waiter. `QuadCortex` passes both through so the layer above never reaches into `_t`
-- The transport now refuses `request`, `await_broadcast` and `collect` when they are called from the RX thread. That is what makes "a listener never reads from the device" enforced rather than requested
-- `protocol.connect(before_handshake=...)` calls back with the started transport before the handshake runs, which is the only moment early enough to hear the handshake's own state burst
-- ADR.md: ADR-0009 - listeners run on the RX thread, and the RX thread may not read; the queue-and-delivery-thread alternative and the document-but-do-not-enforce alternative are recorded with why each was rejected
-- Section 3's "Data and state" names the one hook that is not a live exchange; section 7's table gained the ADR-0009 row
-- `docs/protocol.md` "Connect burst, measured" gained the fact that decided the hook: `connect()` returns at 2.0 s, the ModelRepo lands at 4.9 s and the seed preset at 10.1 s, so a listener attached to the returned client has missed the burst it wanted
-- `tests/hardware/` gained `test_broadcast_listener.py`, and the suite's connection fixture now records the burst - it cannot be attached on demand later, because the burst happens during `connect()`
-
-**Why:**
-- M1 Epic (stokes-audio/pyquadcortex#8), Story #11. This is the protocol-layer half of that story, carved out because it is independent of the model work: `docs/domain-model.md` section 9 needs a push-fed cache, and a cache cannot be fed by three hooks that are all one-shot and scoped to a trigger
-
-**Scope of impact:**
-- **Updated:** `pyquadcortex/protocol/transport.py`, `client.py`, `session.py`, `tests/test_transport.py`, `tests/test_client.py`, `tests/test_session.py`, `tests/test_handshake_burst_recorder.py` (new), `tests/hardware/conftest.py`, `tests/hardware/test_broadcast_listener.py` (new), `tests/hardware/readme.md`, ADR.md, CLAUDE.md, STEERING.md, architecture.md, api.md, protocol.md, changelog.md
-- **Not updated (intentionally):** ADR-0002 - the offline suite still imports no `hid` and the new tests run against `FakeHid` like the rest; ADR-0005 - the new hardware tests only listen, so they write nothing and have nothing to restore, which meets the contract rather than changing it; `docs/domain-model.md` - section 9 designed this and needed no correction; the coverage table in `protocol.md` - no new message type is involved
-
-**Also in this branch:**
-- Merged main (PR #19) in. That change took ADR-0008 for the generator floor, so the listener record is ADR-0009; the two commit messages on this branch predate the renumber and still say 0008
-
-**Downstream to consider:**
-- The model-side cache (the other half of #11) is the intended consumer and is being written separately. It registers through `before_handshake` so the burst warms it for free
-- `tests/hardware/test_write_echo.py` still taps `Transport._dispatch` by monkeypatching it, which predates this and could now be an ordinary listener. Left alone deliberately: it is a working measurement harness, and `tests/test_scene_echo_predicates.py` imports it offline
-- ADR-0009 leaves one question open on purpose - whether a listener hears about device loss. It stops receiving today, and the answer belongs with reconnect (#15)
+- **What changed:** `Transport.add_listener` and `remove_listener`; the transport
+  refuses `request`, `await_broadcast` and `collect` on the RX thread;
+  `protocol.connect(before_handshake=...)`.
+- **Why:** a push-fed cache needs every message for the life of the connection.
+- **Scope:** `transport.py`, `client.py`, `session.py`, tests, `ADR.md`, docs.
 
 ### 2026-08-12 - The generator floor joins the bindings/pin unit (ADR-0008)
 
-**What changed:**
-- The dev extra's `grpcio-tools` floor went from `>=1.68` to `>=1.83.0`, with the reason written next to it. `grpcio-tools` ships its own protoc, so the installed version decides the gencode stamped into the committed bindings. The old floor let `pip install -e ".[dev]"` resolve to 1.82.1, which emits gencode 7.35.0 against bindings committed at 7.35.1; the script's system-`protoc` fallback has no floor at all
-- `scripts/compile_protos.sh` now generates into a temporary directory, compares the gencode it produced against the committed one, and refuses to install a downgrade. On refusal the tree is untouched
-- `tests/test_packaging.py` proves the committed state on every PR: all bindings from one generator, the pin floor equal to the committed gencode, the pin's ceiling one major above it
-- ADR.md: ADR-0008. Section 6's pin constraint says the floor is part of the same unit, and section 4 lists the two scripts added since it was last written
-
-**Why:**
-- Found while working the PR #17 review. ADR-0001 makes the bindings and the pin one unit, but nothing enforced it: protobuf validates `runtime >= gencode` and nothing else, so bindings regenerated by an older generator import cleanly and pass the whole suite while walking the pin backwards
-- The floor is not derivable from package metadata. `grpcio-tools` 1.82.1 declares `protobuf>=7.35.1` and still emits gencode 7.35.0, so 1.83.0 was found by running each candidate and reading the stamp it writes
-
-**Scope of impact:**
-- **Updated:** `pyproject.toml`, `scripts/compile_protos.sh`, `tests/test_packaging.py`, ADR.md, STEERING.md, CLAUDE.md, architecture.md, contributing.md, changelog.md
-- **Not updated (intentionally):** the bindings themselves - regenerating is its own change with its own pin bump (ADR-0001), and this one deliberately leaves the generated files byte-identical
-
-**Downstream to consider:**
-- The floor now moves with every gencode bump. `compile_protos.sh` prints the number to put in the pin when the gencode moves up, but the `grpcio-tools` floor is the maintainer's to raise
+- **What changed:** `grpcio-tools>=1.83.0`; `compile_protos.sh` refuses a
+  downgrade; `tests/test_packaging.py` proves the pin equals the gencode.
+- **Why:** an older generator emitted older gencode that imported cleanly and
+  walked the pin backwards.
+- **Scope:** `pyproject.toml`, `compile_protos.sh`, tests, `ADR.md`, docs.
 
 ### 2026-08-11 - The namespace flip lands, and ADR-0007
 
-**What changed:**
-- The package now has two namespaces: `pyquadcortex` is the model, `pyquadcortex.protocol` is today's protocol layer moved verbatim. Sections 3 and 4 describe both; the patterns table's file paths moved with the code
-- ADR.md: ADR-0007 - the model may represent a control whose wire path is still open, provided the operation it cannot perform refuses rather than guesses
-- `docs/domain-model.md`: TEMPO MODE reopened. `Tempo` gains `mode`; the appendix row and §13 changed from "not on the wire at all" to an open investigation, and the appendix legend gained *open* as a status so the row's value is defined rather than improvised
-- One account of the TEMPO MODE evidence, the same in every document: **three** tests, not two; the strong instrument (70 of 72 message types, 420-second window, liveness heartbeat) is **the second**, and the third is the 2026-08-06 device-wide sweep, whose script toggles MODE without a written OK step; the over-strong claim stood for **eight** releases, 0.33.0 through 0.40.0. `changelog.md` carries the withdrawal under Unreleased, which it had been missing
-- `docs/protocol.md` no longer files `GlobalTempo` as a dead end. One READ of it returned a clock; the same document records that it alternates two shapes and that the other one carries the 25 params, so it is the first place to ask, not a closed door
-- The same correction landed in the protocol record itself, which is where the over-strong claim actually lived: `protocol.md` ("Per-preset tempo, LED and metronome"), `manual-coverage.md` (two places), and `capture.md`, whose listener chapter used the claim as its exemplar and now carries the second lesson too - a listener proves only that the device does not ANNOUNCE something
-- Section 6's offline-suite constraint: the hardware suite is built, not merely decided - it shipped in 0.39.0 and this line had not caught up
+- **What changed:** `pyquadcortex` is the model and `pyquadcortex.protocol` is
+  the protocol layer, moved verbatim. `Device` checks field presence and refuses
+  reads once closed.
+- **Why:** M1 story #9; every later story imports through the new layout.
+- **Scope:** the whole package, CI, `scripts/`, every document. ADR-0001 keeps
+  its `pyquadcortex/proto/` paths as written, because a decided record is
+  append-only; the directory now lives at `pyquadcortex/protocol/proto/`.
 
-**Why:**
-- M1 Epic (stokes-audio/pyquadcortex#8), Story #9. The flip goes first because every other story in the Epic imports through the new layout (ADR-0006)
-- ADR-0007 is an owner decision taken during the same story: "three tests saw no broadcast" had been over-read as "not on the wire", and a control we understand but cannot drive should refuse rather than be omitted or guessed at
+### 2026-08-06 - Domain model Part 2: state tracking and save behaviour
 
-**Also closed in review, on the same branch:**
-- `Device` now checks field PRESENCE before reporting firmware or serial, and caches only a complete reply. Both fields sit in synthetic `oneof`s, so an absent one decodes as `""` and would have been reported as the unit's answer - the guess ADR-0007 forbids, in shipped code. CLAUDE.md carries the rule
-- A closed `Device` refuses `firmware`, `serial` and `client` instead of answering from cache. `_closed` had been read by nothing but `__repr__`. This defines only the explicit `close()`; a connection that goes away on its own stays with the reconnect story (#15)
-- `__repr__` says whether the `Device` owns or borrows its connection, which decides whether `close()` releases the unit and was otherwise invisible
-- Test guards that were weaker than they read: the pre-flip export snapshot is pinned by content hash and exact count (a live `git show` cannot work - CI checks out one commit deep); the parity check asserts each name still resolves to something in the protocol layer rather than merely existing; the layering check reads every import spelling, including `from pyquadcortex import model`, which is the house style and was invisible to it; the import-cleanliness sentinel takes the trailing dot
-- `scripts/check_artifacts.py`, run by CI's `build` job: `twine check` reads metadata, so nothing was looking inside the wheel for the generated bindings ADR-0001 exists to ship
-- `scripts/compile_protos.sh` refuses an output directory that is not the bindings directory instead of `mkdir -p`-ing a new one, writing into it and reporting success
+- **What changed:** `domain-model.md` sections 9 to 13.
+- **Why:** M0 story #4; both empirical questions answered on hardware.
+- **Scope:** `domain-model.md`, this file.
 
-**Scope of impact:**
-- **Updated:** STEERING.md, ADR.md, CLAUDE.md, domain-model.md, architecture.md, api.md, README.md, capture.md, protocol.md, manual-coverage.md, releasing.md, contributing.md, changelog.md, `.github/workflows/ci.yml`, `scripts/`
-- **Not updated (intentionally):** ADR-0001 - it is `Decided` and append-only, so its `pyquadcortex/proto/` paths stay as written; the directory it names moved under ADR-0006 and now lives at `pyquadcortex/protocol/proto/`. The decision itself is unchanged. ADR-0004 and ADR-0006 - the flip is what ADR-0006 already decided, not a new decision. `roadmap.md`'s illustrative model snippet - it reads `pyquadcortex.connect()`, which is now exactly right
+### 2026-08-05 - Domain model structural design, and ADR-0006
 
-**Downstream to consider:**
-- The version moved to `pyquadcortex/_version.py` so both namespaces can publish it without one importing the other; `pyproject.toml` and `releasing.md` follow it
-- `qcctl` is declared as `pyquadcortex.protocol.cli:main`. The command is unchanged, but an editable install from before the flip needs reinstalling before the console script resolves
-- No release is cut here. Per ADR-0006 the version is cut once the M1 anchor works, so no release ever has `connect()` meaning two different things
-- Finding the TEMPO MODE wire path is now a prerequisite of M3's device-settings Epic
-
-### 2026-08-06 - Domain model Part II: state tracking and save behavior
-
-**What changed:**
-- `docs/domain-model.md`: Part II replaces its stub - how the model keeps its cached facts current (§9), write verification via the unit's own echo (§10), the save lifecycle (§11), and disconnect/standby/reconnect (§12), with the breadth the hardware session did not reach named explicitly in §13
-- Part I forward references resolved in the same pass: `DeviceLostError` replaces the placeholder `NotConnectedError` in §8, writes to an inactive scene are refused, and the appendix's *Part II* rows now point at §13 or the section that answers them
-
-**Why:**
-- M0 Epic (stokes-audio/pyquadcortex#2), Story #4. Both of the Epic's empirical questions were answered on hardware (`d14e` / CorOS 4.0.1) rather than carried as M1 risks: unsaved-change detection is readable and pushed, and device loss is detectable for free because a HID read raising means the device is gone while a write raising means nothing
-
-**Scope of impact:**
-- **Updated:** domain-model.md, STEERING.md
-- **Not updated (intentionally):** ADR.md - the behavioral decisions (optimistic writes confirmed by echo, abandon-on-switch matching the unit, transparent reconnect) are design choices recorded in the doc, not reversals of a prior decision; CLAUDE.md - still no model code, so no new imperatives; protocol.md and the coverage table - the session's protocol-layer findings were handed to the protocol work and shipped there, not duplicated here
-
-**Downstream to consider:**
-- §13's open items are the natural first jobs for ADR-0005's hardware suite rather than more one-off scripts; the write-echo check that produced §10's latencies already snapshots, writes, verifies, and restores
-- The design assumes the protocol layer's `DeviceLostError`, `preset_dirty()`, `RecallReason` and `handshake_patience`, so M1 depends on those staying public
-- Whether host writes are honoured during standby is untested, and a script can talk to a sleeping unit over a healthy connection - worth closing before M1 exposes `power_state`
-
-### 2026-08-05 - Domain model structural design + ADR-0006 (namespace flip at M1)
-
-**What changed:**
-- New `docs/domain-model.md`: the M0 structural design of the object model (hierarchy, typing, full manual-feature appendix); its behavioral half lands from the companion design story
-- ADR.md: ADR-0006 - at M1 the model takes the top-level namespace and the protocol layer moves to `pyquadcortex.protocol`, refining ADR-0004
-- STEERING.md: section 7 table gained the ADR-0006 row; section 9 points at the design doc
-
-**Why:**
-- M0 Epic (stokes-audio/pyquadcortex#2), Story #3: the full object model is designed before M1 implementation starts; the namespace flip was an owner decision during design review
-
-**Scope of impact:**
-- **Updated:** domain-model.md (new), ADR.md, STEERING.md
-- **Not updated (intentionally):** CLAUDE.md - no code exists yet, so no new imperatives; architecture.md - the layer map changes only when M1 lands
-
-**Downstream to consider:**
-- The Intent Brief's "Additive, not breaking" requirement and Customer FAQ need the ADR-0006 amendment (planning repo)
-- Part II (state/save behavior, Story #4) merges into domain-model.md and must resolve the rows marked *Part II* / *unaudited* in its appendix
+- **What changed:** new `domain-model.md` (Part I and the appendix); ADR-0006
+  decides the namespace flip.
+- **Why:** M0 story #3.
+- **Scope:** `domain-model.md`, `ADR.md`, this file.
 
 ### 2026-08-04 - ADR-0005: hardware-in-the-loop integration suite
 
-**What changed:**
-- ADR.md: added ADR-0005 (an online integration suite that drives a real unit; state-neutral on success, best-effort restore on failure, never in CI)
-- STEERING.md: section 6 constraint reworded from "the test suite" to "the default test suite" and now points at ADR-0005; section 7 table gained the ADR-0005 row
-
-**Why:**
-- Owner decision: hardware verification is manual today and should become repeatable, but any automated suite edits the only unit that exists, so the restore contract is the safety condition
-
-**Scope of impact:**
-- **Updated:** STEERING.md, ADR.md
-- **Not updated (intentionally):** CLAUDE.md - the suite does not exist yet, so there are no commands or rules to state; ADR-0002 - unchanged, the offline guarantee still holds for the default suite
-
-**Downstream to consider:**
-- ADR-0005's open questions (invocation mechanism, restorable-state inventory, scratch slots) need answers before the suite is built
-- The domain-model Epics (M1+) are natural first consumers - their hardware verification could land as online tests instead of one-off scripts
+- **What changed:** ADR-0005 recorded; section 6 says "the default test suite".
+- **Why:** hardware verification was manual and not repeatable.
+- **Scope:** `ADR.md`, this file.

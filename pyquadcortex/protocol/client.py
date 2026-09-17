@@ -600,7 +600,7 @@ class QuadCortex:
         # now reads identity once, through its OWN Version READ, before ever
         # calling _hello - and the unit answers that: the full reply, then its
         # own Version{READ} tail ~1 ms later (protocol.md section 4.4, "A
-        # Version READ is answered twice"). So a connect() no longer sees just
+        # Version read is answered twice"). So a connect() no longer sees just
         # the one inbound Version this was measured against on 2026-08-27 (d14e)
         # - it sees that identity exchange's two, plus this announce's one.
         self._t.send(
@@ -650,7 +650,7 @@ class QuadCortex:
         incomplete reply as if it were complete"). Confirmed after the change,
         same unit and day: five back-to-back calls through this path - a READ
         with no ``request_id`` - all returned the full reply. See
-        ``protocol.md``, "A ``Version`` READ is answered twice".
+        ``protocol.md``, "A ``Version`` read is answered twice".
         """
         return self._t.await_broadcast(
             pa.VersionMessage,
@@ -1565,7 +1565,7 @@ class QuadCortex:
         So do not wait on this to confirm an edit landed - it will time out on an
         already-dirty preset, correctly, because the unit said nothing. The
         ``Grid`` echo is the per-edit signal. See ``protocol.md``,
-        "``PresetDirty`` announces a CHANGE of flag, not an edit".
+        "``PresetDirty`` announces a change of the flag, not an edit".
 
         ``is_dirty`` has no field presence, so absent simply IS false - do not
         try to distinguish them. And like most reads here, the FIRST request

@@ -1,53 +1,44 @@
 # The domain model
 
-> **Status: the design; M1 is being built against it.** This document is the design for
-> the object model of the Quad Cortex that pyquadcortex exposes: a Python API that looks
-> and behaves like the unit itself. The namespaces below have landed; everything else here
-> is still ahead of the code, and the code says what is built. Part I (this document's
-> bulk) is the structural design -
-> the object hierarchy, from the [Quad Cortex manual](https://neuraldsp.com/manual/quad-cortex).
-> Part II (state tracking, the save lifecycle, and everything verified on hardware) was
-> designed separately and is now merged in below, with its remaining gaps named in
-> [§13](#13-still-open).
->
-> The manual is the canonical reference for what the device does and how it presents
-> itself. Where this design and the manual disagree, the manual wins; where the manual
-> and the touchscreen disagree, the touchscreen wins.
+> Purpose: the design of the model layer, a Python API that looks and behaves like the unit, with what is built, what is planned, and what is left out and why.
+
+> **Status:** the namespaces, the loaded preset, the grid and the state layer are
+> built. Everything else here is design ahead of the code, and the code says what
+> is built. The [Quad Cortex manual](https://neuraldsp.com/manual/quad-cortex) is
+> the reference for what the unit does and how it presents itself. Where this
+> design and the manual disagree, the manual wins; where the manual and the
+> touchscreen disagree, the touchscreen wins.
 
 ## Design principles
 
-1. **Screen-faithful, and the manual's own words.** Objects, properties, names, and units
-   match what the unit shows. Rows are 1-4 and **slots** 1-8, which is the manual's word
-   for the eight cells in a row ("four rows, each containing eight device block slots");
-   scenes are letters; knobs read in dB/Hz/ms where the screen shows dB/Hz/ms. Where the
-   manual has a word, the model uses it rather than the wire's - `slot` not `column`,
-   *virtual device* not *model*, *item* not *entry*. A user who knows the unit recognizes
-   the API without a mapping table.
-2. **Strongly typed, deliberately polymorphic.** Every value has a real type: enums where
-   the unit's option set is fixed, domain value types where it is structured, generics to
-   carry value types through parameters. Capability differences are type differences - a
-   factory preset *has no* `save()` rather than raising when you call it, and a row that
-   cannot start a split *has no* `splitter`.
-3. **Omission over caveat.** If a feature cannot be represented faithfully yet - the wire
-   path is unknown, a display mapping is unverified - the model omits it and the appendix
-   says why. It stays reachable through the protocol layer. No model API ships with a
-   "this might be stale/wrong" caveat.
-4. **Nothing audible is a side effect.** Recalling a preset and activating a scene change
-   what comes out of the unit's outputs. In the model these are always explicit method
+1. **Screen-faithful, in the manual's own words.** Objects, properties, names and
+   units match what the unit shows. Rows are 1 to 4 and slots 1 to 8 (the manual's
+   word for the eight cells in a row); scenes are letters; knobs read in dB, Hz
+   and ms where the screen does. Where the manual has a word, the model uses it
+   rather than the wire's: `slot` not `column`, *virtual device* not *model*,
+   *item* not *entry*.
+2. **Strongly typed, deliberately polymorphic.** Every value has a real type:
+   enums where the option set is fixed, value types where it is structured.
+   Capability differences are type differences: a factory preset has no `save()`
+   rather than raising, and a row that cannot start a split has no `splitter`.
+3. **Omission over caveat.** If a feature cannot be represented faithfully yet,
+   the model omits it and the appendix says why. It stays reachable through the
+   protocol layer. No model API ships with a "this might be stale" caveat. A
+   control we understand but cannot drive is the exception: it is modelled and
+   refuses (ADR-0007).
+4. **Nothing audible is a side effect.** Recalling a preset and activating a
+   scene change what comes out of the outputs. In the model these are explicit
    calls (`item.recall()`, `scene.activate()`), never a consequence of reading a
    property.
-5. **One translation boundary.** The model speaks touchscreen coordinates and display
-   units everywhere. Conversion to protocol values (0-based indexes, raw scales) happens
-   in exactly one module at the model-to-protocol seam. No `-1`/`+1` anywhere else.
-   **Built:** the `pyquadcortex/device/translate/` package, with the rule enforced by a test that
-   reads the source of the whole package outside `protocol/` - not just the model
-   directory - rather than trusting a convention.
+5. **One translation boundary.** The model speaks screen coordinates and display
+   units everywhere. Conversion to wire values happens in one package,
+   `pyquadcortex/device/translate/`, and a test reads the source of the whole
+   package outside `protocol/` to prove nothing else converts (ADR-0013).
 
-## Namespaces: the model becomes the front door
+## Namespaces: the model is the front door
 
-The model takes the top-level namespace. Today's protocol layer moves to
-`pyquadcortex.protocol`, public and supported, with nothing about it changed but the
-import path:
+The model takes the top-level namespace and the protocol layer is
+`pyquadcortex.protocol`, public and supported (ADR-0006):
 
 ```python
 import pyquadcortex
@@ -56,23 +47,16 @@ with pyquadcortex.connect() as device:          # the model: a Device
     ...
 
 from pyquadcortex import protocol
-qc = protocol.connect()                          # today's QuadCortex, unchanged
+qc = protocol.connect()                          # the protocol layer's QuadCortex
 ```
 
-`Device.from_client(qc)` builds a model on an existing protocol connection, so the two
-layers mix in one script. The rename lands with M1 (the first model release), so no
-release ever has `connect()` meaning two different things. This amends ADR-0004's
-"additive namespace" consequence and is recorded as ADR-0006.
-
-**This part is built, and not yet released.** It landed in the M1 Epic (story OM-M1.1);
-the version is cut once the model can read a preset, so that no published release ever has
-`connect()` meaning two different things. `pyquadcortex/protocol/` is today's protocol
-layer moved verbatim, and the `Device` the front door hands back is still a skeleton -
-identity only - and fills in over the rest of M1.
+`Device.from_client(qc)` builds a model on an existing protocol connection, so
+the two layers mix in one script. Built; the version is cut once the model can
+read a preset, so no published release has `connect()` meaning two things.
 
 ---
 
-# Part I - Structure
+# Part 1 - Structure
 
 ## 1. Device and the Directory
 
@@ -118,16 +102,13 @@ class Device:
     power_state: PowerOption            # read-only: awake vs standby (section 12)
 ```
 
-`Setlists` covers every preset container the Directory shows: `Factory Presets` and
-`My Presets` - both non-deletable, exposed as `.factory` and `.my_presets` - plus the
-user setlists, which are created and deleted through the model (`setlists.create(name)`,
-`setlist.delete()`, `setlist.rename(name)` - M3 lifecycle). The manual's limits (10 user
-setlists, 256 presets each, 3072 total) are the device's to enforce; the model reports
-the device's refusal rather than pre-checking.
-
-> **`.my_presets`, not `.user`.** The manual uses "MY PRESETS" for one specific
-> non-deletable setlist and "user setlist" for the ten a player creates, so `.user` read
-> as "the user setlists" to anyone who had read chapter 5. Named for the screen instead.
+`Setlists` covers every preset container the Directory shows: `Factory Presets`
+and `My Presets`, both non-deletable, as `.factory` and `.my_presets`, plus the
+user setlists, created and deleted through the model (`setlists.create(name)`,
+`setlist.delete()`, `setlist.rename(name)`; M3). The manual's limits (10 user
+setlists, 256 presets each) are the unit's to enforce; the model reports the
+unit's refusal. It is `.my_presets`, not `.user`, because the manual uses "user
+setlist" for the ten a player creates.
 
 ```python
 class Setlist:
@@ -139,35 +120,24 @@ class Setlist:
 class PresetAddress:
     """Where a preset lives, as the Directory shows it: a bank and a position in it."""
     bank: int
-    position: str                       # "A".."H" under chapter 3's reading; see below
+    position: str                       # "A".."H"
     # str() gives "28C"; parsing accepts the same form and rejects malformed input
 ```
 
-> **The manual contradicts itself on bank size, by exactly a factor of two.** Chapter 3
-> says banks of eight ("either A-D or E-H" in a PRESET-containing HYBRID mode, so eight
-> otherwise); chapter 5 says four by default and two in HYBRID. The two accounts are each
-> internally consistent, so this is not one stray sentence. `PresetAddress` models the
-> *address* and takes no position on how many presets share a bank. Settled on hardware:
-> chapter 3 is right at **8**, and a PRESET-containing HYBRID halves it to **4**, so
-> `position` spans "A".."H" normally and "A".."D" there. The sting is that slot NAMES move
-> with the mode - linear position 5 reads "1F" normally and "2B" under the hybrid - so an
-> address is only unambiguous alongside the mode it was read in.
-
-> **`PresetAddress` is built**, in `pyquadcortex/device/translate/` and exported from
-> `pyquadcortex`. It speaks the non-hybrid naming, "A".."H". `PresetAddress.parse("28C")`
-> refuses a malformed address there and then, rather than at write time, and `.to_wire()`
-> / `.from_wire()` convert through the protocol layer's own `slot_to_position` pair so the
-> two layers cannot drift on what "28C" means. The mode caveat above is on the converting
-> function's docstring, where someone converting will read it. The Directory that hands
-> addresses out is still ahead of the code.
+**Bank size.** The manual contradicts itself by a factor of two (chapter 3 says
+eight, chapter 5 says four). Settled on the unit: chapter 3 is right at 8, and a
+`PRESET`-containing `HYBRID` mode halves it to 4. Slot names move with the mode:
+linear position 5 reads "1F" normally and "2B" under the hybrid, so an address is
+unambiguous only alongside the mode it was read in. `PresetAddress` is built, in
+`pyquadcortex/device/translate/`, speaks the non-hybrid naming, refuses a
+malformed address at parse time, and converts through the protocol layer's own
+`slot_to_position` pair. The Directory that hands addresses out is not built.
 
 ### Directory items are a type family
 
-Everything a Directory list can hold shares an `Item` base - the Directory's own word,
-used throughout chapter 5 ("Items can be sorted, favorited, uploaded"). What you can *do*
-to an item is expressed by its type. This is how read-only-ness works throughout the
-model: factory content lacks mutating methods entirely, so misuse is a type error, not a
-runtime surprise.
+Everything a Directory list can hold shares an `Item` base, the Directory's own
+word. What you can do to an item is expressed by its type, so factory content
+lacks mutating methods entirely and misuse is a type error.
 
 ```mermaid
 classDiagram
@@ -206,19 +176,17 @@ class IRItem(Item): ...                 # assign to an IR Loader slot
 class PluginPresetItem(Item): ...       # listing and favoriting; see appendix
 ```
 
-> **`instrument` is on the preset because the unit puts it there.** The manual mentions
-> "Preferred Instrument" only for Neural Captures and as a Plugin Preset sort key, never
-> on a preset - but all five values were confirmed by setting them on the unit's own
-> picker and reading them back (`protocol.md`, "Tags are not preserved by ANY save path").
-> The touchscreen wins over the manual by this document's own precedence rule, so the
-> manual is simply behind here. Capture Type and Preferred Instrument ARE on the wire, as
-> `ProductData.device` and `.instrument`, so `CaptureItem` can carry both - see
-> [§13](#13-still-open) for the one Capture Type value the unit's filter does not name.
+`instrument` is on the preset item because the unit puts it there: all five values
+were confirmed by setting them on the unit's own picker and reading them back
+([`protocol.md`](protocol.md) section 9.2). Capture Type and Preferred Instrument
+are on the wire as `ProductData.device` and `.instrument`, so `CaptureItem` can
+carry both; see [section 13](#13-still-open) for the one Capture Type value the
+unit's filter does not name.
 
-`Library[I]` is the read side of the Captures, IR and Plugin Preset libraries: iteration,
-`find()`, and typed items. Library *management* (folders, rename, delete) has no known
-wire path and is omitted for now - see the appendix. `recall()` returns a `UserPreset` or
-`FactoryPreset` matching the entry's type, so the capability split carries through.
+`Library[I]` is the read side of the Captures, IR and Plugin Preset libraries:
+iteration, `find()`, typed items. Library management (folders, rename, delete)
+has no known wire path and is omitted; see the appendix. `recall()` returns a
+`UserPreset` or `FactoryPreset` matching the entry's type.
 
 ## 2. Preset and Scenes
 
@@ -262,58 +230,40 @@ class Scene:
     def activate(self) -> None: ...     # audible - explicit, like recall
 ```
 
-> **Sections 2 and 3 are built**, less the parts that need the Directory or a write.
-> `device.preset`, `preset.rows`, `row.slots`, `preset.blocks`, `scene.blocks`,
-> `scenes.active`, `scene.name`, `scene.activate()`, splits, routing,
-> `has_unsaved_changes` and `is_current` all read on hardware - with one gap
-> stated rather than glossed: the loaded preset routes no row into another row,
-> so the rule that such a row shows no LANE OUTPUT CONTROL is covered offline
-> against a recorded payload that does, and the hardware test skips it aloud. Four things named above
-> are deliberately NOT built, and each is an omission rather than a caveat (principle 3):
->
-> * **`UserPreset` / `FactoryPreset`.** Which one you hold is a Directory fact, and the
->   only method that separates them - `save()` - is M2. A type split with nothing in it
->   would be shape without meaning, so `device.preset` is a `Preset` until the split
->   carries a method.
-> * **`preset.instrument`** lives on the directory listing rather than in the preset, as
->   §11 says. It arrives with the Directory.
-> * **`preset.address`** needs the Directory to say which setlist a position is in.
->   `SetlistPosition{READ}` is confirmed and the model tracks the loaded slot already;
->   what is missing is the setlist, not the read.
-> * **Which row an output feeds.** `Output.NEXT_ROW_3` almost certainly means screen row
->   3 - the unit has four rows and the names fit - but almost certainly is a guess, and a
->   wrong row is the silent failure this whole design is arranged against. So
->   `output.destination` reads as the port it is, and `output.lane` is absent when that
->   port feeds a row, which is what the screen shows and is the part that can be checked.
+**Built:** `device.preset`, `preset.rows`, `row.slots`, `preset.blocks`,
+`scene.blocks`, `scenes.active`, `scene.name`, `scene.activate()`, splits,
+routing, `has_unsaved_changes` and `is_current` all read on hardware. Four things
+above are deliberately not built, each an omission rather than a caveat
+(principle 3):
+
+- **`UserPreset` and `FactoryPreset`.** Which one you hold is a Directory fact,
+  and the only method that separates them, `save()`, is M2. `device.preset` is a
+  `Preset` until the split carries a method.
+- **`preset.instrument`** lives on the directory listing, not in the preset
+  (section 11). It arrives with the Directory.
+- **`preset.address`** needs the Directory to say which setlist a position is
+  in. The model already tracks the loaded slot from `SetlistPosition{READ}`.
+- **Which row an output feeds.** `Output.NEXT_ROW_3` almost certainly means
+  screen row 3, and almost certainly is a guess about a coordinate. So
+  `output.destination` reads as the port it is, and `output.lane` is absent when
+  that port feeds a row, which is what the screen shows.
 
 **The scene/grid duality.** Blocks are placed once per preset; bypass state and
-scene-following parameter values vary per scene. There is exactly one `Block` object
-per occupied cell, and a `BlockGrid` is a *binding* of the grid to a scene context:
+scene-following parameter values vary per scene. A `BlockGrid` is a binding of
+the grid to a scene context: `preset.blocks` is live-bound and always reads and
+writes through the active scene, like the touchscreen; `scene.blocks` is
+fixed-bound to that scene. Scene-invariant facts (which device is placed, where)
+are identical through every binding. As built, two bindings hand back two handles
+on the same cell, sharing the payload underneath; they compare equal, and `is` is
+not the test.
 
-- `preset.blocks` is **live-bound**: it always reads and writes through whatever scene
-  is currently active, like the touchscreen itself.
-- `scene.blocks` is **fixed-bound** to that scene.
+Writing through a non-active scene's binding is refused, because the unit cannot
+do it without switching scenes, which changes what you hear
+([section 10](#writing-to-a-scene-you-are-not-in)). Reads through such a binding
+are fine.
 
-Scene-invariant facts (which device is placed, its position, its non-scene parameters)
-are identical through every binding; scene-varying state differs. The two paths cannot
-disagree because the object underneath is the same.
-
-> **As built, "one object" means one CELL, not one Python object.** Two bindings hand
-> back two handles on the same cell. They have to: a single object could not answer
-> `bypassed` differently for `preset.blocks` and `sceneB.blocks`, which is the whole
-> point of a binding. What the handles share is the payload underneath, so where a block
-> is and which device is in it cannot differ between them. They compare EQUAL, and `is`
-> is not the test - within one binding the same handle does come back.
-
-Writing through a *non-active* scene's binding is **refused**, because the unit has no
-way to do it without switching scenes first - which would change what you hear and leave
-it changed. Reads through such a binding are fine. See
-[§10](#writing-to-a-scene-you-are-not-in).
-
-The default scene (the one a preset opens in) follows the unit's own rule: it is set by
-saving while that scene is active, surfaced as the `default_scene` argument on the save
-methods. Scene *copy* and *swap* (Gig View operations) have no audited wire path yet and
-are omitted - see the appendix.
+The default scene follows the unit's rule: it is set by saving while that scene
+is active, surfaced as the `default_scene` argument on the save methods.
 
 ## 3. Rows and blocks
 
@@ -353,24 +303,16 @@ class Rows:
     def __getitem__(self, row: Literal[2, 4]) -> Row: ...
 ```
 
-**A split belongs to a pair of rows, and only the upper row can start one.** The manual
-is explicit - "insert a Splitter or Mixer for the corresponding pair of Rows", and "Route
-audio from Rows 1 or 3 (**Path A**) to Rows 2 or 4 (**Path B**)". So rows 1 and 3 are
-`SplittableRow` and rows 2 and 4 are plain `Row`, which makes `rows[2].create_split()`
-something your editor rejects rather than something that raises at runtime. Principle 2,
-applied to the grid.
+**A split belongs to a pair of rows, and only the upper row can start one.** The
+manual routes "Rows 1 or 3 (Path A) to Rows 2 or 4 (Path B)", so rows 1 and 3
+are `SplittableRow` and rows 2 and 4 are plain `Row`, which makes
+`rows[2].create_split()` something your editor rejects. A `SplittableRow` is
+Path A and its `path_b` is Path B. The static catch needs a literal index; a
+computed index resolves to `Row | SplittableRow`.
 
-That also gives Path A and Path B a home: a `SplittableRow` *is* Path A, and its `path_b`
-*is* Path B. No separate pair object is needed, and no row is reachable by two names.
-
-> **The static catch needs a literal index.** `preset.rows[2]` is checked before you run
-> it. A computed index resolves to `Row | SplittableRow`, so narrow it or accept a runtime
-> error. Better than no check, and not absolute - stated rather than overclaimed.
-
-**A split need not rejoin.** The manual allows Path B to reach "different output blocks"
-*or* merge back, and the (S) and (M) tokens are placed independently. So `mixer` is
-optional: `create_split()` alone leaves Path B with its own output, and `rejoin()` adds
-the mixer later.
+**A split need not rejoin.** The manual allows Path B to reach its own output or
+merge back, so `mixer` is optional: `create_split()` alone leaves Path B with its
+own output, and `rejoin()` adds the mixer later.
 
 The block family mirrors what the grid can show:
 
@@ -431,21 +373,17 @@ class MixerBlock(Block):
     muted: bool           # the same control as the splitter's MUTE - see below
 ```
 
-> **The splitter's MUTE and the mixer's MUTE are one control.** The manual lists a MUTE
-> row under SPLITTER PARAMETERS and another under MIXER PARAMETERS, so it reads as two.
-> On the unit they are linked: muting the splitter shows the mixer's MUTE already engaged,
-> and it is not a catalogue parameter of either device (`protocol.md`, "Splitter and mixer
-> MUTE is ONE control"). Both screen paths are kept, because both exist on screen, and
-> `muted` on either object is the same state. Setting one changes the other.
+**The splitter's `MUTE` and the mixer's `MUTE` are one control.** The manual
+lists one under each editor; on the unit they are linked, and neither model's
+catalog entry carries it ([`protocol.md`](protocol.md) section 7.6). Both screen
+paths are kept and `muted` on either object is the same state.
 
-Placement rules are the device's: a refused placement (DSP capacity) raises
-`CapacityError` - *detected*, not predicted, because the wire offers no headroom read.
-A cross-row `move_to` creates a branch, exactly as dragging does on the touchscreen.
-Side-chain SOURCE/TRIGGER is an ordinary `ChoiceParam` on the blocks that have it.
+A refused placement (DSP capacity) raises `CapacityError`, detected rather than
+predicted, because the wire offers no headroom read. A cross-row `move_to`
+creates a branch, as dragging does on the touchscreen. Side-chain `SOURCE` is an
+ordinary `ChoiceParam` on the blocks that have it.
 
-### The collections, spelled out
-
-Named here so every access path in this document leads to a declared type.
+### The collections
 
 ```python
 class Setlists:                          # device.setlists
@@ -507,26 +445,22 @@ class ChoiceParam(Parameter[C]):         # dropdowns, and switches of three or m
     options: Sequence[C]
 ```
 
-> **Switches are not always boolean.** The manual describes SWITCHES as toggling "between
-> **two or more** discrete states". `SwitchParam` covers the two-state case; a switch with
-> three or more is a `ChoiceParam` over its own option list, even though the screen calls
-> it a switch. `TextParam`'s only candidate so far - a cab's microphone - is described by
-> the manual as *selectable*, not typed, so no confirmed `TextParam` exists yet; it stays
-> in the design because the parameter-kind taxonomy needs it, not because a user can reach
-> one today.
+**Switches are not always boolean.** The manual's switches toggle "between two or
+more discrete states". `SwitchParam` covers the two-state case; a switch with
+three or more is a `ChoiceParam`. No confirmed `TextParam` exists yet: a cab's
+microphone, the only candidate, is described by the manual as selectable.
 
-**Values are what the screen shows.** A knob that displays -6.0 dB reads and writes
-`-6.0`. The raw wire scale (0..1 with unity at 0.769, and friends) is the translation
-boundary's problem. A parameter whose display mapping is *unverified* is omitted from
-the model until verified, per principle 3.
+**Values are what the screen shows.** A knob that displays -6.0 dB reads and
+writes `-6.0`. The wire scale is the translation boundary's problem. A parameter
+whose display mapping is unverified is omitted until verified (principle 3).
 
-**Choice types.** Where the unit's option set is fixed, `C` is a real enum
-(`ChoiceParam[TimeSignature]`, `ChoiceParam[FilterType]`). Where the option list is
-dynamic but *structured* - routing sources whose membership grows with the preset
-("Follow Input", "Input 1", "Return 2", "USB Input 5"...) - `C` is a domain value type
-(`Source`) parsed from the device's own option list, dynamic in membership but fixed in
-type. Only genuinely free-form lists fall back to `str`. Option names always come from
-the preset's own `dynamic_steps`, so they match the screen exactly.
+**Choice types.** Where the option set is fixed, `C` is a real enum
+(`ChoiceParam[TimeSignature]`). Where the list is dynamic but structured, such as
+routing sources whose membership grows with the preset, `C` is a value type
+(`Source`) parsed from the unit's own option list. Only free-form lists fall back
+to `str`. Option names for a dynamic list come from the preset's own
+`dynamic_steps`, so they match the screen exactly. For a fixed list they come
+from the catalog's `stepNames`, which the appendix says how far to trust.
 
 ## 5. The Virtual Device List
 
@@ -544,14 +478,11 @@ class VirtualDevice:
     sidechain: bool                      # the (S/C) marker
 ```
 
-The list is the device's own model repository, so it reflects purchased and captured
-content. Plugin-locked devices appear with their plugin marker, matching the list on
-screen.
-
-> **Named for the screen, not the wire.** The protocol calls this the model repository and
-> its entries models, and the model layer used to as well. But *model* is also this
-> document's word for the domain model, and the unit's own words are VIRTUAL DEVICE LIST
-> and VIRTUAL DEVICE NAME. The screen wins.
+The list is the unit's own catalog, so it reflects purchased and captured content.
+Named for the screen, not the wire: the protocol calls this the model repository
+and its entries models, and the unit's own words are `VIRTUAL DEVICE LIST` and
+`VIRTUAL DEVICE NAME`. The code directory is `device/`, not `model/`, because the
+protocol layer spells a block `model` (`models.py`, `Model`, `ModelCatalog`).
 
 ## 6. Device-level features
 
@@ -614,9 +545,8 @@ class Tuner:
 class Tempo:                             # the Tempo & Metronome menu
     bpm: float                           # the tempo IN EFFECT - see the note below
     mode: TempoMode                      # GLOBAL or PRESET, as the menu shows it.
-                                         # Readable and writable: the wire path is
-                                         # the device tempo block's parameter 1
-                                         # (found 2026-08-12). See section 13
+                                         # The wire path is the device tempo block's
+                                         # parameter 1 (protocol.md section 8.1)
     led: bool
     metronome: Metronome
 class Metronome:
@@ -641,9 +571,7 @@ class Modes:
 # the device's own rules, enforced by the device; the model surfaces its refusal.
 
 class MasterVolume:
-    level: float                         # READ-ONLY: a MasterVolume write is ignored,
-                                         # measured. See section 13 - Cortex Control does
-                                         # move it, by a route we have not found
+    level: float                         # writable (protocol.md section 11.3)
     outputs: set[OutputAssignment]       # the overlay's checkboxes
 
 class Settings:                          # the DEVICE SETTINGS section of chapter 10
@@ -662,31 +590,18 @@ class System:                            # the SYSTEM SETTINGS section of chapte
     master_volume_knob: MasterVolumeKnob # enum: global vs output-specific
 ```
 
-> **`Tempo.mode` is an ordinary readable, writable property.** It was modelled and
-> refused for one release under ADR-0007, on the strength of three tests that watched
-> for a broadcast when the switch moves and saw nothing. The switch does not broadcast -
-> that holds - but it answers a READ, and it takes a write. The wire path is the DEVICE
-> tempo block's parameter 1, carried in `GlobalTempo.params`: `0.0` is PRESET, `1.0` is
-> GLOBAL. Found 2026-08-12 and confirmed three ways - the wire value moved and moved
-> back, the unit's own menu followed a host write, and the tempo in effect switched
-> between the two blocks' stored values. `protocol.md`, "MODE is the DEVICE tempo block's
-> parameter 1", has the method and the evidence.
->
-> **`mode` is a DEVICE setting, not a preset one**, even though it rides a tempo
-> message. Writing it affects every preset and there is nothing to save afterwards. It
-> belongs to the M3 device-settings surface with the rest of `Tempo`; nothing here ships
-> at M1.
->
-> The unit keeps BOTH tempo blocks at all times and `mode` selects which one plays -
-> writing it moves neither. So `bpm` is the tempo in effect, which is the preset's own
-> tempo in PRESET mode and the device's in GLOBAL mode. The unit resolves that, not the
-> model.
+**`Tempo.mode` is a device setting**, even though it rides a tempo message.
+Writing it affects every preset and there is nothing to save. The unit keeps both
+tempo blocks at all times and `mode` selects which one plays, so `bpm` is the
+tempo in effect: the preset's own tempo in `PRESET` mode and the device's in
+`GLOBAL` mode. It belongs to the M3 device-settings surface with the rest of
+`Tempo`.
 
-> **Two sections, not one.** Chapter 10 has four named subsections - Account, System,
-> Device, Support. Brightness, device storage and the master-volume knob function live
-> under **System**, the other eight rows under **Device**, so `settings` and `system` are
-> separate objects rather than one flattened bag. Account and Support are omitted: cloud
-> surfaces are out of scope, and Support is diagnostics.
+**Two sections, not one.** Manual chapter 10 has four subsections: Account,
+System, Device, Support. Brightness, storage and the master-volume knob function
+live under System, the other eight rows under Device, so `settings` and `system`
+are separate objects. Account and Support are omitted: cloud surfaces are out of
+scope, and Support is diagnostics.
 
 ## 7. Assignments and Preset MIDI Out
 
@@ -695,11 +610,10 @@ class StompAssignment:                   # footswitches A-H in Stomp mode, per p
     footswitch: FootswitchLetter         # "A".."H"
     targets: Sequence[DeviceBlock]       # one switch can toggle several blocks
     label: str                           # EDIT STOMP's custom name
-    momentary: bool                      # RESTORED: the unit's Assign footswitch modal
-    #   has a Latching/Momentary toggle that the manual never mentions. Settable ONLY
-    #   when len(targets) == 1 - the device silently refuses a multi-block switch and
-    #   greys its own toggle out in the same case, so the model refuses it honestly
-    #   rather than passing a write through that will not land.
+    momentary: bool                      # the unit's Assign footswitch modal has a
+    #   Latching/Momentary toggle the manual never mentions. Settable ONLY when
+    #   len(targets) == 1 - the device silently refuses a multi-block switch and
+    #   greys its own toggle out in the same case, so the model refuses too.
 
 class Stomps:                            # preset.stomps
     def __getitem__(self, footswitch: str) -> StompAssignment | None: ...
@@ -708,27 +622,19 @@ class Stomps:                            # preset.stomps
     def clear(self, footswitch: str) -> None: ...
 ```
 
-> **The footswitch letter is a type, not a convention.** `stomp_is_momentary` is keyed by
-> footswitch index, and that stayed hidden for months because every sample happened to
-> have the footswitch index equal to the block's column - an assumption that looked like a
-> fact until a block at column 3 was assigned to footswitch E and the key came back 4.
-> Documenting the difference is not enough. `FootswitchLetter` is the model's only public
-> key for a footswitch, and the zero-based index stays inside the protocol layer where the
-> `Footswitch` enum already lives. Where a bare `int` can reach a model API, someone
-> eventually passes a column to it and gets a write that silently does nothing, which is
-> precisely the bug that cost a hardware session to find.
->
-> **`FootswitchLetter` is built**, in `pyquadcortex/device/translate/` and exported from
-> `pyquadcortex`. It is a `StrEnum`, so `stomps["E"]` and `stomps[FootswitchLetter.E]` are
-> the same key and it prints as the screen labels it. Passing the number 4 raises, with a
-> message naming the column trap. `SceneLetter` is the same type for scenes.
->
-> **A device-level footswitch object is deferred, deliberately.** There are now two
-> footswitch-keyed collections at different scopes - `preset.stomps` per preset and
-> `settings.looper_actions` global - plus the mode that decides which is live, so nothing
-> answers "what does switch E do right now". A `device.footswitches[...]` would have to
-> reach across the Device/Preset boundary this model otherwise keeps clean, and at M1
-> nothing needs it. Revisit at M2, when editing makes that question common.
+**The footswitch letter is a type, not a convention.** `stomp_is_momentary` is
+keyed by footswitch index, and a footswitch index and a block's column are
+different numbers that usually agree (a block at column 3 assigned to footswitch E
+has key 4). `FootswitchLetter` is the model's only public key for a footswitch;
+the zero-based index stays inside the protocol layer. Built, as a `StrEnum` in
+`pyquadcortex/device/translate/`: `stomps["E"]` and `stomps[FootswitchLetter.E]`
+are the same key, and passing the number 4 raises. `SceneLetter` is the same type
+for scenes.
+
+A device-level footswitch object is deferred. There are two footswitch-keyed
+collections at different scopes, `preset.stomps` per preset and
+`settings.looper_actions` global, plus the mode that decides which is live, so
+nothing answers "what does switch E do right now". Revisit at M2.
 
 ```python
 class ExpressionAssignment:              # assigned FROM the parameter, as on screen
@@ -742,20 +648,8 @@ class ExpressionBypass:
     switch_delay_ms: int                 # SWITCH DELAY, real ms; greyed out in SWITCH mode
     latch_emulation: bool                # LATCH EMULATION; greyed out in HEEL_TOE mode
     # All three verified on hardware as ExpressionBypassInfo{invert, delay_ms,
-    # latch_emulation}; a false always travels as an absent field.
-    # The mode decides which of the last two exist, and they are mutually
-    # exclusive in the two modes measured: SWITCH offers latch and no delay,
-    # HEEL_TOE offers delay and no latch. STOP's delay is confirmed; whether it
-    # offers latch emulation has never been looked at.
-    # This same message carries a LANE OUTPUT's MUTE and SOLO settings:
-    # output_control pre-allocates two slots, MUTE at [0] and SOLO at [1], both
-    # confirmed by moving them one at a time on the unit. input_control carries
-    # one, an ordinary block none until set_expression_bypass adds it.
-    # NOT "one slot per switch parameter" - that rule was tried and is false.
-    # The Jewel's HIGH CUT, the Mixer's PHASE and the Splitter's TYPE are all
-    # switch-typed and their blocks carry no slot at all. What generates the
-    # pre-allocation is unestablished; only the counts and the MUTE/SOLO
-    # positions are measured.
+    # latch_emulation}; a false always travels as an absent field. The mode
+    # decides which of the last two exist (protocol.md section 7.8).
 
 class PresetMidiOut:                     # preset.midi_out - the Preset MIDI Out menu
     on_load: Sequence[OnLoadMessage]
@@ -765,104 +659,79 @@ class PresetMidiOut:                     # preset.midi_out - the Preset MIDI Out
 # OnLoadMessage     = ControlChange | ProgramChange
 ```
 
-> **On-load messages cannot be CC Toggle.** The manual gives footswitch and expression
-> messages three types (CC, CC Toggle, PC) and on-load messages only two (CC or PC), and
-> reinforces it - MIN/MAX VALUE, the CC-Toggle-only field, appears only in the footswitch
-> block. Two unions rather than one, so the narrower screen is the narrower type. Principle
-> 2 again.
-
-Expression-assigned parameters are excluded from scene data (the unit's rule); the model
-reflects that: assigning an expression pedal to a parameter fixes `follows_scenes` off,
-matching the screen's behavior.
+On-load messages cannot be CC Toggle: the manual gives footswitch and expression
+messages three types and on-load messages two, so the narrower screen is the
+narrower type. Expression-assigned parameters are excluded from scene data (the
+unit's rule), so assigning a pedal fixes `follows_scenes` off.
 
 ## 8. Errors
 
-- `CapacityError` - the device refused a placement or move (DSP headroom). Detected, not
-  predicted.
-- `DeviceLostError` - the device went away. Detection and cache consequences are in
-  [§12](#12-disconnect-standby-and-reconnect); the protocol layer raises this type, so
-  the model does not invent its own.
-- Static prevention beats runtime errors everywhere types can carry the rule: factory
-  types lack mutating methods, enums bound choice values, `PresetAddress` rejects malformed
-  addresses at parse time.
+- `CapacityError`: the unit refused a placement or move (DSP headroom). Detected,
+  not predicted.
+- `DeviceLostError`: the unit went away. Detection is in
+  [section 12](#12-disconnect-standby-and-reconnect); the protocol layer raises
+  this type.
+- Static prevention beats runtime errors everywhere types can carry the rule.
 
-The device accepts-and-ignores writes it does not understand, so the model's contract
-is: **every mutating call either verifies acceptance or is backed by a
-hardware-confirmed protocol method**. The mechanics - echoes, the three-way watcher, and
-the one write that blocks - are in [§10](#10-writing-and-knowing-a-write-landed).
+The unit accepts and ignores writes it does not understand, so the model's
+contract is: **every mutating call either verifies acceptance or is backed by a
+hardware-confirmed protocol method.** The mechanics are in
+[section 10](#10-writing-and-knowing-a-write-landed).
 
 ---
 
-# Part II - Behavior
+# Part 2 - Behaviour
 
-How the model tracks what the unit is doing, and how saving works. Every number here
-was measured on hardware (firmware `d14e`, CorOS 4.0.1) rather than read off the schema.
-Where something was not established, it says so - see
-[§13, still open](#13-still-open).
+How the model tracks what the unit is doing, and how saving works. Every number
+here was measured on CorOS 4.0.1. Where something was not established, it says so
+([section 13](#13-still-open)).
 
 ## 9. How the model keeps its facts current
 
-The model remembers what it learned from the unit, so reading a value is fast. The risk
-is obvious: someone touches the unit, and what we remember goes wrong. Three rules
-handle it.
+The model remembers what it learned from the unit, so reading a value is fast.
+The risk is that someone touches the unit and what we remember goes wrong. Three
+rules handle it.
 
-**1. The unit tells us when things change.** Turn a knob on the touchscreen and the unit
-sends a message saying what changed. We store the new value, so reading it later costs
-nothing. Confirmed: one on-unit edit produced 40 `Grid` pushes.
+**1. The unit tells us when things change.** Turn a knob on the touchscreen and
+the unit sends a message saying what changed. We store the new value. One on-unit
+edit produced 40 `Grid` pushes.
 
-**2. If a message mentions something we do not model, we stop trusting our copy.**
-Suppose someone edits a splitter. The model cannot represent a splitter at all (no host
-write path, and the wire carries no position for it - see the appendix), so the push names something we have
-no code for. Then we discard our copy of that preset and read a fresh one. Slower, but
-right. A message of a type we know nothing about is ignored outright, which is what the
-RX thread already does.
+**2. If a message mentions something we do not model, we stop trusting our
+copy.** Then we discard our copy of that entry and read a fresh one. Slower, and
+right. A message of a type no entry tracks is ignored, which is what the RX thread
+already does. The check is per field, not per message type: applying the half of
+a message we understand and dropping the rest is the one failure that leaves the
+cache confidently wrong (ADR-0011).
 
-The check is per FIELD, not per message type. Applying the half of a message we
-understand and silently dropping the rest is the one failure mode that leaves the cache
-confidently wrong, so it is the case this rule exists to catch.
+Two message types are handled by type rather than by field, because the per-field
+check cannot see them. `Grid` carries its meaning in `action`, which the wire
+gives no presence, so an `UPDATE` and a `DELETE` with the same payload look
+identical. `SceneLabel` gives `index` and `label` no presence either, so renaming
+a scene to a blank label sets nothing a field check can see. Both are declared as
+voiding the copy outright (ADR-0012).
 
-**Two message types are handled by type rather than by field, because the per-field
-check cannot see them.** `Grid` carries its meaning in `action`, which the wire gives no
-presence, so an `UPDATE` and a `DELETE` with the same payload look identical to a
-field-by-field reading. `SceneLabel` gives `index` and `label` no presence either, so
-renaming scene A to a blank label sets *nothing at all* that a field check can observe.
-Both are therefore declared as voiding the copy outright: every message of those types
-means the preset moved, whatever it appears to carry. That is each entry's own decision
-about `action`, made per entry and per type; the shared scaffolding skip is not widened.
+**A grid push is not merged.** A `Grid` echo is a sparse, keyed delta into a
+deeply nested structure. Rather than apply it, the model notes that the grid moved
+and re-reads the whole live preset on the next access. Forty pushes cost one
+re-read, because the note is a flag rather than a queue, and `RecallPreset{READ}`
+has no side effects. Merging would need each push applied by key (chain by row,
+model by column, parameter by index) and the "did this mention something we do
+not model" check walking the structure recursively. The prize is instant reads
+while somebody edits on the unit; the risk is the recursive check, so it is not
+built. A caller who needs the fresh value sooner subscribes to `device.events`.
 
-**A grid push is not merged.** A `Grid` echo is a sparse, keyed delta into a deeply
-nested structure. Rather than apply it, the model notes that the grid moved and re-reads
-the whole live preset on the next access. One edit on the touchscreen produces about
-forty of these and costs exactly one re-read, because the note is a flag rather than a
-queue, and `RecallPreset{READ}` has no side effects.
+**A push carrying every field an entry keeps clears the mark**, because it is the
+same thing a read returns. That is what makes the connect burst leave the cache
+warm: the burst delivers `RecallPreset`, `SetlistPosition`, `PresetDirty` and
+`Scene` inside ten milliseconds, so two entries are marked by one message and
+answered in full by the next.
 
-What merging would take, if it is ever worth doing: each push applied BY KEY into the
-stored payload - chain by row, model by column, parameter by index - and, to stay honest,
-the "did this mention something we do not model" check walking that structure recursively
-instead of reading the top level. The prize is that reads stay instant while somebody is
-editing on the unit. The reason it is not M1 is that the recursive check is where all of
-its risk sits, and it would have sat next to the objects three other stories are blocked
-on. A caller who needs the fresh value sooner subscribes to `device.events` - below - and
-reads it themselves.
-
-**A push carrying every field an entry keeps clears the mark.** It is the same thing a
-read returns, so it replaces rather than merges, and an entry holding the unit's own
-complete answer has nothing left to ask about. This is what makes the connect burst leave
-the cache genuinely warm rather than nominally warm: measured 2026-08-15, the burst
-delivers `RecallPreset`, `SetlistPosition`, `PresetDirty` and `Scene` in that order
-inside ten milliseconds, so two entries are marked by one message and answered in full by
-the next.
-
-**3. When we write, we update our copy immediately.** The unit echoes our own change
-back, and that echo confirms it. Because we already applied it, a matching echo changes
-nothing - one code path, not two. Waiting for the echo before updating would make every
-write pay for information we almost always already have.
-
-This is a deliberate trade. If a write is wrong, the echo disagrees with our copy and we
-have written a bug - so the place to catch it is a hardware test that performs every
-supported write and asserts the read-back, which is what ADR-0005's suite is for, not a
-check on every call at runtime. [§10](#10-writing-and-knowing-a-write-landed) covers what
-happens when an echo does disagree.
+**3. When we write, we update our copy immediately.** The unit echoes our change
+back, and the echo confirms it. Because we already applied it, a matching echo
+changes nothing. If a write is wrong, the echo disagrees and we have written a
+bug; the place to catch that is the hardware suite, which performs every
+supported write and asserts the read-back
+([section 10](#10-writing-and-knowing-a-write-landed)).
 
 ### What we track, and how each part stays current
 
@@ -870,478 +739,405 @@ happens when an echo does disagree.
 |---|---|---|---|
 | The preset on the grid now | `device.preset` (**built**) | `RecallPreset{READ}` | `Grid`, `RecallPreset` |
 | Which scene is active | `preset.scenes.active` (**built**) | `Scene{READ}` | `Scene` |
-| Scene names and colors | `scene.name` | comes with the preset | `SceneLabel`, `SceneColor` |
-| Unsaved edits | `preset.has_unsaved_changes` (**built**) | `PresetDirty{READ}` | `PresetDirty`, and a recall - which pushes NOTHING, so it is re-read |
-| Which preset is loaded | `preset.is_current` (**built**); `preset.address` needs the Directory | `SetlistPosition{READ}` - confirmed 2026-08-15, 3 ms | `SetlistPosition` |
+| Scene names and colours | `scene.name` | comes with the preset | `SceneLabel`, `SceneColor` |
+| Unsaved edits | `preset.has_unsaved_changes` (**built**) | `PresetDirty{READ}` | `PresetDirty`, and a recall, which pushes nothing, so it is re-read |
+| Which preset is loaded | `preset.is_current` (**built**); `preset.address` needs the Directory | `SetlistPosition{READ}`, 3 ms | `SetlistPosition` |
 | What is in a setlist | `setlist` iteration | `File{READ}` | `File` |
 | Recents and favorites | `device.recents`, `.favorites` | `RecentsFavorites{READ}` | `RecentsFavorites` |
-| I/O, settings, EQ, volume, mode | `device.io` and friends | one READ each | one push each |
+| I/O, settings, EQ, volume, mode | `device.io` and friends | one `READ` each | one push each |
 | Power state (awake / standby) | `device.power_state` | in general settings | `GeneralSettings` |
 | Device list, firmware, serial | `device.virtual_devices`, `.firmware` | `ModelRepo`, `Version` | nothing; these do not change |
 
-The third column is the safety net. Wherever the fourth turns out to be unreliable, we
-ask instead of remembering, which is what lets the model honour principle 3 and never
-hand back a value with a "might be stale" caveat.
+The third column is the safety net. Wherever the fourth is unreliable, we ask
+instead of remembering, which is what lets the model never hand back a value with
+a "might be stale" caveat. An entry with no read is not an entry: each remaining
+row lands with the surface that reads it.
 
 ### Telling a caller what we noticed
 
-Re-reading only happens when somebody asks for a value, which is too late for a script
-following the unit closely. So the model publishes what it noticed, and a subscriber can
-fetch the fresh value itself:
+Re-reading happens only when somebody asks for a value, which is too late for a
+script following the unit closely. So the model publishes what it noticed:
 
 ```python
 with pyquadcortex.connect() as device:
     device.events.subscribe(print)
 ```
 
-Two events, both about the model's copy rather than about the wire. `Changed(part,
-fields)` when a push moved a value we hold, and `Invalidated(part, why)` when we stopped
-trusting our copy of something. Two rules keep the stream usable: `Invalidated` fires on
-the change from trusted to untrusted, so one edit on the touchscreen produces one event
-rather than forty, and `Changed` fires only when a value really moved, so the unit
-restating what it has already said is silent.
+Two events, both about the model's copy. `Changed(part, fields)` when a push
+moved a value we hold, and `Invalidated(part, why)` when we stopped trusting our
+copy of something. `Invalidated` fires on the change from trusted to untrusted,
+so one edit on the touchscreen produces one event rather than forty, and
+`Changed` fires only when a value moved.
 
-**A subscriber runs on a thread the model owns, and may read from the unit.** That is the
-whole reason the thread exists. Messages arrive on the RX thread, which may not read
-([§9](#9-how-the-model-keeps-its-facts-current) rule 5, ADR-0009), so handing an event
-over there would make the obvious reaction - go and re-read it - raise. The RX thread
-queues; the model's thread delivers. The costs are ordinary and worth stating: an event
-can lag by however long the subscribers ahead of it take, they are served one at a time
-in subscription order, and a subscriber that blocks forever holds up the ones behind it.
-None of that can delay the unit.
+**A subscriber runs on a thread the model owns, and may read from the unit.**
+Messages arrive on the RX thread, which may not read (ADR-0009), so handing an
+event over there would make the obvious reaction raise. The RX thread queues; the
+model's thread delivers, one subscriber at a time in subscription order. A
+subscriber that blocks holds up the ones behind it and never delays the unit.
 
 ### Smaller decisions
 
-1. **Connecting already warms almost everything, so there is little to fetch.** The
-   handshake's subscription burst delivers one message of nearly every state type. Its
-   measured shape: about 3 s of quiet, then the model repository as one huge message,
-   then ~400 `File` messages at ~1490 reports/s for 5 s, then everything else at once -
-   including the current preset - about 9 s in. So the cache is warm for free, and the
-   read paths are the fallback rather than the normal route. Anything not yet delivered
-   is fetched on first access.
-2. **Pushes are often partial.** A push after an update may carry one field with
-   everything else absent - the standby announcement carries only `power_option`. An
-   absent field means "not mentioned", never "changed to default", so pushes merge into
-   our copy rather than replacing it.
-3. **Recalling a preset resets three things at once**: the grid contents, the active
-   scene, and the unsaved-changes flag. The unit moves them together, so we do too.
-4. **Deleting or moving a preset needs a retry.** The unit does the work immediately but
-   its preset listing lags a couple of seconds. So we re-read until the listing reflects
-   the change rather than storing the first, stale answer.
-5. **The RX thread never asks the unit for anything.** It applies pushes and notes what
-   needs re-reading; the caller's thread does any re-reading. This preserves the rule
-   that the RX thread can never block or die.
-6. **Reconnecting discards everything**, firmware and serial included - see
-   [§12](#12-disconnect-standby-and-reconnect).
-7. **The tempo stream is not a change signal.** The metronome clock always runs, so
-   `GlobalTempo` arrives in pairs, one pair per beat (measured 1.5 s apart at 40 bpm), on
-   every connection. Treating every inbound message as "something changed, go re-read"
-   would have had the model re-reading constantly for no reason. Applying pushes as data
-   does not care.
-
-   The control that looks like a start/stop is not one. It is **one control with three
-   names** - MUTE on the unit, START in the catalogue, PLAYBACK in the manual - traced to
-   tempo parameter 4 by pressing the unit's own MUTE button. It silences the metronome
-   rather than stopping the clock, which is why the stream never pauses. The model calls it
-   `metronome.muted`, after the label a player actually sees.
+1. **Connecting warms almost everything.** The handshake's burst delivers one
+   message of nearly every state type ([`protocol.md`](protocol.md) section
+   12.1), so the cache is warm for free and the read paths are the fallback.
+2. **Pushes are often partial.** An absent field means "not mentioned", never
+   "changed to default", so pushes merge into our copy rather than replacing it.
+3. **Recalling a preset resets three things at once**: the grid contents, the
+   active scene, and the unsaved-changes flag. The unit moves them together, so we
+   do too. It is declared once, on the entry that knows which slot is loaded, and
+   fires only when that slot changes.
+4. **Deleting or moving a preset needs a retry.** The unit's listing lags a
+   couple of seconds, so we re-read until the listing reflects the change.
+5. **The RX thread never asks the unit for anything.** It applies pushes and
+   notes what needs re-reading; the caller's thread does the reading.
+6. **Reconnecting discards everything**, firmware and serial included
+   ([section 12](#12-disconnect-standby-and-reconnect)).
+7. **The tempo stream is not a change signal.** The metronome clock always runs,
+   so `GlobalTempo` arrives in pairs, one pair per beat, on every connection.
+   Applying pushes as data does not care. The control that looks like a start/stop
+   is one control with three names (`MUTE` on the unit, `START` in the catalog,
+   `PLAYBACK` in the manual) and it silences the metronome rather than stopping
+   the clock, so the model calls it `metronome.muted`.
 
 ## 10. Writing, and knowing a write landed
 
-The unit accepts writes it does not understand and silently does nothing, so "no error"
+The unit accepts writes it does not understand and does nothing, so "no error"
 proves nothing. What we have instead is the echo.
 
-**The echo is a sparse, keyed delta.** Writing one parameter produced a `Grid` push of
-**23 bytes**: one chain with `row` set, one entry with `column` set (the wire's word for
-what the screen calls a slot), one parameter, and nothing else. That is worth stating plainly because it is the opposite of a recalled
-preset, whose chains carry *no* explicit row - the reason writing a whole preset back
-does nothing. Echoes are unambiguous where recalls are positional, so an echo merges
-into our copy with no guessing.
+**The echo is a sparse, keyed delta.** Writing one parameter produced a `Grid`
+push of 23 bytes: one chain with `row` set, one entry with `column` set, one
+parameter. That is the opposite of a recalled preset, whose chains carry no
+explicit row, so an echo merges into our copy with no guessing. Echo latency is
+113 to 116 ms for a parameter write and 290 to 420 ms for a block placement, and
+those two set the watcher's window ([`protocol.md`](protocol.md) section 12.3
+has the rest).
 
-Measured echo latency: **113-116 ms** for a parameter write, **290-420 ms** for a block
-placement. These two set the watcher's window. The other write types read far quicker
-(scene label, scene colour and global settings about 2 ms, routing 9-19 ms), but those
-figures carry a caveat that belongs with them rather than here - see
-[`protocol.md`](protocol.md); block bypass is still unmeasured entirely.
+**Each write gets a watcher** that compares the echo against what we sent and
+reports one of three outcomes:
 
-**Each write gets a watcher** that compares the echo against what we sent and reports one
-of three outcomes:
+- **Confirmed**: every field we sent came back with the value we sent.
+- **Different**: a field we sent came back with another value. Log the field,
+  what we sent, and what came back. That is a bug in our code, and the entry is
+  marked for a re-read too, because the other fields in the same write went into
+  the cache on our say-so.
+- **Timed out**: nothing came back. Log it and mark that part of our copy for
+  re-reading, so a silently ignored write self-corrects instead of poisoning the
+  cache.
 
-- **Confirmed** - every field we sent came back with the value we sent. Our copy was
-  already right; nothing to do.
-- **Different** - a field we sent came back with another value. Log the field, what we
-  sent, and what came back. That is a bug in our code, now with a name and a location.
-- **Timed out** - nothing came back. Log it and mark that part of our copy for
-  re-reading, so the next read gets the truth from the unit. A silently ignored write
-  self-corrects instead of poisoning the cache.
-
-The watcher does not block the write, and the bar is exactly one sentence:
-
-> Every field we sent must come back with the value we sent.
-
-Not "the echo equals what we sent" - that would cry wolf constantly, because the unit
-legitimately changes things we did not ask about. All four known cases are things we did
-not send, so none of them needs an exception:
+The watcher does not block the write, and the bar is one sentence: every field we
+sent must come back with the value we sent. Not "the echo equals what we sent",
+because the unit legitimately changes things we did not ask about, and applying
+the whole echo handles all of them:
 
 | The unit also changes | Why |
 |---|---|
-| GAIN REDUCTION (`input_control` index 2) | a live meter, sampled into the preset at save time |
-| A mirrored parameter | writing the metronome transport also moves a Looper X parameter |
+| `GAIN REDUCTION` (`input_control` index 2) | a live meter, sampled into the preset at save time |
+| A mirrored parameter | writing the metronome mute also moves a Looper X parameter |
 | NaN in unused parameter slots | factory presets store it; NaN never equals itself |
 | Dropdown values on untouched rows | adding a block changes the option count, so stored values are recomputed |
 
-Applying the whole echo to our copy handles all four for free: the mirrored parameter and
-the recomputed dropdowns land in our copy without the model knowing they exist.
+**Placement is the one write that waits.** Whether a block fits depends on how
+much DSP the preset already uses, and DSP load is unreadable, so there is no test
+we can pre-run. The unit echoes every cell it accepts and gives a refused block no
+echo, so `row.place()` waits for that echo and raises `CapacityError` when it
+does not come. It returns in about a third of a second normally.
 
-**Placement is the one write that waits.** Whether a block fits depends on how much DSP
-the preset already uses, and DSP load is unreadable on this firmware (`CPULoad` never
-arrives), so there is no test we can pre-run - the answer depends on the user's preset.
-The unit echoes every cell it accepts and gives a refused block no echo at all, so
-`row.place()` waits for that echo and raises `CapacityError` when it does not come. It
-returns in about a third of a second normally; only a real refusal waits out the timeout.
-
-Everything else - parameters, bypass, routing, scene names, I/O, settings - updates our
-copy immediately and is confirmed in the background.
+Everything else updates our copy immediately and is confirmed in the background.
 
 ### Writing to a scene you are not in
 
-The unit has no way to write to a scene that is not active - you switch to it first. So
-`scene.blocks[1, 3].bypassed = False` on an inactive scene would have to activate that
-scene, which changes what comes out of the outputs and *leaves it changed*. The effect
-would be far larger than the request.
-
-**So a `BlockGrid` bound to an inactive scene refuses writes**, and the error names
-`scene.activate()` as the step to take. Reads through it are fine. This is the unit's own
-limitation, mirrored rather than papered over, and it costs the caller one line. It
-settles the question Part I's [§2](#2-preset-and-scenes) left open.
+The unit has no way to write to a scene that is not active; you switch to it
+first. So `scene.blocks[1, 3].bypassed = False` on an inactive scene would have
+to activate that scene, which changes what comes out of the outputs and leaves it
+changed. **A `BlockGrid` bound to an inactive scene refuses writes**, and the
+error names `scene.activate()` as the step to take. Reads through it are fine.
 
 ## 11. The save lifecycle
 
-**How the unit works.** There is no separate edit buffer. You edit the grid directly, and
-what is on the grid is what you hear. Saving snapshots the grid into a slot: the save
-message carries no preset data at all, just a slot and a name. That is why the protocol
-edit path is recall, then small keyed edits, then save. The model hides all three - you
-get a preset, change it, and call `save()`.
+**How the unit works.** There is no separate edit buffer. You edit the grid
+directly, and what is on the grid is what you hear. Saving snapshots the grid
+into a slot: the save message carries no preset data, just a slot and a name.
+That is why the protocol edit path is recall, then keyed edits, then save. The
+model hides all three: you get a preset, change it, and call `save()`.
 
-**Two ways to save.**
+**Two ways to save.** `save()` writes back to the same slot under the same name;
+re-saving the same name to the same slot is not a collision, so the unit does not
+append a suffix. `save_as(name)` writes to a new slot or name, and that can
+collide; the unit renames rather than refusing, so the returned `UserPresetItem`
+is the authority on what was stored.
 
-- `save()` writes back to the same slot under the same name. Confirmed safe: re-saving
-  the same name to the same slot is *not* treated as a collision, so the unit does not
-  append a `_2` suffix.
-- `save_as(name)` writes to a new slot or name, and that *can* collide - the unit renames
-  rather than refusing. So the returned `UserPresetItem` is the authority on what was
-  actually stored: read `entry.name`, not the name you passed in.
+**Factory presets.** You can edit a factory preset on the grid and hear the
+change; you cannot save it in place. `FactoryPreset` has no `save()`, so it is a
+mistake your editor catches. `save_as()` on a factory preset targets a user
+setlist, defaulting to My Presets.
 
-**Factory presets.** You can edit a factory preset on the grid and hear the change; you
-just cannot save it in place. Part I already handles this by type - `FactoryPreset` has
-no `save()` at all, so it is a mistake your editor catches rather than a runtime error.
-`save_as()` on a factory preset targets a user setlist, defaulting to My Presets.
+**Losing edits.** Recalling another preset discards unsaved changes and resets
+the active scene. The model does the same, because that is what the unit does.
+What makes this safe is principle 4: recalling is always an explicit call, and
+`preset.has_unsaved_changes` is there to check first.
 
-**Losing edits.** Recalling another preset discards unsaved changes and resets the active
-scene. **The model does the same, silently, because that is what the unit does.** What
-makes this safe rather than careless is principle 4: recalling is always an explicit
-call, never a consequence of reading a property. The only way to lose work is to ask for
-it, and `preset.has_unsaved_changes` is there to check first.
+**`has_unsaved_changes` is cheap and always available.** `preset_dirty()`
+answers in 2 to 11 ms, reads true after an edit and false after a clean save, and
+the unit pushes it unsolicited in the connect burst and on the first edit. So the
+model subscribes rather than polls. `is_dirty` has no field presence, so absent is
+false.
 
-**`has_unsaved_changes` is cheap and always available.** `preset_dirty()` answers in
-**2-11 ms** across every measured poll, reads true after an edit and false after a clean
-save, and the unit also pushes it unsolicited in the connect burst and on every edit. So
-the model subscribes rather than polls, and the value is warm from the moment we connect.
-One protocol detail the model absorbs: `is_dirty` has no field presence, so absent simply
-*is* false.
+**Two warts the model hides.** Place a Neural Capture, bypass it, save, and the
+bypass is gone: it survives on the live grid and not the first save, while an
+ordinary block in the same row is fine. The sequence that works is save, recall
+the slot, set the bypass again, save again (verified on 24 presets). `save()`
+performs that sequence itself when the preset has a freshly placed capture with a
+non-default bypass, and restores the active scene afterwards. And a preset's
+default scene is whichever scene was active when it was saved, so
+`save(default_scene="C")` activates scene C, saves, and returns to the scene you
+were on. That is audible twice.
 
-**Two warts the model hides.**
-
-Place a Neural Capture, bypass it, save - and the bypass is gone. It survives on the live
-grid; it just does not survive that first save, while an ordinary block in the same row is
-fine. The sequence that works is save, recall the slot, set the bypass again, save again
-(field-verified on 24 presets). `save()` performs that sequence itself when the preset has
-a freshly placed capture with a non-default bypass. It costs a few seconds, and because
-the recall in the middle resets the active scene, the model restores the active scene
-afterwards.
-
-A preset's default scene is whichever scene was active when it was saved. So
-`save(default_scene="C")` activates scene C, saves, and returns to the scene you were on.
-That is audible twice, which is worth doing rather than refusing, but you will hear it.
-
-**What no save can keep.** Descriptive tags are lost by every save path including the
-unit's own, so a preset derived from a factory preset is simply untagged. Not a library
-limitation and nothing to work around. The instrument category is separate and does
-survive, because it lives on the directory listing rather than in the preset.
+**What no save can keep.** Descriptive tags are lost by every save path including
+the unit's own, so a preset derived from a factory preset is untagged. The
+instrument category is separate and does survive, because it lives on the
+directory listing rather than in the preset.
 
 ## 12. Disconnect, standby, and reconnect
 
-**The unit going away is free to detect.** A read raising means the device is gone; a
-write raising means nothing at all. Over one measured 145-second healthy session there
-were **0 read exceptions and 91 write exceptions**, because every write to a healthy unit
-"fails" via the status-stage stall. Detection lands within the 200 ms read window.
+**The unit going away is free to detect.** A read raising means the unit is gone;
+a write raising means nothing (every write to a healthy unit "fails" via the
+status-stage stall). Nothing branches on the exception text, which is often the
+stale write-stall lookalike. The protocol layer surfaces this as
+`DeviceLostError`.
 
-Nothing may branch on the exception text. It is often the stale write-stall lookalike
-rather than anything honest: across four measured loss transitions, one reboot gave the
-misleading text on both read attempts, another gave the honest text on both, and a
-shutdown gave one of each. The reliable signal is that a read raised at all. The protocol
-layer surfaces this as `DeviceLostError`, and **Part I's section 8 should be read as
-naming that type** - `NotConnectedError` was a placeholder from before the protocol layer
-shipped it.
+**Asleep is not the same as gone.** Standby ("Be Right Back") does not
+disconnect: the session stays alive and the unit announces it with a partial
+settings push carrying only `power_option: 2`, then `3` on waking. Reboot and
+shutdown send nothing before the reads start raising. So a script can be talking
+to a sleeping unit over a healthy connection; `device.power_state` makes that
+visible. Reading the field is all the model does with it, since writing
+`power_option` would let a script shut the unit down.
 
-**Asleep is not the same as gone.** The power button's three options behave completely
-differently, and the model must not confuse them:
+**Lock mode does not block us.** With the screen and volume knob locked, a
+parameter write landed and read back exactly.
 
-| Action | What happens on the wire |
-|---|---|
-| Be Right Back (standby) | **No disconnect at all.** The session stays fully alive - probes kept answering in 2 ms. Announced by a partial settings push carrying only `power_option: 2`, then `3` on waking. Connecting fresh while asleep works normally. |
-| Reboot | Session dies with no announcement. Healthy 3 ms probes, then the read raises. |
-| Shutdown | Same - no announcement, no goodbye. |
+**Reconnect is transparent, and logged.** When the model notices the unit has
+gone:
 
-So a script can be talking to a sleeping unit over a perfectly healthy connection. The
-model exposes `device.power_state` so that is visible rather than surprising. Reading the
-field is all the model does with it: writing `power_option` would let a script shut the
-unit down, and the protocol layer refuses the write.
-
-**Lock mode does not block us.** With the unit's screen and volume knob locked, a
-parameter write landed and read back exactly. Lock mode locks the touchscreen only. Worth
-saying because "locked" invites the opposite assumption.
-
-**Reconnect is transparent, and logged.** When the model notices the unit has gone:
-
-1. The RX thread records the loss, logs a warning, and stops - so the warning appears
-   immediately even in a script that is only listening.
+1. The RX thread records the loss, logs a warning, and stops.
 2. Everything we remembered is discarded, firmware and serial included.
-3. The next call from the caller's thread reconnects: find the unit, open it, run the
-   handshake. Recovery happens on the caller's thread, so there is no hidden background
-   activity.
-4. If that call was a **read**, it runs again and returns normally, a few seconds later.
-5. If it was a **write**, it raises. We never replay it - a unit that came back may have
-   been power-cycled with a different preset on the grid, and a replayed parameter write
-   would land somewhere the caller never asked for.
+3. The next call from the caller's thread reconnects: find the unit, open it, run
+   the handshake. Recovery happens on the caller's thread.
+4. If that call was a read, it runs again and returns normally, a few seconds
+   later.
+5. If it was a write, it raises. We never replay it: a unit that came back may
+   have been power-cycled with a different preset on the grid.
 
-**Opening the device proves nothing about readiness.** There is a real window where the
-unit is enumerated and openable but the control protocol does not answer: measured at ~9 s
-after a reboot and 11.7 s after a cold boot, and the protocol layer's `handshake_patience`
-default was subsequently raised to **30 s** after 15 s was measured failing live. So the
-handshake itself is retried, not just the open. Unattended recovery from a reboot took
-about 55 seconds end to end.
+**Opening the device proves nothing about readiness.** There is a window where
+the unit is enumerated and openable but the control protocol does not answer,
+about 9 s after a reboot and 11.7 s after a cold boot, so the handshake itself is
+retried (`handshake_patience`, 30 s). Unattended recovery from a reboot took about
+55 seconds end to end.
 
-**A held preset can go stale, so it checks itself.** If you hold a `Preset` and the loaded
-slot changes, that object now points at something else, and writing through it would edit
-a preset you never opened. Every mutating call therefore checks first - locally, against
-the loaded slot we already track, with no device round trip - and raises rather than
-editing the wrong preset. `preset.is_current` exposes the same check for callers who want
-to ask.
-
-This is deliberately not reconnect-specific. Someone tapping a different slot on the
-touchscreen invalidates a held preset just as thoroughly, and far more often. One rule
-covers both. It is also the one place the model has a concept the unit lacks - but so is
-holding a preset object at all, so it earns its place. `device.preset` always returns the
-current one.
+**A held preset can go stale, so it checks itself.** If you hold a `Preset` and
+the loaded slot changes, that object now points at something else. Every mutating
+call checks first, locally against the loaded slot we track, and raises rather
+than editing the wrong preset. `preset.is_current` exposes the same check.
+Someone tapping a different slot on the touchscreen invalidates a held preset just
+as thoroughly as a reconnect, and one rule covers both. `device.preset` always
+returns the current one.
 
 ## 13. Still open
 
-Named so nothing here is mistaken for verified. Everything this list used to hold was
-closed on hardware on 2026-08-07; what survives is below, and each entry says what was
-tried rather than just what is unknown.
-
 ### Genuinely open
 
-- **`RecallPreset.reason` UNDO.** The value exists in the schema and has never been
-  observed. The unit's undo IS reachable from a host: a sparse `UndoRedo{UPDATE, undo:
-  true}` (`08 01 28 01`) reverses the last grid edit and `redo: true` (`08 01 30 01`)
-  reapplies it - measured 2026-09-03 on Quad Cortex, CorOS 4.0.1 / d14e, and by a
-  contributor on 4.1.0 (PR #42, where the client methods land). The touchscreen still has
-  no undo of its own beyond Looper X's. Whether the recall that follows a host undo
-  carries `reason: UNDO` was not captured in either session - both read the preset back
-  instead of watching the push - so this stays open, one listener away from an answer.
-- **Bypass persistence over MIDI.** The unit's own SCENE BYPASS BEHAVIOR wording groups
-  **MIDI with footswitches**, not with the touchscreen - a distinction the manual's summary
-  omits. A USB HID write was measured and behaves like the touchscreen, but the MIDI half
-  is untested because this library has no MIDI path. Do not assume a future MIDI route
-  inherits the host write's behaviour.
-- **The first-generation I/O variant.** `Version.is_ess` IS the discriminator the model
-  needed, and reads `True` here. But only an ESS unit has ever been available, so the
-  first-generation value is inferred from the field's name rather than observed, and the
-  correlation with `InputPort.input_type` presence rests on one machine.
-- **Capture Type value 8.** `ProductData.device` is the manual's Capture Type, keyed
-  zero-based against the unit's own filter list: Default, Amp, Combo Amp, Amp + Cab, Cab,
-  Overdrive, Fuzz, Compressor. A ninth value, `8`, is in use by 102 factory V2 captures -
-  all of them drive and distortion pedals - and the filter offers no category for it. Those
-  captures list normally with no filter applied, so enumeration by folder is safe and
-  enumeration by filter would silently drop them. The name of value 8 is unknown.
+- **`RecallPreset.reason` `UNDO`.** The value exists in the schema and has never
+  been observed. The unit's undo is reachable from a host (`UndoRedo{UPDATE,
+  undo: true}`, measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0
+  in PR #42). Whether the recall that follows carries `reason: UNDO` was not
+  captured in either session.
+- **The writability half of `Parameter.hidden`.** The flag was tested against
+  the screen, which it predicts most of the time and not always
+  ([Catalog attributes](#catalog-attributes)). Nobody has tried writing a hidden
+  parameter, so that half of the question is untested.
+- **Bypass persistence over MIDI.** The unit's own `SCENE BYPASS BEHAVIOR` wording
+  groups MIDI with footswitches, not with the touchscreen. A USB HID write behaves
+  like the touchscreen; the MIDI half is untested because this library has no MIDI
+  path.
+- **The first-generation I/O variant.** `Version.is_ess` is the discriminator and
+  reads `True` here. Only an ESS unit has been available, so the first-generation
+  value is inferred from the field's name, and the correlation with
+  `InputPort.input_type` presence rests on one machine.
+- **Capture Type value 8.** `ProductData.device` is the manual's Capture Type,
+  keyed zero-based against the unit's own filter list: Default, Amp, Combo Amp,
+  Amp + Cab, Cab, Overdrive, Fuzz, Compressor. A ninth value, `8`, is in use by
+  102 factory V2 captures, all drive and distortion pedals, and the filter offers
+  no category for it. Those captures list normally with no filter applied.
 
 ### Closed, with where the answer lives
 
 | was open | outcome |
 |---|---|
-| Device-wide broadcast sweep | swept; all eight action categories captured |
-| Echo latencies for the unmeasured write types | `tests/hardware/test_write_echo.py`; the two previously measured types are the two slowest |
+| Device-wide push sweep | swept; all eight action categories captured |
+| Echo latencies for the unmeasured write types | `tests/hardware/test_write_echo.py`; `protocol.md` section 12.3 |
 | Writes during standby | honoured, and they survive the wake |
-| Bank size, 8 versus 4 | 8, and 4 under a PRESET hybrid - and slot NAMES are mode-dependent, so `slot_to_position` speaks the non-hybrid naming |
-| Scene name and colour writes | `SceneLabel` / `SceneColor`. An edit made on the unit re-broadcasts all eight. A host write was observed echoing only the index it wrote, as two identical messages - one capture of one label write, so treat the count as indicative and the "only the written index" half as the load-bearing part |
+| Bank size, 8 versus 4 | 8, and 4 under a `PRESET` hybrid; slot names are mode-dependent |
+| Scene name and colour writes | `SceneLabel` and `SceneColor`. An edit made on the unit re-sends all eight; a host write echoes only the index it wrote |
 | Scene copy and swap | `SceneCopy{from_index, to_index, is_swap}` |
 | The three ExpressionBypass fields | `invert`, `delay_ms` in real milliseconds, `latch_emulation` |
-| `SCENE BYPASS BEHAVIOR` persistence | a host write counts as a touchscreen edit; see `protocol.md` |
+| SCENE BYPASS BEHAVIOR persistence | a host write counts as a touchscreen edit; `protocol.md` section 11.1 |
 | `FileMessage.type` | 0 presets, 1 IRs, 2 captures |
-| `stomp.momentary` | real, host-writable, and only on a footswitch driving ONE block |
-| The footswitch HOLD action | not an assignable action - `hold_timing` is a threshold for the unit's fixed hold gestures |
+| `stomp.momentary` | real, host-writable, and only on a footswitch driving one block |
+| The footswitch HOLD action | not an assignable action; `hold_timing` is a threshold for the unit's fixed hold gestures |
 | Assign Looper X Actions | `GeneralSettings.looper_stomp_assignments`, global, indexed by footswitch |
 | I/O device variant | `Version.is_ess`, subject to the caveat above |
 | Capture metadata | `ProductData.instrument` and `.device`, subject to the caveat above |
 | Master volume | writable; the recorded refusal was a stale read |
-| Per-preset tempo MODE | **closed 2026-08-12.** `GlobalTempo.params[1]`: `0.0` PRESET, `1.0` GLOBAL. Readable and writable - `tempo_mode()` / `set_tempo_mode()`. Reopened one release earlier on the argument that three tests proving the unit never BROADCASTS it had been over-read as "not on the wire"; asking found it. It is a DEVICE setting, so `Tempo.mode` is an ordinary property and ADR-0007's refusal no longer applies to it (ADR-0010) |
+| Tempo `MODE` | `GlobalTempo.params[1]`: `0.0` `PRESET`, `1.0` `GLOBAL`, readable and writable. A device setting, so `Tempo.mode` is an ordinary property (ADR-0010) |
 
-### Two method notes this round earned
+Two method notes. **A read straight after a write returns the previous value**; it
+produced the master-volume "refusal" that stood for releases. **A flawlessly
+repeatable negative is the instrument**: a host bypass write read as "discarded"
+in all three behaviour modes because `ColBypass.column` has no presence and reads
+0 on every entry, so a filter on it matched nothing. Any measurement that is
+recorded deserves a control.
 
-**A read straight after a write returns the previous value.** It produced the master-volume
-"refusal" that stood as a measured fact for releases, and it produced two wrong conclusions
-in the session that overturned it. Reconnect, or wait, before believing a read-back.
-
-**A flawlessly repeatable negative is the instrument.** The fourth instance: a host bypass
-write read as "discarded" in all three behaviour modes, including the one where a
-touchscreen edit demonstrably persists. The cause was `ColBypass.column` having no presence
-and reading 0 on every entry, so a filter on it matched nothing and the reader returned a
-constant. Any measurement worth recording deserves a control - `test_write_echo.py` now
-carries one permanently.
 ---
 
 # Appendix - manual feature audit
 
 Every feature the manual describes, mapped to the model or explicitly omitted.
-**Protocol** is the current reachability from [`manual-coverage.md`](manual-coverage.md)
-(*yes* / *partly* / *no* / *n/a*); *unaudited* marks features this design pass found
-missing from that audit. (*open* - understood on the unit but not yet drivable, ADR-0007 -
-is defined and currently unused: its only holder, TEMPO MODE, closed on 2026-08-12.) An
-omission with a protocol path of *no* becomes reachable work only after the protocol layer
-grows the path - closing wire gaps is separate work.
+**Protocol** is the current reachability from
+[`manual-coverage.md`](manual-coverage.md) (*yes*, *partly*, *no*, *n/a*);
+*unaudited* marks features this design pass found missing from that audit. An
+omission with a protocol path of *no* becomes reachable work only after the
+protocol layer grows the path.
 
-Manual chapters 1-2 (welcome, hardware overview), 7 (plugin compatibility tables), 9's
-host-side audio setup, and 12 (specs, regulatory) describe physical hardware, host
-concerns, or reference text with nothing for a host API to model; they are covered by
-the n/a rows below where they intersect the API at all.
+Manual chapters 1 and 2 (welcome, hardware overview), 7 (plugin compatibility
+tables), 9's host-side audio setup, and 12 (specs, regulatory) describe physical
+hardware, host concerns or reference text with nothing for a host API to model.
 
 ## Chapter 3 - Global controls, quick start
 
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
 | Power on/off, reboot, Be Right Back, lock | - | n/a | physical power button; the wire refuses `power_option` as a command |
-| Master Volume level | `device.master_volume.level` | yes | writable, contrary to what this row said for several releases - the "accepted and ignored" measurement was a stale read. A separate gain stage downstream of the port levels, so writing it changes no `IOSettings` level. The model should reject anything outside 0..1, as the library now does |
+| Master Volume level | `device.master_volume.level` | yes | writable. A separate gain stage downstream of the port levels |
 | Master Volume output assignment | `device.master_volume.outputs` | yes | |
-| Master Volume knob function | `system.master_volume_knob` | yes | the manual documents this row under ch. 10 System Settings, not ch. 3 |
+| Master Volume knob function | `system.master_volume_knob` | yes | the manual documents this under ch. 10 System Settings |
 | Footswitch presses, touch gestures, encoders | - | n/a | physical controls |
 | Recall a preset | `item.recall()`, `device.recall("28C")` | yes | |
-| Bank navigation / Blinking Mode | `PresetAddress` addressing covers the destination | yes | Blinking Mode itself is a footswitch UI flow, n/a |
-| Tuner menu open/close | `device.tuner.visible` | partly | accepted on the wire; on-screen effect not yet eyeballed |
+| Bank navigation / Blinking Mode | `PresetAddress` covers the destination | yes | Blinking Mode itself is a footswitch UI flow, n/a |
+| Tuner menu open/close | `device.tuner.visible` | partly | accepted on the wire; on-screen effect not yet seen |
 | Tuner reference pitch | `device.tuner.reference_hz` | yes | displayed Hz; wire stores offset from 440 |
-| Tuner input source | `device.tuner.source` | yes | `RETURN_1_2` refused by the device itself |
+| Tuner input source | `device.tuner.source` | yes | `RETURN_1_2` refused by the unit itself |
 | Tuner mute | `device.tuner.muted` | yes | |
-| Live Tuner (streaming needle) | **omitted** | no | the device refuses `enable_meter` from a host; unsupported by decision |
-| Tempo (BPM) | `device.tempo.bpm` | yes | the tempo in effect. Which scope it comes from is the unit's business, and depends on the MODE row below. Both blocks exist at once: measured 111 bpm from the preset's and 120 from the device's on the same unit, minutes apart |
-| Tempo MODE (Global vs Preset) | `device.tempo.mode` | yes | `GlobalTempo.params[1]`, `0.0` PRESET and `1.0` GLOBAL, readable and writable (`tempo_mode()` / `set_tempo_mode()`). A **device** setting despite riding a tempo message: it affects every preset and there is nothing to save. Never broadcast, which is why three earlier tests found nothing and why only a READ finds it. M3 with the rest of `Tempo` |
-| Tap tempo | **omitted** | no | a `GlobalTempo` READ carries the 25 tempo parameters, and none of the 23 attributed ones is a tap; indices 23 and 24 are unattributed, so this is not quite a closed door. MIDI CC#44 is the documented route |
+| Live Tuner (streaming needle) | **omitted** | no | the unit refuses `enable_meter` from a host; unsupported by decision |
+| Tempo (BPM) | `device.tempo.bpm` | yes | the tempo in effect; which block it comes from depends on `MODE` |
+| Tempo `MODE` (Global vs Preset) | `device.tempo.mode` | yes | `GlobalTempo.params[1]`, readable and writable. A device setting. M3 with the rest of `Tempo` |
+| Tap tempo | **omitted** | no | none of the 23 attributed tempo parameters is a tap; indices 23 and 24 are unattributed. MIDI CC#44 is the documented route |
 | Tempo LED | `device.tempo.led` | yes | |
 | Metronome volume/playback/pan/T-sig/subdivisions/sound/routing | `device.tempo.metronome.*` | yes | full enums for all four option lists |
-| Per-scene tempo (Cortex Control's bottom bar claims it) | **omitted** | n/a | the unit has no per-scene tempo; `scene_tempo` is inert on the wire. On-unit presentation wins |
+| Per-scene tempo (Cortex Control's bottom bar claims it) | **omitted** | n/a | the unit has no per-scene tempo; `scene_tempo` is inert on the wire |
 | Modes: read/set active | `device.modes.active` | yes | |
-| Modes: reorder / merge to HYBRID / remove | `device.modes.set_cycle()` | yes | all six ordered hybrid pairings modeled; device enforces its own cycle rules |
-| PRESET / SCENE / STOMP mode semantics | covered by `PresetAddress`, `Scene`, `Stomps` | yes | the modes are footswitch behavior; their objects are modeled where state lives |
+| Modes: reorder / merge to HYBRID / remove | `device.modes.set_cycle()` | yes | all six ordered hybrid pairings modelled |
+| PRESET / SCENE / STOMP mode semantics | covered by `PresetAddress`, `Scene`, `Stomps` | yes | |
 | Scene recall | `scene.activate()` | yes | |
-| Scene assignment of a parameter (tap-and-hold) | `param.follows_scenes` | yes | flag must travel alone on the wire - absorbed |
+| Scene assignment of a parameter (tap-and-hold) | `param.follows_scenes` | yes | the flag must travel alone on the wire; absorbed |
 | Default scene on save | `default_scene=` on save methods | yes | set by saving in that scene, as on the unit |
 | Scenes dropdown | `preset.scenes` | yes | |
 | Stomp assignment (see ch. 4) | `preset.stomps` | yes | |
 | Gig View open/close | `device.gig_view` | yes | |
-| Gig View EDIT SCENE (name, color) | `scene.name`, `scene.color` | yes | both write as `SceneLabel` / `SceneColor`; an edit made on the unit sends all eight scenes (a host write echoes only the index it wrote) |
-| Gig View SWAP SCENE / COPY SCENE | `scene.copy_from()` / `scene.swap_with()` | yes | one message: `SceneCopy{from_index, to_index, is_swap}`. Copying selects the destination scene, which is where the label side effect comes from |
+| Gig View EDIT SCENE (name, colour) | `scene.name`, `scene.color` | yes | `SceneLabel` and `SceneColor` |
+| Gig View SWAP SCENE / COPY SCENE | `scene.copy_from()`, `scene.swap_with()` | yes | one message: `SceneCopy{from_index, to_index, is_swap}`; the label and colour travel with the state |
 | Gig View EDIT STOMP | `stomp.label`, `stomp.targets` | yes | |
-| I/O: input LEVEL / IMPEDANCE / TYPE | `io.inputs[...]` | yes | fields travel one per message - absorbed |
-| I/O: no TYPE switch on ESS-codec units | `InputPort.input_type` is `None` there | unaudited | the manual notes first-generation units show TYPE and ESS-codec ones do not; the variant is not readable yet, see [§13](#13-still-open) |
+| I/O: input LEVEL / IMPEDANCE / TYPE | `io.inputs[...]` | yes | fields travel one per message; absorbed |
+| I/O: no TYPE switch on ESS-codec units | `InputPort.input_type` is `None` there | unaudited | the variant is `Version.is_ess`; see [section 13](#13-still-open) |
 | I/O: PHANTOM 48V | **omitted** | no | no field exists in the recovered schema |
-| I/O: output LEVEL / GROUND LIFT / MUTE | `io.outputs[...]` | yes | mute travels alone - absorbed |
+| I/O: output LEVEL / GROUND LIFT / MUTE | `io.outputs[...]` | yes | mute travels alone; absorbed |
 | I/O: output pairing | `io.output_pairs[...].linked` | yes | |
-| I/O: USB LEVEL / HP SOURCE / DRY-WET / MIDI THRU | `io.usb` | yes | headphone output's own level is not writable anywhere. MIDI THRU is listed on this screen and under Device MIDI; one field, both paths |
-| I/O: EXP 1 / EXP 2 ports | `io.expression[...]` | partly | POSITION streams as `exp_port.level`. RECALIBRATE is observable - the flow broadcasts `exp_port{exp_port_id, calibrating: true}` then `false` - but has never been driven from a host |
-| Global EQ: bypass, 5 bands, output assignment | `io.global_eq` | yes | whole 28-index layout mapped. The manual reaches it by tapping GLOBAL EQ at the top of I/O Settings, so it nests under `io` |
-| Global EQ: OUT tab overall level | **omitted** | partly | control reachable but its dB mapping is unverified - omission over caveat |
+| I/O: USB LEVEL / HP SOURCE / DRY-WET / MIDI THRU | `io.usb` | yes | the headphone output's own level is not writable anywhere |
+| I/O: EXP 1 / EXP 2 ports | `io.expression[...]` | partly | POSITION streams as `exp_port.level`. RECALIBRATE announces `exp_port{exp_port_id, calibrating}` and has never been driven from a host |
+| Global EQ: bypass, 5 bands, output assignment | `io.global_eq` | yes | whole 28-index layout mapped |
+| Global EQ: OUT tab overall level | **omitted** | partly | reachable, and its dB mapping is unverified |
 
 ## Chapter 4 - The Grid
 
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
 | Grid layout: 4 rows x 8 slots | `preset.rows`, `preset.blocks[r, c]` | yes | 1-based, as on screen |
-| Virtual Device List: browse by category | `device.virtual_devices` | yes | the device's own repository |
-| Virtual Device List: search | client-side over `device.virtual_devices` | n/a | iteration makes it a Python expression |
+| Virtual Device List: browse by category | `device.virtual_devices` | yes | the unit's own catalog |
+| Virtual Device List: search | client-side over `device.virtual_devices` | n/a | |
 | Pin/unpin a device | `virtual_devices.pin()/unpin()`, `.pinned` | yes | append-not-replace quirk absorbed |
 | Place / replace a block | `row.place()`, `block.replace()` | yes | acceptance verified by the model |
 | Remove a block | `block.remove()` | yes | |
 | Move a block (drag) | `block.move_to()` | yes | cross-row move creates a branch, as on screen |
 | DSP capacity refusal | `CapacityError` | partly | detected not predicted; no headroom read exists |
 | CPU Monitor | **omitted** | no | `CPULoad` never arrives on the wire |
-| Global EQ / Input Gate auto-disable under load | `global_eq.auto_disabled` (and gate equivalent) | partly | `CompilerInhibitedModules` arrives on grid edits; surfacing it is new API |
+| Global EQ / Input Gate auto-disable under load | `global_eq.auto_disabled` (and gate equivalent) | partly | `CompilerInhibitedModules` arrives on grid edits |
 | Input blocks: assign input source | `row.input.source` | yes | |
-| Input Gate Control | `row.input.gate` | yes | per scene; GAIN REDUCTION is a meter, n/a |
+| Input Gate Control | `row.input.gate` | yes | per scene; `GAIN REDUCTION` is a meter, n/a |
 | Output blocks: assign destination | `row.output.destination` | yes | rows, sends, USB, Multi-Out |
 | Lane Output Control | `row.output.lane` | yes | absent when routed to another row, as on screen |
 | Block bypass | `block.bypassed` | yes | per scene via the binding |
-| Parameter knobs / dropdowns / switches | `KnobParam` / `ChoiceParam` / `SwitchParam` | yes | display units; options from the preset's own lists |
-| Special parameters (Cabs, Looper X full-screen editors) | same `Params` surface | yes | no confirmed `TextParam` yet - the manual calls a cab's microphone *selectable*, not typed |
-| Side-chain SOURCE/TRIGGER | a `ChoiceParam[Source]` on (S/C) blocks | yes | ordinary parameter on the wire too |
-| Splitter & Mixer: create / activate | `row.create_split()` | yes | |
-| Splitter parameters (TYPE/STEREO/BALANCE/LEVELS/FREQ/MODE) | `split.splitter.params` | yes | |
-| Mixer parameters (LEVELS/PANS/PHASE/MIXER LEVEL) | `split.mixer.params` | yes | |
-| Splitter/Mixer MUTE | `split.muted` | yes | one shared control - the wire confirms it |
+| Parameter knobs / dropdowns / switches | `KnobParam`, `ChoiceParam`, `SwitchParam` | yes | display units; options from the preset's own lists |
+| Special parameters (Cabs, Looper X full-screen editors) | same `Params` surface | yes | no confirmed `TextParam` yet |
+| Side-chain SOURCE/TRIGGER | a `ChoiceParam[Source]` on (S/C) blocks | yes | an ordinary parameter on the wire too |
+| Splitter and Mixer: create / activate | `row.create_split()` | yes | |
+| Splitter parameters | `split.splitter.params` | yes | |
+| Mixer parameters | `split.mixer.params` | yes | |
+| Splitter/Mixer MUTE | `split.muted` | yes | one shared control; the wire confirms it |
 | Where a row branches and rejoins | `row.split`, branch topology on `Row` | yes | |
-| Footswitch (Stomp) assignment | `preset.stomps` | yes | multiple blocks per switch modeled |
+| Footswitch (Stomp) assignment | `preset.stomps` | yes | multiple blocks per switch modelled |
 | Stomp label | `stomp.label` | yes | |
-| Stomp momentary | `stomp.momentary` | yes | RESTORED to the model. The manual never mentions it, but the unit's Assign footswitch modal has a Latching/Momentary toggle. Settable only when the switch drives ONE block - the device refuses multi-block switches silently, and the model should refuse them honestly |
-| Expression pedal assignment (MIN/MAX, reverse) | `grid.pedals`, `block.pedals` | yes | READ ONLY at M1, matching #13's scope. Reversal by min>max, as documented, and reported through `reversed` rather than sorted away. Hung off the GRID rather than `param.expression` because there is no `Parameter` object yet - #13 builds that and can delegate here. With no device attached the sweep stays the wire's 0..1 and `in_real_units` says so |
-| Expression bypass: three modes | `block.expression_bypass.mode` | yes | wire order differs from the manual's listing - absorbed |
-| Expression bypass: INVERT RANGE / SWITCH DELAY / LATCH EMULATION | `bypass.invert`, `bypass.switch_delay_ms`, `bypass.latch_emulation` | yes | `ExpressionBypassInfo{invert, delay_ms, latch_emulation}`; `delay_ms` is real milliseconds. SWITCH DELAY is greyed out in Switch mode, so it applies to Heel-Toe and Stop only, and LATCH EMULATION is greyed out in Heel-Toe mode - the two are mutually exclusive in the modes measured |
+| Stomp momentary | `stomp.momentary` | yes | settable only when the switch drives one block; the unit refuses multi-block switches silently |
+| Expression pedal assignment (MIN/MAX, reverse) | `grid.pedals`, `block.pedals` | yes | read only at M1. Reversal by min > max, reported through `reversed`. With no unit attached the sweep stays the wire's 0..1 and `in_real_units` says so |
+| Expression bypass: three modes | `block.expression_bypass.mode` | yes | wire order differs from the manual's listing; absorbed |
+| Expression bypass: INVERT RANGE / SWITCH DELAY / LATCH EMULATION | `bypass.invert`, `bypass.switch_delay_ms`, `bypass.latch_emulation` | yes | `delay_ms` is real milliseconds; the mode decides which of the two exist |
 | Expression pedal calibration | **omitted** | no | global setting; candidate `IOSettings`, unexplored |
 | Set Parameters as Defaults | **omitted** | no | `DefaultParameters` decoded, never written |
-| Looper X: place the block | `row.place()` - an ordinary virtual device | yes | |
+| Looper X: place the block | `row.place()` | yes | |
 | Looper X: parameters | `LooperBlock.params` | yes | |
 | Looper X: transport actions | **omitted**; `LooperBlock.state` is readable | partly | transport is not drivable over USB; MIDI CC#48-61 is the documented route |
-| Assign Looper X Actions (footswitch layout) | `device.settings.looper_actions` | yes | `GeneralSettings.looper_stomp_assignments` - GLOBAL, not per preset. Eight entries indexed by footswitch, each the Looper X parameter index. The MIDI CC follows the action, not the switch |
-| Undo / redo | **omitted** | no | `UndoRedo` arrives as an acceptance signal only; never driven |
+| Assign Looper X Actions (footswitch layout) | `device.settings.looper_actions` | yes | `GeneralSettings.looper_stomp_assignments`, global. The MIDI CC follows the action, not the switch |
+| Undo / redo | **omitted** | no | `UndoRedo` arrives as an acceptance signal; drivable, and not modelled |
 
 ## Chapter 5 - The Directory
 
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
-| Directory navigation, categories | `device.setlists` / `.captures` / `.irs` | yes | |
-| Favorites | `device.favorites`, `item.favorite` | yes | the manual favorites *items*, including Plugin Presets - so not presets only |
+| Directory navigation, categories | `device.setlists`, `.captures`, `.irs` | yes | |
+| Favorites | `device.favorites`, `item.favorite` | yes | the manual favorites *items*, including Plugin Presets |
 | Recents | `device.recents` | yes | |
-| Factory / My Presets setlists | `setlists.factory` / `.my_presets` | yes | non-deletable, so no `delete()` on them |
+| Factory / My Presets setlists | `setlists.factory`, `.my_presets` | yes | non-deletable, so no `delete()` on them |
 | User setlists: create / rename / delete | `setlists.create()`, `setlist.rename()/.delete()` | yes | |
-| Banks | `PresetAddress` | yes | 8 per bank, 4 under a PRESET-containing HYBRID - chapter 3 is right, chapter 5 is halved. Slot NAMES are therefore mode-dependent: linear position 5 is "1F" normally and "2B" under the hybrid, so an address is only unambiguous alongside the mode |
+| Banks | `PresetAddress` | yes | 8 per bank, 4 under a `PRESET`-containing HYBRID; slot names are mode-dependent |
 | Downloads / Cloud Presets categories | listing only, if discoverable | no | cloud surfaces are out of scope without owner permission |
 | Save (in place) | `UserPreset.save()` | yes | |
 | Save As | `preset.save_as()` | yes | works from factory presets, as on the unit |
-| Unsaved-changes indicator (italic name) | `preset.has_unsaved_changes` | partly | display rule is clear; detection mechanics in [§11](#11-the-save-lifecycle) |
-| Preset descriptive tags | **omitted** | n/a | not a manual feature at all ("tag" appears nowhere); listed because factory presets carry them on the wire and no save path preserves them - the unit's own Save As strips them |
-| Preset description / author / cloud id | **omitted** | no | writes ignored; author stamped by the device from the signed-in account |
+| Unsaved-changes indicator (italic name) | `preset.has_unsaved_changes` | partly | detection mechanics in [section 11](#11-the-save-lifecycle) |
+| Preset descriptive tags | **omitted** | n/a | factory presets carry them on the wire and no save path preserves them |
+| Preset description / author / cloud id | **omitted** | no | writes ignored; author stamped by the unit from the signed-in account |
 | Preset volume and pan fields | **omitted** | n/a | inert fields; the unit has no control for them |
 | Move a preset | `item.move_to()` | yes | same-setlist observed so far |
-| Copy / duplicate a preset | `item.copy_to()` | partly | recall-and-save under the hood, seconds per preset; the model says so in its docs |
-| Rename a preset | `item.rename()` | yes | the manual lists store / edit / rename / move together |
-| Delete a preset | `item.delete()` | yes | eventually consistent on the wire - absorbed |
-| Bulk actions (multi-select) | Python iteration over items | partly | no host-drivable bulk op; per-item calls; `duplicate_setlist()` composes |
+| Copy / duplicate a preset | `item.copy_to()` | partly | recall-and-save under the hood, seconds per preset |
+| Rename a preset | `item.rename()` | yes | |
+| Delete a preset | `item.delete()` | yes | eventually consistent on the wire; absorbed |
+| Bulk actions (multi-select) | Python iteration over items | partly | no host-drivable bulk op |
 | Sorting | client-side | n/a | |
-| Bank View / List View | **omitted** | n/a | two named Directory views; a display mode with no state a host can read or set |
+| Bank View / List View | **omitted** | n/a | a display mode with no state a host can read or set |
 | Search (incl. recent searches) | client-side over listings | no | on-wire search unexplored (`RecentSearches`) |
 | Filtering captures by category | client-side over `captures` | n/a | |
 | Neural Captures: list | `device.captures` | yes | Factory V1/V2 and My Captures |
 | Load a capture onto the grid | `row.place(col, capture)` | yes | |
 | Captures: rename / delete / manage | **omitted** | no | candidate `File`, unexplored |
 | Capture/IR folders, subfolders, saving destination | **omitted** (flat listing) | no | folder management unexplored |
-| IRs: list | `device.irs` | yes | plugin-asset IRs excluded - the unit cannot load them |
-| IRs: load into an IR Loader | `IRLoaderBlock.slots[n].ir` | yes | two slots; keyed by library id, name travels separately - absorbed |
-| Plugin Presets folders | `PluginPresetItem` listing only | no | candidates `License`/`CloudProduct` |
+| IRs: list | `device.irs` | yes | plugin-asset IRs excluded; the unit cannot load them |
+| IRs: load into an IR Loader | `IRLoaderBlock.slots[n].ir` | yes | two slots; keyed by library id, name travels separately; absorbed |
+| Plugin Presets folders | `PluginPresetItem` listing only | no | candidates `License`, `CloudProduct` |
 | Upload to Cortex Cloud | **omitted** | no | cloud surface; owner permission required |
 
 ## Chapter 6 - Neural Capture
 
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
-| Run a capture (v1 wizard) | **omitted** | no | the unit hands the flow to a connected host, suppressing the on-device wizard - a hazard, not a feature, until fully understood |
-| Capture v2 (via Cortex Control + cloud) | **omitted** | no | flow unexplored; also a cloud surface |
+| Run a capture (v1 wizard) | **omitted** | no | the unit hands the flow to a connected host, suppressing the on-device wizard |
+| Capture v2 (via Cortex Control and cloud) | **omitted** | no | flow unexplored; also a cloud surface |
 | Calibration / A-B test / metadata | **omitted** | no | |
 | Physical connection for capture | - | n/a | cabling |
 
@@ -1350,8 +1146,8 @@ the n/a rows below where they intersect the API at all.
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
 | Controlling the unit over MIDI (PC, CC#0-62) | - | n/a | this library speaks USB HID; the MIDI map is the manual's ch. 8 |
-| MIDI settings: channel / Thru / over USB / ignore dup PC / clock | `device.settings.midi` | partly | all confirmed writable except `internal_midi_clock_enabled`, which refuses writes - that one field is omitted |
-| Preset MIDI Out: footswitch / expression / on-load | `preset.midi_out` | yes | CC, CC Toggle, and PC message types modeled |
+| MIDI settings: channel / Thru / over USB / ignore dup PC / clock | `device.settings.midi` | partly | all writable except `internal_midi_clock_enabled`, which is omitted |
+| Preset MIDI Out: footswitch / expression / on-load | `preset.midi_out` | yes | CC, CC Toggle and PC message types modelled |
 
 ## Chapter 10 - Device Settings menu (System and Device sections)
 
@@ -1359,22 +1155,22 @@ the n/a rows below where they intersect the API at all.
 |---|---|---|---|
 | Account settings, cloud backups | **omitted** | no | cloud surface; owner permission required |
 | Wi-Fi / connectivity | **omitted** | no | unexplored |
-| CorOS updates | **omitted** - permanently | no | the `Updater` surface is out of scope for good (see STEERING) |
-| BRIGHTNESS (screen and LED) | `system.brightness` | yes | System Settings. Unit quantizes; dimmed stays below LED - device rules, reported as read back. The third *dimmed-LED* field is wire-derived, not a manual row |
+| CorOS updates | **omitted**, permanently | no | the `Updater` surface is out of scope for good |
+| BRIGHTNESS (screen and LED) | `system.brightness` | yes | the unit quantizes; dimmed stays below LED |
 | Power button sensitivity | **omitted** | no | refused as a command by the wire |
-| MASTER VOLUME KNOB (global vs output-specific) | `system.master_volume_knob` | yes | System Settings |
-| DEVICE STORAGE | `system.storage` | yes | System Settings; read-only |
-| Factory reset | **omitted** - permanently | n/a | destructive; not a host operation |
+| MASTER VOLUME KNOB (global vs output-specific) | `system.master_volume_knob` | yes | |
+| DEVICE STORAGE | `system.storage` | yes | read-only |
+| Factory reset | **omitted**, permanently | n/a | destructive; not a host operation |
 | GLOBAL BYPASS (Cab / IR per row) | `settings.global_bypass` | yes | |
-| SCENE BYPASS BEHAVIOR (3 modes) | `settings.scene_bypass_behavior` | yes | a HOST write counts as a touchscreen edit: it survives *footswitch presses not saved* and dies under *no changes are saved*. The unit's own wording groups MIDI with footswitches |
+| SCENE BYPASS BEHAVIOR (3 modes) | `settings.scene_bypass_behavior` | yes | a host write counts as a touchscreen edit |
 | STOMP MODE BYPASS | `settings.stomp_mode_bypass` | yes | |
-| HOLD TIMING | `settings.hold_timing_ms` | yes | milliseconds in the API; the wire stores an index - absorbed |
-| The footswitch HOLD action being timed | **omitted** - correctly | n/a | there is no assignable hold action. HOLD TIMING is the threshold for the unit's FIXED hold gestures (TEMPO to Tuner, BANK DOWN + TEMPO to Gig View, touchscreen tap-and-holds); a held stomp emits an ordinary press |
+| HOLD TIMING | `settings.hold_timing_ms` | yes | milliseconds in the API; the wire stores an index; absorbed |
+| The footswitch HOLD action being timed | **omitted**, correctly | n/a | there is no assignable hold action; HOLD TIMING is the threshold for the unit's fixed hold gestures |
 | SWAP TEMPO AND TUNER | `settings.swap_tempo_and_tuner` | yes | |
 | GIG VIEW ACCESS | `settings.gig_view_access` | yes | |
 | LATENCY COMPENSATION | `settings.latency_compensation` | yes | |
 | MIDI submenu | `settings.midi` | partly | see ch. 8 row |
-| Device name | **omitted** | no | candidates `Serialization`/`GeneralSettings`, unexplored |
+| Device name | **omitted** | no | candidates `Serialization`, `GeneralSettings`, unexplored |
 | Firmware and serial (Device Information) | `device.firmware`, `device.serial` | yes | |
 | Diagnostics / Send Report | **omitted** | no | decoded but never driven |
 | 3rd-party licenses | - | n/a | reference text |
@@ -1383,586 +1179,151 @@ the n/a rows below where they intersect the API at all.
 
 | Manual feature | Model surface | Protocol | Notes |
 |---|---|---|---|
-| USB audio channels, DI vs processed, host monitoring | `io.usb` covers the on-unit controls | partly | channel-map routing choices live in unexplored `IOSettings`; host driver/DAW concerns are n/a |
+| USB audio channels, DI vs processed, host monitoring | `io.usb` covers the on-unit controls | partly | channel-map routing lives in unexplored `IOSettings`; host driver and DAW concerns are n/a |
 | Everything Cortex Control mirrors from the unit | the same objects above | n/a | this library is an alternative client to the same protocol |
 | CC-only: device name display/edit | **omitted** | no | see Device name row |
 | CC-only: per-scene tempo claim | **omitted** | n/a | contradicts the unit; on-unit presentation wins |
-| CC-only: preset / plugin-preset / IR import from computer | **omitted** | no | candidate `File` with payloads; the import flow is unsolved (and IR import probing is hazardous - see CLAUDE.md) |
+| CC-only: preset / plugin-preset / IR import from computer | **omitted** | no | candidate `File` with payloads; the import flow is unsolved and IR-import probing is hazardous (see `CLAUDE.md`) |
 | CC-only: local backups | **omitted** | yes | protocol layer: `create_local_backup()`; no model wrapper yet |
-| CC-only: CorOS update via USB | **omitted** - permanently | no | `Updater` |
+| CC-only: CorOS update via USB | **omitted**, permanently | no | `Updater` |
 | CC-only: keyboard shortcuts, window sizing | - | n/a | app UI |
 | CC-only: undo/redo shortcuts | **omitted** | no | see Undo/redo row |
 
 ---
 
-## Catalog attributes we can see and cannot yet explain
+## Catalog attributes
 
-The device puts **24** distinct attributes on its `<Parameter>` elements.
-Seventeen are parsed. These are the other seven, recorded so the next person does
-not have to rediscover that they exist. None is guessed at, per the rule that a control we do
-not understand is omitted with the reason written down.
+The unit puts 24 distinct attributes on its `<Parameter>` elements. Seventeen are
+parsed. What follows is what is known about the ones that matter to a caller, and
+the seven that are not yet explained. Counts are from the CorOS 4.0.1 catalog,
+3,809 parameters. Nothing here is guessed at: a control we do not understand is
+omitted with the reason written down.
 
-The counts are from the shipped CorOS 4.0.1 catalog, 3,809 parameters.
+### Unexplained
 
 | attribute | on | what it looks like, and what is unknown |
 |---|---|---|
-| `replaces` | 462 | Also distinct from the `<Model>` attribute of the same name, which we do parse. On a parameter it presumably names a superseded index, which would matter for reading an old preset - untested. |
-| `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, **212 parameters between them** | `toggleOn` carries a number (`4`, `5`, `6`) on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a PAIR (`"0,1"`, `"1,2"`). The obvious reading is the two values a footswitch toggle alternates between - obvious, and untested. Driving one and watching the screen would settle it. |
-| `tooltip` | 126 | The help text the unit shows. Real prose, occasionally load-bearing: a Vibrato's `MODE` warns that changing it causes a brief mute. Note the values contain HTML (`<div align="left">`), which is where an `align` "attribute" appears - it is markup inside the tooltip, not an attribute of the parameter. |
-| `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name (`"NG_412 Plini Cab_Dynamic 57"`), sometimes a token (`"eltron_self_test"`). |
-| `isplayPos` | 1 | `displayPos` with the `d` missing. The device's own typo. Recorded rather than silently accepted as an alias, because a parser that took both would hide that the catalog has a defect. |
-
-### `showAsInteger` says how the unit's numeric entry behaves
-
-Parsed since the catalog work and read for the first time on 2026-09-12, when it
-turned out to answer the Off-detent question outright. A parameter carrying it
-takes WHOLE numbers in the unit's entry box; one without it takes two decimal
-places. Ten for ten across everything driven, and it is what makes a cab HPF's
-lowest real value 21 Hz where a lane VOLUME's is -39.99 dB.
-
-The entry box also states exactly `min`..`max` - eight for eight - which is the
-fact that removed a hand-measured table. See `protocol.md`.
+| `replaces` | 462 | Distinct from the `<Model>` attribute of the same name. On a parameter it presumably names a superseded index, which would matter for reading an old preset. Untested |
+| `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, 212 parameters between them | `toggleOn` carries a number on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a pair (`"0,1"`). The obvious reading is the two values a footswitch toggle alternates between. Untested |
+| `tooltip` | 126 | The help text the unit shows. Real prose, sometimes with content: a Vibrato's `MODE` warns that changing it causes a brief mute. The values contain HTML |
+| `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name, sometimes a token |
+| `isplayPos` | 1 | `displayPos` with the `d` missing. The catalog's own typo, recorded rather than silently accepted as an alias |
 
 ### `type` names the widget, and two of its values are readouts
 
-`type` has been parsed all along (`Parameter.type`) and never read for meaning.
-It is worth reading. Across the 4.0.1 catalog it takes twelve values: `float`
-2618, `switch` 461, `string` 396, `rotarySwitch` 140, `fader` 48, `int` 44,
-`comboBox` 34, `grMeter` 39, `empty` 16, `meter` 8, `toggleButton` 3,
-`floatWithLed` 2.
+Across the catalog `type` takes twelve values: `float` 2618, `switch` 461,
+`string` 396, `rotarySwitch` 140, `fader` 48, `int` 44, `comboBox` 34, `grMeter`
+39, `empty` 16, `meter` 8, `toggleButton` 3, `floatWithLed` 2.
 
 `grMeter` and `meter` are not controls. All 39 `grMeter` parameters are named
-`GAIN REDUCTION`, one per model across 39 delay and dynamics models, and the
-unit draws them as a moving readout: with no audio playing one sits at 0.0, and
-it flickers while something plays. A host write is STORED - wire 0.5 round-trips
-through the preset - and moves nothing on screen, which is the accept-and-ignore
-trap wearing its most convincing disguise, since the read-back looks like
-success.
+`GAIN REDUCTION`, one per model, and the unit draws them as a moving readout. A
+host write is stored (wire 0.5 round-trips through the preset) and moves nothing
+on screen. Whether `set_param` should refuse all 47 is open; ADR-0010 wants the
+capture before the refusal.
 
-This cost a hardware session on 2026-09-11. 20 of them share a law
-(-60..0 dB, skew 1) and carry `min_string="-Inf"`, so they came up as the
-second-largest group of Off detents to measure, and `type` said they were not
-knobs before anyone connected a cable. What the library does with the other 8
-`meter` parameters, and whether `set_param` should refuse all 47, is open -
-nothing has been driven, and ADR-0010 wants the capture before the refusal.
+### `showAsInteger` says how the unit's numeric entry behaves
 
-### `displayPos` is the catalog's PREDICTION of the screen's order
+A parameter carrying it takes whole numbers in the unit's entry box; one without
+it takes two decimal places. Ten for ten across everything driven. The entry box
+also states exactly `min`..`max`, which is what derives `Parameter.floor`
+([`protocol.md`](protocol.md) section 14.1).
 
-**Read twice, not proved, and not a structural fact.** Where a control is drawn
-is presentational by the rule in `CLAUDE.md`, so this is not something the
-library takes from the file on the file's word - it is the file's prediction,
-which has now been held against a screen twice and matched twice. Two models out
-of the 163 that place a visible control, with nothing re-driving it. A third
-reading that disagreed would unseat it, the way three disagreeing readings
-unseated the drawn order of an option list.
+### `displayPos` is the catalog's prediction of the screen's order
 
-The first was 2026-09-11 - a cab's four visible controls reading POSITION,
-DISTANCE, LEVEL, PAN on screen against a different wire order - after which it
-sat in the table above as "still unused here". The second was 2026-09-15 on a
-different model and a different kind of difference: a Solo 100 Lead was placed
-and its knobs read off the screen as GAIN, BASS, MID, TREBLE, PRESENCE, MASTER,
-OUTPUT. That is `displayPos` order; the wire lists MASTER before PRESENCE, so a
-single adjacent swap rather than a wholesale reordering.
+Where a control is drawn is presentational, so `Parameter.display_pos` is
+published as the catalog's prediction, held against a screen twice and matching
+twice: a cab's four visible controls on 2026-09-11, and a Solo 100 Lead on
+2026-09-15 (the screen shows `GAIN`, `BASS`, `MID`, `TREBLE`, `PRESENCE`,
+`MASTER`, `OUTPUT`; the wire lists `MASTER` before `PRESENCE`). A third reading
+that disagreed would unseat it.
 
-Now `Parameter.display_pos`. Of the 503 models a user can place - not hidden,
-not internal, not in a hidden category - 163 place at least one VISIBLE control
-and **142 of those disagree with wire order**, so anything describing a block to
-a person should sort by it rather than ignore it - which is why it is published
-despite resting on two readings. 340 of the 503 place none of their visible controls: 338
-carry the attribute nowhere at all, and two carry it only on a hidden parameter. Of the 163 that do place one, 23 place only SOME of their
-visible controls and one places two at the same number - so a sort is not a
-complete layout, and what the unit does with an unplaced control is unmeasured. These counts are from the 4.0.1 catalog. The whole
-`ModelRepo.xml` is not committed, so the offline suite has no catalog to count -
-`tests/fixtures/catalog/scales.json` carries raw attributes for a few dozen
-parameters, nowhere near enough for 163 or 142. A distilled counts fixture could
-pin them offline the way `scales.json` pins bounds, and deliberately does not:
-the numbers are only interesting as a description of the unit, so a committed
-copy would agree with itself forever while the device moved.
-`tests/hardware/test_option_structure_on_unit.py` asserts the population figures
-against the live catalog instead - 533 models, 503 placeable, 163/142 on the
-visible basis, 165/144 counting hidden parameters, 331 carrying `<Padding>` -
-which is where a firmware that changed them would show up. The shape figures
-below (23 placing only some, one placing two at a number) are NOT pinned and are
-prose only. Addressing a parameter still uses the
-index - `displayPos` is where a control is DRAWN, not what selects it.
+| population | count |
+|---|---|
+| models in the catalog | 533 |
+| models a user can place (not hidden, not internal, not in a hidden category) | 503 |
+| of those, placing at least one visible control | 163 |
+| of those, disagreeing with wire order | 142 |
+| placing only some of their visible controls | 23 |
+| placing two controls at the same number | 1 |
+| counting hidden parameters too: placing / disagreeing | 165 / 144 |
 
-### `<Padding>` is what a block reserves, and we do not know the budget
+So a sort by `display_pos` is not a complete layout, and what the unit does with
+an unplaced control is unmeasured. `tests/hardware/test_option_structure_on_unit.py`
+asserts the population figures against the live catalog. Addressing a parameter
+still uses the index.
 
-A child element rather than an attribute, which is why it was never in the table
-above: 331 of 533 models carry one, holding `cpu`, `dm_heap`, `pm_heap` and `sw`,
-and more rarely `dm`, `pm`, `sd_heap`, `nw`, `dm_hp`. The names are the device's.
+### `<Padding>` is what a block reserves, and the budget is unknown
 
-They behave like DSP reservations. On 2026-09-15 the loaded preset's free row was
-filled with a 0.15-`cpu` amp: two fitted and the third was refused, putting a
-ceiling between 8.10 and 8.25 by that column. That is as far as it goes, and not
-far enough to publish a capacity model - four of the fourteen blocks already on
-the grid carry no `<Padding>` at all, so the base is an undercount, and nothing
-establishes that `cpu` is the column that binds rather than one of the heaps. The
-Mono Synth is the awkward case: no `<Padding>` element, and the unit still refused
-to place it on a full grid, so an absent element is not a free block.
+A child element rather than an attribute. 331 of 533 models carry one, holding
+`cpu`, `dm_heap`, `pm_heap` and `sw`, and more rarely `dm`, `pm`, `sd_heap`, `nw`,
+`dm_hp`. `Model.resources` publishes the numbers under the catalog's own names and
+claims nothing more. On 2026-09-15 the loaded preset's free row was filled with a
+0.15-`cpu` amp: two fitted and the third was refused, putting a ceiling between
+8.10 and 8.25 by that column. Four of the fourteen blocks already on the grid
+carried no `<Padding>`, so the base is an undercount, and nothing establishes that
+`cpu` is the column that binds. The Mono Synth has no `<Padding>` and was still
+refused on a full grid. A caller still has to try the block and handle the refusal.
 
-So `Model.resources` publishes the numbers under the catalog's own names and
-claims nothing more. A caller still has to try the block and handle the refusal.
+### The option vocabulary is conveyed once per session, and the screen is a second renderer
 
-### The option names ARE conveyed, in the catalog, once per session
+Cortex Control reads the catalog as the third message type of every session,
+and the reply carries every `stepNames` string: reassembled from each of the three
+lab captures, it is a 556,732-byte `ModelRepo.xml` with 539 `stepNames`
+attributes, the same vocabulary in all three. So a host is handed the whole
+vocabulary about 1.2 seconds in. That is an observation of delivery; nobody here
+watched a host draw from it. Label text also crosses in `File`, since preset
+bodies carry `dynamic_steps`.
 
-The question was whether the words a person sees are sent anywhere - which
-matters, because if a model downloaded after Cortex Control shipped still shows
-the right names on a laptop, those names have to reach it somehow. Nobody here
-has watched a downloaded model, so that is the question rather than a finding.
+The unit renders the same data its own way. A 150-second capture while a person
+stepped through a Mono Synth's seven waveforms recorded 600 messages, every one
+the metronome tempo stream, and not one label: the unit holds the catalog too and
+had no need to send anything. On that tab the screen shortens the catalog's words
+and draws icons: `Sine` appears as `SIN` and `Pulse` as `PUL`.
 
-They do, and it is observed rather than inferred. The reply Cortex Control
-receives was taken out of the capture and read:
+**The shortening belongs to the control, not to the catalog's words.** A Flanger
+Engine's `WAVEFORM` offers `Sine`, `Triangle`, `Square`, `Saw Up`, `Saw Dn`,
+`rndSmooth` and `rndStep`, and the screen spells all seven out (read 2026-09-16,
+positions 0 and 3 driven from a host). The same word draws as `SIN` on the synth
+and as `Sine` on the Flanger. The short words are not in the file either: `WHT`,
+`PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte `ModelRepo.xml`, and
+the only hits for `SIN`, `TRI` and `PUL` are inside `SINGLE`,
+`TRIG`/`TRIM`/`TRIPLET` and `PULL`.
 
-- **Cortex Control fetches the catalog at connect, in every session.** It is
-  the THIRD message type of the session - after `ResetCommsBuffers` and
-  `Version`, before `Connection` - and the 371-report reply lands 1.204 / 1.198
-  / 1.186 seconds after the session's first message in the three captures. The
-  reply is 46,713 / 46,723 / 46,702 bytes.
-- **That reply contains the strings.** Reassembled independently from each of
-  the three captures and inflated, it is a 558,592-byte tar holding one member,
-  `ModelRepo.xml`, 556,732 bytes, carrying 539 `stepNames` attributes -
-  including `stepNames="Sine,Triang,Sawtooth,Square,Pulse,Pink NS,White NS"`.
-
-Three artifacts, three different answers about sameness, and they must not be
-run together. The compressed payloads on the wire DIFFER (46,713 / 46,723 /
-46,702 bytes; the gzip header alone carries a different MTIME each time). The
-inflated XML differs in 4,800 and 4,825 bytes against session 01 - and every
-one of those bytes is inside a `blob="..."` attribute, 338 of the 351 changing
-between fetches. Strip that one attribute and all three are byte-identical,
-551,715 bytes: the vocabulary does not differ at all, the same 539 `stepNames`,
-655 `id` and 4,374 `name` attributes byte for byte.
-
-The appendix below already carries that 338, from "two dumps of one unit taken
-minutes apart" which "differed on 338 models and on nothing else". Do not read
-that as a second, independent measurement: the appendix does not say how those
-two dumps were taken, and sessions 02 and 03 were captured sixteen minutes apart
-and differ on exactly 338 models and nothing else - so they may well BE that
-pair. What is added here is the third session and the pairwise detail: the
-changing set is the same 338 in all three comparisons, with the same thirteen
-holding still.
-
-The lab repo's `research/catalog/ModelRepo.xml` is NOT a fourth sample and must
-not be counted as one. It is byte-identical to session 02 - all 351 tokens, not
-just the vocabulary - so it is that same fetch, and its 2026-07-26 date is when
-the lab repo was reorganised, not when anything was dumped. What it is good for
-is checking the METHOD: the payload reassembled here out of the pcapng equals,
-byte for byte, a file committed seven weeks before this reassembly was written.
-
-So a host is handed the whole vocabulary before it does anything else: the
-reply starts at 1.204 / 1.198 / 1.186 seconds and its 371 reports finish at
-1.480 / 1.497 / 1.475. What was observed is the DELIVERY; nobody here watched
-Cortex Control draw from it.
-
-**How to repeat it.** `research/scripts/decode_capture.py` in the `quad-cortex`
-lab repo already does the reassembly - accumulate INPUT reports until
-`framing.is_complete`, resync on FIRST - and its committed timelines show the
-message; it needs tshark, and it predates `decode_reports` returning a `Frame`.
-With tshark absent, the same loop runs off the pcapng directly by keeping
-USBPcap records
-that are interrupt transfers, device-to-host, completion, carrying a 129-byte
-body, and no others. That last clause is the whole trick: an earlier attempt
-swept in the control-transfer records - endpoint 0x80, bodies of 8, 22 and 24
-bytes, against the reports' endpoint 0x81 - which split the FIRST..LAST runs and
-produced three large messages that do not exist. Reports
-dropped and runs left open, on the correct filter: zero, in all three captures.
-Then find the gzip magic inside the protobuf field, inflate, untar, grep.
-
-What is still INFERENCE: that a model added to the catalog brings its names
-with it, so a host that shipped before that model still names it correctly.
-Nothing here observed a downloaded or purchased model.
-
-An earlier version of this section argued the point by elimination, claiming
-nothing else crossing the wire was large enough to hold a label table. That was
-false and the captures disprove it: `File` reaches 885 reports in one message,
-more than twice `ModelRepo`'s 371, and its largest arrives about seven seconds
-AFTER it. `File` also carries preset bodies, and a preset body carries
-`dynamic_steps` - which is option-label text, for the twelve dynamic parameters.
-So label text crosses in at least two message families. The elimination argument
-was both unnecessary and wrong; the payload is the evidence.
-
-### The unit's screen is a second renderer over that same data
-
-What the 150-second capture actually showed is narrower, and still worth having.
-While a human opened a Mono Synth's Oscillator tab and stepped through all seven
-waveforms, the unit sent **600 messages, every one the metronome tempo stream** -
-not one waveform label, and no notice that the value had changed. It had no need
-to send anything: it holds the catalog too.
-
-So there are two renderers over one source, and they do not always agree. On
-the Mono Synth's oscillator tab the screen shortens the catalog's words and
-draws a row of icons: `Sine` appears as `SIN`, `Pulse` as `PUL`. On two of the
-seven the catalog is the one that is wrong: it has pink and white noise the
-opposite way round from what the unit actually produces. The acoustic
-measurement that settled it is further down.
-
-**The shortening is not about the words.** A Flanger Engine's `WAVEFORM` offers
-`Sine`, `Triangle`, `Square`, `Saw Up`, `Saw Dn`, `rndSmooth`, `rndStep`, and
-the screen spells all seven out (read 2026-09-16, positions 0 and 3 driven from
-a host). The same word `Sine` draws as `SIN` on the synth and `Sine` on the
-Flanger, so whatever shortens it belongs to that oscillator control and not to
-the catalog's text.
-
-The short words are not in the file either:
-`WHT`, `PNK`, `SAW` and `SQR` appear zero times in the 556,732-byte
-`ModelRepo.xml`, and the only hits for `SIN`, `TRI` and `PUL` are inside
-`SINGLE`, `TRIG`/`TRIM`/`TRIPLET` and `PULL`.
-
-What the reading rules out is the catalog's TEXT. It does not rule out the
-catalog predicting the shortening some other way, and there is a candidate in
-plain sight: both controls that shorten carry `hidden="true"` on the PARAMETER,
-and the Flanger's `WAVEFORM` does not. Five more hidden parameters were looked
-for and were not on the screen at all.
-
-Do not turn that into a rule. Two positives is not a rule, and `Parameter.hidden`
-is the exact flag ADR-0010 caught this repo trusting once already, which is why
-a list is never marked `absent` from it. The metronome's four cells argue the
-other way: they are NOT hidden parameters and they depart from the catalog
-anyway, drawing circles instead of words. Their model is `internal` inside a
-hidden category, which is a third attribute again.
-
-What the reading establishes is the narrow thing: the catalog's WORDS do not
-predict the shortening, because the same word renders both ways.
+That rules out the catalog's text. It leaves open that the catalog predicts the
+shortening some other way, and there is one candidate: both controls that shorten
+carry `hidden="true"` on the parameter, and the Flanger's `WAVEFORM` does not.
+Two readings are not a rule. `hidden` is also the flag that marks a control which
+is plainly on screen (see below), which is why a list is never marked `absent`
+from it (ADR-0010). The metronome's four cells argue the other way. They are not
+hidden, and they depart from the catalog anyway by drawing circles instead of
+words. Their model is `internal` inside a hidden category, which is a third
+attribute again.
 
 Nineteen controls have been read - the fixture holds 24, but five of those are
-records of looking and finding no control at all. Of the nineteen, the Mono
-Synth's two oscillators are the only ones that shorten a word. The metronome's
-four step cells draw circles instead of words, which is why that list is
-`drawn` rather than `audited` below. The other thirteen match the catalog
-exactly.
+records of looking and finding no control. Two shorten a word and four draw
+circles. The other thirteen match the catalog exactly.
 
-Two things are still unknown: whether some control nobody has looked at yet
-also draws its own words, and whether `Parameter.hidden` marks the ones that
-do. The 94 unread lists below answer the first wherever you start. The second
-needs a hidden parameter, and only five of the 94 reach one - two of which are
-ranks 2 and 3 of the worklist, `Small,Med,Large` on a PCOM Core Cabsim's `SIZE`
-and `Off,Duck,Gate` on a Tape Delay's `DYN MODE`. Read either on a model where
-the parameter is hidden and the candidate gets its third data point.
+Two things stay unknown: whether a control nobody has looked at yet draws its own
+words, and whether `Parameter.hidden` marks the ones that do. The 94 unread lists
+below answer the first wherever you start. The second needs a hidden parameter,
+and five of the 94 reach one. Two of those five are ranks 2 and 3 of the worklist
+below: `Small,Med,Large` on a PCOM Core Cabsim's `SIZE`, and `Off,Duck,Gate` on
+the `DYN MODE` of a `Tape Delay (ST)`. Read either of those two and the candidate
+gets its third data point. The worklist names a different model for each list,
+because it names one place the list appears rather than a place the parameter is
+hidden. The model matters: a `PCOM Tape Delay (ST)` offers the shorter
+`Duck,Gate` on the same control, which is a different list.
 
-The practical consequence is the one that matters: a reading taken off the
-unit's screen is a fact about the unit's screen. It is not automatically a fact
-about what a host shows, and - as the noise labels prove - not automatically a
-fact about what the device produces either.
+A reading taken off the unit's screen is a fact about the unit's screen.
 
-### `hidden` on a parameter is the vendor's intent, not the glass
+The reassembly method and the byte counts are in the lab repository,
+`doc/model-repo-vocabulary-reassembly.md`.
 
-Parsed since 2026-09-14 as `Parameter.hidden`, and this table used to carry it as
-unexplained: "whether it means 'not shown on screen' or 'not writable' is
-untested". It is now tested, and the answer is neither cleanly.
+### `hidden` on a parameter is the vendor's intent, not the screen
 
-Six option lists are used only by parameters carrying it, and a block for each
-was placed on the grid and searched page by page. Five controls are genuinely
-not drawn. The sixth, a Mono Synth's `OSC1 WAVE`, **is on the screen** - on a tab
-called Oscillator, as waveform icons - and so is `OSC1 ACTIVE` beside it, which
-the flag also marks. Writability was not tested, so that half of the old question
-stays open.
-
-So the flag predicts the screen most of the time and not always, which is the
-worst kind of signal to build on: it looks reliable right up until it is not.
-`options.OPTION_AUDIT` deliberately does not use it. `Parameter.hidden` is
-published because it is real catalog data and a useful hint about where to look,
-and nothing in the library branches on it.
-
-It is also not a boolean. 649 parameters say `"true"` and one says `"atma"` - the
-Freeze block's `MOMENTARY` switch. `atma` is the Quad Cortex Mini's `device_type`,
-so the catalog is naming the MODEL a parameter is hidden on. `Parameter.hidden`
-answers for a Quad Cortex only, and a Mini profile must read the attribute rather
-than the flag. That value is also a second, independent sign that ATMA is the
-Mini, which until now rested on the schema's `atma_*` field names alone.
-
-### `mid_string` is the label at the middle of the wire
-
-This sat in the table above because the catalog never says which middle position
-it labels. It is wire 0.5, measured 2026-09-11 on CorOS 4.0.1: a mono cab's
-`PAN` and a stereo cab's `BALANCE` both read `C` there.
-
-All 36 parameters carrying it carry `min_string` and `max_string` too, and that
-triple is the device marking a bipolar control. 35 spell the three labels
-`L`/`C`/`R`; the odd one out is `A/B PITCH MIX`, which spells them `A`/`A/B`/`B`.
-
-Reading them settled something bigger, and it is a defect rather than a gap: the
-span these controls DRAW is 50 on one side through the middle label to 50 on the
-other, and the catalog declares that span four different ways, none of which is
-what the screen shows. `Parameter.mid_label` now carries the label and
-`units.LABELLED_END_SPAN` carries the drawn span, with the readings in
-`tests/test_scales.py`.
-
-On `<Model>`, `blob` is also unexplained: a same-length string of letters that
-**changes between fetches**. Two dumps of one unit taken minutes apart differed
-on 338 models and on nothing else. A per-fetch token of some kind, not content.
-
-On `<Option>` labels, the character `¤` (U+00A4) appears as a separator inside a
-label - `Triads¤Closed Triad (3-R-5)` - in 27 labels of the CorOS 4.1.0 catalog a
-contributor regenerated (PR #44), and in none of the 4.0.1 catalog. It reads like a
-group-then-item split for a two-level menu, with the part before it shown as a
-heading. That is a guess, and it is untested: nobody has watched the unit's screen
-on those lists. The generator flattens the character to `_` and says nothing, so a
-constant name hides that the label had structure. Recorded here so the 4.1.0
-profile's constants carry the question rather than an answer.
-
-### `stepNames` was right and our hand-chosen names were wrong
-
-Worth keeping because of how it went, not just how it ended.
-
-The metronome's per-beat cells carry `stepNames="OFF,MUTE,DOWN,ON"`.
-`enums.MetronomeBeat` called the same four positions `NORMAL, OFF, ACCENT,
-QUIET` - names chosen by ear in an earlier session. They disagree at every
-position, and this document briefly concluded that `stepNames` must therefore be
-the device's *internal* vocabulary rather than the screen's, on the strength of
-one half-measurement: in a factory 4/4 the unit holds index 0 on beats 2 to 4,
-those beats are audible, so index 0 could not mean "OFF".
-
-That inference was wrong, and it was wrong in the ordinary way - it assumed the
-word `OFF` had to be about **sound**.
-
-Driven properly on 2026-08-27, one bar at 60 bpm in 4/4 with all four states on
-the four beats, listened to and looked at:
-
-| index | catalog | sounds like | drawn as | old name |
-|---|---|---|---|---|
-| 0 | `OFF` | the plain click | solid circle | `NORMAL` |
-| 1 | `MUTE` | silent | outlined circle | `OFF` |
-| 2 | `DOWN` | the big accent | solid circle, dot ABOVE | `ACCENT` |
-| 3 | `ON` | a small accent | solid circle, dot BELOW | `QUIET` |
-
-`OFF` and `ON` are about the **accent**, not about whether the beat sounds. Under
-that reading every one of the device's four words is true: `MUTE` silences,
-`DOWN` is the downbeat, and the pair `OFF`/`ON` is the accent off or on. The
-drawing agrees - hollow is silent, a bare circle is plain, a dot lifts it.
-
-Two of the four hand-chosen names were not merely different, they were
-**backwards**: what we called `NORMAL` is the quietest audible state and what we
-called `QUIET` is the louder of the two ordinary ones. A caller reaching for
-`QUIET` got the opposite of what they asked for.
-
-So the enum now uses the device's words, and the lesson is the one ADR-0015 is
-already about: the device's description of itself beat four names arrived at by
-listening, and the way to find that out was to drive all four states at once
-rather than reason about the two we had.
-
-**What this does not license.** This one was checked only because a hand-written
-enum existed to disagree with it, and the disagreement turned out to be ours.
-Auditing the rest began on 2026-09-14; see the next section.
-
-### Auditing the option lists against the screen
-
-`stepNames` is the catalog's vocabulary, and the catalog is not the screen. The
-proof is offline and was sitting in the repo the whole time: for the twelve
-parameters whose list the device builds from the preset, the preset carries the
-device's OWN rendering in `Param.dynamic_steps`, and it does not match the
-catalog's `stepNames` for the same parameter. The catalog writes `In 1`, `Ret
-1/2` and `USB 5`; the device writes `Input 1`, `Return 1/2` and `USB input 5`.
-18 of 20 shared positions differ on all three committed preset fixtures.
-
-So every list's names are a hypothesis until a human reads them off the unit.
-`options.OPTION_AUDIT` publishes which have been, keyed by the labels rather
-than by the enum so the two Off/On lists and the metronome list - none of which
-gets an enum, and which are 260 parameters between them - can be recorded too.
-The readings are in `tests/fixtures/catalog/option_readings.json`, one row per
-POSITION, and `scripts/generate_options.py` stamps each enum's docstring from
-them. A list nobody has read says so where a caller will see it.
-
-**Where it stands (2026-09-16, CorOS 4.0.1): 13 audited, 1 drawn, 5 not drawn,
-94 unread**, of 113 fixed lists. Those fourteen read lists cover 301 of the 527
-parameters that carry a fixed list, because the ones in heaviest use were done
-first. The 94 unread cover 190.
-
-**What is left is not 94 equal jobs.** Ranked by how many parameters each list
-decides, the tail falls away fast: the biggest five cover 54 of the 190.
-`options.OPTION_USAGE` publishes the count for every list, so a session at the
-unit can be planned from the library rather than from a one-off count:
-
-| parameters | positions | list | somewhere it appears |
-|---|---|---|---|
-| 14 | 17 | a 17-entry `SYNC NOTE` | Vibrato / `SYNC NOTE` |
-| 12 | 3 | `Small,Med,Large` | Ambience / `SIZE` |
-| 11 | 3 | `Off,Duck,Gate` | Digital Delay (ST) / `DYN MODE` |
-| 9 | 14 | a 14-entry `SYNC NOTE` | Dual Chorus / `SYNC NOTE` |
-| 8 | 3 | `Normal,Thick,Thicker` | CA 1Star Clean 50W Normal / `EQ` |
-
-The two note lists are the cheap ones despite their length: a 21-entry
-`SYNC NOTE` is already audited, and these two are its shorter siblings, so a
-reader knows what to expect and where an error would show. Of the remaining 89,
-83 decide one or two parameters each and 46 have only two positions.
-
-Eight of the 94 lists, 12 parameters between them, sit on models a user cannot
-put on the grid: three lists and seven parameters on the Splitter family, five
-lists and five parameters on `TempoControl`.
-
-That is about where they live, not about whether anyone can see them. The Tempo
-page is on the unit and this fixture already holds four driven readings from it,
-so `TempoControl`'s five are a job still to do. None of the eight is marked
-`absent`, which this document uses only for a control somebody looked for and
-did not find.
-
-`drawn` is its own answer for one list. Every position of the metronome's
-`OFF,MUTE,DOWN,ON` was driven and read, so by position count it is complete -
-but the unit draws a circle, filled or empty, with an optional dot, and never
-writes the word `MUTE` anywhere. Those four words remain exactly the hypothesis
-this mechanism exists to flag. What the readings confirm is the ORDER and the
-behaviour, not the spelling, and calling that audited would be the
-overstatement in its purest form.
-
-| list | parameters | how it was read |
-|---|---|---|
-| `Off,On` | 222 | a Circular Delay's SYNC and TRAILS, each position driven |
-| `SYNC NOTE` (21 entries) | 28 | the dial in order, anchored at 0 and 13 |
-| `OFF,ON` | 25 | the same block's VINTAGE MODE, each position driven |
-| `OFF,MUTE,DOWN,ON` | 13 | the metronome cells, re-driven as the control |
-| `Momentary,Toggle` | 3 | a Looper X RECORD MODE, each position driven |
-| `ROUTING MODE` (14) | 1 | the dial in order, anchored at 2, 7 and 11 |
-| `REC. LENGTH` (33) | 1 | the dial, anchored at 0 and 16, gaps ruled out by asking |
-| `QUANTIZE` (10) | 1 | the dial in order, anchored at 0 and 9 |
-| `TAP PRESET` (9) | 1 | the dial in order, anchored at 0 and 4 |
-| `PRE ROLL` (4) | 1 | the dial in order, anchored at 0 and 2 |
-| `Linear,Log` | 1 | a Volume block's CURVE, each position driven |
-| `Free,Sync` | 1 | a Looper X DUPLICATE MODE, each position driven |
-| `OSC1 WAVE` (7) | 2 | the tab in order, anchored at 0, 3, 5 and 6 |
-| `WAVEFORM` (7) | 1 | a Flanger Engine, in order, anchored at 0 and 3 |
-
-Twelve of the fourteen matched the catalog exactly, including spellings that
-look like mistakes and are not: `In 1` carries a space and `Out1` does not, on
-the same control, and the screen draws both that way.
-
-Two did not. The metronome's cells are drawn rather than written, which is the
-`drawn` row above. **The other is a real disagreement, and it is the kind that
-changes what a caller gets.** A Mono Synth's oscillator waveform list reads, in
-the catalog, `Sine, Triang, Sawtooth, Square, Pulse, Pink NS, White NS`. On
-screen the seven shapes are drawn as waveform icons labelled
-`SIN, TRI, SAW, SQR, PUL, WHT, PNK`.
-Six of those are just abbreviations. The last two are not:
-
-| wire position | catalog says | the screen shows |
-|---|---|---|
-| 5 | `Pink NS` | **WHT** |
-| 6 | `White NS` | **PNK** |
-
-Both were driven at once, on the two oscillators of one Mono Synth, and read
-together - so neither can be a stale screen. **The catalog has pink and white
-swapped**, and that is now settled by measurement rather than by reading a
-label.
-
-#### Measured acoustically, 2026-09-15
-
-The screen reading said which label the unit draws. It could not say which
-signal comes out, and the catalog disagreeing with the screen leaves open which
-of the two is wrong. Noise settles it: white noise has a flat power spectrum, so
-measured in OCTAVE bands its energy rises about 3 dB per octave, because each
-band is twice as wide as the one below. Pink noise falls 3 dB per octave, so its
-octave-band energy is flat.
-
-A Mono Synth was placed at the head of a populated row, OSC 1 alone with OSC 2
-off, and the unit's own USB audio interface recorded at each position -
-`-t 5`, which avfoundation delivers a little short, so the two files are 4.47
-and 4.48 seconds.
-
-| octave band | position 5 | position 6 | difference |
-|---|---|---|---|
-| 125-250 Hz | -43.3 dB | -32.2 dB | -11.1 |
-| 250-500 Hz | -38.7 dB | -32.9 dB | -5.8 |
-| 500 Hz-1 kHz | -33.6 dB | -31.9 dB | -1.7 |
-| 1-2 kHz | -29.8 dB | -31.4 dB | +1.6 |
-| 2-4 kHz | -27.2 dB | -31.5 dB | +4.3 |
-| 4-8 kHz | -26.5 dB | -33.6 dB | +7.1 |
-| 8-16 kHz | -28.9 dB | -39.2 dB | +10.3 |
-
-**Read the difference column.** The rest of the row colours both recordings
-identically, so subtracting them removes it - and the result climbs
-monotonically across all seven bands, averaging +3.57 dB per octave. Position 5
-is the brighter, by the scale and in the direction that separates white from
-pink.
-
-The textbook separation is 3.01 dB per octave, and 3.57 is not that number. Do
-not read the difference as a precision match. The BAND ANALYSIS below is not
-exact - `sinc` filtering leaks across band edges - and on 2026-09-15 it was
-calibrated to say by how much. Synthetic noise of both kinds, put through the
-same per-band commands and the same subtraction, gave 3.69 to 3.84 dB per
-octave over ten runs (sox 14.4.2; the figure is random run to run, and no run
-came near 3.01):
-
-```
-sox -n -r 48000 -c 1 white.wav synth 5 whitenoise
-sox -n -r 48000 -c 1 pink.wav synth 5 pinknoise
-# then the same `sinc <band> stats` per band as below, and the slope of the
-# difference column across the seven bands
-```
-
-So this analysis returns about 3.75 for a pair that is exactly 3.01 apart. The
-unit's 3.57 is between the two, and below every calibration run; the
-calibration does not account for the gap, it moves it to the other side. That
-is the honest position, and the finding does not rest on it. What the
-measurement establishes is the SIGN and the order of magnitude, which is all
-that is needed to say which of two positions is the white one. Note also that
-the calibration exercised only the band analysis - synthetic files straight
-into `sox` - and not the unit, the USB capture or the amp row.
-
-Each column alone says the same thing less cleanly, because the chain's response
-is curved: position 6 is flat to about 2 dB from 125 Hz to 8 kHz, and position 5
-climbs about 3.4 dB per octave over that span, but neither is a straight line.
-The subtraction is what makes the comparison controlled.
-
-The catalog calls position 5 `Pink NS`. It is white, and the screen's `WHT` is
-right.
-
-Reproducing it needs no special tooling - the unit enumerates as an 8-in USB
-audio device. Find its index first, because the numbering is per machine and
-index 0 is often the built-in microphone:
-
-```
-ffmpeg -f avfoundation -list_devices true -i ""     # note the Quad Cortex index
-ffmpeg -f avfoundation -i ":N" -t 5 -ac 1 -ar 48000 pos5.wav
-sox pos5.wav -n sinc 2000-4000 stats                # read "RMS lev dB"; repeat per band
-```
-
-`-ac 1` sums the interface's eight inputs to mono, which is fine while only the
-measured signal is present and would not be otherwise. A quick check that the
-right device is being recorded: change the block's level and watch the RMS move.
-
-The recordings themselves are not committed. They are a few seconds of noise and
-the numbers above are the finding. A caller asking for pink noise by the
-catalog's name gets white, which is the same shape of error as the metronome
-names and the reason this audit exists.
-
-The enum members follow the screen, and `set_param_option` refuses the catalog's
-two strings rather than selecting the other noise. **The READ path is not fixed
-and knowingly so:** `param_options` and `option_at` still report `Pink NS` for
-the position that draws WHT, because they hand back what the device published
-and nothing has been measured about what the unit calls it anywhere other than
-this one screen. Closing that asymmetry means deciding whether a reader may
-overrule the device's own string, which is a bigger decision than this audit
-should make on one finding. Recorded here rather than left to be discovered.
-
-**A control's display order is not the wire order, and assuming it is nearly put
-three backwards names into the library.** Reading a dial top to bottom is much
-faster than driving 21 positions, and it works: SYNC NOTE and ROUTING MODE read
-in order and anchoring confirmed them. It does NOT work on a two-position
-control. `RECORD MODE`, `DUPLICATE MODE` and `CURVE` were each read as a list and
-each came back in the opposite order from the catalog - three apparent
-disagreements. Driving position 0 showed all three matched the catalog and the
-list reading was the thing that was wrong. So: a list of three or more may be
-read in order, provided at least two positions are then driven and read back, one
-of them awkward (the `16 Beats` that breaks QUANTIZE's counting, the `4 Alt` that
-breaks TAP PRESET's). A two-position list is read ONLY by driving each position.
-
-**One control cannot be audited even though it is not hidden.** The catalog's
-`METRONOME MUTE` on a Looper X offers `MUTE,UNMUTE`, and no parameter of that
-name appears on screen at all - there is a button, and its label names what
-pressing it WILL DO rather than what the state IS (confirmed as the convention
-used on the Tempo screen). So the catalog names states and the screen names an
-action, and the two vocabularies cannot be held against each other. It stays
-unread rather than being forced into one of the other statuses.
-
-**Some controls are greyed out until another is set.** `SYNC NOTE` is disabled
-until the block's `SYNC` is On; `PRE ROLL` and `REC. LENGTH` are disabled while
-`QUANTIZE` is OFF. Their lists can still be opened and read, but a reading run
-has to set the enabling control first.
-
-**Five lists are not drawn at all, and that was measured rather than inferred -
-after the inference turned out to be wrong.** The catalog marks 649 parameters
-`hidden`, and six lists are used only by parameters it marks that way. The
-obvious move was to call those six unauditable and stop. That rule is false. A
-block carrying each of the six was placed on the grid and the named control
-looked for on every page:
+Parsed as `Parameter.hidden`. Six option lists are used only by parameters
+carrying it, and a block for each was placed on the grid and searched page by
+page (2026-09-14):
 
 | list | looked for on | drawn? |
 |---|---|---|
@@ -1973,107 +1334,168 @@ looked for on every page:
 | `Duck,Gate` | a Plini Delay's `DYN MODE` | no |
 | `Sine,Triang,...` | a Mono Synth's `OSC1 WAVE` | **yes** |
 
-The Mono Synth's oscillator waveform is marked `hidden="true"` and is on the
-screen, on a tab called Oscillator, drawn as waveform icons - as is
-`OSC1 ACTIVE`, which the flag also marks. So `hidden` describes the vendor's
-intent and not the glass, and a status built on it would have declared a
-visible, readable control permanently uncheckable. This is ADR-0010's lesson
-again: a plausible rule about a parameter attribute, false on the unit.
+The Mono Synth's `OSC1 WAVE` is marked `hidden="true"` and is on the screen, on a
+tab called Oscillator, drawn as waveform icons. `OSC1 ACTIVE` sits beside it, on
+the same tab, and the flag marks that too. So the flag predicts the screen most
+of the time and not always. Whether it predicts writability is untested; see
+[section 13](#13-still-open). `options.OPTION_AUDIT` does not use it, and
+nothing in the library branches on it. It is also not a boolean: 649 parameters
+say `"true"` and one says `"atma"` (the Freeze block's `MOMENTARY`), the Quad
+Cortex Mini's `device_type`, so the catalog names the model a parameter is hidden
+on. The Soldano carries two parameters called `CHANNEL`, one flagged and one not,
+and the screen draws the second only, so the unit honours the flag per parameter.
 
-So `OPTION_AUDIT`'s `absent` comes from an OBSERVATION - a row in
-`option_readings.json` naming the model and control somebody looked at and did
-not find - and never from the flag. A test names the Mono Synth list explicitly
-so that if the derivation ever slips back to the flag, it fails.
+### `mid_string` is the label at the middle of the wire
 
-The Soldano is worth keeping for a second reason: it carries **two** parameters
-called `CHANNEL`, one flagged and offering `Clean,Crunch,Lead` and one not,
-offering `Normal,OD`. The screen draws the second only, so the unit honours the
-flag per parameter rather than per name.
+Wire 0.5, measured 2026-09-11: a mono cab's `PAN` and a stereo cab's `BALANCE`
+both read `C` there. All 36 parameters carrying it carry `min_string` and
+`max_string` too, and that triple marks a bipolar control drawn from 50 on one
+side to 50 on the other, whatever span the catalog declares
+([`protocol.md`](protocol.md) section 14.1). 35 spell the labels `L`/`C`/`R`;
+`A/B PITCH MIX` spells them `A`/`A/B`/`B`.
 
-Our `Noral` -> `NORMAL` correction stays an inference about a control nobody can
-see, and is labelled as one.
+On `<Model>`, `blob` is unexplained: a same-length string that changes between
+reads, on 338 models and no others across the three lab captures. A per-read
+token, not content.
 
-**A reading is a pairing, not a verdict.** "Index 2 showed `Gate`" can be
-checked; "this list is fine" cannot. A part-read list is `partial` and does NOT
-count as audited - rounding that up is what would make a checked list
-indistinguishable from an unchecked one. Where the unit DRAWS a position rather
-than naming it, as the metronome cells do, the reading records the picture and
-never counts as a disagreement.
+On `<Option>` labels, the character `¤` (U+00A4) appears as a separator inside a
+label (`Triads¤Closed Triad (3-R-5)`) in 27 labels of the CorOS 4.1.0 catalog a
+contributor regenerated (PR #44), and in none of the 4.0.1 catalog. It reads like
+a group-then-item split for a two-level menu. Untested; nobody has watched the
+unit's screen on those lists. The generator flattens the character to `_`.
 
-### `expAssignable` says something, and not what it looks like
+### `stepNames` and the screen: the option audit
 
-Fourteen parameters carry `expAssignable="false"`, and it does **not** govern a host
-expression assignment. ADR-0010 capture, 2026-08-26: a Pattern Tremolo's `STEPS` (one
-of the fourteen) and `DEPTH` (not one) both accepted a pedal identically, and both
-survived a disconnect and a fresh read.
+`stepNames` is the catalog's vocabulary, and the catalog is not the screen. For
+the twelve parameters whose list the unit builds from the preset, the preset
+carries the unit's own rendering in `Param.dynamic_steps`, and it disagrees with
+`stepNames` at 18 of 20 shared positions (`In 1` against `Input 1`, `Ret 1/2`
+against `Return 1/2`, `USB 5` against `USB input 5`).
 
-So the flag is published as `Parameter.exp_assignable` and nothing acts on it. The
-likely reading - that it governs which knobs the unit's own touchscreen offers for
-assignment - is a guess and stays one. A second, separate unknown: whether the unit
-ACTS on an assignment stored against such a parameter. That needs audio, not a wire
-read, so it is not something this suite can settle.
+So every list's names are a hypothesis until a person reads them off the unit.
+`options.OPTION_AUDIT` publishes which have been, keyed by the labels rather than
+by the enum so the two Off/On lists and the metronome list, which get no enum
+and are 260 parameters between them, can be recorded too. The readings are in
+`tests/fixtures/catalog/option_readings.json`, one row per position, and
+`scripts/generate_options.py` stamps each enum's docstring from them.
 
-## Deferred by design (recorded, not planned)
+**Where it stands (2026-09-16, CorOS 4.0.1): 13 audited, 1 drawn, 5 not drawn,
+94 unread**, of 113 fixed lists. The fourteen read lists cover 301 of the 527
+parameters that carry a fixed list. The 94 unread cover 190.
 
-- **An exclusive-use fast mode** - a connection mode where the caller promises no
-  concurrent touchscreen use, letting the model skip proactive reads. A follow-on Intent,
-  recorded here so the cache design keeps the door open.
-- **Library management** (capture/IR folders, renames) and **on-wire search** - modeled
-  as flat listings until the `File` family is understood.
+What is left is not 94 equal jobs. Ranked by how many parameters each list
+decides, the tail falls away fast: the biggest five cover 54 of the 190.
+`options.OPTION_USAGE` publishes the count for every list, so a session at the
+unit can be planned from the library rather than from a count taken once.
 
-## Change log
+| parameters | positions | list | somewhere it appears |
+|---|---|---|---|
+| 14 | 17 | a 17-entry `SYNC NOTE` | Vibrato / `SYNC NOTE` |
+| 12 | 3 | `Small,Med,Large` | Ambience / `SIZE` |
+| 11 | 3 | `Off,Duck,Gate` | Digital Delay (ST) / `DYN MODE` |
+| 9 | 14 | a 14-entry `SYNC NOTE` | Dual Chorus / `SYNC NOTE` |
+| 8 | 3 | `Normal,Thick,Thicker` | CA 1Star Clean 50W Normal / `EQ` |
 
-- **2026-08-05** - Initial structural design (Part I + appendix), from the manual and
-  `manual-coverage.md`. Part II (behavior) designed separately; merges here.
-- **2026-08-06** - Part II (behavior) merged in: state tracking, write verification, the
-  save lifecycle, and disconnect/standby/reconnect, all grounded in a hardware session on
-  `d14e` / CorOS 4.0.1. Also settled three things Part I had left forward-referenced -
-  `DeviceLostError` replaces the placeholder `NotConnectedError` in §8, writes to an
-  inactive scene are refused (§10), and `has_unsaved_changes` ships because
-  `preset_dirty()` answers in 2-11 ms (§11). The findings that belonged to the protocol
-  layer were handed over separately and shipped there; the breadth items the session did
-  not reach are named in §13 rather than left implied.
-- **2026-08-11** - M1 construction starts. The namespaces section is now built rather than
-  planned. TEMPO MODE is reopened: three tests prove the unit never BROADCASTS the switch,
-  which this doc had over-read as "not on the wire at all". `Tempo` gains `mode`, modelled
-  and refused rather than omitted or guessed (ADR-0007); the appendix row and §13 say the
-  same. Nothing here ships at M1 - tempo is an M3 surface - so this is a design change,
-  not a behaviour change.
-- **2026-08-12** - TEMPO MODE is **closed**, one release after being reopened. It is the
-  DEVICE tempo block's parameter 1, carried in `GlobalTempo.params`: `0.0` PRESET, `1.0`
-  GLOBAL, readable and writable, confirmed on the wire, on the unit's own screen, and by
-  the tempo actually in effect. `Tempo.mode` becomes an ordinary property and ADR-0007
-  loses its only instance (ADR-0010). The method that found it is the one worth keeping:
-  capture every field of every message the device answers in each switch position and
-  diff, rather than looking for a field you expect. Still an M3 surface, so still not a
-  behaviour change at M1.
-- **2026-08-13** - Design principle 5 is built (M1 story #10): `pyquadcortex/device/translate.py`
-  owns every conversion between a screen value and a wire value - including the tempo's
-  bpm, which arrived from the TEMPO MODE work above - with `PresetAddress`,
-  `FootswitchLetter` and `SceneLetter` landing as part of it. The model package directory
-  is `device/` rather than `model/`, because the protocol layer spells an amp or pedal
-  block `model` in code (`models.py`, `Model`, `ModelCatalog`) and will keep doing so,
-  whatever §5 renamed the concept to in this document. No design changed here; this
-  records what is now code.
-- **2026-08-15** - M1 story #12 lands the preset surface: `device.preset`, the four
-  rows, the eight slots, blocks, splits, routing, the eight scenes and both grid
-  bindings, plus `device.events`. Issue #12 was SPLIT on the way in - the Directory half
-  needs the cache to handle a read that answers with a STREAM of several hundred
-  messages, which `StateEntry` says in as many words it does not carry yet, and that work
-  should not sit beside the objects three other stories are blocked on.
+The two note lists are cheap despite their length: a 21-entry `SYNC NOTE` is
+already audited, so a reader knows what to expect and where an error would show.
+Of the remaining 89, 83 decide one or two parameters each and 46 have only two
+positions.
 
-  A hardware session corrected three things this document had implied. The connect burst's
-  seed `RecallPreset` DOES set `reason`, so an entry that drops it is marked stale by the
-  very burst that warmed it. A recall pushes `Grid`, `RecallPreset`, `Scene` and
-  `SetlistPosition` and **no `PresetDirty` at all**, so the unsaved-changes flag has to be
-  re-read after a recall rather than waited for - §9's "recalling resets three things
-  together" is right about the unit and needed spelling out for the model. And
-  `SetlistPosition{READ}` really does answer, in 3 ms, which this document's own table
-  claimed and nobody had checked; the model tracks the loaded slot from it rather than
-  counting recall events, so `is_current` compares a fact the unit stated.
+Eight of the 94 lists, 12 parameters between them, sit on models a user cannot
+place on the grid: three lists and seven parameters on the Splitter family, five
+lists and five parameters on `TempoControl`. That is about where they live, not
+about whether anyone can see them. The Tempo page is on the unit, and this
+fixture already holds four driven readings from it, so `TempoControl`'s five are
+a job still to do. None of the eight is `absent`, which the status list below
+defines.
 
-  §9 gains the rules those needed: two message types are handled by type rather than by
-  field because the per-field check cannot see them, a grid push is noted rather than
-  merged with what merging would take written down beside it, and a push carrying every
-  field an entry keeps clears the mark the way a read does. §2 and §3 record what is built
-  and, more usefully, the four things deliberately left out and why.
+| list | parameters | how it was read |
+|---|---|---|
+| `Off,On` | 222 | a Circular Delay's `SYNC` and `TRAILS`, each position driven |
+| `SYNC NOTE` (21 entries) | 28 | the dial in order, anchored at 0 and 13 |
+| `OFF,ON` | 25 | the same block's `VINTAGE MODE`, each position driven |
+| `OFF,MUTE,DOWN,ON` | 13 | the metronome cells, re-driven as the control |
+| `Momentary,Toggle` | 3 | a Looper X `RECORD MODE`, each position driven |
+| `ROUTING MODE` (14) | 1 | the dial in order, anchored at 2, 7 and 11 |
+| `REC. LENGTH` (33) | 1 | the dial, anchored at 0 and 16 |
+| `QUANTIZE` (10) | 1 | the dial in order, anchored at 0 and 9 |
+| `TAP PRESET` (9) | 1 | the dial in order, anchored at 0 and 4 |
+| `PRE ROLL` (4) | 1 | the dial in order, anchored at 0 and 2 |
+| `Linear,Log` | 1 | a Volume block's `CURVE`, each position driven |
+| `Free,Sync` | 1 | a Looper X `DUPLICATE MODE`, each position driven |
+| `OSC1 WAVE` (7) | 2 | the tab in order, anchored at 0, 3, 5 and 6 |
+| `WAVEFORM` (7) | 1 | a Flanger Engine, in order, anchored at 0 and 3 |
+
+The statuses:
+
+- **audited**: every position read, and the enum's names follow the screen.
+  Thirteen of the fourteen read lists. Twelve match the catalog's words,
+  including spellings that look like mistakes and are not (`In 1` carries a space
+  and `Out1` does not, on the same control); the thirteenth, `OSC1 WAVE`, is the
+  swap below.
+- **drawn**: every position driven and read, and the unit draws a picture rather
+  than a word. The metronome's `OFF,MUTE,DOWN,ON` is the case: the screen shows a
+  filled or empty circle with an optional dot and never writes `MUTE`, so the
+  four words remain a hypothesis and calling the list audited would overclaim.
+- **absent**: someone looked for the control on a placed block and did not find
+  it. The five lists in the `hidden` table above. Never derived from the `hidden`
+  flag, which marks a visible control.
+- **partial**: some positions read. Does not count.
+- **unread**: nobody has looked.
+
+How a position was read is a field, because the method matters. A list of three
+or more may be transcribed from the control in order only if at least two
+positions are then driven and read back, one of them where an error would show
+(the `16 Beats` that breaks `QUANTIZE`'s counting). A two-position list is read
+only by driving each position: read as a list, `RECORD MODE`, `DUPLICATE MODE`
+and `CURVE` each came back in the opposite order from the catalog, and driving
+position 0 showed all three matched the catalog.
+
+Some controls are greyed out until another is set: `SYNC NOTE` until `SYNC` is
+On, `PRE ROLL` and `REC. LENGTH` while `QUANTIZE` is `OFF`. One control cannot be
+audited though it is not hidden: a Looper X's `METRONOME MUTE` offers
+`MUTE,UNMUTE`, and the screen shows a button whose label names what pressing it
+will do, so the two vocabularies cannot be held against each other.
+
+**The catalog can be wrong about its own meaning.** A Mono Synth's oscillator
+waveform list reads, in the catalog, `Sine`, `Triang`, `Sawtooth`, `Square`,
+`Pulse`, `Pink NS`, `White NS`. On screen the seven are drawn as icons labelled
+`SIN`, `TRI`, `SAW`, `SQR`, `PUL`, `WHT`, `PNK`: position 5 is `WHT` and position
+6 is `PNK`, both driven at once on the two oscillators of one Mono Synth.
+Measured acoustically on
+2026-09-15 by recording each position off the unit's own USB audio interface and
+comparing octave bands: subtracting the two recordings cancels the rest of the
+signal chain, and the difference climbs across all seven bands at about 3.6 dB
+per octave, the direction that separates white from pink. **Position 5 is white.**
+
+The enum members follow the screen, `set_param_option` refuses the catalog's two
+strings rather than select the other noise, and `option_at` still reports the
+catalog's name because overruling the unit's own string on a read is a wider
+decision than one finding should settle. The band numbers, the commands and the
+calibration are in the lab repository, `doc/noise-labels-acoustic-measurement.md`.
+
+The metronome's per-beat names were the earlier case of the catalog beating our
+own words: `stepNames="OFF,MUTE,DOWN,ON"` against a hand-chosen `NORMAL`, `OFF`,
+`ACCENT`, `QUIET`, two of which were backwards. `OFF` and `ON` are about the accent
+([`protocol.md`](protocol.md) section 8).
+
+How a list is chosen, driven and recorded is in the lab repository,
+`doc/option-audit-method.md`.
+
+### `expAssignable` does not govern a host write
+
+Fourteen parameters carry `expAssignable="false"`, and a host can still assign a
+pedal to them. It is published as `Parameter.exp_assignable` and nothing acts on
+it. What it does govern is not established ([`protocol.md`](protocol.md) section
+14.1).
+
+## Deferred by design
+
+- **An exclusive-use fast mode**: a connection mode where the caller promises no
+  concurrent touchscreen use, letting the model skip proactive reads. Recorded so
+  the cache design keeps the door open.
+- **Library management** (capture and IR folders, renames) and **on-wire search**:
+  modelled as flat listings until the `File` family is understood.
+
+Earlier versions of this design, with what changed when, are archived in the lab
+repository at `doc/pyquadcortex/history/domain-model-change-log.md`.
