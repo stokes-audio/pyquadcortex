@@ -4623,7 +4623,7 @@ def test_version_insists_on_the_full_reply_and_ignores_the_units_own_read():
     identity field, serial or firmware. A PARTIAL reply with one of them is
     still accepted: the cache keeps what the unit sent and re-reads the rest,
     and refusing it here would turn that rule into a timeout. See protocol.md,
-    "A ``Version`` READ is answered twice"."""
+    "A ``Version`` read is answered twice"."""
     full = pa.VersionMessage(action=pa.MessageAction.UPDATE,
                              app_fw_version="d14e",
                              device_serial_number="QA00EE910",

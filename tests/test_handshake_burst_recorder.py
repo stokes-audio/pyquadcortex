@@ -204,7 +204,7 @@ def test_record_until_waits_for_the_whole_tail_not_just_the_first_of_it(
     The burst's four closing messages arrive in the order ``RecallPreset``,
     ``SetlistPosition``, ``PresetDirty``, ``Scene``, inside six milliseconds -
     re-measured 2026-09-14 on d14e over three sessions, spreads of 6.0, 3.6 and
-    5.8 ms (``docs/protocol.md``, "Connect burst, measured"). ``RecallPreset`` is
+    5.8 ms (``docs/protocol.md``, "The connect burst"). ``RecallPreset`` is
     the FIRST of the four, not the last. A recorder that stops on it stops with
     the poll's granularity of slack after it - so it can close in the gap before
     the other three land, and the fixture takes its ``burst_warmed`` snapshot of

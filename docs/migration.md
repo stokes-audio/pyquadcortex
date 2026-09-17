@@ -1,17 +1,14 @@
 # Migration
 
-What to change in your own code when a release renames or removes something.
+> Purpose: what to change in your own code when a release renames or removes something.
 
 One section per version pair, newest first. Each lists only the things that
-BREAK - a new method or a new argument needs no entry here, because nothing you
-already wrote stops working. The changelog is the place for what is new; this is
-the place for what moved.
+break. The changelog says what is new; this file says what moved.
 
-While the major number is 0 these sections are expected to exist. The changelog
-says why: everything is verified against one unit on one firmware, protocol
-facts are still being corrected at a live rate, and the API is deliberately
-still moving. A rename that makes the library read correctly is worth doing
-while that is true, and this file is the cost of doing it.
+While the major number is 0 these sections are expected to exist. Everything is
+verified against one unit on one firmware, protocol facts are still being
+corrected, and the API is still moving. A rename that makes the library read
+correctly is worth doing while that is true.
 
 ---
 
@@ -19,19 +16,17 @@ while that is true, and this file is the cost of doing it.
 
 ### `params.py`'s constants are no longer `IntEnum` members
 
-They are `Param[Unit]` instances, so each one carries its parameter's unit in
-its type and a checker can reject the wrong one. Everything a caller reads or
-passes is unchanged - a constant IS its wire index, and `.name`, iteration,
-`__members__`, `len()`, lookup by name and `in` all still work.
+They are `Param[Unit]` instances, so each carries its parameter's unit in its
+type and a checker can reject the wrong one. A constant is still its wire index,
+and `.name`, iteration, `__members__`, `len()`, lookup by name and `in` all work.
 
 | what changed | before | after |
 |---|---|---|
 | the base class | `issubclass(X, IntEnum)` | `issubclass(X, params.ParamSet)` |
 | `BY_MODEL` values | `IntEnum` subclasses | `ParamSet` subclasses |
-| an index-addressed real value | `set_param(t, 21, Real(3))` ran and checked | still runs; a type checker now rejects it - say `Encoded(...)`, or name the parameter |
+| an index-addressed real value | `set_param(t, 21, Real(3))` ran and checked | still runs; a type checker now rejects it. Say `Encoded(...)`, or name the parameter |
 
-Nothing here raises at runtime except through a type checker, so a codebase
-that does not run one is unaffected.
+Nothing here raises at runtime except through a type checker.
 
 ### Every setting takes a typed value, not just `set_param`
 
@@ -51,19 +46,8 @@ that does not run one is unaffected.
 | `set_tuner_reference(2.0)` | `set_tuner_reference(Hertz(2.0))` |
 | `set_expression(t, p, minimum=0.0, maximum=0.9)` | `set_expression(t, p, minimum=Encoded(0.0), maximum=Encoded(0.9))` |
 
-**Which type, and why it is not always your choice.** Three cases:
-
-- **A known scale**, so the unit type works: an input port's gain
-  (-12..+60 dB, from four measured points) and a Global EQ band's gain
-  (-12..+12 dB, from four points driven on screen including both ends - see
-  `units.SETTING_SPANS`).
-- **No known scale**, so `Encoded` is the only thing accepted: output level,
-  USB level, master volume, Global EQ frequency/Q/output level, and a Global EQ
-  parameter addressed by raw index. A `Db` there raises `ControlNotDrivable`
-  naming what would have to be measured - it is not converted against a guess.
-- **No wire scale at all**, so `Encoded` is REFUSED: the HOLD threshold takes
-  `Milliseconds` and the tuner reference takes `Hertz`, because the wire carries
-  the real number rather than a 0..1 position.
+Which type a setting takes, and why it is not always your choice, is the table in
+[api.md](api.md#the-same-rule-for-the-settings-with-one-twist).
 
 **`set_expression` got better, not just stricter.** Its sweep ends are positions
 of the parameter being assigned, so they take the same values a write to that
@@ -83,8 +67,8 @@ endpoints come off the wire as plain floats, so a restore is
 `minimum=Encoded(was.expression_min)`.
 
 **Selectors did not change.** `impedance`, `input_type`, `ground_lift`,
-`hp_select`, `dry_wet`, `filter_type`, `mute` and `enabled` are switches and
-option lists, not values on a scale, and still take an enum or a bool.
+`hp_select`, `dry_wet`, `filter_type`, `mute` and `enabled` still take an enum or
+a bool.
 
 `translate.hz_to_tuner_reference()` now returns `Hertz`, so its result can be
 passed straight to `set_tuner_reference()`.
@@ -103,15 +87,30 @@ passed straight to `set_tuner_reference()`.
 
 A bare number is refused, and the error shows the call rewritten.
 
-`scene` and `promote` are keyword-only now. Nobody plausibly passed them
-positionally past three `None`s, but if you did, name them.
+`scene` and `promote` are keyword-only now.
+
+**Read this before running a find-and-replace.** `real=` and `value=` are not
+the same number in different clothes. On a lane `VOLUME` (-40..+12 dB):
+
+```python
+set_param(LaneOutput(0), "VOLUME", Real(0.0))     # 0 dB - unity
+set_param(LaneOutput(0), "VOLUME", Encoded(0.0))  # the Off detent - silence
+```
+
+A mechanical migration is safe as long as `real=` becomes `Real` or a unit type
+and `value=` becomes `Encoded`, because that preserves which line each call was
+on. Swapping them silently inverts a volume. The two lines are explained in
+[api.md](api.md#setting-a-parameter-the-two-number-lines).
+
+Only `Encoded` works with no unit attached. The other two read the parameter's
+scale from the catalog, and the catalog comes from the unit.
 
 ### Reads hand back a typed value, so `str()` changed
 
-Not just writes. `Parameter.to_real()`, `Parameter.floor` and `param_state()`'s
-`values` used to give plain floats and now give `Db`, `Real`, `Encoded` and the
-rest. They ARE floats - arithmetic, comparisons and `json.dumps` are unchanged -
-but `repr` says the type, and `str()` delegates to `repr` on a float subclass:
+`Parameter.to_real()`, `Parameter.floor` and `param_state()`'s `values` used to
+give plain floats and now give `Db`, `Real`, `Encoded` and the rest. They are
+floats, so arithmetic, comparisons and `json.dumps` are unchanged, but `repr`
+says the type and `str()` delegates to `repr` on a float subclass:
 
 ```python
 str(p.to_real(0.5))     # was '-14.0',  is now 'Db(-14.0)'
@@ -119,83 +118,52 @@ f"{p.floor}"            # was '-39.5',  is now 'Db(-39.5)'
 f"{p.floor:.1f}"        # '-39.5' either way - a format spec is unaffected
 ```
 
-So a log line or a UI label built with `str()` or a bare `{}` will show the type
-name. Wrap it in `float()`, or give the f-string a format spec. This is the one
-change here that alters output without raising anything, which is why it has its
-own section rather than a table row.
+A log line or a UI label built with `str()` or a bare `{}` will show the type
+name. Wrap it in `float()`, or give the f-string a format spec.
 
-**Read this part before running a find-and-replace.** `real=` and `value=` are
-NOT the same number in different clothes. On a lane VOLUME, `-40..+12 dB`:
+### Dangerous: `MetronomeBeat.OFF` now means the opposite of what it meant
 
-```python
-set_param(LaneOutput(0), "VOLUME", Real(0.0))     # 0 dB - unity
-set_param(LaneOutput(0), "VOLUME", Encoded(0.0))  # the Off detent - silence
-```
-
-Every knob has two number lines - the screen's and the device's - and the type
-says which one your number is on. A mechanical migration is safe as long as
-`real=` becomes `Real`/a unit type and `value=` becomes `Encoded`, because that
-preserves which line each call was already using. Swapping them silently
-inverts a volume.
-
-`Db`, `Percent`, `Hertz`, `Milliseconds`, `Seconds`, `Semitones`, `Cents` and
-`Bpm` are `Real` plus a claim that gets checked: hand `Db` to a parameter the
-catalog calls Hz and you get a `TypeError` rather than a wrong write. Use plain
-`Real` where you do not want the check, or where the parameter has no unit -
-1,780 of them do not.
-
-Only `Encoded` works with no device attached. The other two read the parameter's
-scale from the catalog, and the catalog comes from the unit.
-
-### DANGEROUS: `MetronomeBeat.OFF` now means the OPPOSITE of what it meant
-
-Read this before the rest. It is the only break here where a name survives, the
-type-checker stays quiet, and the meaning inverts.
+The only break here where a name survives, the type checker stays quiet, and the
+meaning inverts.
 
 ```python
 qc.set_beat(3, MetronomeBeat.OFF)     # before: beat 3 is SILENT
                                       # after:  beat 3 is an ordinary CLICK
 ```
 
-The four states were named by ear in an earlier session and two were backwards.
-Driven properly on 2026-08-27 - one bar at 60 bpm with all four states on the
-four beats, listened to and looked at - they are the device's own words:
+The four states are now the unit's own words, driven on the unit 2026-08-27:
 
 | index | now | before | sounds like | drawn as |
 |---|---|---|---|---|
 | 0 | `OFF` | `NORMAL` | the plain click | solid circle |
 | 1 | `MUTE` | `OFF` | silent | outlined circle |
-| 2 | `DOWN` | `ACCENT` | the big accent | solid circle, dot ABOVE |
-| 3 | `ON` | `QUIET` | a small accent | solid circle, dot BELOW |
+| 2 | `DOWN` | `ACCENT` | the big accent | solid circle, dot above |
+| 3 | `ON` | `QUIET` | a small accent | solid circle, dot below |
 
-`OFF` and `ON` are about the ACCENT, not about whether the beat sounds. **To
-silence a beat, use `MUTE`.**
+`OFF` and `ON` are about the accent, not about whether the beat sounds. To
+silence a beat, use `MUTE`.
 
-`NORMAL`, `ACCENT` and `QUIET` are gone, so code using those fails at import,
-which is what you want. Only `OFF` is the trap: it still exists, it moved from
-1 to 0, and it flipped from silent to audible. Search for it.
+`NORMAL`, `ACCENT` and `QUIET` are gone, so code using them fails at import. Only
+`OFF` is the trap: it still exists, it moved from 1 to 0, and it flipped from
+silent to audible. Search for it.
 
-Note `QUIET` was the worst of the four - it named index 3, which is the LOUDER
-of the two ordinary states.
+### `to_real` and `to_normalized` return different numbers for 615 parameters
 
-### `to_real` and `to_normalized` return DIFFERENT NUMBERS for 615 parameters
+Nothing about it is visible at a call site: the names, the arguments and the
+types are unchanged, and the answers are better.
 
-Read this one first, because nothing about it is visible at a call site: the
-names, the arguments and the types are unchanged, and the answers are better.
-
-The device publishes a `skew` attribute describing each knob's taper. This
-library did not read it, so every conversion was a straight line. 615 parameters
-are not straight lines. If you have calibrated anything against the old output -
-a stored mapping, a fixture, a value you tuned by ear until it sounded right -
-recheck it.
+The unit publishes a `skew` attribute describing each knob's taper. The library
+did not read it, so every conversion was a straight line. 615 parameters are not
+straight lines. If you have calibrated anything against the old output, recheck
+it.
 
 ```python
 # a Low-High Cut's HPF FREQ, catalog range 20..20000 Hz
 p.to_real(0.25)     # before: 5015.0    after: 216.7    the unit shows 217
 ```
 
-The new numbers are the ones the unit displays; see `docs/protocol.md`, "A
-parameter's scale is in the catalog".
+The new numbers are the ones the unit displays; see `docs/protocol.md`, "One
+law covers every parameter's scale".
 
 ### An out-of-range value is refused, not clamped
 
@@ -205,37 +173,34 @@ Also silent, and also unchanged at the call site.
 p.to_normalized(999.0)     # before: 1.0    after: ValueError
 ```
 
-Two behaviours were in the library at once - the catalog path clamped and the
-measured-span path refused - and unifying them on the catalog meant picking one.
 A clamped write looks like it worked and lands somewhere else.
 
-The bottom of the range is the knob's FLOOR, not its minimum, where those
-differ - and on any knob whose screen shows a word at the bottom they differ by
-one step of the unit's own numeric entry. A lane output's VOLUME states -40 to
-12 and its lowest real value is -39.99 dB; a cab HPF states 20 to 500 in whole
-numbers and its lowest is 21 Hz.
-
-Reading an expression sweep changed with it: an end reads as `Off` below the
-knob's floor, and on a lane VOLUME that band went from the bottom 1% of the wire
-to the bottom 0.02%. A heel at wire 0.005 used to read `Off` and now reads
--39.74 dB.
+The bottom of the range is the knob's floor, not its minimum, where those differ:
+on any knob whose screen shows a word at the bottom they differ by one step of
+the unit's own numeric entry. A lane output's `VOLUME` states -40 to 12 and its
+lowest real value is -39.99 dB; a cab `HPF` states 20 to 500 in whole numbers and
+its lowest is 21 Hz.
 
 So the minimum itself is refused on those knobs: `Db(-40.0)` on a cab or a lane
-VOLUME, `Db(-60.0)` on an amp OUTPUT, `Hertz(20.0)` on a cab HPF. Each converts
-to wire 0.0, which is the Off position rather than the value asked for. Write
-`Encoded(0.0)` if the Off position is what you want.
+`VOLUME`, `Db(-60.0)` on an amp `OUTPUT`, `Hertz(20.0)` on a cab `HPF`. Each
+converts to wire 0.0, which is the Off position rather than the value asked for.
+Write `Encoded(0.0)` if the Off position is what you want.
+
+Reading an expression sweep changed with it: an end reads as `Off` below the
+knob's floor, and on a lane `VOLUME` that band went from the bottom 1% of the
+wire to the bottom 0.02%.
 
 ### Converting real units now needs a catalog
 
-A real value reads the device's own description of the parameter, so it fetches one.
-Previously a handful of parameters were served by a hand-measured table and
-worked with no device attached - `Tempo()` in particular.
+A real value reads the unit's own description of the parameter, so it asks the
+unit for one. Previously a few parameters were served by a hand-measured table and worked
+with no unit attached, `Tempo()` in particular.
 
-If you convert without a device, use the standalone helpers, which are unchanged:
+To convert without a unit, use the standalone helpers, which are unchanged:
 `protocol.bpm_to_tempo`, `protocol.tempo_bpm`, `protocol.db_to_lane_level`,
 `protocol.lane_level_db`, `protocol.input_level_db`, `protocol.db_to_input_level`.
 
-Addressing a parameter by wire INDEX and writing `Encoded` still needs no catalog.
+Addressing a parameter by wire index and writing `Encoded` still needs no catalog.
 
 ### Removed: the placeholder-range machinery
 
@@ -244,20 +209,20 @@ are gone.
 
 | removed | replacement |
 |---|---|
-| `catalog.Parameter.range_is_placeholder` | nothing - it was never true of any parameter |
-| `units.MEASURED_SPANS` | `units.FIRMWARE_CONSTANTS`, keyed by the device's own constant names |
-| `units.UNCONVERTIBLE` | nothing - it was empty, and the case it described does not arise |
-| `units.EQ_GAIN_SPAN` | `catalog[4000].parameters[0]` and its `.minimum` / `.maximum` / `.skew` |
+| `catalog.Parameter.range_is_placeholder` | nothing; it was never true of any parameter |
+| `units.MEASURED_SPANS` | `units.FIRMWARE_CONSTANTS`, keyed by the unit's own constant names |
+| `units.UNCONVERTIBLE` | nothing; it was empty |
+| `units.EQ_GAIN_SPAN` | `catalog[4000].parameters[0]` and its `.minimum`, `.maximum`, `.skew` |
 | `units.CAB_LEVEL_UNITY` | `catalog[12000].parameters[2].to_normalized(0.0)` |
-| `units.Span`, `units.measured_to_wire`, `units.measured_from_wire` | `catalog.Parameter.to_real` / `.to_normalized`, which now apply the taper |
+| `units.Span`, `units.measured_to_wire`, `units.measured_from_wire` | `catalog.Parameter.to_real` and `.to_normalized`, which apply the taper |
 
-`ValueError` for an unconvertible parameter now says "nobody has measured"
-rather than "placeholder range". One parameter reaches it: `NC_Recorder`'s
-`OUT LEVEL`, whose block crashes the unit when placed.
+`ValueError` for an unconvertible parameter now says "nobody has measured" rather
+than "placeholder range". One parameter reaches it: `NC_Recorder`'s `OUT LEVEL`,
+whose block crashes the unit when placed.
 
 ### `set_param_option` no longer needs `source=`
 
-The option names are in the catalog. They always were.
+The option names are in the catalog.
 
 ```python
 # before - a preset was required for every list
@@ -270,16 +235,14 @@ block = protocol.blocks(p)[0]
 qc.set_param_option(block, "DYN MODE", options.DynMode3.GATE)
 ```
 
-`source=` is still required for a DYNAMIC list, whose entries include one per
+`source=` is still required for a dynamic list, whose entries include one per
 block earlier in the chain. Twelve parameters qualify; a side-chain `SOURCE` is
-the one to know. Passing a preset anywhere else is harmless and saves a fetch.
+the one to know.
 
+### A parameter is addressed by a target, not by a collection-specific method
 
-### A parameter is addressed by a TARGET, not by a collection-specific method
-
-Ten methods became four. Import the address from
-`pyquadcortex.protocol.targets` (or `pyquadcortex.protocol`) and say where the
-parameter lives:
+Ten methods became four. Import the address from `pyquadcortex.protocol.targets`
+(or `pyquadcortex.protocol`) and say where the parameter lives:
 
 | before | after |
 |---|---|
@@ -295,12 +258,11 @@ parameter lives:
 | `set_expression(row, column, param, ...)` | `set_expression(Block(row, column), param, ...)` |
 | `clear_expression(row, column, param)` | `clear_expression(Block(row, column), param)` |
 
-Both changes ship in the same release, so the "after" column shows the FINAL
-form - there is no intermediate state to migrate through.
+Both changes ship in the same release, so the "after" column shows the final
+form.
 
 `param_index=` is gone; the parameter is the second positional argument, and
-`param=` still works as a keyword. `model=` moves onto the `Block`, because the
-model is a property of the cell rather than of the call.
+`param=` still works as a keyword. `model=` moves onto the `Block`.
 
 `QuadCortex.TEMPO_PARAMS` is now `targets.Tempo.NAMES`.
 
@@ -319,18 +281,17 @@ model is a property of the cell rather than of the call.
 | `set_param_option(row, column, p, o, source)` | `set_param_option(Block(row, column), p, o, source)` |
 | `param_options(preset, row, column, i)` | `param_options(preset, Block(row, column), i)` |
 
-`Block.model_id` means **what is, or is to be, in this cell**. So `set_block`
-takes it from the cell rather than as a separate argument, and `blocks()`
-round-trips: read a block, place it somewhere else.
+`Block.model_id` means what is, or is to be, in this cell. So `set_block` takes
+it from the cell, and `blocks()` round-trips: read a block, place it somewhere
+else.
 
-`Block` is a frozen dataclass rather than a `NamedTuple`, so it no longer
-unpacks as a tuple. Attribute access - `block.row`, `block.column`,
-`block.model_id` - is unchanged, and that is how every use in this repo read it.
+`Block` is a frozen dataclass rather than a `NamedTuple`, so it no longer unpacks
+as a tuple. Attribute access is unchanged.
 
 ### Submodules moved
 
-Public names are unchanged: `from pyquadcortex.protocol import X` still works
-for every one of them. Only direct submodule imports move.
+Public names are unchanged: `from pyquadcortex.protocol import X` still works for
+every one of them. Only direct submodule imports move.
 
 | before | after |
 |---|---|
@@ -338,10 +299,9 @@ for every one of them. Only direct submodule imports move.
 | `client.UNITY_LEVEL`, `client.lane_level_db`, `client.db_to_lane_level`, `client.input_level_db`, `client.db_to_input_level`, `client.tempo_bpm`, `client.bpm_to_tempo` | `units.…` |
 | `client.Block` | `targets.Block` |
 
-
 ### The protocol API moved to `pyquadcortex.protocol`
 
-Change one import line. `pyquadcortex.connect()` now returns the DOMAIN MODEL's
+Change one import line. `pyquadcortex.connect()` now returns the model's
 `Device`; the message-level client is one namespace deeper.
 
 | before | after |
@@ -355,8 +315,7 @@ Change one import line. `pyquadcortex.connect()` now returns the DOMAIN MODEL's
 
 Every name the package exported is reachable under `pyquadcortex.protocol` with
 the same behaviour, apart from the one rename below. `tests/test_namespace.py`
-enumerates the pre-flip export list and proves it, so this table cannot quietly
-fall out of date.
+proves it.
 
 `qcctl` is unchanged. If you installed the package in editable mode before the
 move, reinstall it so the console script points at the new module path.
@@ -367,7 +326,7 @@ move, reinstall it so the console script points at the new module path.
 |---|---|
 | `ExpressionBypassMode` | `ExpressionSwitchMode` |
 
-Same values, same numbering, same meaning - `STOP` 0, `SWITCH` 1, `HEEL_TOE` 2.
+Same values, same numbering, same meaning: `STOP` 0, `SWITCH` 1, `HEEL_TOE` 2.
 No alias: the old name described one of the three things the enum governs. It is
-the unit's **SWITCH ON** control, and it applies to a block's bypass *and* to a
-Lane Output Control's MUTE and SOLO. Only the bypass is a bypass.
+the unit's `SWITCH ON` control, and it applies to a block's bypass and to a Lane
+Output Control's `MUTE` and `SOLO`.

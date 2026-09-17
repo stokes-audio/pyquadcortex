@@ -279,6 +279,24 @@ def test_the_pins_that_cap_an_upgrade_are_the_ones_named_here():
         f"docs/STEERING.md section 6 together, in this commit.")
 
 
+def _steering_bullet(lead):
+    """The whole bullet in `docs/STEERING.md` that starts with `lead`.
+
+    The documents wrap at about 80 columns, so a bullet is several lines. Reading
+    only the first one would pass a bullet that names nothing after the wrap.
+    """
+    lines = (ROOT / "docs" / "STEERING.md").read_text(encoding="utf-8").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith(lead)), None)
+    if start is None:
+        return None
+    out = [lines[start]]
+    for line in lines[start + 1:]:
+        if not line.strip() or re.match(r"^\s*[-*]\s", line):
+            break
+        out.append(line.strip())
+    return " ".join(out)
+
+
 def test_the_steering_document_names_the_pins_that_cap_an_upgrade():
     """Section 6 tells a reader why this file's check is quiet. Hold it to that.
 
@@ -291,10 +309,7 @@ def test_the_steering_document_names_the_pins_that_cap_an_upgrade():
     raise the mypy ceiling - doing so leaves it naming one too many, which a
     check that only looked for what was missing would have passed.
     """
-    bullet = next(
-        (line for line in (ROOT / "docs" / "STEERING.md")
-         .read_text(encoding="utf-8").splitlines()
-         if line.startswith("- **The environment is held to the pins")), None)
+    bullet = _steering_bullet("- **The environment is held to the pins")
     assert bullet, (
         "docs/STEERING.md section 6 no longer carries the bullet about holding "
         "the environment to the pins, which is where this check is explained")

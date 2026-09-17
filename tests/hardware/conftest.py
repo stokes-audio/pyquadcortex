@@ -218,7 +218,7 @@ class HandshakeBurst:
     #: They are one group, not a sequence with a last member to watch for:
     #: re-measured 2026-09-14 on d14e over three sessions, they land at about
     #: 11.1 s inside 3.6, 5.8 and 6.0 ms respectively, always in this order
-    #: (``docs/protocol.md``, "Connect burst, measured"). ``RecallPreset`` is
+    #: (``docs/protocol.md``, "The connect burst"). ``RecallPreset`` is
     #: the FIRST of them. Waiting for that one alone is what this used to do,
     #: and it cost two hardware tests a few runs in a hundred - most often by
     #: losing ``Scene``, which arrives last. See
