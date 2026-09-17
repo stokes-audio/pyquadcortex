@@ -951,10 +951,10 @@ returns the current one.
   undo: true}`, measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0
   in PR #42). Whether the recall that follows carries `reason: UNDO` was not
   captured in either session.
-- **Whether `Parameter.hidden` predicts writability.** The flag was tested
-  against the screen and predicts it most of the time, not always (see "Catalog
-  attributes"). Nobody has tried writing a hidden parameter, so that half of the
-  question is untested.
+- **The writability half of `Parameter.hidden`.** The flag was tested against
+  the screen, which it predicts most of the time and not always
+  ([Catalog attributes](#catalog-attributes)). Nobody has tried writing a hidden
+  parameter, so that half of the question is untested.
 - **Bypass persistence over MIDI.** The unit's own `SCENE BYPASS BEHAVIOR` wording
   groups MIDI with footswitches, not with the touchscreen. A USB HID write behaves
   like the touchscreen; the MIDI half is untested because this library has no MIDI
@@ -1305,20 +1305,21 @@ circles. The other thirteen match the catalog exactly.
 
 Two things stay unknown: whether a control nobody has looked at yet draws its own
 words, and whether `Parameter.hidden` marks the ones that do. The 94 unread lists
-below answer the first wherever you start. The second needs a hidden parameter.
-Five of the 94 reach one, and two of those are ranks 2 and 3 of the worklist
-below: `Small,Med,Large` on a PCOM Core Cabsim's `SIZE`, and `Off,Duck,Gate` on a
-Tape Delay's `DYN MODE`. Read either on one of those models, where the parameter
-is hidden, and the candidate gets its third data point. The worklist names a
-different model for each, because it names one place the list appears rather than
-a hidden one.
+below answer the first wherever you start. The second needs a hidden parameter,
+and five of the 94 reach one. Two of those five are ranks 2 and 3 of the worklist
+below: `Small,Med,Large` on a PCOM Core Cabsim's `SIZE`, and `Off,Duck,Gate` on
+the `DYN MODE` of a `Tape Delay (ST)`. Read either of those two and the candidate
+gets its third data point. The worklist names a different model for each list,
+because it names one place the list appears rather than a place the parameter is
+hidden. The model matters: a `PCOM Tape Delay (ST)` offers the shorter
+`Duck,Gate` on the same control, which is a different list.
 
 A reading taken off the unit's screen is a fact about the unit's screen.
 
 The reassembly method and the byte counts are in the lab repository,
 `doc/model-repo-vocabulary-reassembly.md`.
 
-### `hidden` on a parameter is the vendor's intent, not the glass
+### `hidden` on a parameter is the vendor's intent, not the screen
 
 Parsed as `Parameter.hidden`. Six option lists are used only by parameters
 carrying it, and a block for each was placed on the grid and searched page by
@@ -1334,9 +1335,9 @@ page (2026-09-14):
 | `Sine,Triang,...` | a Mono Synth's `OSC1 WAVE` | **yes** |
 
 The Mono Synth's `OSC1 WAVE` is marked `hidden="true"` and is on the screen, on a
-tab called Oscillator, drawn as waveform icons, and so is `OSC1 ACTIVE` beside
-it, which the flag also marks. So the flag predicts the screen most of the time
-and not always. Whether it predicts writability is untested; see
+tab called Oscillator, drawn as waveform icons. `OSC1 ACTIVE` sits beside it, on
+the same tab, and the flag marks that too. So the flag predicts the screen most
+of the time and not always. Whether it predicts writability is untested; see
 [section 13](#13-still-open). `options.OPTION_AUDIT` does not use it, and
 nothing in the library branches on it. It is also not a boolean: 649 parameters
 say `"true"` and one says `"atma"` (the Freeze block's `MOMENTARY`), the Quad
@@ -1405,8 +1406,8 @@ place on the grid: three lists and seven parameters on the Splitter family, five
 lists and five parameters on `TempoControl`. That is about where they live, not
 about whether anyone can see them. The Tempo page is on the unit, and this
 fixture already holds four driven readings from it, so `TempoControl`'s five are
-a job still to do. None of the eight is `absent`, which this document uses only
-for a control somebody looked for and did not find.
+a job still to do. None of the eight is `absent`, which the status list below
+defines.
 
 | list | parameters | how it was read |
 |---|---|---|
