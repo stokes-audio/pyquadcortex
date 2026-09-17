@@ -51,13 +51,15 @@ dependencies = [
 # protobuf ones, and 1.82.1 declares `protobuf>=7.35.1` while still emitting
 # gencode 7.35.0.
 #
-# The `<2` on mypy is a gate rather than a guess: a major version of the
-# checker does not enter a BLOCKING CI job unreviewed (ADR-0018). mypy 2.3.1
-# was run against this tree on 2026-09-16 and both halves of that job were
-# clean - no issues in 46 source files, and `tests/test_typing.py` passed, so
-# the unit checking still bites. Raising the ceiling is therefore open, not
-# blocked, and it is a change of its own: this pin decides which checker every
-# contributor runs, and one green run on one tree is not that decision.
+# The `<2` on mypy has no recorded reason. ADR-0018 put mypy in CI as a BLOCKING
+# job and says nothing about a bound; the bound arrived in b726d3e on 2026-08-28
+# with no note - one day after ADR-0016 recorded that the static unit checking
+# was VERIFIED with mypy 2.3.1, which is the version it excludes. So it stands as
+# a review gate rather than as a decision to defend. mypy 2.3.1 was run against
+# this tree on 2026-09-16 and both halves of that job were clean - no issues in
+# 46 source files, and `tests/test_typing.py` passed. Raising it is open, and it
+# is a change of its own: this pin decides which checker every contributor runs,
+# and one green run on one tree is not that decision. See STEERING section 8.
 #
 # `packaging` arrives with pytest either way, and is named here because
 # `tests/test_packaging.py` parses these requirement strings with it - the

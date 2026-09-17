@@ -12,7 +12,9 @@ import subprocess
 import sys
 import tomllib
 
+import pytest
 from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -223,11 +225,24 @@ def test_the_protobuf_pin_stops_below_the_next_gencode_major():
 
 # -- the pins and the environment that claims to satisfy them -----------------
 
-#: The declared pins that can actually disagree with a newer install. A pin with
-#: only a floor is satisfied by every later release, so these two are the whole
-#: reach of the check below - which is what makes it quiet rather than noisy,
-#: and what `docs/STEERING.md` section 6 says in prose.
+#: The declared pins that can refuse a newer release. A pin with only a floor is
+#: satisfied by everything above it, so these two are the whole reach of the
+#: comparison below - which is what makes it quiet rather than noisy, and what
+#: `docs/STEERING.md` section 6 says in prose. Both halves are held: the set has
+#: to match what pyproject declares, and section 6 has to name the set.
 PINS_WITH_A_CEILING = {"protobuf", "mypy"}
+
+#: A version no release will reach, for asking a specifier whether it has an
+#: effective ceiling at all.
+_ABOVE_EVERYTHING = "9999.0.0"
+
+#: A development checkout, as opposed to an unpacked sdist. The sdist ships
+#: `tests/` on purpose, so a downstream repackager can and does run this suite -
+#: against their distribution's own protobuf and mypy, which they chose
+#: deliberately and cannot swap, and for whom "reinstall the dev extra" is not
+#: advice. The claim below is about a development environment matching the
+#: project's own declared setup, so it is only asked where that is the question.
+IN_A_CHECKOUT = (ROOT / ".git").exists()
 
 
 def _declared_requirements():
@@ -239,25 +254,60 @@ def _declared_requirements():
     return runtime, dev
 
 
-def test_the_pins_that_can_bite_are_the_ones_the_documents_name():
-    """The check below can only ever refuse a pin that carries a CEILING.
+def _has_a_ceiling(req):
+    """Whether this requirement can refuse a newer release.
+
+    Asked by offering a version nothing will ever reach, rather than by reading
+    operators. `~=1.83` and `==1.2.*` both refuse 2.0 while neither spells a
+    `<`, so an operator scan calls them open and lets a minor-version ceiling
+    in behind the sentence that says there is none. `!=1.2.3` really is open,
+    and this says so.
+    """
+    return not req.specifier.contains(_ABOVE_EVERYTHING, prereleases=True)
+
+
+def test_the_pins_that_can_bite_are_the_ones_named_here():
+    """The comparison below can only ever refuse a pin with a CEILING.
 
     `pytest>=8` is satisfied by every later release, so it can never disagree
-    with anything installed. That is the whole argument for the check below
-    being quiet rather than noisy, and it is stated in prose twice - in
-    `docs/STEERING.md` section 6 and in the docstring under this one. Prose
-    nobody holds is prose that rots, so the set is named here instead.
+    with anything installed. That is the whole argument for the comparison being
+    quiet rather than noisy, and an argument nobody holds is an argument that
+    rots - so the set is named, and a new ceiling has to come through here.
     """
     runtime, dev = _declared_requirements()
-    ceilinged = {req.name for req in runtime + dev
-                 if any(spec.operator.startswith("<") for spec in req.specifier)}
-    assert ceilinged == PINS_WITH_A_CEILING, (
-        f"the pins carrying a ceiling are now {sorted(ceilinged)}, not "
-        f"{sorted(PINS_WITH_A_CEILING)}. A new ceiling widens what the check "
-        f"below can refuse, so move this set and the sentence in "
+    ceilinged = {canonicalize_name(req.name)
+                 for req in runtime + dev if _has_a_ceiling(req)}
+    assert ceilinged == {canonicalize_name(n) for n in PINS_WITH_A_CEILING}, (
+        f"the pins that can refuse a newer release are now {sorted(ceilinged)}, "
+        f"not {sorted(PINS_WITH_A_CEILING)}. A new ceiling widens what the "
+        f"comparison below can refuse, so move this set and the sentence in "
         f"docs/STEERING.md section 6 together, in this commit.")
 
 
+def test_the_steering_document_names_the_pins_that_can_bite():
+    """Section 6 tells a reader why this file's check is quiet. Hold it to that.
+
+    `tests/test_option_audit.py` already holds `docs/domain-model.md` to the
+    counts it quotes, for the same reason: a document that can drift from the
+    thing it describes will.
+    """
+    bullet = next(
+        (line for line in (ROOT / "docs" / "STEERING.md")
+         .read_text(encoding="utf-8").splitlines()
+         if line.startswith("- **The environment is held to the pins")), None)
+    assert bullet, (
+        "docs/STEERING.md section 6 no longer carries the bullet about holding "
+        "the environment to the pins, which is where this check is explained")
+    missing = sorted(n for n in PINS_WITH_A_CEILING if f"`{n}`" not in bullet)
+    assert not missing, (
+        f"docs/STEERING.md section 6 does not name {missing}, which can refuse "
+        f"an installed version. The sentence claims which pins can bite; it has "
+        f"to name all of them.")
+
+
+@pytest.mark.skipif(
+    not IN_A_CHECKOUT,
+    reason="an unpacked sdist is not a development checkout - see IN_A_CHECKOUT")
 def test_no_installed_dependency_sits_outside_the_pin_that_declares_it():
     """CI installs from these pins; a working copy is installed by hand.
 
@@ -281,26 +331,28 @@ def test_no_installed_dependency_sits_outside_the_pin_that_declares_it():
         # is the cheapest way to start crying wolf.
         if req.marker is not None and not req.marker.evaluate():
             continue
+        name = canonicalize_name(req.name)
         try:
-            installed = importlib.metadata.version(req.name)
+            installed = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             continue
-        compared.append(req.name)
+        compared.append(name)
         # `prereleases=True` so an installed prerelease is COMPARED rather than
         # reported as outside every pin, which is the other obvious way to cry
         # wolf.
         if not req.specifier.contains(installed, prereleases=True):
-            outside.append(f"{req.name} {installed} installed, pinned "
+            outside.append(f"{name} {installed} installed, pinned "
                            f"{req.name}{req.specifier}")
     assert "protobuf" in compared, (
         f"nothing answered for protobuf, which this package cannot import "
         f"without, so the version lookup has broken rather than the environment "
         f"being bare. Compared {sorted(compared)}.")
     assert not outside, (
-        "the installed packages disagree with pyproject.toml:\n  "
+        "the environment running pytest disagrees with pyproject.toml:\n  "
         + "\n  ".join(outside)
         + "\nCI installs from the pins, so whatever was checked against these "
-          "versions was checked against something else. In a development "
-          "checkout, reinstall with `uv pip install -e \".[dev]\"`. If the "
-          "newer version is the one this project now wants, move the pin in "
-          "this commit.")
+          "versions was checked against something else. Reinstall with "
+          "`uv pip install -e \".[dev]\"` - note that is the interpreter "
+          "running this, which in a worktree is usually the main checkout's. "
+          "If the newer version is the one this project now wants, move the "
+          "pin in this commit.")
