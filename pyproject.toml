@@ -51,15 +51,17 @@ dependencies = [
 # protobuf ones, and 1.82.1 declares `protobuf>=7.35.1` while still emitting
 # gencode 7.35.0.
 #
-# The `<2` on mypy has no recorded reason. ADR-0018 put mypy in CI as a BLOCKING
-# job and says nothing about a bound; the bound arrived in b726d3e on 2026-08-28
-# with no note - one day after ADR-0016 recorded that the static unit checking
-# was VERIFIED with mypy 2.3.1, which is the version it excludes. So it stands as
-# a review gate rather than as a decision to defend. mypy 2.3.1 was run against
-# this tree on 2026-09-16 and both halves of that job were clean - no issues in
-# 46 source files, and `tests/test_typing.py` passed. Raising it is open, and it
-# is a change of its own: this pin decides which checker every contributor runs,
-# and one green run on one tree is not that decision. See STEERING section 8.
+# The `<2` on mypy has a reason, and it is not in an ADR. ADR-0018 put mypy in CI
+# as a BLOCKING job and says nothing about a bound. The bound arrived in b726d3e
+# (2026-08-28), whose commit message gives it - "mypy is pinned below 2 so the
+# enforcer cannot change under CI" - and that is where it stayed. It landed one
+# day after ADR-0016 recorded that the static unit checking was VERIFIED with
+# mypy 2.3.1, the version the bound excludes, which is the likeliest source of
+# the drift this repo just found. mypy 2.3.1 was run against this tree on
+# 2026-09-16 and both halves of that job were clean - no issues in 46 source
+# files, and `tests/test_typing.py` passed. So raising it is open, and it is a
+# change of its own: this pin decides which checker every contributor runs, and
+# one green run on one tree is not that decision. See STEERING section 8.
 #
 # `packaging` arrives with pytest either way, and is named here because
 # `tests/test_packaging.py` parses these requirement strings with it - the

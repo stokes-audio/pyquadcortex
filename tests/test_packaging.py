@@ -12,7 +12,6 @@ import subprocess
 import sys
 import tomllib
 
-import pytest
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
@@ -236,14 +235,6 @@ PINS_WITH_A_CEILING = {"protobuf", "mypy"}
 #: effective ceiling at all.
 _ABOVE_EVERYTHING = "9999.0.0"
 
-#: A development checkout, as opposed to an unpacked sdist. The sdist ships
-#: `tests/` on purpose, so a downstream repackager can and does run this suite -
-#: against their distribution's own protobuf and mypy, which they chose
-#: deliberately and cannot swap, and for whom "reinstall the dev extra" is not
-#: advice. The claim below is about a development environment matching the
-#: project's own declared setup, so it is only asked where that is the question.
-IN_A_CHECKOUT = (ROOT / ".git").exists()
-
 
 def _declared_requirements():
     """The runtime pins and the dev-extra pins, parsed, as two lists."""
@@ -298,16 +289,21 @@ def test_the_steering_document_names_the_pins_that_can_bite():
     assert bullet, (
         "docs/STEERING.md section 6 no longer carries the bullet about holding "
         "the environment to the pins, which is where this check is explained")
-    missing = sorted(n for n in PINS_WITH_A_CEILING if f"`{n}`" not in bullet)
+    missing = sorted(canonicalize_name(n) for n in PINS_WITH_A_CEILING
+                     if f"`{canonicalize_name(n)}`" not in bullet)
     assert not missing, (
         f"docs/STEERING.md section 6 does not name {missing}, which can refuse "
         f"an installed version. The sentence claims which pins can bite; it has "
         f"to name all of them.")
 
 
-@pytest.mark.skipif(
-    not IN_A_CHECKOUT,
-    reason="an unpacked sdist is not a development checkout - see IN_A_CHECKOUT")
+# Nothing gates this on being a development checkout, although the sdist ships
+# `tests/` and a repackager's own protobuf is not the drift this is about. The
+# sdist does not ship `docs/`, and this suite reads it - the STEERING check
+# above, and `tests/test_option_audit.py` holding `docs/domain-model.md` to its
+# counts - so it does not run from an sdist at all today. A skip for a
+# population that cannot reach the code only ever hides something. Ship `docs/`
+# in the sdist and this needs revisiting.
 def test_no_installed_dependency_sits_outside_the_pin_that_declares_it():
     """CI installs from these pins; a working copy is installed by hand.
 

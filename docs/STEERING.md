@@ -105,7 +105,7 @@ Decisions for this area are recorded in [`ADR.md`](ADR.md):
 
 ## 8. Open Questions
 
-- **Whether the mypy pin should allow 2.x.** It is `mypy>=1.15,<2`, and the ceiling has no recorded reason. ADR-0018 put mypy in CI as a blocking job and says nothing about a bound; the bound arrived in b726d3e (2026-08-28) with no note, one day after ADR-0016 recorded that the static unit checking was VERIFIED with mypy 2.3.1 - the version the bound excludes. That is also the likeliest source of the drift this repo just found. mypy 2.3.1 was run against this tree on 2026-09-16 and both halves of CI's blocking job were clean: no issues in 46 source files, and `tests/test_typing.py` passed, so the unit checking still bites. That is one green run on one tree - it says raising the ceiling is open, not that it should be raised. The pin decides which checker every contributor runs, which makes it a change of its own.
+- **Whether the mypy pin should allow 2.x.** It is `mypy>=1.15,<2`, and the ceiling's reason has never left a commit message. ADR-0018 put mypy in CI as a blocking job and says nothing about a bound; the bound arrived in b726d3e (2026-08-28), which says "mypy is pinned below 2 so the enforcer cannot change under CI" and nothing since has repeated it. It landed one day after ADR-0016 recorded that the static unit checking was VERIFIED with mypy 2.3.1 - the version the bound excludes, and the likeliest source of the drift this repo just found. mypy 2.3.1 was run against this tree on 2026-09-16 and both halves of CI's blocking job were clean: no issues in 46 source files, and `tests/test_typing.py` passed, so the unit checking still bites. That is one green run on one tree - it says raising the ceiling is open, not that it should be raised. The pin decides which checker every contributor runs, which makes it a change of its own.
 
 Protocol unknowns (the splitter write path, the IR import payload format, and the rest) are investigation gaps tracked in [`roadmap.md`](roadmap.md) and [`architecture.md`](architecture.md), not deferred decisions.
 
@@ -179,7 +179,9 @@ denied.
 
 **Scope of impact:**
 - **Updated:** `pyproject.toml` (a comment on the mypy pin and `packaging` added
-  to the dev extra; no version moved); `tests/test_packaging.py`; `CLAUDE.md`;
+  to the dev extra; no version moved); `uv.lock` (the same `packaging` entry, so
+  the repo's other declaration of this dependency set does not go stale);
+  `tests/test_packaging.py`; `CLAUDE.md`;
   `contributing.md`; this file's sections 6 and 8; `docs/architecture.md` (the
   runtime-dependency count); `tests/test_catalog.py` (a docstring that said
   `changelog.md` was unguarded when it is in `SNIPPET_SOURCES`);
@@ -188,8 +190,9 @@ denied.
   sentence naming two attributes and calling them a third)
 - **Not updated (intentionally):** `ADR.md` - no decision was made or reversed.
   ADR-0018 records mypy as a blocking CI job and says nothing about the `<2`
-  ceiling; that gap is written up in section 8 rather than backfilled into a
-  record that did not make the call. `changelog.md` - that file answers "I
+  ceiling, whose reason has never left b726d3e's commit message; that gap is
+  written up in section 8 rather than backfilled into a record that did not
+  make the call. `changelog.md` - that file answers "I
   upgraded, what is different for me?" and nothing here reaches an installed
   package.
 
