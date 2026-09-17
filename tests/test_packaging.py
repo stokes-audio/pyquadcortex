@@ -224,11 +224,14 @@ def test_the_protobuf_pin_stops_below_the_next_gencode_major():
 
 # -- the pins and the environment that claims to satisfy them -----------------
 
-#: The declared pins that can refuse a newer release. A pin with only a floor is
-#: satisfied by everything above it, so these two are the whole reach of the
-#: comparison below - which is what makes it quiet rather than noisy, and what
-#: `docs/STEERING.md` section 6 says in prose. Both halves are held: the set has
-#: to match what pyproject declares, and section 6 has to name the set.
+#: The declared pins that can refuse a NEWER release. This is not the whole
+#: reach of the comparison below - every pin refuses an install beneath its
+#: floor, so `pytest>=8` really does bite on pytest 7. It is the direction a
+#: working copy drifts in, where an ordinary upgrade would otherwise walk past a
+#: bound nobody re-reads. What naming it buys is the claim that an upgrade stays
+#: quiet unless it crosses one of these two, which `docs/STEERING.md` section 6
+#: makes in prose and the two tests below hold from both ends: the set has to
+#: match what pyproject declares, and section 6 has to name the set.
 PINS_WITH_A_CEILING = {"protobuf", "mypy"}
 
 #: A version no release will reach, for asking a specifier whether it has an
@@ -257,13 +260,14 @@ def _has_a_ceiling(req):
     return not req.specifier.contains(_ABOVE_EVERYTHING, prereleases=True)
 
 
-def test_the_pins_that_can_bite_are_the_ones_named_here():
-    """The comparison below can only ever refuse a pin with a CEILING.
+def test_the_pins_that_cap_an_upgrade_are_the_ones_named_here():
+    """Which pins can refuse a NEWER release, held so the prose cannot drift.
 
-    `pytest>=8` is satisfied by every later release, so it can never disagree
-    with anything installed. That is the whole argument for the comparison being
-    quiet rather than noisy, and an argument nobody holds is an argument that
-    rots - so the set is named, and a new ceiling has to come through here.
+    `pytest>=8` refuses pytest 7 like any other pin, but nothing above 8, so an
+    upgrade never trips it. That asymmetry is the whole argument for the
+    comparison below staying quiet in ordinary use, and an argument nobody holds
+    is an argument that rots - so the set is named, and a new ceiling has to
+    come through here.
     """
     runtime, dev = _declared_requirements()
     ceilinged = {canonicalize_name(req.name)
@@ -275,7 +279,7 @@ def test_the_pins_that_can_bite_are_the_ones_named_here():
         f"docs/STEERING.md section 6 together, in this commit.")
 
 
-def test_the_steering_document_names_the_pins_that_can_bite():
+def test_the_steering_document_names_the_pins_that_cap_an_upgrade():
     """Section 6 tells a reader why this file's check is quiet. Hold it to that.
 
     `tests/test_option_audit.py` already holds `docs/domain-model.md` to the
@@ -297,13 +301,25 @@ def test_the_steering_document_names_the_pins_that_can_bite():
         f"to name all of them.")
 
 
-# Nothing gates this on being a development checkout, although the sdist ships
-# `tests/` and a repackager's own protobuf is not the drift this is about. The
-# sdist does not ship `docs/`, and this suite reads it - the STEERING check
-# above, and `tests/test_option_audit.py` holding `docs/domain-model.md` to its
-# counts - so it does not run from an sdist at all today. A skip for a
-# population that cannot reach the code only ever hides something. Ship `docs/`
-# in the sdist and this needs revisiting.
+def test_the_sdist_still_does_not_ship_the_documents_this_suite_reads():
+    """Why the comparison below has no development-checkout gate.
+
+    One was written and removed. The sdist ships `tests/` but not `docs/`, and
+    this suite reads `docs/` - the STEERING check above, and
+    `tests/test_option_audit.py` holding `docs/domain-model.md` to its counts -
+    so it does not run from an unpacked sdist at all. A skip for a population
+    that cannot reach the code only ever hides something. Shipping `docs/` would
+    change that, and this is what trips when someone does, rather than a comment
+    asking to be remembered.
+    """
+    include = PYPROJECT["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+    assert not [p for p in include if p.strip("/").split("/")[0] == "docs"], (
+        f"the sdist include list is now {include}, so this suite can be run "
+        f"from an unpacked sdist - where a repackager's own protobuf and mypy "
+        f"are versions they chose and cannot swap, and not the drift the "
+        f"comparison below is about. Revisit the gate this replaced.")
+
+
 def test_no_installed_dependency_sits_outside_the_pin_that_declares_it():
     """CI installs from these pins; a working copy is installed by hand.
 
