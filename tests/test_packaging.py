@@ -240,12 +240,11 @@ _ABOVE_EVERYTHING = "9999.0.0"
 
 
 def _declared_requirements():
-    """The runtime pins and the dev-extra pins, parsed, as two lists."""
+    """Every requirement `pyproject.toml` declares, runtime and dev extra."""
     project = PYPROJECT["project"]
-    runtime = [Requirement(r) for r in project["dependencies"]]
-    dev = [Requirement(r) for extra in project["optional-dependencies"].values()
-           for r in extra]
-    return runtime, dev
+    return [Requirement(r) for r in project["dependencies"]] + [
+        Requirement(r) for extra in project["optional-dependencies"].values()
+        for r in extra]
 
 
 def _has_a_ceiling(req):
@@ -269,9 +268,9 @@ def test_the_pins_that_cap_an_upgrade_are_the_ones_named_here():
     is an argument that rots - so the set is named, and a new ceiling has to
     come through here.
     """
-    runtime, dev = _declared_requirements()
+    declared = _declared_requirements()
     ceilinged = {canonicalize_name(req.name)
-                 for req in runtime + dev if _has_a_ceiling(req)}
+                 for req in declared if _has_a_ceiling(req)}
     assert ceilinged == {canonicalize_name(n) for n in PINS_WITH_A_CEILING}, (
         f"the pins that can refuse a newer release are now {sorted(ceilinged)}, "
         f"not {sorted(PINS_WITH_A_CEILING)}. A new ceiling widens what the "
@@ -289,9 +288,15 @@ def _steering_bullet(lead):
     start = next((i for i, line in enumerate(lines) if line.startswith(lead)), None)
     if start is None:
         return None
+    indent = len(lines[start]) - len(lines[start].lstrip())
     out = [lines[start]]
     for line in lines[start + 1:]:
-        if not line.strip() or re.match(r"^\s*[-*]\s", line):
+        if not line.strip() or line.lstrip().startswith("#"):
+            break
+        # Only a bullet at the lead's own indent ends it. A continuation line
+        # may itself begin with `- `, which this repository uses as a separator.
+        here = len(line) - len(line.lstrip())
+        if here <= indent and re.match(r"[-*]\s", line.lstrip()):
             break
         out.append(line.strip())
     return " ".join(out)
@@ -319,8 +324,8 @@ def test_the_steering_document_names_the_pins_that_cap_an_upgrade():
         f"docs/STEERING.md section 6 does not name {missing}, which can refuse "
         f"a newer release. The sentence claims which pins cap an upgrade; it "
         f"has to name all of them.")
-    runtime, dev = _declared_requirements()
-    stale = sorted({canonicalize_name(req.name) for req in runtime + dev
+    declared = _declared_requirements()
+    stale = sorted({canonicalize_name(req.name) for req in declared
                     if canonicalize_name(req.name) not in capping
                     and f"`{canonicalize_name(req.name)}`" in bullet})
     assert not stale, (
@@ -341,7 +346,13 @@ def test_the_sdist_still_does_not_ship_the_documents_this_suite_reads():
     asking to be remembered.
     """
     sdist = PYPROJECT["tool"]["hatch"]["build"]["targets"]["sdist"]
-    named = list(sdist["include"]) + list(sdist.get("force-include", {}))
+    assert "include" in sdist, (
+        "the sdist declares no include list, so hatchling ships the whole tree "
+        "and `docs/` with it. Revisit the gate this replaced.")
+    forced = sdist.get("force-include", {})
+    # Both sides of `force-include`: the key is the source path and the value is
+    # where it lands, so either one can be `docs/`.
+    named = list(sdist["include"]) + list(forced) + list(forced.values())
     assert not [p for p in named if p.strip("/").split("/")[0] == "docs"], (
         f"the sdist now names {named}, so this suite can be run from an "
         f"unpacked sdist - where a repackager's own protobuf and mypy are "
@@ -368,9 +379,9 @@ def test_no_installed_dependency_sits_outside_the_pin_that_declares_it():
     cannot find `protobuf` has broken rather than answered - and without that
     anchor the skip would let this pass having compared nothing at all.
     """
-    runtime, dev = _declared_requirements()
+    declared = _declared_requirements()
     compared, outside = [], []
-    for req in runtime + dev:
+    for req in declared:
         # A marker is a condition on the environment - `; python_version < "3.11"`
         # - and a pin that does not apply here cannot be disagreed with. Nothing
         # in pyproject.toml carries one today; enforcing one that does not apply

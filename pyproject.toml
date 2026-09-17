@@ -57,8 +57,10 @@ dependencies = [
 #
 # `packaging` is named because `tests/test_packaging.py` parses these requirement
 # strings with it: the module that holds every declared dependency to its pin
-# should not rest on one nothing declares. The floor is pytest's own, so naming
-# it forces no install pytest would not have made anyway.
+# should not rest on one nothing declares. Every pytest this extra allows brings
+# it, so nothing new installs. The floor is pytest 9's own; pytest 8 declares
+# `packaging` with no floor, so on pytest 8 this can raise it, which costs
+# nothing because every API used here predates 22.
 dev = ["pytest>=8", "packaging>=22", "grpcio-tools>=1.83.0",
        "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
 

@@ -127,8 +127,7 @@ ADR-0012.
   copy is installed by hand and drifted once, running mypy 2.3.1 against a `<2`
   pin. Any pin refuses an install beneath its floor. Only the `protobuf` and
   `mypy` pins can refuse a newer release, so upgrading anything else stays quiet
-  however far it goes, and upgrading those two past their bound does not. The
-  test holds this sentence to that set, both ways.
+  however far it goes, and upgrading those two past their bound does not.
 - **The default test suite runs offline.** No test imports `hid`, touches a unit
   or needs `DYLD_LIBRARY_PATH` (ADR-0002). The hardware suite in
   `tests/hardware/` runs only under `--hardware`, is state-neutral on success and
@@ -239,8 +238,8 @@ behind each one is in the lab repository,
 - **Why:** this checkout ran mypy 2.3.1 against a `<2` pin, so the local check
   and CI's were different tools and nothing said so.
 - **Scope:** `pyproject.toml`, `uv.lock`, `CLAUDE.md`, `contributing.md`,
-  `changelog.md`, sections 6 and 8 here, three test files. No decision record:
-  nothing was decided or reversed.
+  `changelog.md`, [`domain-model.md`](domain-model.md), sections 6 and 8 here,
+  three test files. No decision record.
 
 ### 2026-09-16 - Documents rewritten for readability
 
