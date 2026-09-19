@@ -78,13 +78,13 @@ def test_a_listener_registered_before_connecting_sees_the_handshake_burst(
     """
     names = handshake_burst.names()
     counted = {name: names.count(name) for name in sorted(set(names))}
-    report = (f"recorded {len(names)} message(s), settled in "
-              f"{handshake_burst.settled_in}s: {counted}")
+    settled = ("" if handshake_burst.settled_in is None
+               else f", settled in {handshake_burst.settled_in:.1f}s")
+    report = f"recorded {len(names)} message(s){settled}: {counted}"
 
     assert handshake_burst.closed, "the recorder was still running - see conftest"
-    assert handshake_burst.settled_in is not None, (
-        f"the seed preset never arrived, so the burst was cut off by the "
-        f"fixture's patience rather than by finishing - {report}")
+    unfinished = handshake_burst.unfinished()
+    assert unfinished is None, f"{unfinished} - {report}"
     assert len(names) >= 100, report
     assert len(counted) >= 15, f"too few distinct state types in the burst - {report}"
     # Nothing in the handshake REQUESTS these. The subscription is a burst of

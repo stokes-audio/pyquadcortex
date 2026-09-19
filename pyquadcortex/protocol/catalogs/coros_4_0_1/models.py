@@ -335,6 +335,8 @@ class GuitarAmplifier:
     US_TWEED_BASSLAD_NORMAL = 1126
     UK_C15_NORMAL = 1127
     UK_C15_TOPBOOST = 1128
+    BOGNA_UBER_CLEAN = 1130
+    BOGNA_UBER_LEAD = 1131
     US_HP_TWEED_TWN_NORMAL = 1132
     US_HP_TWEED_TWN_NORMAL_PATCH = 1133
     US_HP_TWEED_TWN_BRIGHT = 1134
@@ -801,6 +803,8 @@ ALL = {
     "GuitarAmplifier.US_TWEED_BASSLAD_NORMAL": 1126,
     "GuitarAmplifier.UK_C15_NORMAL": 1127,
     "GuitarAmplifier.UK_C15_TOPBOOST": 1128,
+    "GuitarAmplifier.BOGNA_UBER_CLEAN": 1130,
+    "GuitarAmplifier.BOGNA_UBER_LEAD": 1131,
     "GuitarAmplifier.US_HP_TWEED_TWN_NORMAL": 1132,
     "GuitarAmplifier.US_HP_TWEED_TWN_NORMAL_PATCH": 1133,
     "GuitarAmplifier.US_HP_TWEED_TWN_BRIGHT": 1134,

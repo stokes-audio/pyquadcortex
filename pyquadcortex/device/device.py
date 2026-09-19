@@ -233,6 +233,7 @@ class Device:
 
 def connect(*, timeout: float = 5.0, settle: float = 2.0,
             handshake_patience: float = 30.0,
+            initial_file_listing: bool = True,
             profile: type[protocol.QuadCortex] | None = None,
             support: protocol.Support = protocol.Support.VERIFIED) -> Device:
     """Open a Quad Cortex over USB and return it as a :class:`Device`.
@@ -253,6 +254,9 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
         handshake_patience: total seconds to keep re-attempting the handshake
             while the unit is openable but silent. See
             :func:`pyquadcortex.protocol.connect`, which this passes through to.
+        initial_file_listing: whether to enumerate the full folder tree during
+            the handshake. Set false to defer that traffic until a listing is
+            requested explicitly.
         profile: a profile class to use instead of the one the unit's identity
             resolves to. See :func:`pyquadcortex.protocol.connect` (ADR-0020).
         support: how the connection treats an operation its profile has not
@@ -280,6 +284,7 @@ def connect(*, timeout: float = 5.0, settle: float = 2.0,
     state = DeviceState()
     client = protocol.connect(timeout=timeout, settle=settle,
                               handshake_patience=handshake_patience,
+                              initial_file_listing=initial_file_listing,
                               before_handshake=state.listen_on,
                               profile=profile, support=support)
     return Device(client, _owns_client=True, _state=state)

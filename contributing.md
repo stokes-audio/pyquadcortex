@@ -1,39 +1,38 @@
 # Contributing
 
-Thanks for your interest in improving this project. Contributions of all kinds are
-welcome - bug reports, fixes, new operations, documentation, and tests.
+> Purpose: how to set up, test, and submit a change to pyquadcortex, including the rules a pull request follows before it is marked ready.
 
-By submitting a contribution you agree that it is licensed under the project's
-[MIT License](LICENSE).
+Thanks for your interest. Bug reports, fixes, new operations, documentation and
+tests are all welcome. By submitting a contribution you agree that it is licensed
+under the project's [MIT License](LICENSE).
 
-**New here?** [docs/architecture.md](docs/architecture.md) explains how the library
-is put together and walks through adding support for an operation it does not
-implement yet. That is the place to start if you want to extend it.
+**New here?** [docs/architecture.md](docs/architecture.md) explains how the
+library is put together and walks through adding an operation it does not
+implement yet.
 
 ## How contributions work
 
-You do **not** need to ask for access or to be added to the project first. The flow is:
+You do not need to ask for access first.
 
-1. **Fork** this repository to your own account.
+1. **Fork** this repository.
 2. Create a **branch** for your change.
-3. Commit your work, push it to your fork, and open a **draft pull request** against
-   `main`. Mark it ready for review once the checks under "Before you mark a pull
-   request ready" below have run, or the description says why they could not.
-4. A maintainer reviews it. Every change is reviewed and approved before it is merged,
-   so please be patient and expect a round or two of feedback.
+3. Commit, push to your fork, and open a **draft pull request** against `main`.
+   Mark it ready once the checks under "Before you mark a pull request ready"
+   have run, or the description says why they could not.
+4. A maintainer reviews it. Every change is reviewed before it is merged, so
+   expect a round or two of feedback.
 
-Continuous integration runs the offline suite, mypy and a packaging build on every
-pull request. Please
-make sure it is green - a red build will block the merge. Green proves the library
-agrees with itself; only a unit proves it agrees with the device, which is why the
-hardware suite below is part of every pull request too.
+CI runs the offline suite, mypy and a packaging build on every pull request. A red
+build blocks the merge. A green build proves the library agrees with itself. Only
+a run against a unit proves it agrees with the unit's protocol, which is why the
+hardware suite is part of every pull request too.
 
 ## Development setup
 
-You need **Python 3.11 or newer** and, to talk to real hardware, the **hidapi** C
-library (macOS: `brew install hidapi`; Debian/Ubuntu:
+You need **Python 3.11 or newer**. To talk to a unit you also need the **hidapi**
+C library (macOS: `brew install hidapi`; Debian/Ubuntu:
 `sudo apt install libhidapi-hidraw0`; Windows: included with the `hid` wheel).
-hidapi is not needed to run the tests.
+The tests do not need it.
 
 [`uv`](https://docs.astral.sh/uv/) is recommended:
 
@@ -51,24 +50,21 @@ python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 
 ### The protobuf bindings
 
-The generated `pyquadcortex/protocol/proto/*_pb2.py` bindings are **committed to the
-repository on purpose** - that is what lets `pip install` work without a protoc
-toolchain. Please do not add them to `.gitignore`.
+The generated `pyquadcortex/protocol/proto/*_pb2.py` bindings and their `.pyi`
+stubs are **committed on purpose**. That is what lets `pip install` work without
+a protoc toolchain. Do not add them to `.gitignore`.
 
-You only need to regenerate them when working against an updated device schema:
+Regenerate them only when the schema changes:
 
 ```bash
 scripts/compile_protos.sh
 ```
 
-If you regenerate with a newer `protobuf`, the runtime pin in `pyproject.toml` must
-be raised to match the generated code, or imports will fail for everyone else.
-
-Regenerating with an *older* generator is the quieter mistake, so the script
-checks for it: if your `grpcio-tools` would write older gencode than what is
-committed, it refuses and leaves the bindings alone. Reinstall the dev extra
-(`pip install -U -e ".[dev]"`) to get a generator at or above the pinned floor.
-See [docs/architecture.md](docs/architecture.md) for the details.
+The script refuses to write bindings older than the committed ones. If it
+refuses, reinstall the dev extra (`pip install -U -e ".[dev]"`). A newer generator means
+raising the `protobuf` pin in `pyproject.toml` in the same commit. Details and
+the reasons are in [docs/architecture.md](docs/architecture.md), "The generated
+protobuf bindings".
 
 ## Running the tests
 
@@ -76,105 +72,79 @@ See [docs/architecture.md](docs/architecture.md) for the details.
 .venv/bin/python -m pytest -q
 ```
 
-CI also runs a type checker, and it BLOCKS a merge, so run it before pushing:
+mypy blocks a merge, so run it before pushing:
 
 ```bash
 .venv/bin/python -m mypy
 ```
 
-The package is expected to be clean - no error is suppressed, and the generated
-protobuf bindings are checked through the committed `*_pb2.pyi` stubs beside
-them. See ADR-0018.
+The package is expected to be clean. No error is suppressed except the missing
+stubs for `hid`. See ADR-0018.
 
-The suite is fully **offline** - it needs no Quad Cortex and does not import `hid`
-(so no `DYLD_LIBRARY_PATH` prefix is needed, even on macOS), which means you can
-develop and test most changes with no hardware attached. Please add or update tests
-for any behavior you change.
+The suite is fully offline. It needs no unit and does not import `hid`, so no
+`DYLD_LIBRARY_PATH` prefix is needed even on macOS. Add or update tests for any
+behaviour you change.
 
-Two contracts the tests protect, worth knowing before you change import structure:
+Two contracts the tests protect:
 
-- `import pyquadcortex` and `qcctl --help` must work **without** hidapi installed.
-  Any `import hid` therefore stays lazy, inside the function that opens the device.
-- The client layer speaks only protobuf, never HID, so it can be tested against a
-  fake transport.
+- `import pyquadcortex` and `qcctl --help` work without hidapi installed. Any
+  `import hid` stays inside the function that opens the device.
+- The protocol layer's client speaks only protobuf, never HID, so it is tested
+  against a fake transport.
 
-## Working with hardware
+## Working with a unit
 
-Every pull request runs the hardware suite before it is marked ready (see "Before
-you mark a pull request ready" below). To run it, or to verify anything else on a
-real unit:
-
-- Connect the Quad Cortex over **USB**. (Wi-Fi may stay on; it makes no difference.)
-- **Quit Cortex Control first.** It holds the USB interface exclusively, so nothing
-  else can talk to the device while it is running.
-- The device protocol is **unversioned** and can change across CorOS / Cortex Control
-  updates. This library is verified against **Quad Cortex, CorOS 4.0.1** (firmware
-  `d14e`); if you are on a newer version, re-verify the framing and schema before
-  assuming a bug. A different firmware or a Mini is a different DEVICE PROFILE
-  (ADR-0020): record what you measure beside the 4.0.1 record in `docs/protocol.md`,
-  dated and named by CorOS version, rather than in its place.
+- Connect the Quad Cortex over USB. Wi-Fi may stay on.
+- **Quit Cortex Control first.** It holds the USB interface exclusively.
+- The protocol is unversioned and can change across CorOS releases. This library
+  is verified against **Quad Cortex, CorOS 4.0.1** (firmware `d14e`). A different
+  firmware or a Mini is a different device profile (ADR-0020). Record what you
+  measure beside the 4.0.1 record in `docs/protocol.md`, dated and named by CorOS
+  version. To add a profile, follow [docs/architecture.md](docs/architecture.md),
+  "Adding a device profile".
 
 ### Before you mark a pull request ready
 
-A pull request opens as a draft and is marked ready for review only after the
-hardware suite has run on its final commit:
+A draft is work in progress, and a maintainer does not review one. Two things
+happen before it becomes reviewable, both on the **same final commit**: the
+hardware suite runs, and a review pass's findings are addressed. Changing the code
+afterwards means doing both again, because each is evidence about the commit it
+ran on.
+
+Run the hardware suite on the final commit:
 
 ```bash
 pytest tests/hardware --hardware
 ```
 
-The prerequisites are the ones above plus the hidapi library from "Development
-setup". On macOS prefix the command with `DYLD_LIBRARY_PATH=/opt/homebrew/lib`. On
-a unit the registry refuses (a firmware no profile has measured, or a Mini) add
-`--profile` with the class to measure as (see "Adding a device profile").
+On macOS prefix the command with `DYLD_LIBRARY_PATH=/opt/homebrew/lib`. On a unit
+the registry refuses, add `--profile` with the class to measure as (see
+`tests/hardware/readme.md`).
 
-Put four things in the pull request description: the short commit hash the run was
-made on, the CorOS version of the unit, the `operations on ...` block the suite
-prints, and pytest's own last line after it (the one with the pass, fail, error and
-skip counts). If
-your change adds or alters an operation, also say how you verified that operation on
-the unit (a read-back, or watching the screen), because the suite measures only the
-operations a hardware test names. This record is the evidence this project keeps:
-the offline suite proves the library agrees with itself, and a unit is what proves
-it agrees with the device.
+Put four things in the description:
+
+1. the short commit hash the run was made on
+2. the CorOS version of the unit
+3. the `operations on ...` block the suite prints
+4. pytest's own last line (the pass, fail, error and skip counts)
+
+If your change adds or alters an operation, also say how you verified it on the
+unit: a read-back, or the screen. The suite measures only the operations a
+hardware test names.
 
 If you have no unit, say so in the description and mark the pull request ready
-anyway; a maintainer runs the suite before merging. If the change cannot reach the
-wire (documentation, packaging), a maintainer may waive the run, in the description.
-Either way the description says which it was: run, with the numbers, or not run,
-with the reason. A description that says nothing about hardware is not ready for
-review, whatever GitHub shows.
-
-## Adding a device profile
-
-A new CorOS release, or a new model, is a new `QuadCortex` subclass (ADR-0020),
-not a change to the existing baseline. On the unit it covers:
-
-1. **Generate the snapshot.** `scripts/generate_models.py --snapshot coros_x_y_z`
-   and the params and options generators; bind the three modules on the new class.
-2. **Run the suite.** `pytest tests/hardware --hardware --profile QuadCortexMini`
-   against the unit, naming your new class. `--profile` connects as that class
-   instead of the one the unit's identity resolves to, which is what lets the
-   suite run at all on a unit the registry would refuse; the suite always
-   connects `Support.EXPERIMENTAL`, so nothing refuses before it is measured.
-3. **Fill `VERIFIED`.** The report at the end of the run names which operations
-   passed; put those names in the class's `VERIFIED` set.
-4. **Record differences beside the 4.0.1 record.** Anything that behaved
-   differently goes in [docs/protocol.md](docs/protocol.md), dated and named
-   next to the existing entry, never in its place, and overridden on the new
-   class.
-
-Profiles are named by CorOS version, never by `app_fw` - a contributor reports
-firmware `d14e` on both CorOS 4.0.1 and 4.1.0 (PR #44), so the app firmware
-string distinguishes nothing. `MEASURED_ON` lists the exact `zenos_git_hash`
-strings a suite run has covered; a patch release is added to it after a suite
-run confirms it, not assumed to behave like the version already there.
+anyway. A maintainer runs the suite before merging. If the change cannot reach the
+wire (documentation, packaging), a maintainer may waive the run, in the
+description. Either way the description says which it was. A description that says
+nothing about hardware is not ready for review, whatever GitHub shows.
 
 ## Style
 
-Match the style of the surrounding code. Keep changes focused - unrelated cleanups are
-easier to review as separate pull requests.
+Match the style of the surrounding code. Keep changes focused. Unrelated cleanups
+are easier to review as separate pull requests.
 
-In user-facing text, describe the project as speaking and re-implementing the device's
-own protobuf protocol - it is a USB client, like Cortex Control, and requires no
-modification to the device.
+Documents follow [docs/writing.md](docs/writing.md).
+
+In user-facing text, describe the project as speaking the unit's own protobuf
+protocol. It is a USB client, like Cortex Control, and requires no modification to
+the unit.
