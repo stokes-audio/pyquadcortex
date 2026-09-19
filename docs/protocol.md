@@ -1385,15 +1385,15 @@ does. So the MIDI documentation's "User folders" at bank-select LSB 2 to 12 are
 folders a player creates. **Deleting a setlist** is `File{DELETE, folder{key,
 name}}` against the setlist's own key.
 
-On CorOS 4.0.1, the unit's duplicate action sends a `File` CREATE and narrates
-progress through `BulkOperation`; replaying that CREATE from the host produced
+On CorOS 4.0.1, the unit's duplicate action sends a `File` `CREATE` and narrates
+progress through `BulkOperation`; replaying that `CREATE` from the host produced
 an empty destination. `copy_preset()` retains the measured recall-and-save
 fallback on that profile.
 
 On CorOS 4.1, Cortex Control sends one host-drivable sparse
 `File{COPY, type: 0, folder{key: <source>, is_factory: false}}`. Firmware chooses
 the collision-safe destination and performs the copy asynchronously.
-`duplicate_setlist()` sends COPY exactly once and uses read-only polling until
+`duplicate_setlist()` sends `COPY` exactly once and uses read-only polling until
 two complete, identical 256-slot destination generations match the source.
 A contributed 4.1.0 hardware run verified a two-preset copy in 49.878 seconds.
 
