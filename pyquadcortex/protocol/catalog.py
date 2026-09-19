@@ -149,15 +149,14 @@ class Parameter:
     #: (1 / skew)``. 1.0 is a straight line, which is what an absent attribute
     #: means; 615 parameters carry something else. See :func:`parse_skew`.
     skew: float = LIN_SKEW
-    #: The lowest wire position with a NUMERIC display, where the bottom of the
-    #: range is an OFF detent instead. 0.0 where every position is a number, and
-    #: also where nobody has looked - see :attr:`floor_is_measured`.
+    #: The lowest wire position that shows a NUMBER, where the bottom of the
+    #: range is an Off detent instead. 0.0 where every position is a number.
+    #: Derived from :attr:`floor_display`, so the two always agree.
     floor_wire: float = 0.0
-    #: What the unit SHOWS at :attr:`floor_wire`, or ``None`` if unmeasured.
-    #: Carried rather than derived, because the law does not reproduce it
-    #: exactly: the lane family's fitted value at wire 0.01 is -39.48 while the
-    #: screen says -39.5, and a refusal quoting a number it would itself reject
-    #: is a dead end for whoever reads it.
+    #: The lowest value this knob will accept as a number, or ``None`` where
+    #: every position is one. One step of the unit's numeric entry above
+    #: :attr:`minimum` - see
+    #: :data:`~pyquadcortex.protocol.units.OFF_STEP_DECIMAL`.
     floor_display: float | None = None
     #: This list parameter's option names, in wire order, exactly as the device
     #: spells them - typos included. Empty for a parameter that is not a list.
@@ -203,23 +202,96 @@ class Parameter:
     exp_assignable: bool = True
     #: Whether the screen shows this without a decimal point.
     show_as_integer: bool = False
+    #: Where the catalog says this control sits on the block's page, from the
+    #: XML's ``displayPos``, or ``None`` where it does not say.
+    #:
+    #: **This is the catalog's PREDICTION of what the screen does, and it is
+    #: read twice, not proved.** Where a control is drawn is presentational, so
+    #: unlike a parameter's index it is not a fact this library takes from the
+    #: file on the file's word. What is behind it: a cab read off the unit
+    #: 2026-09-11 (POSITION, DISTANCE, LEVEL, PAN) and a Solo 100 Lead read
+    #: 2026-09-15 (GAIN, BASS, MID, TREBLE, PRESENCE, MASTER, OUTPUT, where the
+    #: wire lists MASTER before PRESENCE). Two models out of the 163 that place
+    #: a VISIBLE control, and nothing re-drives it. (Counting every parameter a
+    #: model hands you, hidden ones included, it is 165 - which is the basis the
+    #: changelog's sorting recipe uses, because that is what it sorts.) A third reading that disagreed
+    #: would unseat this the way three disagreeing readings unseated the drawn
+    #: order of an option list.
+    #:
+    #: It still beats ignoring it: 142 of those 163 disagree with wire order (144
+    #: of 165 counting hidden parameters too), so
+    #: a caller showing ``model.parameters`` in the order it gets them is
+    #: usually showing the wrong order. But it is not a complete layout - 23
+    #: models place only SOME of their visible controls and one places two at
+    #: the same number - the Minivoicer, which does it twice, at positions 3 and
+    #: 8 - shapes no screen can literally have. So sort by it, put the unplaced
+    #: last, and do not drop them. Those two figures are on the VISIBLE basis;
+    #: sorting ``model.parameters``, which is what the advice above does, meets
+    #: 43 and 5, and the Minivoicer collides three times there.
+    #:
+    #: Addressing a parameter keeps using the index. This says where a control
+    #: is drawn, not what selects it.
+    display_pos: int | None = None
+    #: Whether the unit keeps this parameter OFF the screen, from the XML's
+    #: ``hidden``. It matters to anything that compares the catalog against what
+    #: a person can see: a hidden parameter's option names are never drawn, so
+    #: they cannot be checked and are not expected to read like screen text.
+    #: That is why the labels which look like source identifiers -
+    #: ``nollySkewedPlug``, ``Noral``, ``Triang`` - sit almost entirely on
+    #: hidden parameters.
+    #:
+    #: **It does not reliably mean "not on screen", and that was measured**
+    #: (2026-09-14, CorOS 4.0.1). A block carrying each of the six lists used
+    #: ONLY by hidden parameters was placed on the grid and the named control
+    #: looked for on every page of that block. Five were genuinely not drawn: a
+    #: Soldano SLO-100's ``CHANNEL``, an IR loader's ``INVERT``, a Gojira REV's
+    #: ``MIX LAW``, a Slapback Delay's ``QUALITY`` and a Plini Delay's ``DYN
+    #: MODE``. The sixth, a Mono Synth's ``OSC1 WAVE``, **is on the screen** -
+    #: on a tab called Oscillator, drawn as waveform icons, alongside
+    #: ``OSC1 ACTIVE`` which this flag also marks hidden.
+    #:
+    #: So do not build behaviour on it. `options.OPTION_AUDIT` deliberately does
+    #: not: a list is stamped unreadable only where somebody looked and it was
+    #: not there, never because of this flag. ADR-0010 is the precedent - a
+    #: plausible rule about a parameter attribute, disproved on the unit.
+    #:
+    #: What the flag IS good for is a hint about where to look first, and it is
+    #: read per PARAMETER rather than per name. The Soldano is the proof: it
+    #: carries two parameters called ``CHANNEL``, one flagged and offering
+    #: ``Clean,Crunch,Lead`` and one not, offering ``Normal,OD``, and the screen
+    #: draws the second only.
+    #:
+    #: **The attribute is not a boolean.** 649 parameters say ``"true"`` and one
+    #: says ``"atma"`` - the Freeze block's ``MOMENTARY`` switch. ``atma`` is the
+    #: Quad Cortex Mini's ``device_type``, so the catalog is naming the MODEL a
+    #: parameter is hidden on, and this field answers only for a Quad Cortex.
+    #: The raw string is NOT kept - this is a bool - so a Mini profile wanting
+    #: that distinction has to re-read the attribute from the XML rather than
+    #: from here. Left that way deliberately: no Mini has been measured, and a
+    #: field shaped for one would be a guess about what it needs. That also
+    #: makes the value a second, independent sign that ATMA is the Mini, which
+    #: until now rested on the schema's ``atma_*`` field names alone.
+    hidden: bool = False
 
     @property
     def floor(self) -> "values.Real | None":
         """The lowest value this parameter is KNOWN to reach, as a typed value.
 
         Usually :attr:`minimum`, but not where the bottom of the scale is an Off
-        detent: a cab LEVEL's law runs to -40 dB and its quietest real position
-        is -21.8 dB.
+        detent: a lane output's VOLUME runs to -40 dB and the lowest numeric
+        lowest value its numeric entry accepts is -39.99 dB, one hundredth
+        above. -40.0 itself shows the word.
 
-        **Check :attr:`floor_is_measured` before trusting this as the knob's own
-        bottom.** 254 parameters carry a :attr:`min_label` - the device saying
-        the bottom of the range shows a word rather than a number - and only
-        three laws have been driven to find where the numbers resume. For the
-        other 187 this returns :attr:`minimum`, the bottom of the SCALE, which
-        may sit below the bottom of the TRAVEL. The library does not refuse
-        there: refusing on a detent nobody has measured would be its own guess.
-        Driving one is what moves it.
+        **Every knob whose bottom is a word has one**, because the floor is
+        derived from the device's own description rather than measured per
+        family: 218 parameters carry a :attr:`min_label` without the
+        :attr:`mid_label` that marks a pan, and each gets a floor one step of
+        the unit's numeric entry above its minimum. See
+        :data:`~pyquadcortex.protocol.units.OFF_STEP_DECIMAL`.
+
+        The hand-measured table this replaced was wrong twice, most expensively
+        on a cab LEVEL, which carried a floor of -21.8 dB until 2026-09-11 -
+        16 dB above the knob's real bottom.
         """
         if self.minimum is None or self.maximum is None:
             return None
@@ -229,8 +301,35 @@ class Parameter:
 
     @property
     def floor_is_measured(self) -> bool:
-        """Whether somebody has actually driven this knob to its bottom."""
+        """Whether :attr:`floor` is the bottom of the TRAVEL, not of the SCALE.
+
+        True exactly where the device declares an Off position, which is what
+        the floor is derived from - so this is :attr:`has_an_off_position` seen
+        from the caller's side, and the name is kept because that is the
+        question a caller asks. It does NOT mean somebody drove this knob:
+        nobody drove 218 of them, and the device described all 218.
+        """
         return self.floor_display is not None
+
+    @property
+    def has_an_off_position(self) -> bool:
+        """Whether wire 0.0 shows a word on this knob instead of a number.
+
+        :attr:`min_label` is the device saying so, which is why this needs no
+        measurement. The exception is the pan family, which carries a
+        :attr:`mid_label` as well: there the bottom label is the SIDE - a pan
+        reads "50 L" at wire 0.0 - and :data:`units.LABELLED_END_SPAN` makes
+        -50.0 the correct real value for that position.
+
+        The 20 ``grMeter`` GAIN REDUCTION readouts carry ``min_string="-Inf"``
+        and so answer True here. That is harmless and deliberately not special
+        cased: they are not controls at all (see ``docs/domain-model.md``), so
+        the only effect is that a `Real` write to one is refused at its bottom
+        as well as ignored by the unit. Whether ``set_param`` should refuse all
+        47 meters outright is open, and is an ADR-0010 question rather than a
+        floor question.
+        """
+        return bool(self.min_label) and not self.mid_label
 
     @property
     def option_count(self) -> int | None:
@@ -326,9 +425,14 @@ class Parameter:
         nudge to the nearest one.
 
         The bottom of the range is :attr:`floor`, not :attr:`minimum`, and the
-        difference is the whole reason this is here: a cab LEVEL's law runs to
-        -40 dB while its quietest real position is -21.8 dB, so -30 dB converts
-        to wire 0.0005 and MUTES the microphone.
+        difference is the whole reason this is here: a lane output's VOLUME law
+        runs to -40 dB while its lowest real value is -39.99 dB, and -40.0
+        itself shows OFF rather than a number.
+
+        The example used to be a cab LEVEL refusing -30 dB. That floor was
+        measured with the unit's encoder, which cannot reach below wire 0.01,
+        and the knob turned out to have no detent - so a cab converts -30 dB
+        like any other value now.
         """
         bottom, top = self.floor, self.maximum
         if bottom is None or top is None:
@@ -345,13 +449,17 @@ class Parameter:
         if low <= real <= high:
             return
         unit = f" {self.units}" if self.units else ""
-        hint = f" ({units.OFF_HINT})" if self.floor_wire > 0.0 else ""
+        hint = ""
+        if self.has_an_off_position and self.minimum is not None:
+            hint = (f" ({self.minimum:g}{unit} is the Off position, which shows "
+                    f"{self.min_label!r} rather than a number - say Encoded(0.0) "
+                    f"if that is what you want)")
         raise ValueError(
             # The bound printed is the bound COMPARED. Rounding only the message
             # produced a dead end: the lane family's fitted floor is -39.48, the
-            # message said -39.5, and -39.5 was then refused - while -39.5 is
-            # precisely the value measured on the unit's screen at that wire
-            # position. `floor` reports the measured display where there is one.
+            # message named a rounded floor the check would then refuse. The
+            # floor is now exact - one step of the unit's numeric entry above
+            # the minimum - so the printed bound is the accepted bound.
             f"{self.name!r} runs {low:g}..{high:g}{unit} on the unit; "
             f"{real:g}{unit} does not exist there.{hint}"
         )
@@ -363,7 +471,10 @@ class Parameter:
         2026-08-26 over three unrelated blocks in two different units: a cab
         LEVEL at skew 4.9594844 (wire 0.01/0.50/1.00 read -21.8/0.0/6.0 dB), a
         Low-High Cut HPF FREQ at skew 0.3 (wire 0.25 read 217 Hz), and the same
-        block's OUTPUT with no skew (wire 0.25 read -10.0 dB).
+        block's OUTPUT with no skew (wire 0.25 read -10.0 dB). Extended
+        2026-09-11 to an amp OUTPUT at skew 3.8018, which holds over four
+        decades of wire (0.01/0.005/0.000001 read -38.6/-42.1/-58.1 dB) and is
+        the taper 125 knobs carry.
 
         Raises ``ValueError`` for a parameter whose bounds the catalog names and
         nobody has measured - see :meth:`_reject_unmeasured`.
@@ -430,11 +541,67 @@ class Model:
     parameters: tuple[Parameter, ...] = ()
     sku: str | None = None
     plugin_id: str | None = None
+    #: Whether the catalog marks this model hidden, from the XML's ``hidden``.
+    #:
+    #: **Read as ``== "true"``, not by presence**, because the attribute is not
+    #: a boolean here any more than it is on a parameter. 13 models say
+    #: ``"true"`` and two say ``"false"`` - Bogna Uber Clean (1130) and Bogna
+    #: Uber Lead (1131), ordinary amps in a visible category with no ``sku``.
+    #: Reading presence reported both as hidden, which made :attr:`is_factory`
+    #: drop them, which left them out of the generated constants entirely:
+    #: ``models.py`` went from ``UK_C15_TOPBOOST = 1128`` straight to
+    #: ``US_HP_TWEED_TWN_NORMAL = 1132`` and two amps a player can use had no
+    #: name. Fixed 2026-09-15, and settled by ASKING the unit rather than by
+    #: reading the attribute a second time: ``set_block`` was sent for each and
+    #: the unit placed both.
     hidden: bool = False
+    #: Whether the catalog marks this model internal - scaffolding rather than a
+    #: block a player places. Read ``== "true"`` for the same reason as
+    #: :attr:`hidden`; all eight on CorOS 4.0.1 say ``"true"``.
     internal: bool = False
+    #: Whether this model's CATEGORY is marked hidden. Same attribute as
+    #: :attr:`hidden`, one element up, and it feeds :attr:`is_factory` the same
+    #: way - so a category shipping ``hidden="false"`` while this was read by
+    #: presence would have dropped every model in it from the generated
+    #: constants. All nine hidden categories on CorOS 4.0.1 say ``"true"``.
     category_hidden: bool = False
     #: Ids of older models this one supersedes (the XML ``replaces`` attribute).
     replaces: tuple[int, ...] = ()
+    #: What this block reserves, from the XML's ``<Padding>`` child, keyed by
+    #: the catalog's OWN attribute names. How many of the 331 padded models
+    #: carry each: ``sw`` 330, ``cpu`` 307, ``dm_heap`` 286, ``pm_heap`` 219,
+    #: ``dm`` 126, ``sd_heap`` 19, and ``pm``, ``nw`` and ``dm_hp`` on one model
+    #: each. 331 of 533 models carry a ``<Padding>``; this is empty for the 202
+    #: that do not.
+    #:
+    #: **The names are the device's and the meaning is not measured.** They read
+    #: as DSP resource reservations and they behave like one: a grid that
+    #: refuses a block is a grid with no room left, and on 2026-09-15 filling
+    #: the loaded preset's free row with a 0.15-``cpu`` amp fitted two and was
+    #: refused the third, putting a ceiling between 8.10 and 8.25 by that
+    #: column. That is NOT a budget this library can publish - four of the
+    #: fourteen blocks already on the grid carry no ``<Padding>`` at all, so the
+    #: base is an undercount, and nothing has established that ``cpu`` is the
+    #: column that binds rather than one of the heaps.
+    #:
+    #: So this is published as numbers to look at, not as a capacity model. A
+    #: caller wanting to know whether a block will fit must still try it and
+    #: handle the refusal - :meth:`QuadCortex.set_block` says so and names this
+    #: as one of the two causes.
+    #:
+    #: Held as PAIRS rather than a dict because ``Model`` is frozen and gets
+    #: hashed; ``dict(model.resources)`` when a mapping is wanted.
+    #:
+    #: The pairs come back in ALPHABETICAL key order, which is what the parser
+    #: guarantees. **Read them by name, never by position** - which keys a model
+    #: carries varies, so index 1 is not the same thing twice.
+    #:
+    #: Nothing else about the order is claimed here. Two earlier versions of
+    #: this sentence described what the ORDER contrasts with - the frequency
+    #: listing above, the order the XML writes - and both descriptions were
+    #: wrong, the second in a paragraph edited to fix the first. The sort is the
+    #: fact; anything beyond it was a guess about the data dressed as one.
+    resources: tuple[tuple[str, float | str], ...] = ()
     #: True if a NEWER model replaces this one. Superseded models stay in the
     #: catalog - old presets still reference them - but the replacement is the
     #: one you want when building a new chain, and it is the one that earns the
@@ -616,6 +783,32 @@ def _extract_xml(payload: bytes) -> bytes:
         return extracted.read()
 
 
+def _parse_padding(element) -> tuple[tuple[str, float | str], ...]:
+    """A model's ``<Padding>`` attributes, as numbers, keyed by the XML's names.
+
+    Returns ``()`` where there is no such child. Values parse as float because
+    ``cpu`` is fractional and the heaps are whole; a value that will not parse
+    is kept as the string rather than dropped, since this is published for
+    inspection and losing an unexpected shape silently is what the rest of this
+    parser exists not to do.
+    """
+    pad = element.find("Padding")
+    if pad is None:
+        return ()
+    out: list[tuple[str, float | str]] = []
+    for key, raw in sorted(pad.attrib.items()):
+        try:
+            out.append((key, float(raw)))
+        except ValueError:
+            # ElementTree attribute values are always str, so ValueError is the
+            # only way this fires - no TypeError arm. Nothing in the 4.0.1
+            # catalog needs it; a token where a number goes is kept rather than
+            # dropped, because losing an unexpected shape silently is what the
+            # rest of this parser exists not to do.
+            out.append((key, raw))
+    return tuple(out)
+
+
 def _parameter(index: int, p, model_name: str) -> Parameter:
     """Build one :class:`Parameter` from its XML element."""
     where = f"{model_name!r} {p.get('name')!r}"
@@ -648,13 +841,23 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         wire = (default - minimum) / (maximum - minimum)
         minimum, maximum = units.LABELLED_END_SPAN
         default = minimum + (maximum - minimum) * wire
-    # The floor is keyed by the LAW, not by how the vendor spelled the bound.
-    # Keying it by the symbolic name protected most cabs and not the PCOM ones,
-    # which write `min="-40" max="6"` for the identical control - so asking one
-    # of those for -30 dB returned wire 0.000516 and muted the microphone, which
-    # is the exact bug the floor exists to prevent.
-    floor_wire, floor_display = units.FLOOR_WIRE.get((minimum, maximum, skew),
-                                                     (0.0, None))
+    # The floor is DERIVED from the device's own description, not measured into
+    # a table. `min_string` says the bottom of the range is a word; `min`/`max`
+    # are the range the unit's numeric entry states; `showAsInteger` says
+    # whether it takes whole numbers. Typing the minimum gives the word, and one
+    # UI step up is the lowest real number. units.OFF_STEP_DECIMAL carries
+    # the readings and says how far they reach.
+    #
+    # A parameter carrying `mid_string` is exempt: there the bottom label is a
+    # SIDE, not a stand-in for a number, and units.LABELLED_END_SPAN governs.
+    show_as_integer = p.get("showAsInteger") == "true"
+    floor_wire, floor_display = 0.0, None
+    if (min_label and not mid_label
+            and minimum is not None and maximum is not None
+            and maximum != minimum):
+        floor_display = minimum + (units.OFF_STEP_INTEGER if show_as_integer
+                                   else units.OFF_STEP_DECIMAL)
+        floor_wire = ((floor_display - minimum) / (maximum - minimum)) ** skew
     return Parameter(
         index=index,
         name=p.get("name", ""),
@@ -673,7 +876,9 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         mid_label=mid_label,
         max_label=max_label,
         exp_assignable=p.get("expAssignable") != "false",
-        show_as_integer=p.get("showAsInteger") == "true",
+        show_as_integer=show_as_integer,
+        display_pos=_as_int(p.get("displayPos")),
+        hidden=p.get("hidden") == "true",
     )
 
 
@@ -684,7 +889,14 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
     for category in root.findall("Category"):
         category_id = _as_int(category.get("id"))
         category_name = category.get("name", "")
-        category_hidden = category.get("hidden") is not None
+        # `== "true"`, not presence - see `Model.hidden`. This one is the
+        # same attribute one level up and it feeds `is_factory` the same
+        # way, so a category shipping `hidden="false"` would drop EVERY
+        # model in it from the generated constants. All nine hidden
+        # categories on CorOS 4.0.1 say "true", so this changes nothing
+        # today; it is fixed because the model-level version of exactly
+        # this cost two amps their names.
+        category_hidden = category.get("hidden") == "true"
         for element in category.findall("Model"):
             model_id = _as_int(element.get("id"))
             if model_id is None:
@@ -702,8 +914,11 @@ def parse_model_repo(payload: bytes) -> ModelCatalog:
                 parameters=parameters,
                 sku=element.get("sku"),
                 plugin_id=element.get("plugin_id"),
-                hidden=element.get("hidden") is not None,
-                internal=element.get("internal") is not None,
+                resources=_parse_padding(element),
+                hidden=element.get("hidden") == "true",  # see Model.hidden
+                # Same treatment as `hidden`, for the same reason. All
+                # eight internal models say "true" on 4.0.1.
+                internal=element.get("internal") == "true",
                 category_hidden=category_hidden,
                 replaces=_parse_replaces(element.get("replaces")),
             )

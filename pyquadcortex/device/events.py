@@ -65,7 +65,7 @@ class Changed(ModelEvent):
     useless for the thing it is for. (``PresetDirty`` is not the example it
     looks like: measured 2026-08-14, the unit sends one when the flag CHANGES
     and stays quiet on an edit that leaves it true - see ``docs/protocol.md``,
-    "`PresetDirty` announces a CHANGE of flag, not an edit". The rule here is
+    "`PresetDirty` announces a change of the flag, not an edit". The rule here is
     cheap and holds whatever the unit does.)
     """
 

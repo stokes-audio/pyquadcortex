@@ -2,4 +2,5 @@
 profile's own snapshot from ``pyquadcortex.protocol.catalogs`` when the
 connection decides."""
 from pyquadcortex.protocol.catalogs.coros_4_0_1.options import *  # noqa: F401,F403
-from pyquadcortex.protocol.catalogs.coros_4_0_1.options import OPTION_LABELS, __all__  # noqa: F401
+from pyquadcortex.protocol.catalogs.coros_4_0_1.options import (  # noqa: F401
+    OPTION_AUDIT, OPTION_CONTESTED, OPTION_LABELS, OPTION_USAGE, __all__)

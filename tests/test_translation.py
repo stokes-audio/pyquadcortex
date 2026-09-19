@@ -415,8 +415,14 @@ def test_lane_level_matches_the_protocol_layers_own_conversion(value):
     assert translate.lane_level_db(value) == protocol.lane_level_db(value)
 
 
-@pytest.mark.parametrize("db", [-40.0, -39.5, -3.1, 0.0, 6.0, 12.0])
+@pytest.mark.parametrize("db", [-39.99, -39.5, -3.1, 0.0, 6.0, 12.0])
 def test_lane_level_round_trips_through_the_wire_scale(db):
+    """-40.0 is deliberately absent: it is the Off position, not a value.
+
+    It used to be the first case here, and that was the model layer writing the
+    detent while `set_param(..., Db(-40.0))` refused it - one knob, two answers.
+    -39.99 is the lowest the unit's numeric entry accepts, measured 2026-09-12.
+    """
     assert translate.lane_level_db(translate.db_to_lane_level(db)) == \
         pytest.approx(db)
     assert translate.db_to_lane_level(db) == protocol.db_to_lane_level(db)
@@ -435,8 +441,23 @@ def test_unity_on_a_lane_level_is_zero_db():
 
 @pytest.mark.parametrize("db", [-40.1, 12.1, 60.0])
 def test_a_lane_level_the_unit_has_no_setting_for_is_refused(db):
-    with pytest.raises(ValueError, match="-40"):
+    with pytest.raises(ValueError, match="-39.99"):
         translate.db_to_lane_level(db)
+
+
+def test_the_lane_levels_own_bottom_is_refused_as_the_off_position():
+    """The boundary the model layer used to cross silently.
+
+    `db_to_lane_level(-40.0)` returned wire 0.0 - the Off position - while the
+    catalog path refused the same value on the same knob. The two agree now,
+    and the message says which position it is rather than that the value does
+    not exist, because it does exist and is not a number.
+    """
+    with pytest.raises(ValueError, match="Off position") as refused:
+        translate.db_to_lane_level(-40.0)
+    assert "-39.99" in str(refused.value)
+    # And the first real value converts, one hundredth above it.
+    assert translate.db_to_lane_level(-39.99) > 0.0
 
 
 @pytest.mark.parametrize("converter", ["input_level_db", "db_to_input_level",

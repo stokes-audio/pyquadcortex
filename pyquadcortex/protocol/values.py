@@ -54,8 +54,8 @@ so a type checker rejects ``Hertz`` there before the code runs. The runtime
 check below is unchanged and still does the work for every other caller: a
 string, a bare index, or anyone not running a checker.
 
-See ADR-0016, ADR-0018, and
-``docs/superpowers/specs/2026-08-27-typed-parameter-values-design.md``.
+See ADR-0016 and ADR-0018 in ``docs/ADR.md``. The design notes behind them
+live in the lab repository.
 """
 
 from typing import Any, Generic
