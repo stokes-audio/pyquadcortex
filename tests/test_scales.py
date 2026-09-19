@@ -166,6 +166,9 @@ READINGS = [
     # The lane VOLUME came first and the rest INHERITED its claim for several
     # releases before anyone measured them. They were measured, and it held.
     (23000, 0, 0.01, -39.5, 1),
+    # 2026-09-12: OFF at wire 0.000001, and typed to -39.99 as its first real
+    # value - so the 0.01 above is a reading on the scale, not a floor.
+    (23000, 0, 0.005, -39.7, 1),
     (23000, 0, 0.71, -3.1, 1),
     (23000, 0, 1.00, 12.0, 1),
     (11000, 5, 0.30, -24.4, 1),
@@ -178,6 +181,9 @@ READINGS = [
     # Five parameters and TWO scales. The send tops out at unity because a send
     # cannot boost; the return reaches +12 like the lane levels.
     (13000, 0, 0.01, -39.6, 1),
+    # 2026-09-11: driven below the position the encoder can reach, which moved
+    # this family's floor down from that 0.01. OFF at wire 0.000001.
+    (13000, 0, 0.005, -39.8, 1),
     (13000, 0, 0.10, -36.0, 1),
     (13000, 0, 0.50, -20.0, 1),
     (13000, 0, 0.75, -10.0, 1),
@@ -217,6 +223,42 @@ READINGS = [
     (32000, 3, 1.0, 50.0, 0),           # screen: 50 R
     (18007, 8, 0.6, 10.0, 0),           # screen: 10 R, at its untouched default
     (18007, 12, 0.0, -50.0, 0),         # screen: 50 L, declared 0..1
+
+    # -- the amp OUTPUT family, 2026-09-11 -----------------------------------
+    # 125 knobs on one law - every guitar and bass amp's OUTPUT, plus a drive
+    # and three utilities - and none of them had ever been driven. Read off a
+    # `Brit 2203` (1001) on the factory preset of the same name. The three wire
+    # values were written from the host, because the unit's own encoder cannot
+    # reach below 0.01 on a knob the catalog gives no `steps`: the owner turned
+    # it down to the bottom and one step up landed on 0.01 exactly, which is
+    # where all three floors recorded before this sat.
+    #
+    # This is the first hardware confirmation of skew 3.8018, and it holds over
+    # four decades of wire: the law renders these -38.558, -42.132 and -58.098.
+    (1001, 6, 0.01, -38.6, 1),
+    (1001, 6, 0.005, -42.1, 1),
+    (1001, 6, 0.000001, -58.1, 1),
+
+    # -- the IR loader HI PASS, 2026-09-11 -----------------------------------
+    # The one Off detent of the three looked at that turned out to be real: at
+    # wire 0.000001 this screen says OFF, where the amp above says -58.1. Read
+    # off a `Single (M)` (29001) placed on a free row. 20 Hz is the law's own
+    # minimum, so the detent hides no value - see the test below.
+    (29001, 4, 0.003, 20, 0),
+    (29001, 4, 0.005025126, 20, 0),
+
+    # -- the cab LEVEL below its recorded floor, 2026-09-11 ------------------
+    # Read through a `412 CA Stand OS A V30 01 (M)` (12031), which inherits
+    # 12000's layout the way the 2026-08-27 reading above does. It is here
+    # because it CONTRADICTED a shipped record: the floor table said this knob
+    # reads OFF below wire 0.01, and at wire 0.000001 the screen read -37.2 dB.
+    # See `test_the_cab_floor_records_a_detent_the_screen_does_not_show`.
+    (12000, 2, 0.000001, -37.2, 1),
+    # The same law on a model that does NOT declare an Off position: a
+    # `Parallax` cab LEVEL, typed to -40 on 2026-09-12, displays -40.0 dB where
+    # a labelled cab shows OFF at that same wire 0.0. Recorded against 3008
+    # because Parallax carries the law itself rather than borrowing it.
+    (3008, 16, 0.0, -40.0, 1),
 
     # -- the Splitter Crossover, 2026-08-26 ----------------------------------
     # Not read off the screen. The catalog states defaultValue="400.0" and the
@@ -289,24 +331,100 @@ def test_both_cab_microphones_share_the_layout():
 # -- the Off detent -----------------------------------------------------------
 
 
-@pytest.mark.parametrize("key", [(12000, 2), (23000, 0), (11000, 5),
-                                 (10004, 3), (13000, 0), (13002, 0)])
-def test_a_level_family_parameter_has_a_measured_floor(key):
-    """`min` is not a place these knobs go; below the floor the screen says OFF."""
-    assert SCALES[key].floor_wire == 0.01
+@pytest.mark.parametrize("key", [(23000, 0), (11000, 5), (10004, 3), (13002, 0),
+                                 (13000, 0), (12000, 2), (1001, 6)])
+def test_a_db_knob_with_an_off_detent_starts_one_hundredth_above_its_minimum(key):
+    """`min` is the Off position on these, not a place the knob goes.
+
+    All seven take decimals, so the lowest real number is 0.01 above the
+    minimum - confirmed by typing -39.99 into a lane output VOLUME and -95.99
+    into a cab OUTPUT VOLUME on 2026-09-12, both accepted, both drawn as the
+    minimum because the screen rounds to 0.1 dB.
+    """
+    spec = SCALES[key]
+    assert spec.has_an_off_position is True and spec.show_as_integer is False
+    assert float(spec.floor) == pytest.approx(spec.minimum + 0.01)
+    with pytest.raises(ValueError, match="Off position"):
+        spec.to_normalized(spec.minimum)
 
 
-def test_asking_a_cab_for_a_level_it_cannot_reach_refuses():
-    """The bug this floor exists to prevent.
+def test_an_integer_knob_with_an_off_detent_starts_one_whole_unit_above():
+    """The other half of the rule, and the only reason it is two constants.
 
-    A cab LEVEL's law runs to -40 dB but its quietest real setting is -21.8 dB.
-    Without the floor, -30 dB converts to wire 0.0005 and silently MUTES the
-    microphone - a write that looks like it worked and did something else.
+    Typed on 2026-09-12: a cab HPF states "20 to 500" and reads OFF at 20 and
+    21 Hz at 21; a `Plugin Graphic-9` HPF states "19 to 500" and reads OFF at
+    19 and 20 Hz at 20. Both carry `showAsInteger`, which is what separates
+    them from the seven above - ten for ten across everything driven.
+    """
+    for key, first in (((12000, 16), 21.0), ((4006, 0), 20.0), ((4002, 0), 20.0),
+                       ((29001, 4), 21.0)):
+        spec = SCALES[key]
+        assert spec.show_as_integer is True, spec.name
+        assert float(spec.floor) == pytest.approx(first), spec.name
+        with pytest.raises(ValueError, match="Off position"):
+            spec.to_normalized(spec.minimum)
+
+
+def test_asking_a_cab_for_a_level_below_minus_thirty_is_allowed_now():
+    """The floor this whole area was BUILT for, removed on 2026-09-11 evidence.
+
+    The record said -30 dB on a cab converts to wire 0.0005 and silently MUTES
+    the microphone. Driven below the encoder's reach, the knob turned out to
+    have no gap: the screen prints -37.2 dB at wire 0.000001, the cab is audibly
+    passing signal at wire 0.009 with the second microphone fully Off, and 0.009
+    against 0.011 - 0.7 dB apart across the claimed boundary - sound the same
+    rather than silence against a tone.
+
+    So "muted" was the level the caller asked for, arriving correctly: -30 dB on
+    one microphone is close to inaudible. The old entry cost 16 dB of a real
+    range. This test is its headstone.
     """
     cab = SCALES[(12000, 2)]
-    assert cab.floor == pytest.approx(-21.8, abs=0.05)
-    with pytest.raises(ValueError, match="does not exist there"):
-        cab.to_normalized(-30.0)
+    assert float(cab.floor) == pytest.approx(-39.99)
+    assert float(cab.to_normalized(-30.0)) == pytest.approx(0.000516, abs=1e-5)
+    assert float(cab.to_real(0.000001)) == pytest.approx(-37.2, abs=0.05)
+
+
+@pytest.mark.parametrize("key", [(12000, 2), (1001, 6), (29001, 4), (23000, 0),
+                                 (12000, 16), (12000, 18), (4006, 0)])
+def test_the_bottom_of_the_law_is_the_off_position_and_is_refused(key):
+    """The failure that survived removing the cab's floor, and predates it.
+
+    `floor` used to fall back to `minimum`, and `minimum` converts to wire 0.0,
+    which on these knobs is the word. So `Db(-40.0)` on a cab and `Db(-60.0)` on
+    an amp OUTPUT wrote the Off position and looked exactly like successful
+    writes. Typing the minimum into the unit shows the word on every knob tried,
+    nine of them across nine laws, so this needs no per-family measurement.
+    """
+    spec = SCALES[key]
+    assert spec.has_an_off_position is True
+    with pytest.raises(ValueError, match="Off position") as refused:
+        spec.to_normalized(spec.minimum)
+    assert spec.min_label in str(refused.value)
+    assert "Encoded(0.0)" in str(refused.value)
+
+
+def test_a_pan_still_reaches_its_own_bottom():
+    """The exemption, and why the discriminator is the middle label.
+
+    A pan carries `min_label` too, but there the word is a SIDE rather than a
+    stand-in for a number: wire 0.0 reads "50 L", and `LABELLED_END_SPAN` makes
+    -50.0 the right real value for it. Refusing the endpoint on the strength of
+    `min_label` alone would have broken all 36 of them.
+    """
+    for key in ((12000, 3), (32000, 3), (18007, 12)):
+        spec = SCALES[key]
+        assert spec.min_label and spec.mid_label
+        assert spec.has_an_off_position is False
+        assert float(spec.to_normalized(-50.0)) == pytest.approx(0.0)
+
+
+def test_a_knob_whose_bottom_is_a_number_reaches_it():
+    """The rule must not spread to knobs with no word at the bottom."""
+    eq = SCALES[(4000, 0)]                      # a block EQ band GAIN
+    assert not eq.min_label and eq.has_an_off_position is False
+    assert eq.floor_wire == 0.0
+    assert float(eq.to_normalized(-12.0)) == pytest.approx(0.0)
 
 
 def test_a_labelled_end_control_shows_a_letter_at_its_middle():
@@ -386,37 +504,149 @@ def test_every_symbolic_bound_has_a_number_or_a_written_reason():
         assert twin in named, f"{name} has no {twin}"
 
 
-def test_a_floor_belongs_to_a_law_whose_bounds_are_known():
-    """FLOOR_WIRE is keyed by the LAW, not by the catalog's constant name.
+def test_the_floor_is_derived_from_the_device_rather_than_a_table():
+    """`units.FLOOR_WIRE` is gone, and this is why it could go.
 
-    Keyed by name it protected most cabs and not the PCOM ones, which spell the
-    identical knob with literal bounds - so asking one of those for -30 dB
-    returned wire 0.000516 and muted the microphone, which is the exact bug the
-    table exists to prevent, surviving inside the fix for it.
+    It was a hand-measured table keyed by law, and it was wrong twice: a cab
+    floor 16 dB above the knob's real bottom, and two more that were points
+    somebody happened to measure rather than floors. Everything it tried to
+    hold is in the catalog - `min_string` that the bottom is a word, `min`/`max`
+    the range the unit's own numeric entry states, `showAsInteger` the step.
     """
-    known = set(units.FIRMWARE_CONSTANTS.values())
-    for (low, high, skew), (floor_wire, displayed) in units.FLOOR_WIRE.items():
-        assert low in known and high in known, (low, high)
-        assert 0.0 < floor_wire < 1.0, floor_wire
-        assert low <= displayed <= high, (displayed, low, high)
-        assert skew > 0.0
+    assert not hasattr(units, "FLOOR_WIRE")
+    assert (units.OFF_STEP_INTEGER, units.OFF_STEP_DECIMAL) == (1.0, 0.01)
+    # Derived, so it reaches every knob rather than the few anybody drove -
+    # which is the point and also the exposure. Six of these were typed to their
+    # first real value; `Utility Gate` RANGE and `Looper X` PLAYBACK LEVEL were
+    # taken to one decimal place and no further, so their floors here are the
+    # RULE's answer rather than a reading, and this test says so rather than
+    # letting the assertion imply otherwise.
+    typed = {(23000, 0): -39.99, (12000, 18): -95.99,
+             (12000, 16): 21.0, (4006, 0): 20.0, (4002, 0): 20.0}
+    derived_only = {(12000, 2), (1001, 6), (13000, 0), (16002, 4), (27000, 8)}
+    for key in set(typed) | derived_only:
+        spec = SCALES[key]
+        step = units.OFF_STEP_INTEGER if spec.show_as_integer else units.OFF_STEP_DECIMAL
+        assert float(spec.floor) == pytest.approx(spec.minimum + step), spec.name
+        assert spec.floor_wire > 0.0, spec.name
+    # The five that were typed to their first real value on the unit agree with
+    # what the rule computes. That is the evidence; the other five are the rule
+    # being applied, and are listed separately so the difference stays visible.
+    for key, first in typed.items():
+        assert float(SCALES[key].floor) == pytest.approx(first), SCALES[key].name
 
 
-def test_the_same_knob_is_floored_under_both_of_its_spellings():
-    """The regression that made the key wrong in the first place.
+def test_one_cab_knob_is_labelled_on_some_models_and_not_others():
+    """A vendor inconsistency that turned out not to be one.
 
     A cab LEVEL is `min="MIN_CABSIM_DB"` on most models and `min="-40" max="6"`
-    on the PCOM variants. Same control, same taper, and before the fix only one
-    of them refused a value that mutes the microphone.
+    on the PCOM variants and Parallax - and 14 of them omit the `min_string`
+    the other 160 carry. Same law, same taper. That looked like a data omission
+    worth flagging, and the old law-keyed floor table had papered over it.
+
+    It is real. Typed into on 2026-09-12: a `Parallax` cab LEVEL states "-40 to
+    6", accepts -40, and DISPLAYS -40.0 dB - where a labelled cab shows OFF at
+    the same wire 0.0 on the same law. So the device means what it says per
+    parameter, and deriving the floor from `min_string` is right where keying
+    by law would have been wrong.
+
+    This is also the disproof of the tempting repair: 559 parameters share a law
+    with a labelled one without being labelled, and unioning by law would have
+    given all of them an Off position none of them has.
     """
-    symbolic = SCALES[(12000, 2)]        # min="MIN_CABSIM_DB"
-    literal = SCALES[(12114, 25)]        # min="-40" max="6"
-    assert literal.raw_is_literal if hasattr(literal, "raw_is_literal") else True
-    for spec in (symbolic, literal):
-        assert spec.floor_wire == 0.01, spec.name
-        assert spec.floor == pytest.approx(-21.8, abs=0.05)
-        with pytest.raises(ValueError, match="does not exist there"):
-            spec.to_normalized(-30.0)
+    labelled = SCALES[(12000, 2)]        # min_string="OFF"
+    bare = SCALES[(12114, 25)]           # no min_string, same numbers
+    assert (labelled.minimum, labelled.maximum, labelled.skew) == (
+        bare.minimum, bare.maximum, bare.skew)
+    assert labelled.has_an_off_position is True
+    assert bare.has_an_off_position is False
+    # Measured: wire 0.0 is the Off position on one and -40.0 dB on the other.
+    assert float(labelled.floor) == pytest.approx(-39.99)
+    assert float(bare.floor) == pytest.approx(-40.0)
+    with pytest.raises(ValueError, match="Off position"):
+        labelled.to_normalized(-40.0)
+    assert float(bare.to_normalized(-40.0)) == pytest.approx(0.0)
+
+
+# -- what the 2026-09-11 Off-detent session found ------------------------------
+#
+# Three laws were driven, covering 161 of the 189 parameters that carried a
+# min_label and no measured floor. Not one produced a table entry, and between
+# them they replaced the table: what the unit's numeric entry states turned out
+# to be the catalog's own min..max, every time. These tests hold the answers,
+# because "we looked and the device had already told us" is a result that costs
+# a session to rediscover.
+
+
+def test_gain_reduction_is_a_meter_and_the_device_says_so():
+    """The 20 knobs on the '-Inf' law are readouts, not controls.
+
+    The owner at the unit: it sits at 0.0 with no audio and flickers while
+    something is playing, and a host write of wire 0.5 moved nothing on screen -
+    though the value round-tripped through the preset, which is the
+    accept-and-ignore trap and proves storage rather than control.
+
+    The catalog had said so all along. ``type="grMeter"`` is its own kind, 39
+    parameters across 39 models, every one of them named GAIN REDUCTION - so
+    this needed no hardware at all, and the read-the-catalog-first rule got
+    another instance the same session gave it two more of.
+    """
+    spec = SCALES[(6005, 17)]
+    assert spec.type == "grMeter"
+    assert spec.name == "GAIN REDUCTION"
+    assert spec.min_label == "-Inf"
+
+
+def test_the_amp_output_family_reaches_far_below_what_the_encoder_can():
+    """125 knobs, and the numbers run nearly to the bottom of the law.
+
+    At wire 0.000001 a `Brit 2203` OUTPUT reads -58.1 dB - a number, not the
+    word. What LOOKED like a detent 18 dB higher was the encoder: turning the
+    knob off the bottom lands on wire 0.01, which is where all three of the old
+    hand-measured floors sat.
+    """
+    spec = SCALES[(1001, 6)]
+    assert spec.min_label == "OFF" and spec.show_as_integer is False
+    assert float(spec.to_normalized(-58.1)) < 0.01
+    assert float(spec.floor) == pytest.approx(-59.99)
+
+
+def test_the_ir_loader_hi_pass_is_an_integer_knob():
+    """Why reading the screen could not settle this one, and typing could.
+
+    `Single (M)` HI PASS reads OFF at wire 0.000001 and "20 Hz" at 0.003 - and
+    20 is its MINIMUM, which the cab HPF proves is the Off position on an
+    integer knob of this kind. So the screen prints the minimum at a position
+    that is not the detent, exactly as a lane output prints "-40.0 dB" one step
+    above OFF. Only the numeric entry separates them.
+    """
+    spec = SCALES[(29001, 4)]
+    assert spec.show_as_integer is True and spec.steps == 200
+    assert float(spec.to_real(0.003)) == pytest.approx(20.05, abs=0.01)
+    assert float(spec.floor) == pytest.approx(21.0)
+
+
+def test_the_unit_states_its_own_range_and_the_catalog_matches_it():
+    """The finding that replaced the table, and the one rule that survived.
+
+    An earlier rule - "a knob with no ``steps`` has no Off detent" - fitted the
+    cab and the amp and was FALSE for the lane and the send. What holds instead
+    came from typing rather than turning: the unit's numeric entry states
+    exactly the catalog's ``min``..``max``, eight for eight, and
+    ``showAsInteger`` predicts whole-number entry ten for ten.
+    """
+    stated = {                      # what the unit's own entry box said
+        (12000, 16): (20.0, 500.0), (12000, 18): (-96.0, 12.0),
+        (13000, 0): (-40.0, 0.0), (23000, 0): (-40.0, 12.0),
+        (4006, 0): (19.0, 500.0), (4002, 0): (19.0, 250.0),
+        (16002, 4): (-90.0, -6.0), (27000, 8): (-60.0, 0.0),
+    }
+    for key, (lo, hi) in stated.items():
+        spec = SCALES[key]
+        assert (spec.minimum, spec.maximum) == (lo, hi), spec.name
+    integer = {(12000, 16), (4006, 0), (4002, 0)}
+    for key in stated:
+        assert SCALES[key].show_as_integer is (key in integer), SCALES[key].name
 
 
 def test_parallax_carries_the_cab_law_itself():
@@ -431,7 +661,11 @@ def test_parallax_carries_the_cab_law_itself():
         spec = SCALES[(3008, index)]
         assert (spec.minimum, spec.maximum) == (-40.0, 6.0)
         assert spec.skew == pytest.approx(4.9594844)
-        assert spec.floor_wire == 0.01
+        # No floor, and NOT because the law has none: a labelled cab on this
+        # same law does get one. Parallax omits `min_string`, which is measured
+        # - typing -40 into it displays -40.0 dB. What matters here is that it
+        # tracks the law rather than keeping a private copy of it.
+        assert spec.floor_wire == 0.0 and spec.min_label == ""
 
 
 def test_the_fx_families_are_more_than_one_model_each():
@@ -455,7 +689,7 @@ def test_the_scene_following_mixer_levels_are_covered():
     """
     for key in ((11000, 0), (11000, 2), (11000, 5)):
         assert (SCALES[key].minimum, SCALES[key].maximum) == (-40.0, 12.0)
-        assert SCALES[key].floor_wire == 0.01
+        assert float(SCALES[key].floor) == pytest.approx(-39.99)
 
 
 def test_the_recorder_reason_says_what_actually_happened():
@@ -483,16 +717,24 @@ def test_a_refusal_mentions_the_off_position_only_where_there_is_one():
     assert "Off position" not in str(tempo.value)
 
     with pytest.raises(ValueError) as lane:
-        SCALES[(23000, 0)].to_normalized(-39.9)
-    assert "Off position" in str(lane.value)
+        SCALES[(23000, 0)].to_normalized(-40.0)
+    message = str(lane.value)
+    assert "Off position" in message
+    # It names THIS knob's word and minimum rather than a shared dB sentence,
+    # because the same message now reaches filter frequencies in Hz.
+    assert "'OFF'" in message and "-40" in message
 
 
 def test_asking_for_the_bottom_of_the_scale_is_refused_where_it_is_a_detent():
     """`minimum` and `floor` diverge most sharply exactly here."""
-    with pytest.raises(ValueError, match="does not exist there"):
+    with pytest.raises(ValueError, match="Off position") as refused:
         SCALES[(23000, 0)].to_normalized(-40.0)
-    # ...and the number the refusal prints is one it would itself accept.
-    assert SCALES[(23000, 0)].to_normalized(-39.5) == pytest.approx(0.01, abs=5e-4)
+    # ...and the bound the refusal prints is one it would itself accept, which
+    # a rounded floor made false once: the message named a number the check
+    # then rejected, which is a dead end for whoever reads it.
+    printed = -39.99
+    assert f"{printed:g}" in str(refused.value)
+    assert SCALES[(23000, 0)].to_normalized(printed) > 0.0
 
 
 def test_reading_a_wire_value_the_wire_cannot_carry_is_refused():

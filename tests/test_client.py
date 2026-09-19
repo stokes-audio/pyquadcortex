@@ -7,6 +7,7 @@ client can be exercised without a device.
 """
 
 import itertools
+import json
 import pathlib
 import re
 
@@ -377,6 +378,162 @@ def test_switch_scene_sends_scene_message():
     assert sent.selected_scene == 3
 
 
+# -- native local backups -----------------------------------------------------
+
+
+class BackupTransport(FakeTransport):
+    def __init__(self, pushes):
+        super().__init__()
+        self.pushes = pushes
+        self.seconds = None
+        self.match = None
+        self.until = None
+
+    def collect(self, expected_class, trigger, seconds, match=None, until=None):
+        trigger()
+        self.seconds = seconds
+        self.match = match
+        self.until = until
+        got = []
+        for message in self.pushes:
+            if not isinstance(message, expected_class):
+                continue
+            if match is not None and not match(message):
+                continue
+            got.append(message)
+        # A real Transport may receive a whole batch between polling passes.
+        # Return that batch intact so final-marker ordering remains testable.
+        return got
+
+
+def _backup_chunks(text, final=True):
+    midpoint = len(text) // 2
+    return [
+        pa.LocalBackupMessage(
+            action=pa.MessageAction.UPDATE,
+            backup_json=text[:midpoint],
+            is_last_chunk=False,
+        ),
+        pa.LocalBackupMessage(
+            action=pa.MessageAction.UPDATE,
+            backup_json=text[midpoint:],
+            is_last_chunk=final,
+        ),
+    ]
+
+
+def _backup_document(**changes):
+    document = {
+        "type": "backup",
+        "creator": "quad",
+        "name": "Local backup 1",
+        "payload": "AA==",
+        "payload_hash": "a" * 64,
+    }
+    document.update(changes)
+    return document
+
+
+def test_create_local_backup_collects_and_validates_the_native_document():
+    expected = _backup_document()
+    transport = BackupTransport(_backup_chunks(json.dumps(expected)))
+    qc = client.QuadCortex(transport)
+
+    assert qc.create_local_backup(timeout=12.5) == expected
+
+    sent = transport.sent[-1]
+    assert isinstance(sent, pa.LocalBackupMessage)
+    assert sent.action == pa.MessageAction.CREATE
+    assert not sent.HasField("request_id")
+    assert transport.seconds == 12.5
+    assert transport.match(pa.LocalBackupMessage(action=pa.MessageAction.READ)) is False
+    assert transport.until(transport.pushes[-1]) is True
+
+
+def test_create_local_backup_times_out_without_a_final_chunk():
+    text = json.dumps(_backup_document())
+    qc = client.QuadCortex(BackupTransport(_backup_chunks(text, final=False)))
+
+    with pytest.raises(TimeoutError, match="within 0.25 seconds"):
+        qc.create_local_backup(timeout=0.25)
+
+
+def test_create_local_backup_reports_an_explicit_device_refusal():
+    refusal = pa.LocalBackupMessage(
+        action=pa.MessageAction.UPDATE,
+        can_apply_backup=False,
+    )
+    qc = client.QuadCortex(BackupTransport([refusal]))
+
+    with pytest.raises(ControlNotDrivable) as caught:
+        qc.create_local_backup()
+    assert caught.value.control == "create_local_backup"
+    assert "can_apply_backup=false" in caught.value.evidence
+    assert caught.value.workaround
+
+
+def test_create_local_backup_distinguishes_duplicate_final_markers():
+    text = json.dumps(_backup_document())
+    chunks = _backup_chunks(text)
+    chunks.append(pa.LocalBackupMessage(
+        action=pa.MessageAction.UPDATE, is_last_chunk=True))
+    qc = client.QuadCortex(BackupTransport(chunks))
+
+    with pytest.raises(client.MalformedLocalBackup, match="marked 2.*final"):
+        qc.create_local_backup()
+
+
+def test_create_local_backup_distinguishes_messages_after_final():
+    text = json.dumps(_backup_document())
+    chunks = _backup_chunks(text)
+    chunks.append(pa.LocalBackupMessage(
+        action=pa.MessageAction.UPDATE, can_apply_backup=True))
+    qc = client.QuadCortex(BackupTransport(chunks))
+
+    with pytest.raises(client.MalformedLocalBackup, match="after the final"):
+        qc.create_local_backup()
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        ({}, "unsupported"),
+        (_backup_document(type="preset"), "unsupported"),
+        (_backup_document(creator="control"), "unsupported"),
+        (_backup_document(name=""), "unsupported"),
+        (_backup_document(payload_hash="short"), "integrity identifier"),
+        (_backup_document(payload_hash="a" * 40), "integrity identifier"),
+        (_backup_document(payload=123), "integrity identifier"),
+        (_backup_document(payload="AAAA!!!!"), "not valid Base64"),
+        (_backup_document(payload=""), "decodes to no data"),
+    ],
+)
+def test_create_local_backup_rejects_invalid_wrappers(document, message):
+    qc = client.QuadCortex(
+        BackupTransport(_backup_chunks(json.dumps(document)))
+    )
+
+    with pytest.raises(client.MalformedLocalBackup, match=message):
+        qc.create_local_backup()
+
+
+def test_create_local_backup_rejects_malformed_json():
+    qc = client.QuadCortex(BackupTransport(_backup_chunks("{not json")))
+
+    with pytest.raises(client.MalformedLocalBackup, match="malformed local-backup JSON"):
+        qc.create_local_backup()
+
+
+def test_create_local_backup_limits_the_wrapper_size(monkeypatch):
+    monkeypatch.setattr(client, "_MAX_LOCAL_BACKUP_BYTES", 10)
+    qc = client.QuadCortex(
+        BackupTransport(_backup_chunks(json.dumps(_backup_document())))
+    )
+
+    with pytest.raises(client.MalformedLocalBackup, match="oversized"):
+        qc.create_local_backup()
+
+
 # -- 5.3 copy_scene + set_param + write_preset -------------------------------
 
 
@@ -489,6 +646,10 @@ def test_hello_performs_full_connect_handshake():
         if isinstance(m, pa.RecallPresetMessage) and m.action == pa.MessageAction.READ
     ]
     assert recall_reads
+    assert any(
+        isinstance(m, pa.FileMessage) and m.action == pa.MessageAction.READ
+        for m in sent
+    ), "the default retains eager File enumeration"
     # ModelRepo READ is present (empirically required to open the push gate).
     assert any(
         isinstance(m, pa.ModelRepoMessage) and m.action == pa.MessageAction.READ
@@ -499,6 +660,26 @@ def test_hello_performs_full_connect_handshake():
         isinstance(m, pa.VersionMessage) and m.action == pa.MessageAction.READ
         for m in sent
     )
+
+
+def test_hello_can_defer_only_the_initial_file_listing():
+    canned = {"ResetCommsBuffersMessage": pa.ResetCommsBuffersMessage()}
+    eager = client.QuadCortex(FakeTransport(canned))
+    deferred = client.QuadCortex(FakeTransport(canned))
+
+    eager._hello(settle=0)
+    deferred._hello(settle=0, initial_file_listing=False)
+
+    eager_reads = [
+        type(message).__name__ for message in eager._t.sent
+        if getattr(message, "action", None) == pa.MessageAction.READ
+    ]
+    deferred_reads = [
+        type(message).__name__ for message in deferred._t.sent
+        if getattr(message, "action", None) == pa.MessageAction.READ
+    ]
+    assert eager_reads.count("FileMessage") == 1
+    assert deferred_reads == [name for name in eager_reads if name != "FileMessage"]
 
 
 # -- ergonomics: no magic numbers at the call site -----------------------------
@@ -3881,13 +4062,23 @@ def test_set_param_real_applies_the_taper():
 
 
 def test_set_param_real_refuses_below_the_floor():
-    """The blocking bug, reached the way a caller reaches it.
+    """A floor is enforced where the knob actually has one, reached as a caller does.
 
-    Without the floor this converts to wire 0.0005 and mutes the microphone.
+    This used to be the cab, on the belief that -30 dB there muted the
+    microphone. It does not: the cab was driven below the encoder's reach on
+    2026-09-11, prints -37.2 dB at wire 0.000001 and is audibly passing signal
+    below its old floor, so that entry is gone and -30 dB on a cab is now
+    allowed. The lane family's detent IS real, and is what this guards now.
     """
     qc = _scale_client()
-    with pytest.raises(ValueError, match="does not exist there"):
-        qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", Real(-30.0))
+    with pytest.raises(ValueError, match="Off position"):
+        qc.set_param(LaneOutput(0), "VOLUME", Real(-40.0))
+
+
+def test_set_param_real_no_longer_refuses_a_cab_level_it_can_reach():
+    """The counterpart: the removed floor cost a caller 16 dB of a real range."""
+    qc = _scale_client()
+    qc.set_param(Block(0, 5, 12000), "MIC 1 LEVEL", Real(-30.0))
 
 
 def test_set_param_real_refuses_a_value_off_the_top():
@@ -4458,7 +4649,7 @@ def test_version_insists_on_the_full_reply_and_ignores_the_units_own_read():
     identity field, serial or firmware. A PARTIAL reply with one of them is
     still accepted: the cache keeps what the unit sent and re-reads the rest,
     and refusing it here would turn that rule into a timeout. See protocol.md,
-    "A ``Version`` READ is answered twice"."""
+    "A ``Version`` read is answered twice"."""
     full = pa.VersionMessage(action=pa.MessageAction.UPDATE,
                              app_fw_version="d14e",
                              device_serial_number="QA00EE910",
@@ -4505,3 +4696,106 @@ def test_set_block_refuses_a_model_the_unit_does_not_have_before_sending():
     assert caught.value.control == "model 6026"
     assert "not in this unit's catalog" in caught.value.evidence
     assert fake.sent == []
+
+
+def _waveform_client():
+    """A client carrying the one list the catalog gets WRONG.
+
+    A Mono Synth's oscillator waveforms: the catalog calls wire position 5
+    "Pink NS" and the unit draws WHT there, and position 6 the other way about
+    (driven on the unit 2026-09-14). The two noises are swapped.
+    """
+    from tests.test_catalog import SAMPLE_XML, make_payload
+
+    xml = SAMPLE_XML.replace("</Models>", """
+<Category id="30" name="Synth">
+  <Model blob="syn" id="30001" name="Mono Synth">
+    <Parameter defaultValue="0" max="6" min="0" name="OSC1 WAVE" steps="7"
+               type="rotarySwitch" hidden="true"
+               stepNames="Sine,Triang,Sawtooth,Square,Pulse,Pink NS,White NS"/>
+  </Model>
+</Category>
+""" + "</Models>")
+    qc = client.QuadCortex(FakeTransport())
+    qc._catalog = catalog.parse_model_repo(make_payload(xml))
+    return qc
+
+
+def test_selecting_by_a_name_the_catalog_gets_wrong_is_refused():
+    """"Pink NS" must not quietly hand back white noise.
+
+    This is the shipped path - `set_param_option` with a string - and it was the
+    one the audit found returning the opposite of what was asked for.
+    """
+    qc = _waveform_client()
+    with pytest.raises(ValueError) as caught:
+        qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", "Pink NS")
+    message = str(caught.value)
+    assert "swapped" in message
+    assert "options" in message          # points at the enum, which is correct
+    assert not qc._t.sent, "a refused write must not reach the wire"
+
+
+def test_the_other_swapped_name_is_refused_too():
+    qc = _waveform_client()
+    with pytest.raises(ValueError):
+        qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", "White NS")
+
+
+def test_an_uncontested_name_on_that_same_list_still_selects_normally():
+    """The refusal is per POSITION, not a ban on naming options in this list."""
+    qc = _waveform_client()
+    qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", "Square")
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(3 / 6)
+
+
+def test_the_enum_members_follow_the_screen_and_reach_the_right_positions():
+    """`WHITE_NS` writes position 5, which is where the unit draws WHT."""
+    from pyquadcortex.protocol import options
+
+    qc = _waveform_client()
+    qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", options.Osc1Wave.WHITE_NS)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(5 / 6)
+
+    qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", options.Osc1Wave.PINK_NS)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(6 / 6)
+
+
+def test_an_index_still_reaches_a_contested_position():
+    """The refusal is about the NAME being wrong, not the position being barred.
+
+    A caller who knows the wire and says so must still be able to get there, the
+    way `Encoded` always works.
+    """
+    qc = _waveform_client()
+    qc.set_param_option(Block(0, 2, 30001), "OSC1 WAVE", 5)
+    written = qc._t.sent[-1].preset.chains[0].models[0].params[0]
+    assert written.param_values[0].float_value == pytest.approx(5 / 6)
+
+
+def test_the_exported_helper_refuses_a_wrong_name_too():
+    """`protocol.option_value` is public and was the way around the refusal.
+
+    `set_param_option` guarded the name; this function, exported in `__all__`
+    and sitting beside it, still returned 5/6 for "Pink NS" - white noise, with
+    no signal. A door closed only where the caller is expected to push is not
+    closed.
+    """
+    names = ["Sine", "Triang", "Sawtooth", "Square", "Pulse",
+             "Pink NS", "White NS"]
+    with pytest.raises(ValueError) as caught:
+        client.option_value(names, "Pink NS")
+    assert "swapped" in str(caught.value)
+
+    # everything else about the function is unchanged
+    assert client.option_value(names, "Square") == pytest.approx(3 / 6)
+    assert client.option_value(names, 5) == pytest.approx(5 / 6)
+
+
+def test_a_list_with_no_recorded_error_is_unaffected():
+    """The refusal keys on the LIST, so nothing else changes shape."""
+    names = ["Flat", "-6", "-12"]
+    assert client.option_value(names, "-12") == pytest.approx(1.0)

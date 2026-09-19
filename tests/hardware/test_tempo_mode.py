@@ -5,7 +5,7 @@ tempo and all seven metronome settings belong to the preset. Cortex Control has
 the same switch, so a route to it exists. Three earlier tests watched for a
 broadcast when the switch moves and saw nothing, and that was written up as "not
 on the wire at all" - which is more than those tests measured. **They listened;
-none of them asked.** See ADR-0010 and ``protocol.md`` "MODE is the DEVICE tempo
+none of them asked.** See ADR-0010 and ``protocol.md`` "`MODE` is the device tempo
 block's parameter 1".
 
 **It was asked, and it answered.** MODE is the DEVICE tempo block's parameter 1,

@@ -43,7 +43,9 @@ WANTED = {
     (11000, 0): "Mixer LEVEL A - scene-following, and briefly mistaken for undrivable",
     (11000, 2): "Mixer LEVEL B - the other half of that pair",
     (3008, 16): "Parallax cab LEVEL - a Bass Overdrive carrying a cab section, so"
-                " it cannot borrow the layout and must carry the law itself",
+                " it cannot borrow the layout and must carry the law itself. Also"
+                " the cab law WITHOUT a min_string: typed to -40 on the unit it"
+                " displays -40.0 dB where a labelled cab shows OFF at that wire",
     (3008, 24): "Parallax cab LEVEL, mic 2",
     (12114, 25): "PCOM Core Cabsim LEVEL - the same knob with LITERAL bounds,"
                  " which is what the floor's law-keying exists for",
@@ -70,6 +72,21 @@ WANTED = {
     (13000, 0): "Send LEVEL - MIN_FXLOOP_OUT_GAIN_DB, which tops out at unity",
     (13002, 0): "FX Loop LEVEL - MIN_FXLOOP_IN_GAIN_DB, which can boost",
     (20000, 2): "NC_Recorder OUT LEVEL - the one unmeasured bound; refuses",
+    (1001, 6): "Brit 2203 OUTPUT - the -60..12 dB skew 3.8018 family, 125 knobs"
+               " carrying min_label, and the first of them ever driven",
+    (29001, 4): "Single (M) HI PASS - the IR loader family, steps=200, and the"
+                " one Off detent of the three that turned out to be real",
+    (6005, 17): "Digital Delay (M) GAIN REDUCTION - a METER, not a knob. Here so"
+                " that claim is checkable against the catalog it came from",
+    (12000, 16): "cab HPF - typed into on the unit: states 20 to 500, whole"
+                 " numbers only, 20 reads OFF and 21 Hz is the lowest number",
+    (12000, 18): "cab OUTPUT VOLUME - the decimal twin of the above, -96 reads"
+                 " OFF and -95.99 is accepted and drawn as -96.0 dB",
+    (4006, 0): "Plugin Graphic-9 HPF - an integer knob whose minimum 19 is the"
+               " Off position, so 20 Hz is the floor and 19 Hz does not exist",
+    (4002, 0): "Graphic-9 HPF - the superseded model, alone on the 19..250 law",
+    (16002, 4): "Utility Gate RANGE - a decimal knob, -90 reads OFF",
+    (27000, 8): "Looper X PLAYBACK LEVEL - a decimal knob, -60 reads OFF",
 }
 
 

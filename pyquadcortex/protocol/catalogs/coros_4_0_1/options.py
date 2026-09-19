@@ -11,8 +11,8 @@ an option means knowing its position. These name the positions::
 the same thing wherever it appears - the note-length list is shared by
 ``SYNC NOTE``, ``SYNC NOTE L``, ``SYNC NOTE R`` and two more.
 
-**A two-option Off/On parameter gets no enum.** 247 parameters offer
-exactly those, and ``True`` says everything ``OffOn.ON`` would::
+**A two-option Off/On parameter gets no enum.** 247 parameters
+offer exactly those, and ``True`` says everything ``OffOn.ON`` would::
 
     qc.set_param(block, 'SYNC', True)
 
@@ -23,6 +23,16 @@ read those with :func:`~pyquadcortex.protocol.client.param_options`.
 The member names are ours; the wire's strings are the device's, and
 ``OPTION_LABELS`` keeps them verbatim. Where the two differ the label is
 in a comment beside the member.
+
+**These names come from the catalog, not from the screen.** ``stepNames``
+is the device's own vocabulary, and where it can be compared against what
+the device RENDERS it does not match - the catalog writes ``In 1`` and
+``Ret 1/2`` where the device writes ``Input 1`` and ``Return 1/2``. So
+each enum says whether a human has read it off the unit, and
+``OPTION_AUDIT`` publishes that for all 113 fixed lists:
+13 audited, 1 drawn (read, but the unit draws pictures
+rather than words), 5 not drawn at all, 0 partly, and
+94 that nobody has looked at.
 """
 from enum import IntEnum
 
@@ -31,6 +41,10 @@ class Adjust(IntEnum):
     """2 parameters use this list: Ø ADJUST, Ø ADJUST R
 
     On Phase Doctor.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     BYPASS = 0
@@ -42,6 +56,10 @@ class AnalogDelayMSyncNote(IntEnum):
     """2 parameters use this list: SYNC NOTE
 
     On Analog Delay (M), Analog Delay (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1_16 = 0    # '1/16'
@@ -63,6 +81,10 @@ class ArpPattern(IntEnum):
     """1 parameter use this list: ARP PATTERN
 
     On Mono Synth.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     UP = 0
@@ -76,6 +98,10 @@ class BitDepth(IntEnum):
     """2 parameters use this list: BIT DEPTH
 
     On Bit-Crusher (ST), Bit-Crusher Engine (M).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1 = 0    # '1'
@@ -100,6 +126,10 @@ class Boost(IntEnum):
     """2 parameters use this list: BOOST
 
     On UK C15 TopBoost, UK C30 TopBoost.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     HOT = 0
@@ -110,6 +140,10 @@ class Bright(IntEnum):
     """1 parameter use this list: BRIGHT
 
     On Freeman 100 Clean.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     NORMAL = 0
@@ -121,6 +155,10 @@ class Center(IntEnum):
     """2 parameters use this list: Ø CENTER, Ø CENTER R
 
     On Phase Doctor.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     LO_FREQ = 0    # 'Lo Freq'
@@ -131,6 +169,10 @@ class ChannelNormal(IntEnum):
     """1 parameter use this list: CHANNEL
 
     On Soldano SLO-100®.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     NORMAL = 0
@@ -141,6 +183,10 @@ class ChiefCe2wMType(IntEnum):
     """2 parameters use this list: TYPE
 
     On Chief CE2W (M), Chief CE2W (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     CE2_C = 0    # 'CE2-C'
@@ -152,6 +198,10 @@ class ChiefDc2wMMode(IntEnum):
     """2 parameters use this list: MODE
 
     On Chief DC2W (M), Chief DC2W (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1 = 0    # '1'
@@ -170,6 +220,10 @@ class ChiefDc2wMType(IntEnum):
     """2 parameters use this list: TYPE
 
     On Chief DC2W (M), Chief DC2W (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     S = 0
@@ -180,6 +234,10 @@ class Color(IntEnum):
     """1 parameter use this list: COLOR
 
     On Flanger Engine.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     NATURAL = 0
@@ -196,6 +254,10 @@ class CoryWongDIFunkConsoleAttack(IntEnum):
     """1 parameter use this list: ATTACK
 
     On Cory Wong D.I. Funk Console.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     FAST = 0
@@ -206,6 +268,10 @@ class CoryWongDelayYYMode(IntEnum):
     """1 parameter use this list: MODE
 
     On Cory Wong Delay-y-y.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     SINGLE = 0
@@ -216,6 +282,10 @@ class Crunch(IntEnum):
     """1 parameter use this list: CRUNCH
 
     On Soldano SLO-100®.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     CLEAN = 0
@@ -226,6 +296,8 @@ class Curve(IntEnum):
     """1 parameter use this list: CURVE
 
     On Volume.
+
+    Audited against the unit's screen 2026-09-14: all 2 positions read.
     """
 
     LINEAR = 0
@@ -236,6 +308,10 @@ class DCellHisbertCh2Mode(IntEnum):
     """1 parameter use this list: MODE
 
     On D-Cell Hisbert Ch2.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     MINUS = 0    # '-'
@@ -246,6 +322,10 @@ class Decay(IntEnum):
     """1 parameter use this list: DECAY
 
     On Foog.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     FAST = 0
@@ -256,6 +336,10 @@ class DigitalFlangerPolarity(IntEnum):
     """1 parameter use this list: POLARITY
 
     On Digital Flanger.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     NEG = 0
@@ -266,6 +350,10 @@ class DivSource(IntEnum):
     """1 parameter use this list: DIV. SOURCE
 
     On Phase-Locked Loop.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     UNISON = 0
@@ -276,6 +364,10 @@ class Divider(IntEnum):
     """1 parameter use this list: DIVIDER
 
     On Phase-Locked Loop.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N2 = 0    # '2'
@@ -291,6 +383,10 @@ class DreamChorusMMode(IntEnum):
     """2 parameters use this list: MODE
 
     On Dream Chorus (M), Dream Chorus (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     CHO1 = 0
@@ -301,6 +397,10 @@ class DriveType(IntEnum):
     """2 parameters use this list: DRIVE TYPE
 
     On Chorus Engine, Flanger Engine.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     SOFT = 0
@@ -313,6 +413,10 @@ class DualChorusMode(IntEnum):
     """1 parameter use this list: MODE
 
     On Dual Chorus.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     CHORUS = 0
@@ -323,6 +427,10 @@ class DumbbellOdsChannel(IntEnum):
     """1 parameter use this list: CHANNEL
 
     On Dumbbell ODS.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     CLEAN = 0
@@ -333,6 +441,10 @@ class DumbbellOdsEq(IntEnum):
     """1 parameter use this list: EQ
 
     On Dumbbell ODS.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     JAZZ = 0
@@ -343,6 +455,8 @@ class DuplicateMode(IntEnum):
     """1 parameter use this list: DUPLICATE MODE
 
     On Looper X.
+
+    Audited against the unit's screen 2026-09-14: all 2 positions read.
     """
 
     FREE = 0
@@ -353,9 +467,15 @@ class DynMode2(IntEnum):
     """9 parameters use this list: DYN MODE
 
     On 9 models, among them Gojira DLY, Nameless Delay, Nolly Delay-1 (M).
+
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Plini Delay's DYN MODE and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    DUCK = 0
+    DUCK = 0    # screen: None; catalog: 'Duck'
     GATE = 1
 
 
@@ -363,6 +483,10 @@ class DynMode3(IntEnum):
     """11 parameters use this list: DYN MODE
 
     On 11 models, among them Analog Delay (M), Analog Delay (ST), Digital Delay (M).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     OFF = 0
@@ -374,6 +498,10 @@ class Eq3(IntEnum):
     """8 parameters use this list: EQ
 
     On 8 models, among them CA 1Star Clean 100W Normal, CA 1Star Clean 100W Tweed, CA 1Star Clean 50W Normal.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     NORMAL = 0
@@ -385,6 +513,10 @@ class FeedbackMode(IntEnum):
     """2 parameters use this list: FEEDBACK MODE
 
     On Dual Reverse Delay, Reverse Delay (M).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     REVERSE = 0
@@ -395,6 +527,10 @@ class Filter(IntEnum):
     """1 parameter use this list: FILTER
 
     On Foog.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N4_POLE = 0    # '4-POLE'
@@ -405,6 +541,10 @@ class FilterCutoff(IntEnum):
     """1 parameter use this list: FILTER CUTOFF
 
     On Love Meat.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     LOW = 0
@@ -417,6 +557,10 @@ class FilterType(IntEnum):
     """1 parameter use this list: FILTER TYPE
 
     On Love Meat.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     LOWPASS = 0
@@ -428,6 +572,8 @@ class FlangerEngineWaveform(IntEnum):
     """1 parameter use this list: WAVEFORM
 
     On Flanger Engine.
+
+    Audited against the unit's screen 2026-09-16: all 7 positions read.
     """
 
     SINE = 0
@@ -443,6 +589,10 @@ class Focus(IntEnum):
     """2 parameters use this list: FOCUS
 
     On Victor Squid Ch1, Victor Squid Ch2.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     ON = 0
@@ -453,6 +603,10 @@ class Frequency(IntEnum):
     """2 parameters use this list: FREQUENCY, UNI. AMOUNT
 
     On Amped Super Valve, Mono Synth.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1 = 0    # '1'
@@ -466,6 +620,10 @@ class GainPolarity(IntEnum):
     """3 parameters use this list: PHASE INVERT, Ø POLARITY, Ø POLARITY R
 
     On Gain, Phase Doctor.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     NORMAL = 0
@@ -476,6 +634,10 @@ class GojiraWowMode(IntEnum):
     """1 parameter use this list: MODE
 
     On Gojira WOW.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     BLADE_2 = 0    # 'Blade 2'
@@ -487,6 +649,10 @@ class HighsFreq(IntEnum):
     """1 parameter use this list: HIGHS FREQ
 
     On Cory Wong D.I. Funk Console.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N4_KHZ = 0    # '4 kHz'
@@ -497,6 +663,10 @@ class HpfSlope(IntEnum):
     """2 parameters use this list: HPF SLOPE, LPF SLOPE
 
     On Low-High Cut.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     FLAT = 0
@@ -514,6 +684,10 @@ class Input(IntEnum):
     """2 parameters use this list: INPUT
 
     On US DLX 64 Vintage, US DLX 65 Reissue.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     LOW = 0
@@ -524,6 +698,10 @@ class Instrument(IntEnum):
     """1 parameter use this list: INSTRUMENT
 
     On Phase-Locked Loop.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     GUITAR = 0
@@ -534,9 +712,15 @@ class Invert(IntEnum):
     """16 parameters use this list: INVERT
 
     On 8 models, among them Dual (M), Dual (M) Lite, Dual (ST).
+
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Single (M)'s INVERT and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    NORMAL = 0    # 'Noral'
+    NORMAL = 0    # screen: None; catalog: 'Noral'
     INVERTED = 1
 
 
@@ -544,6 +728,10 @@ class Legendary87MRatio(IntEnum):
     """3 parameters use this list: RATIO
 
     On Legendary 87 (M), Legendary 87 (S/C), Legendary 87 (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N4 = 0    # '4'
@@ -557,6 +745,10 @@ class LowsFreq(IntEnum):
     """1 parameter use this list: LOWS FREQ
 
     On Cory Wong D.I. Funk Console.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N225_HZ = 0    # '225 Hz'
@@ -567,6 +759,10 @@ class Mid(IntEnum):
     """3 parameters use this list: BRIGHT, MID, PREAMP
 
     On Dumbbell ODS.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     OFF = 0
@@ -577,6 +773,10 @@ class MidsFreq(IntEnum):
     """1 parameter use this list: MIDS FREQ
 
     On Cory Wong D.I. Funk Console.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N900_HZ = 0    # '900 Hz'
@@ -587,6 +787,10 @@ class MinivoicerMidiCh(IntEnum):
     """1 parameter use this list: MIDI CH
 
     On Minivoicer.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1 = 0    # '1'
@@ -612,6 +816,10 @@ class MinivoicerMode(IntEnum):
     """2 parameters use this list: MODE
 
     On Minivoicer, Pitch Correction.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     MAJOR = 0
@@ -623,6 +831,10 @@ class MinivoicerRoot(IntEnum):
     """2 parameters use this list: ROOT
 
     On Minivoicer, Pitch Correction.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     A = 0
@@ -643,9 +855,15 @@ class MixLaw(IntEnum):
     """6 parameters use this list: MIX LAW
 
     On 6 models, among them Cory Wong The Wash, Default Reverb, Gojira REV.
+
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Gojira REV's MIX LAW and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    NOLLY = 0
+    NOLLY = 0    # screen: None; catalog: 'nolly'
     NOLLYSKEWED = 1
     NOLLYSKEWEDPLUG = 2
 
@@ -654,6 +872,10 @@ class ModSource(IntEnum):
     """1 parameter use this list: MOD SOURCE
 
     On Micro Processor (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     LFO = 0
@@ -666,6 +888,10 @@ class MonoSynthMidiCh(IntEnum):
     """1 parameter use this list: MIDI CH.
 
     On Mono Synth.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     OFF = 0
@@ -692,6 +918,10 @@ class MonoSynthRoot(IntEnum):
     """1 parameter use this list: ROOT
 
     On Mono Synth.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     OFF = 0
@@ -713,6 +943,10 @@ class MulSource(IntEnum):
     """1 parameter use this list: MUL. SOURCE
 
     On Phase-Locked Loop.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     UNISON = 0
@@ -724,6 +958,10 @@ class Multiplier(IntEnum):
     """1 parameter use this list: MULTIPLIER
 
     On Phase-Locked Loop.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     X1 = 0
@@ -740,6 +978,10 @@ class MxPhase95Mode(IntEnum):
     """1 parameter use this list: MODE
 
     On MX Phase 95.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     BLOCK = 0
@@ -750,6 +992,10 @@ class MxPhase95Type(IntEnum):
     """1 parameter use this list: TYPE
 
     On MX Phase 95.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N90 = 0    # '90'
@@ -760,6 +1006,10 @@ class NollyCompressorAttack(IntEnum):
     """1 parameter use this list: ATTACK
 
     On Nolly Compressor.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     SMOOTH = 0
@@ -770,6 +1020,10 @@ class Notelength(IntEnum):
     """1 parameter use this list: NOTELENGTH
 
     On TempoControl.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     QUARTER = 0
@@ -782,6 +1036,10 @@ class Octave(IntEnum):
     """1 parameter use this list: OCTAVE
 
     On Mono Synth.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     MINUS_2 = 0    # '-2'
@@ -795,6 +1053,10 @@ class OnOff(IntEnum):
     """1 parameter use this list: ON / OFF
 
     On Freeze.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     RELEASE = 0
@@ -805,21 +1067,30 @@ class Osc1Wave(IntEnum):
     """2 parameters use this list: OSC1 WAVE, OSC2 WAVE
 
     On Mono Synth.
+
+    Audited against the unit's screen 2026-09-14: all 7 positions read.
+    The screen SPELLS 0, 1, 2, 3, 4 differently; its word is beside the member.
+    The catalog is WRONG at 5, 6 - not a spelling, a different thing. The member name follows
+    the screen, and naming these by the catalog's string is refused.
     """
 
-    SINE = 0
-    TRIANG = 1
-    SAWTOOTH = 2
-    SQUARE = 3
-    PULSE = 4
-    PINK_NS = 5    # 'Pink NS'
-    WHITE_NS = 6    # 'White NS'
+    SINE = 0    # screen: 'SIN'; catalog: 'Sine'
+    TRIANG = 1    # screen: 'TRI'; catalog: 'Triang'
+    SAWTOOTH = 2    # screen: 'SAW'; catalog: 'Sawtooth'
+    SQUARE = 3    # screen: 'SQR'; catalog: 'Square'
+    PULSE = 4    # screen: 'PUL'; catalog: 'Pulse'
+    WHITE_NS = 5    # screen: 'WHT'; catalog: 'Pink NS'
+    PINK_NS = 6    # screen: 'PNK'; catalog: 'White NS'
 
 
 class OutMode(IntEnum):
     """1 parameter use this list: OUT MODE
 
     On Chief CE2W (M).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     MONO = 0
@@ -830,6 +1101,10 @@ class Peak(IntEnum):
     """1 parameter use this list: PEAK
 
     On Obsessive Drive.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     LP = 0
@@ -840,6 +1115,10 @@ class Pickup(IntEnum):
     """1 parameter use this list: PICKUP
 
     On Facial Fuzz.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     HB = 0
@@ -850,6 +1129,10 @@ class PliniChorusMode(IntEnum):
     """1 parameter use this list: MODE
 
     On Plini Chorus.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     SPATIAL = 0
@@ -860,6 +1143,10 @@ class PliniDriveMode(IntEnum):
     """1 parameter use this list: MODE
 
     On Plini Drive.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     FZ = 0
@@ -870,6 +1157,8 @@ class PreRoll(IntEnum):
     """1 parameter use this list: PRE ROLL
 
     On Looper X.
+
+    Audited against the unit's screen 2026-09-14: all 4 positions read.
     """
 
     OFF = 0
@@ -882,6 +1171,8 @@ class PunchMode(IntEnum):
     """3 parameters use this list: OVERDUB MODE, PUNCH MODE, RECORD MODE
 
     On Looper X.
+
+    Audited against the unit's screen 2026-09-14: all 2 positions read.
     """
 
     MOMENTARY = 0
@@ -892,9 +1183,15 @@ class Quality(IntEnum):
     """4 parameters use this list: QUALITY
 
     On 4 models, among them Analog Delay (M), Analog Delay (ST), Slapback Delay (M).
+
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Slapback Delay (M)'s QUALITY and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    N0 = 0    # '0'
+    N0 = 0    # screen: None; catalog: '0'
     N1 = 1    # '1'
     N2 = 2    # '2'
     N3 = 3    # '3'
@@ -904,6 +1201,8 @@ class Quantize(IntEnum):
     """1 parameter use this list: QUANTIZE
 
     On Looper X.
+
+    Audited against the unit's screen 2026-09-14: all 10 positions read.
     """
 
     OFF = 0
@@ -922,6 +1221,10 @@ class Ratio3(IntEnum):
     """6 parameters use this list: RATIO
 
     On 6 models, among them Nolly Compressor, Plini Comp, SLO-100® Compressor.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N2 = 0    # '2'
@@ -933,6 +1236,8 @@ class RecLength(IntEnum):
     """1 parameter use this list: REC. LENGTH
 
     On Looper X.
+
+    Audited against the unit's screen 2026-09-14: all 33 positions read.
     """
 
     OFF = 0
@@ -974,6 +1279,10 @@ class RedDriveMode(IntEnum):
     """2 parameters use this list: INPUT, MODE
 
     On Fortin® Nameless, Red Drive.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     LOW = 0
@@ -984,6 +1293,10 @@ class Resonance(IntEnum):
     """1 parameter use this list: RESONANCE
 
     On Flanger Engine.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     FULL = 0
@@ -996,6 +1309,10 @@ class Routing(IntEnum):
     """1 parameter use this list: ROUTING
 
     On TempoControl.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     MULTI = 0
@@ -1009,6 +1326,8 @@ class RoutingMode(IntEnum):
     """1 parameter use this list: ROUTING MODE
 
     On Looper X.
+
+    Audited against the unit's screen 2026-09-14: all 14 positions read.
     """
 
     GRID = 0
@@ -1031,6 +1350,10 @@ class Scale(IntEnum):
     """1 parameter use this list: SCALE
 
     On Mono Synth.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     MAJOR = 0
@@ -1041,6 +1364,10 @@ class Size(IntEnum):
     """12 parameters use this list: SIZE
 
     On 12 models, among them Ambience, Dual (M), Dual (M) Lite.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     SMALL = 0
@@ -1052,6 +1379,10 @@ class SlapbackDelayMSyncNote(IntEnum):
     """2 parameters use this list: SYNC NOTE
 
     On Slapback Delay (M), Slapback Delay (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1_64T = 0    # '1/64T'
@@ -1071,6 +1402,10 @@ class Slope(IntEnum):
     """1 parameter use this list: SLOPE
 
     On Mono Synth.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N6DB_OCT = 0    # '6dB/Oct'
@@ -1083,9 +1418,15 @@ class SoldanoSlo100Channel(IntEnum):
     """1 parameter use this list: CHANNEL
 
     On Soldano SLO-100®.
+
+    NOT DRAWN by the unit, so these words cannot be held
+    against a screen. Looked for on Soldano SLO-100®'s CHANNEL and not
+    found on any page of the block (2026-09-14). This is
+    an observation, not the catalog's ``hidden`` flag - a
+    list marked hidden IS drawn on a Mono Synth.
     """
 
-    CLEAN = 0
+    CLEAN = 0    # screen: None; catalog: 'Clean'
     CRUNCH = 1
     LEAD = 2
 
@@ -1094,6 +1435,10 @@ class Sound(IntEnum):
     """1 parameter use this list: SOUND
 
     On TempoControl.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     BLIP = 0
@@ -1108,6 +1453,10 @@ class Speed(IntEnum):
     """2 parameters use this list: ATTACK, SPEED
 
     On Rotary, SLO-100® Compressor.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     SLOW = 0
@@ -1118,6 +1467,10 @@ class SplitterMode(IntEnum):
     """2 parameters use this list: MODE
 
     On Splitter, Splitter Crossover.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     REGULAR = 0
@@ -1128,6 +1481,10 @@ class SplitterType(IntEnum):
     """1 parameter use this list: TYPE
 
     On Splitter.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     BALANCE = 0
@@ -1139,6 +1496,10 @@ class Start(IntEnum):
     """2 parameters use this list: METRONOME MUTE, START
 
     On Looper X, TempoControl.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     MUTE = 0
@@ -1149,6 +1510,10 @@ class Stereo(IntEnum):
     """4 parameters use this list: STEREO
 
     On 4 models, among them Splitter, Splitter AB, Splitter Balance.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     NORMAL = 0
@@ -1159,6 +1524,10 @@ class StereoLink(IntEnum):
     """1 parameter use this list: STEREO LINK
 
     On Phase Doctor.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     UNLINKED = 0
@@ -1169,6 +1538,10 @@ class SyncNote11(IntEnum):
     """5 parameters use this list: CHR NOTE, SYNC NOTE
 
     On 5 models, among them Chief DC2W PCOM, Chorus 229T, Cory Wong The 80s.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1_8 = 0    # '1/8'
@@ -1188,6 +1561,10 @@ class SyncNote14(IntEnum):
     """9 parameters use this list: SYNC NOTE
 
     On 9 models, among them Chief CE2W (M), Chief CE2W (ST), Dream Chorus (M).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1_16 = 0    # '1/16'
@@ -1210,6 +1587,10 @@ class SyncNote17(IntEnum):
     """14 parameters use this list: FAST NOTE, SLOW NOTE, SYNC NOTE
 
     On 12 models, among them Chorus Engine, Digital Flanger, Flanger Engine.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1_32 = 0    # '1/32'
@@ -1235,6 +1616,8 @@ class SyncNote21(IntEnum):
     """28 parameters use this list: SYNC NOTE, SYNC NOTE A, SYNC NOTE B, SYNC NOTE L, SYNC NOTE R
 
     On 24 models, among them Circular Delay, Cory Wong Delay-y-y, Digital Delay (M).
+
+    Audited against the unit's screen 2026-09-14: all 21 positions read.
     """
 
     N1_64T = 0    # '1/64T'
@@ -1264,6 +1647,10 @@ class SyncOn(IntEnum):
     """1 parameter use this list: SYNC ON
 
     On Harmonic Tremolo.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     LOWS = 0
@@ -1274,6 +1661,10 @@ class TankType(IntEnum):
     """2 parameters use this list: TANK TYPE
 
     On Spring Reverb Engine (M), Spring Reverb Engine (ST).
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     VINTAGE = 0
@@ -1286,6 +1677,8 @@ class TapPreset(IntEnum):
     """1 parameter use this list: TAP PRESET
 
     On Circular Delay.
+
+    Audited against the unit's screen 2026-09-14: all 9 positions read.
     """
 
     N1 = 0    # '1'
@@ -1303,6 +1696,10 @@ class TempocontrolType(IntEnum):
     """1 parameter use this list: TYPE
 
     On TempoControl.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     PRESET = 0
@@ -1313,6 +1710,10 @@ class TimeSignature(IntEnum):
     """1 parameter use this list: TIME SIGNATURE
 
     On TempoControl.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N2_4 = 0    # '2/4'
@@ -1342,6 +1743,10 @@ class TremoloWaveform(IntEnum):
     """2 parameters use this list: WAVEFORM
 
     On Harmonic Tremolo, Tremolo.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     SINE = 0
@@ -1355,6 +1760,10 @@ class TrigDirection(IntEnum):
     """1 parameter use this list: TRIG DIRECTION
 
     On Love Meat.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     DOWN = 0
@@ -1365,6 +1774,10 @@ class TriggerMode(IntEnum):
     """1 parameter use this list: TRIGGER MODE
 
     On Love Meat.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     OFF = 0
@@ -1376,6 +1789,10 @@ class Tube(IntEnum):
     """2 parameters use this list: TUBE
 
     On Victor Squid Ch1, Victor Squid Ch2.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N6L6 = 0    # '6L6'
@@ -1386,6 +1803,10 @@ class UnisonSource(IntEnum):
     """1 parameter use this list: UNISON SOURCE
 
     On Mono Synth.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     OFF = 0
@@ -1398,6 +1819,10 @@ class UsDlx64VintageMode(IntEnum):
     """2 parameters use this list: MODE
 
     On US DLX 64 Vintage, US DLX 65 Reissue.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     NORMAL = 0
@@ -1409,6 +1834,10 @@ class V1Inter(IntEnum):
     """2 parameters use this list: V1 INTER, V2 INTER
 
     On Minivoicer.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     MINUS_15TH = 0    # '-15th'
@@ -1446,6 +1875,10 @@ class VibNote(IntEnum):
     """2 parameters use this list: VIB NOTE
 
     On Cory Wong The 80s, Vintage Chorus.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     N1_32 = 0    # '1/32'
@@ -1463,6 +1896,10 @@ class VintageChorusMode(IntEnum):
     """2 parameters use this list: MODE
 
     On Cory Wong The 80s, Vintage Chorus.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     CHORUS = 0
@@ -1473,6 +1910,10 @@ class VoiceMode(IntEnum):
     """1 parameter use this list: VOICE MODE
 
     On Chorus Engine.
+
+    NOT audited against the screen. These names are the
+    catalog's ``stepNames``, which is not known to be the
+    wording the unit draws.
     """
 
     FULL = 0
@@ -1600,6 +2041,289 @@ OPTION_LABELS = {
 }
 
 
+#: Catalog names a driven reading showed to be WRONG about what the
+#: position means, as ``{labels: {index: the catalog's name}}``.
+#:
+#: One entry: a Mono Synth's oscillator waveforms, where the catalog
+#: has pink and white noise swapped. The strings stay in
+#: ``OPTION_LABELS`` because the device publishes them, but naming
+#: one of these in ``set_param_option`` is refused rather than
+#: silently selecting the other noise.
+OPTION_CONTESTED = {
+    ('Sine', 'Triang', 'Sawtooth', 'Square', 'Pulse', 'Pink NS', 'White NS'): {5: 'Pink NS', 6: 'White NS'},
+}
+
+
+#: Whether anyone has held this list against the unit's SCREEN.
+#:
+#: Five answers, and every one of them is a recorded observation in
+#: ``tests/fixtures/catalog/option_readings.json``:
+#:
+#: - ``"audited"`` - every position was read off the screen. It does
+#:   NOT mean the words matched: a list can be audited AND
+#:   disagree, which is the whole point of reading one. The enum's
+#:   own docstring says which positions differ and how.
+#: - ``"drawn"`` - every position was read, but the unit DRAWS them
+#:   rather than naming them, so these words are still unchecked.
+#: - ``"partial"`` - some positions were read and some were not.
+#: - ``"absent"`` - somebody looked for the control and the unit
+#:   does not draw it. NOT inferred from the catalog's ``hidden``
+#:   flag, which marks a Mono Synth's ``OSC1 WAVE`` that is plainly
+#:   on screen.
+#: - ``None`` - the names are the catalog's and nobody has looked.
+#:
+#: Keyed by the LABELS rather than by the enum, because the two lists
+#: that become a bool and the one published by hand have no enum and
+#: are 13 parameters whose words still need
+#: checking - the rest of those three lists have been read.
+OPTION_AUDIT = {
+    ('OFF', 'MUTE', 'DOWN', 'ON'): 'drawn',  # no enum
+    ('OFF', 'ON'): 'audited',  # no enum
+    ('Off', 'On'): 'audited',  # no enum
+    ('Bypass', '90°', '180°'): None,  # Adjust
+    ('1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1'): None,  # AnalogDelayMSyncNote
+    ('Up', 'Down', 'Up & Down', 'Down & Up', 'Random'): None,  # ArpPattern
+    ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16'): None,  # BitDepth
+    ('HOT', 'COOL'): None,  # Boost
+    ('Normal', 'Bright 1', 'Bright 2'): None,  # Bright
+    ('Lo Freq', 'Hi Freq'): None,  # Center
+    ('Normal', 'OD'): None,  # ChannelNormal
+    ('CE2-C', 'CE1-C', 'CE1-V'): None,  # ChiefCe2wMType
+    ('1', '2', '3', '4', '1+2', '1+3', '1+4', '2+3', '2+4', '3+4'): None,  # ChiefDc2wMMode
+    ('S', 'SDD-320'): None,  # ChiefDc2wMType
+    ('Natural', 'Warm', 'Dark', 'Bright', 'Sparkle', 'Dusty', 'Spiky', 'Twangy'): None,  # Color
+    ('Fast', 'Slow'): None,  # CoryWongDIFunkConsoleAttack
+    ('Single', 'Dual'): None,  # CoryWongDelayYYMode
+    ('Clean', 'Crunch'): None,  # Crunch
+    ('Linear', 'Log'): 'audited',  # Curve
+    ('-', '+'): None,  # DCellHisbertCh2Mode
+    ('Fast', 'Smooth'): None,  # Decay
+    ('Neg', 'Pos'): None,  # DigitalFlangerPolarity
+    ('Unison', 'Multiplier'): None,  # DivSource
+    ('2', '3', '4', '5', '6', '7', '8'): None,  # Divider
+    ('CHO1', 'CHO2'): None,  # DreamChorusMMode
+    ('Soft', 'Edgy', 'Hard', 'Off'): None,  # DriveType
+    ('Chorus', 'Vibe'): None,  # DualChorusMode
+    ('Clean', 'OD'): None,  # DumbbellOdsChannel
+    ('Jazz', 'Rock'): None,  # DumbbellOdsEq
+    ('Free', 'Sync'): 'audited',  # DuplicateMode
+    ('Duck', 'Gate'): 'absent',  # DynMode2
+    ('Off', 'Duck', 'Gate'): None,  # DynMode3
+    ('Normal', 'Thick', 'Thicker'): None,  # Eq3
+    ('Reverse', 'Flip'): None,  # FeedbackMode
+    ('4-POLE', '2-POLE'): None,  # Filter
+    ('Low', 'A', 'B', 'High'): None,  # FilterCutoff
+    ('Lowpass', 'Bandpass', 'Highpass'): None,  # FilterType
+    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn', 'rndSmooth', 'rndStep'): 'audited',  # FlangerEngineWaveform
+    ('ON', 'OFF'): None,  # Focus
+    ('1', '2', '3', '4', '5'): None,  # Frequency
+    ('Normal', 'Inverted'): None,  # GainPolarity
+    ('Blade 2', 'Blade 1', 'FATSO'): None,  # GojiraWowMode
+    ('4 kHz', '2.5 kHz'): None,  # HighsFreq
+    ('Flat', '-6', '-12', '-18', '-24', '-30', '-36', '-42', '-48'): None,  # HpfSlope
+    ('Low', 'High'): None,  # Input
+    ('Guitar', 'Bass'): None,  # Instrument
+    ('Noral', 'Inverted'): 'absent',  # Invert
+    ('4', '8', '12', '20', 'All'): None,  # Legendary87MRatio
+    ('225 Hz', '150 Hz'): None,  # LowsFreq
+    ('Off', 'Boost'): None,  # Mid
+    ('900 Hz', '600 Hz'): None,  # MidsFreq
+    ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', 'Omni'): None,  # MinivoicerMidiCh
+    ('Major', 'Minor', 'Chrom'): None,  # MinivoicerMode
+    ('A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'): None,  # MinivoicerRoot
+    ('nolly', 'nollySkewed', 'nollySkewedPlug'): 'absent',  # MixLaw
+    ('LFO', 'LFO Stereo', '+Envelope', '-Envelope'): None,  # ModSource
+    ('Off', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', 'Omni'): None,  # MonoSynthMidiCh
+    ('OFF', 'A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'): None,  # MonoSynthRoot
+    ('Unison', '-1 Octave', '-2 Octaves'): None,  # MulSource
+    ('x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8'): None,  # Multiplier
+    ('Block', 'Script'): None,  # MxPhase95Mode
+    ('90', '45'): None,  # MxPhase95Type
+    ('Smooth', 'Snappy'): None,  # NollyCompressorAttack
+    ('QUARTER', 'EIGHTH', 'TRIPLET', 'SIXTEENTH'): None,  # Notelength
+    ('-2', '-1', '0', '1', '2'): None,  # Octave
+    ('RELEASE', 'FREEZE'): None,  # OnOff
+    ('Sine', 'Triang', 'Sawtooth', 'Square', 'Pulse', 'Pink NS', 'White NS'): 'audited',  # Osc1Wave
+    ('Mono', 'Wet/Dry'): None,  # OutMode
+    ('LP', 'HP'): None,  # Peak
+    ('HB', 'SINGLE'): None,  # Pickup
+    ('Spatial', 'Vintage'): None,  # PliniChorusMode
+    ('FZ', 'OD'): None,  # PliniDriveMode
+    ('OFF', '1 BAR', '2 BARS', '4 BARS'): 'audited',  # PreRoll
+    ('Momentary', 'Toggle'): 'audited',  # PunchMode
+    ('0', '1', '2', '3'): 'absent',  # Quality
+    ('OFF', '1 Beat', '2 Beats', '3 Beats', '4 Beats', '5 Beats', '6 Beats', '7 Beats', '8 Beats', '16 Beats'): 'audited',  # Quantize
+    ('2', '4', '10'): None,  # Ratio3
+    ('OFF', '1 BAR', '2 BARS', '3 BARS', '4 BARS', '5 BARS', '6 BARS', '7 BARS', '8 BARS', '9 BARS', '10 BARS', '11 BARS', '12 BARS', '13 BARS', '14 BARS', '15 BARS', '16 BARS', '17 BARS', '18 BARS', '19 BARS', '20 BARS', '21 BARS', '22 BARS', '23 BARS', '24 BARS', '25 BARS', '26 BARS', '27 BARS', '28 BARS', '29 BARS', '30 BARS', '31 BARS', '32 BARS'): 'audited',  # RecLength
+    ('LOW', 'HIGH'): None,  # RedDriveMode
+    ('Full', 'Hollow', 'Rich', 'Intense'): None,  # Resonance
+    ('MULTI', 'HP', 'OUT 1/2', 'OUT 3/4', 'SEND 1/2'): None,  # Routing
+    ('Grid', 'In 1', 'In 2', 'Ret 1', 'Ret 2', 'In 1/2', 'Ret 1/2', 'Out1', 'Out2', 'Out3', 'Out4', 'Out1/2', 'Out3/4', 'Multi'): 'audited',  # RoutingMode
+    ('Major', 'Minor'): None,  # Scale
+    ('Small', 'Med', 'Large'): None,  # Size
+    ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8'): None,  # SlapbackDelayMSyncNote
+    ('6dB/Oct', '12dB/Oct', '18dB/Oct', '24dB/Oct'): None,  # Slope
+    ('Clean', 'Crunch', 'Lead'): 'absent',  # SoldanoSlo100Channel
+    ('BLIP', 'BLOCK', 'COWBELL', 'DIGITAL', 'DRUM KIT', 'SOFT KIT'): None,  # Sound
+    ('Slow', 'Fast'): None,  # Speed
+    ('Regular', 'Invert'): None,  # SplitterMode
+    ('Balance', 'A/B', 'Crossover'): None,  # SplitterType
+    ('MUTE', 'UNMUTE'): None,  # Start
+    ('Normal', 'Split'): None,  # Stereo
+    ('Unlinked', 'Linked'): None,  # StereoLink
+    ('1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): None,  # SyncNote11
+    ('1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): None,  # SyncNote14
+    ('1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): None,  # SyncNote17
+    ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 'audited',  # SyncNote21
+    ('Lows', 'Highs'): None,  # SyncOn
+    ('Vintage', 'Short', 'Mid', 'Long'): None,  # TankType
+    ('1', '2', '3', '4', '4 Alt', '5', '5 Alt', '6', '6 Alt'): 'audited',  # TapPreset
+    ('Preset', 'Global'): None,  # TempocontrolType
+    ('2/4', '3/4', '4/4', '5/4', '6/4', '7/4', '8/4', '9/4', '10/4', '11/4', '12/4', '13/4', '3/8', '6/8', '9/8', '12/8', '5/8 (3+2)', '5/8 (2+3)', '7/8 (3+2+2)', '7/8 (2+3+2)', '7/8 (2+2+3)'): None,  # TimeSignature
+    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn'): None,  # TremoloWaveform
+    ('Down', 'Up'): None,  # TrigDirection
+    ('Off', 'Full', '1/2'): None,  # TriggerMode
+    ('6L6', 'EL34'): None,  # Tube
+    ('OFF', 'OSC 1', 'OSC 2', 'OSC 1 + 2'): None,  # UnisonSource
+    ('Normal', 'Vibrato', 'Vibrato Bright Off'): None,  # UsDlx64VintageMode
+    ('-15th', '-14th', '-13th', '-12th', '-11th', '-10th', '-9th', '-8th', '-7th', '-6th', '-5th', '-4th', '-3rd', '-2nd', 'Root', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th'): None,  # V1Inter
+    ('1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D'): None,  # VibNote
+    ('Chorus', 'Vibrato'): None,  # VintageChorusMode
+    ('Full', 'Thick', 'Open', 'Broad'): None,  # VoiceMode
+}
+
+
+#: How many PARAMETERS each fixed list decides, as
+#: ``{labels: count}``.
+#:
+#: Published beside ``OPTION_AUDIT`` because the two are read
+#: together: a list nobody has looked at matters in proportion to
+#: how many controls it governs, and the numbers were being quoted
+#: in prose from one-off counts before this existed. Keyed by the
+#: LABELS, like the audit, so the three lists with no enum are in
+#: it too.
+#:
+#: Totals on this snapshot: 527
+#: parameters across 113 lists, of which 190 across
+#: 94 lists nobody has read. The work is long-tailed - the
+#: five biggest unread lists cover 54 of those 190.
+OPTION_USAGE = {
+    ('OFF', 'MUTE', 'DOWN', 'ON'): 13,  # no enum
+    ('OFF', 'ON'): 25,  # no enum
+    ('Off', 'On'): 222,  # no enum
+    ('Bypass', '90°', '180°'): 2,  # Adjust
+    ('1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1'): 2,  # AnalogDelayMSyncNote
+    ('Up', 'Down', 'Up & Down', 'Down & Up', 'Random'): 1,  # ArpPattern
+    ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16'): 2,  # BitDepth
+    ('HOT', 'COOL'): 2,  # Boost
+    ('Normal', 'Bright 1', 'Bright 2'): 1,  # Bright
+    ('Lo Freq', 'Hi Freq'): 2,  # Center
+    ('Normal', 'OD'): 1,  # ChannelNormal
+    ('CE2-C', 'CE1-C', 'CE1-V'): 2,  # ChiefCe2wMType
+    ('1', '2', '3', '4', '1+2', '1+3', '1+4', '2+3', '2+4', '3+4'): 2,  # ChiefDc2wMMode
+    ('S', 'SDD-320'): 2,  # ChiefDc2wMType
+    ('Natural', 'Warm', 'Dark', 'Bright', 'Sparkle', 'Dusty', 'Spiky', 'Twangy'): 1,  # Color
+    ('Fast', 'Slow'): 1,  # CoryWongDIFunkConsoleAttack
+    ('Single', 'Dual'): 1,  # CoryWongDelayYYMode
+    ('Clean', 'Crunch'): 1,  # Crunch
+    ('Linear', 'Log'): 1,  # Curve
+    ('-', '+'): 1,  # DCellHisbertCh2Mode
+    ('Fast', 'Smooth'): 1,  # Decay
+    ('Neg', 'Pos'): 1,  # DigitalFlangerPolarity
+    ('Unison', 'Multiplier'): 1,  # DivSource
+    ('2', '3', '4', '5', '6', '7', '8'): 1,  # Divider
+    ('CHO1', 'CHO2'): 2,  # DreamChorusMMode
+    ('Soft', 'Edgy', 'Hard', 'Off'): 2,  # DriveType
+    ('Chorus', 'Vibe'): 1,  # DualChorusMode
+    ('Clean', 'OD'): 1,  # DumbbellOdsChannel
+    ('Jazz', 'Rock'): 1,  # DumbbellOdsEq
+    ('Free', 'Sync'): 1,  # DuplicateMode
+    ('Duck', 'Gate'): 9,  # DynMode2
+    ('Off', 'Duck', 'Gate'): 11,  # DynMode3
+    ('Normal', 'Thick', 'Thicker'): 8,  # Eq3
+    ('Reverse', 'Flip'): 2,  # FeedbackMode
+    ('4-POLE', '2-POLE'): 1,  # Filter
+    ('Low', 'A', 'B', 'High'): 1,  # FilterCutoff
+    ('Lowpass', 'Bandpass', 'Highpass'): 1,  # FilterType
+    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn', 'rndSmooth', 'rndStep'): 1,  # FlangerEngineWaveform
+    ('ON', 'OFF'): 2,  # Focus
+    ('1', '2', '3', '4', '5'): 2,  # Frequency
+    ('Normal', 'Inverted'): 3,  # GainPolarity
+    ('Blade 2', 'Blade 1', 'FATSO'): 1,  # GojiraWowMode
+    ('4 kHz', '2.5 kHz'): 1,  # HighsFreq
+    ('Flat', '-6', '-12', '-18', '-24', '-30', '-36', '-42', '-48'): 2,  # HpfSlope
+    ('Low', 'High'): 2,  # Input
+    ('Guitar', 'Bass'): 1,  # Instrument
+    ('Noral', 'Inverted'): 16,  # Invert
+    ('4', '8', '12', '20', 'All'): 3,  # Legendary87MRatio
+    ('225 Hz', '150 Hz'): 1,  # LowsFreq
+    ('Off', 'Boost'): 3,  # Mid
+    ('900 Hz', '600 Hz'): 1,  # MidsFreq
+    ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', 'Omni'): 1,  # MinivoicerMidiCh
+    ('Major', 'Minor', 'Chrom'): 2,  # MinivoicerMode
+    ('A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'): 2,  # MinivoicerRoot
+    ('nolly', 'nollySkewed', 'nollySkewedPlug'): 6,  # MixLaw
+    ('LFO', 'LFO Stereo', '+Envelope', '-Envelope'): 1,  # ModSource
+    ('Off', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', 'Omni'): 1,  # MonoSynthMidiCh
+    ('OFF', 'A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'): 1,  # MonoSynthRoot
+    ('Unison', '-1 Octave', '-2 Octaves'): 1,  # MulSource
+    ('x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8'): 1,  # Multiplier
+    ('Block', 'Script'): 1,  # MxPhase95Mode
+    ('90', '45'): 1,  # MxPhase95Type
+    ('Smooth', 'Snappy'): 1,  # NollyCompressorAttack
+    ('QUARTER', 'EIGHTH', 'TRIPLET', 'SIXTEENTH'): 1,  # Notelength
+    ('-2', '-1', '0', '1', '2'): 1,  # Octave
+    ('RELEASE', 'FREEZE'): 1,  # OnOff
+    ('Sine', 'Triang', 'Sawtooth', 'Square', 'Pulse', 'Pink NS', 'White NS'): 2,  # Osc1Wave
+    ('Mono', 'Wet/Dry'): 1,  # OutMode
+    ('LP', 'HP'): 1,  # Peak
+    ('HB', 'SINGLE'): 1,  # Pickup
+    ('Spatial', 'Vintage'): 1,  # PliniChorusMode
+    ('FZ', 'OD'): 1,  # PliniDriveMode
+    ('OFF', '1 BAR', '2 BARS', '4 BARS'): 1,  # PreRoll
+    ('Momentary', 'Toggle'): 3,  # PunchMode
+    ('0', '1', '2', '3'): 4,  # Quality
+    ('OFF', '1 Beat', '2 Beats', '3 Beats', '4 Beats', '5 Beats', '6 Beats', '7 Beats', '8 Beats', '16 Beats'): 1,  # Quantize
+    ('2', '4', '10'): 6,  # Ratio3
+    ('OFF', '1 BAR', '2 BARS', '3 BARS', '4 BARS', '5 BARS', '6 BARS', '7 BARS', '8 BARS', '9 BARS', '10 BARS', '11 BARS', '12 BARS', '13 BARS', '14 BARS', '15 BARS', '16 BARS', '17 BARS', '18 BARS', '19 BARS', '20 BARS', '21 BARS', '22 BARS', '23 BARS', '24 BARS', '25 BARS', '26 BARS', '27 BARS', '28 BARS', '29 BARS', '30 BARS', '31 BARS', '32 BARS'): 1,  # RecLength
+    ('LOW', 'HIGH'): 2,  # RedDriveMode
+    ('Full', 'Hollow', 'Rich', 'Intense'): 1,  # Resonance
+    ('MULTI', 'HP', 'OUT 1/2', 'OUT 3/4', 'SEND 1/2'): 1,  # Routing
+    ('Grid', 'In 1', 'In 2', 'Ret 1', 'Ret 2', 'In 1/2', 'Ret 1/2', 'Out1', 'Out2', 'Out3', 'Out4', 'Out1/2', 'Out3/4', 'Multi'): 1,  # RoutingMode
+    ('Major', 'Minor'): 1,  # Scale
+    ('Small', 'Med', 'Large'): 12,  # Size
+    ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8'): 2,  # SlapbackDelayMSyncNote
+    ('6dB/Oct', '12dB/Oct', '18dB/Oct', '24dB/Oct'): 1,  # Slope
+    ('Clean', 'Crunch', 'Lead'): 1,  # SoldanoSlo100Channel
+    ('BLIP', 'BLOCK', 'COWBELL', 'DIGITAL', 'DRUM KIT', 'SOFT KIT'): 1,  # Sound
+    ('Slow', 'Fast'): 2,  # Speed
+    ('Regular', 'Invert'): 2,  # SplitterMode
+    ('Balance', 'A/B', 'Crossover'): 1,  # SplitterType
+    ('MUTE', 'UNMUTE'): 2,  # Start
+    ('Normal', 'Split'): 4,  # Stereo
+    ('Unlinked', 'Linked'): 1,  # StereoLink
+    ('1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 5,  # SyncNote11
+    ('1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 9,  # SyncNote14
+    ('1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 14,  # SyncNote17
+    ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1', '1/1D'): 28,  # SyncNote21
+    ('Lows', 'Highs'): 1,  # SyncOn
+    ('Vintage', 'Short', 'Mid', 'Long'): 2,  # TankType
+    ('1', '2', '3', '4', '4 Alt', '5', '5 Alt', '6', '6 Alt'): 1,  # TapPreset
+    ('Preset', 'Global'): 1,  # TempocontrolType
+    ('2/4', '3/4', '4/4', '5/4', '6/4', '7/4', '8/4', '9/4', '10/4', '11/4', '12/4', '13/4', '3/8', '6/8', '9/8', '12/8', '5/8 (3+2)', '5/8 (2+3)', '7/8 (3+2+2)', '7/8 (2+3+2)', '7/8 (2+2+3)'): 1,  # TimeSignature
+    ('Sine', 'Triangle', 'Square', 'Saw Up', 'Saw Dn'): 2,  # TremoloWaveform
+    ('Down', 'Up'): 1,  # TrigDirection
+    ('Off', 'Full', '1/2'): 1,  # TriggerMode
+    ('6L6', 'EL34'): 2,  # Tube
+    ('OFF', 'OSC 1', 'OSC 2', 'OSC 1 + 2'): 1,  # UnisonSource
+    ('Normal', 'Vibrato', 'Vibrato Bright Off'): 2,  # UsDlx64VintageMode
+    ('-15th', '-14th', '-13th', '-12th', '-11th', '-10th', '-9th', '-8th', '-7th', '-6th', '-5th', '-4th', '-3rd', '-2nd', 'Root', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th'): 2,  # V1Inter
+    ('1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D'): 2,  # VibNote
+    ('Chorus', 'Vibrato'): 2,  # VintageChorusMode
+    ('Full', 'Thick', 'Open', 'Broad'): 1,  # VoiceMode
+}
+
+
 __all__ = [
     "Adjust",
     "AnalogDelayMSyncNote",
@@ -1712,4 +2436,7 @@ __all__ = [
     "VintageChorusMode",
     "VoiceMode",
     "OPTION_LABELS",
+    "OPTION_AUDIT",
+    "OPTION_USAGE",
+    "OPTION_CONTESTED",
 ]
