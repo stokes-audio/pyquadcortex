@@ -18,7 +18,7 @@ sustained stretch without a correction.
 ### CorOS 4.1 preset screenshots are readable
 
 `QuadCortex41.preset_screenshot()` sends the complete preset address and returns
-the device-rendered PNG bytes. The CorOS 4.0.1 profile refuses the operation
+the device-rendered `PNG` bytes. The CorOS 4.0.1 profile refuses the operation
 because that wire shape has only been measured on 4.1.0.
 
 ### The screen shortens one control's words, and not because of the words
