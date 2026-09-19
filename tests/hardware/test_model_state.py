@@ -152,17 +152,32 @@ def test_the_connect_burst_warms_the_cache(burst_warmed, handshake_burst,
 
     Read from a snapshot the connection fixture took the moment the burst
     finished, so this says the BURST filled it rather than some earlier test.
+
+    ``unfinished`` comes first because the snapshot is only evidence if the
+    recording it came from is whole: a burst cut off by the fixture's patience
+    leaves the same absence a unit that stopped sending would, and the two want
+    opposite responses. It says which in its own words.
     """
+    unfinished = handshake_burst.unfinished()
+    assert unfinished is None, unfinished
+    # One decimal, because the poll that produced it runs at 100 ms - three
+    # would read as a measurement the number cannot support.
+    record_property("burst_settled_in_s", round(handshake_burst.settled_in, 1))
     record_property("burst_warmed", {name: sorted(fields)
                                      for name, fields in burst_warmed.items()})
-    counted = collections.Counter(handshake_burst.names())
+    # How far from the end of the recording each closing message landed. Not
+    # asserted - see HandshakeBurst.tail_positions - but a firmware that stopped
+    # closing the burst with these four shows up here first.
+    record_property("burst_tail_positions", handshake_burst.tail_positions())
 
-    assert counted.get("PresetDirtyMessage"), (
-        f"the burst carried no PresetDirty, so there was nothing to warm the "
-        f"cache with - it recorded {dict(counted)}")
+    # That PresetDirty ARRIVED is already settled: it is in BURST_TAIL, so the
+    # guard above cannot pass without it. What is still open, and is this test's
+    # subject, is whether the model KEPT what the unit announced.
     assert "is_dirty" in burst_warmed["dirty"], (
-        f"the unit announced its unsaved-changes state during the burst and the "
-        f"model did not keep it - the cache held {burst_warmed}")
+        f"the unit announced its unsaved-changes state during the burst - the "
+        f"recording holds {collections.Counter(handshake_burst.names())['PresetDirtyMessage']} "
+        f"PresetDirty message(s) - and the model did not keep it. The cache "
+        f"held {burst_warmed}")
 
 
 def test_nothing_the_burst_delivered_is_read_again_on_first_access(

@@ -215,3 +215,381 @@ def test_the_output_tree_is_the_repos_catalogs_package_wherever_the_run_starts(n
     mod = _load(name)
     assert mod.CATALOGS.is_absolute()
     assert mod.CATALOGS == ROOT / "pyquadcortex" / "protocol" / "catalogs"
+
+
+# ---------------------------------------------------------------------------
+# generate_options' audit stamping
+#
+# All of this shipped untested in its first version, including two refusals
+# whose whole value is that they fire. `screen_word`'s in particular is the
+# mechanism for catching a device that draws one `stepNames` string two ways -
+# a finding - and nothing had ever invoked it.
+# ---------------------------------------------------------------------------
+
+AUDIT_XML = b"""<?xml version="1.0"?>
+<ModelRepo>
+  <Category id="6" name="Delay">
+    <Model id="6001" name="Test Delay">
+      <Parameter name="SHAPE" type="comboBox" stepNames="Soft,Hard,Wild"
+                 min="0" max="1" defaultValue="0" steps="3"/>
+      <Parameter name="SECRET" type="comboBox" stepNames="alpha,beta" hidden="true"
+                 min="0" max="1" defaultValue="0" steps="2"/>
+      <Parameter name="CELL" type="comboBox" stepNames="LOW,HIGH"
+                 min="0" max="1" defaultValue="0" steps="2"/>
+    </Model>
+  </Category>
+</ModelRepo>"""
+
+
+def _reading(labels, index, screen, **extra):
+    row = {"snapshot": "s", "labels": list(labels), "index": index,
+           "screen": screen, "read_on": "2026-09-14", "method": "driven",
+           "model": "Test Delay", "model_id": 6001, "param": "X",
+           "param_index": 0}
+    row.update(extra)
+    return row
+
+
+def _with_readings(monkeypatch, tmp_path, rows):
+    """Point the generator's READINGS at a fixture we control."""
+    import json
+    mod = _load("generate_options")
+    path = tmp_path / "readings.json"
+    path.write_text(json.dumps(rows), encoding="utf-8")
+    monkeypatch.setattr(mod, "READINGS", path)
+    return mod
+
+
+SHAPE = ("Soft", "Hard", "Wild")
+
+
+def test_a_list_nobody_read_says_so_in_its_own_docstring(monkeypatch, tmp_path):
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "NOT audited against the screen" in text
+    assert "'audited'" not in text
+
+
+def test_reading_every_position_stamps_the_enum_audited(monkeypatch, tmp_path):
+    rows = [_reading(SHAPE, i, w) for i, w in enumerate(SHAPE)]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "Audited against the unit's screen 2026-09-14: all 3 positions read." in text
+
+
+def test_reading_some_positions_is_partial_and_never_audited(monkeypatch, tmp_path):
+    """The status most likely to be rounded up, so it gets its own test."""
+    rows = [_reading(SHAPE, 0, "Soft"), _reading(SHAPE, 2, "Wild")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "PARTLY audited against the screen" in text
+    assert "2 of 3 positions read" in text
+    assert "'partial'" in text
+    assert "'audited'" not in text
+
+
+def test_a_screen_word_that_contradicts_the_catalog_reaches_the_enum(monkeypatch, tmp_path):
+    """The case the whole mechanism exists for, and which has never happened.
+
+    Written against a SYNTHETIC disagreement rather than a recorded one, so it
+    is a real test today instead of an assertion that waits years to run.
+    """
+    rows = [_reading(SHAPE, 0, "Soft"), _reading(SHAPE, 1, "Firm"),
+            _reading(SHAPE, 2, "Wild")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "screen: 'Firm'; catalog: 'Hard'" in text
+    # A wording difference and a MEANING error are said differently, because
+    # flattening them into one word buried the two that mattered among five
+    # harmless abbreviations on the waveform list.
+    assert "The screen SPELLS 1 differently" in text
+    # A wording difference is NOT announced as the catalog being wrong. Scoped
+    # to the phrase rather than the word, which also appears in the
+    # OPTION_CONTESTED docstring further down the same file.
+    assert "The catalog is WRONG at" not in text
+
+
+def test_two_readings_of_one_position_that_disagree_stop_the_generator(monkeypatch, tmp_path):
+    """Two parameters sharing a `stepNames` string, drawn differently.
+
+    That is a finding about the device. Letting file order pick a winner would
+    bury it, so the generator refuses rather than emitting either.
+    """
+    rows = [_reading(SHAPE, 0, "Soft"),
+            _reading(SHAPE, 0, "Gentle", param="OTHER"),
+            _reading(SHAPE, 1, "Hard"), _reading(SHAPE, 2, "Wild")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "readings disagree" in str(caught.value)
+    assert "not one list" in str(caught.value)
+
+
+def test_the_hidden_flag_alone_never_stamps_a_list_unreadable(monkeypatch, tmp_path):
+    """The rule that was wrong, pinned so it cannot come back.
+
+    `SECRET` here is marked `hidden="true"` exactly as a Mono Synth's
+    `OSC1 WAVE` is - and that one is on the screen. So a flagged parameter with
+    no observation behind it stays UNREAD, which is work somebody should do,
+    rather than `absent`, which is work nobody can.
+    """
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "'absent'" not in text
+    assert "NOT audited against the screen" in text
+
+
+def test_looking_for_a_control_and_not_finding_it_stamps_the_list_absent(monkeypatch, tmp_path):
+    rows = [_reading(("alpha", "beta"), 0, None, kind="absent",
+                     model="Test Delay", param="SECRET")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "'absent'" in text
+    assert "NOT DRAWN by the unit" in text
+    assert "Test Delay's SECRET" in text
+
+
+def test_a_list_recorded_both_read_and_not_drawn_stops_the_generator(monkeypatch, tmp_path):
+    """One of the two observations is wrong; neither wins by file order."""
+    rows = [_reading(("alpha", "beta"), 0, None, kind="absent", param="SECRET"),
+            _reading(("alpha", "beta"), 1, "beta", param="SECRET")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "recorded both as read and as not drawn" in str(caught.value)
+
+
+def test_a_list_the_unit_draws_is_stamped_drawn_rather_than_audited(monkeypatch, tmp_path):
+    """Every position read, and not one WORD checked.
+
+    `OFF,MUTE,DOWN,ON` is the real case: the unit draws circles and dots and
+    never writes `MUTE`. Calling that audited would be the overstatement the
+    stamp exists to prevent.
+    """
+    rows = [_reading(("LOW", "HIGH"), 0, "empty circle", kind="symbol"),
+            _reading(("LOW", "HIGH"), 1, "filled circle", kind="symbol")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "'drawn'" in text
+    assert "DRAWS them rather than naming them" in text
+    assert "drawn as 'empty circle'" in text
+    # A drawing must never be reported as disagreeing with the word. Asserted
+    # against the phrases the generator actually emits - the earlier version
+    # looked for "DISAGREE", a token this generator writes for no input at all,
+    # so it could not fail.
+    assert "The screen SPELLS" not in text
+    assert "The catalog is WRONG at" not in text
+    assert "screen: " not in text
+
+
+def test_a_missing_readings_file_stops_the_run_instead_of_erasing_the_audit(monkeypatch, tmp_path):
+    """Returning {} here rewrites every list as unread and prints success."""
+    mod = _load("generate_options")
+    monkeypatch.setattr(mod, "READINGS", tmp_path / "does-not-exist.json")
+    with pytest.raises(SystemExit) as caught:
+        mod.load_readings("s")
+    assert "erase every recorded reading" in str(caught.value)
+
+
+def test_a_rename_with_no_reading_behind_it_stops_the_generator(monkeypatch, tmp_path):
+    """`MEANING_DISAGREEMENTS` renames a PUBLIC member, so it needs evidence.
+
+    Without a guard it is `SPELLING_FIXES` with a bigger blast radius.
+    """
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("HARD", "0 drew 'Sft', which is 'Hard'"), 1: ("SOFT", "1 drew 'Hrd', which is 'Soft'")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "no DRIVEN reading records" in str(caught.value)
+
+
+def test_a_rename_cannot_lean_on_a_row_saying_the_control_is_not_drawn(monkeypatch, tmp_path):
+    """An `absent` row says nothing about what a POSITION means.
+
+    It was accepted as evidence at first, because every absent row claimed
+    `method: "driven"` - so a rename could ride on a row whose whole content is
+    "this control is not on the screen".
+    """
+    rows = [_reading(SHAPE, 0, None, kind="absent", method="looked")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("HARD", "0 drew 'Sft', which is 'Hard'"), 1: ("SOFT", "1 drew 'Hrd', which is 'Soft'")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "not drawn does not count" in str(caught.value)
+
+
+def test_a_rename_cannot_overrule_a_reading_that_agrees_with_the_catalog(monkeypatch, tmp_path):
+    """Requiring a reading to EXIST is not the same as requiring it to support.
+
+    At first the guard only checked existence, so renaming position 1 to
+    anything at all passed while the recorded screen word there was `Hard` -
+    the catalog's own label. There has to be something to correct.
+    """
+    rows = [_reading(SHAPE, 0, "Soft"), _reading(SHAPE, 1, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("HARD", "0 drew 'Sft', which is 'Hard'"), 1: ("SOFT", "1 drew 'Hrd', which is 'Soft'")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "nothing to correct" in str(caught.value)
+
+
+def test_a_rename_for_a_list_this_catalog_lacks_is_not_demanded(monkeypatch, tmp_path):
+    """A correction is per snapshot; another firmware need not carry the list.
+
+    Demanding a reading for a list that is not in the catalog being rendered
+    would make a 4.1.0 run fail over a 4.0.1 finding.
+    """
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {("nowhere", "at", "all"): {0: ("NOWHERE", "x"), 1: ("AT", "y")}})
+    mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+
+
+def test_a_rename_to_a_name_the_list_does_not_contain_is_refused(monkeypatch, tmp_path):
+    """The check that actually gives the guard teeth.
+
+    The contradiction test is an exact string compare, so it is trivially
+    satisfied on any list whose screen text ABBREVIATES - and every position of
+    the one list this table governs does ("SIN" vs "Sine"). With only that test,
+    `{0: "HARD_SYNC"}` was accepted on a pure hunch and went on to stamp the
+    enum's docstring "the catalog is WRONG at 0".
+
+    What this table can express is "this position is the thing the catalog calls
+    ANOTHER position of this list" - a swap. Anything else is a new claim about
+    the device and belongs in a record.
+    """
+    rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 1, "Hrd"),
+            _reading(SHAPE, 2, "Wld")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("INVENTED", "0 drew 'Sft', which is 'Soft'"), 2: ("WILD", "x")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "not what this list calls any of its positions" in str(caught.value)
+
+
+def test_a_rename_to_the_name_that_position_already_has_is_refused(monkeypatch, tmp_path):
+    rows = [_reading(SHAPE, 0, "Sft")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {0: ("SOFT", "0 drew 'Sft', which is 'Soft'"), 2: ("WILD", "2 drew 'Wld', which is 'Wild'")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "already that position's name" in str(caught.value)
+
+
+def test_a_swap_between_two_positions_of_the_list_is_accepted(monkeypatch, tmp_path):
+    """The shape the real finding has: two positions of one list, exchanged."""
+    rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {SHAPE: {1: ("WILD", "1 drew 'Wld', which is 'Wild'"), 2: ("HARD", "2 drew 'Hrd', which is 'Hard'")}})
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "WILD = 1" in text
+    assert "HARD = 2" in text
+    assert "The catalog is WRONG at 1, 2" in text
+
+
+def test_a_rename_using_another_positions_name_is_still_not_a_swap(monkeypatch, tmp_path):
+    """`{0: "HARD"}` again, spelled with a name the list happens to contain.
+
+    Requiring the new name to belong to SOME position of the list was not
+    enough: renaming position 0 to position 2's name is an invention that
+    happens to be spelled from the right vocabulary, and it shadows the real
+    member to `HARD_2`.
+    """
+    rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 1, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {
+        0: ("HARD", "0 drew 'Sft', which is 'Hard'"),
+        1: ("WILD", "1 drew 'Hrd', which is 'Wild'")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "have to be the same set" in str(caught.value)
+
+
+def test_half_a_swap_is_refused_because_it_deletes_a_member(monkeypatch, tmp_path):
+    """`{1: "WILD"}` alone emits WILD and WILD_2, and HARD simply vanishes.
+
+    Silently, from a PUBLIC enum, with no error anywhere - which is why the
+    entry is checked as a whole rather than one rename at a time.
+    """
+    rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {1: ("WILD", "1 drew 'Wld', which is 'Wild'")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "deletes a member" in str(caught.value)
+
+
+def test_a_closed_swap_keeps_every_member_the_list_had(monkeypatch, tmp_path):
+    """The property the permutation check is really protecting."""
+    rows = [_reading(SHAPE, 1, "Wld"), _reading(SHAPE, 2, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {SHAPE: {1: ("WILD", "1 drew 'Wld', which is 'Wild'"), 2: ("HARD", "2 drew 'Hrd', which is 'Hard'")}})
+    text = mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    for member in ("SOFT = 0", "WILD = 1", "HARD = 2"):
+        assert member in text
+    # no collision suffix anywhere, which is what a deletion would have caused
+    assert "_1 =" not in text and "_2 =" not in text
+
+
+def test_a_rename_to_a_name_two_positions_produce_is_refused(monkeypatch, tmp_path):
+    """Two positions of one list can mangle to the same member name.
+
+    The note lists do it - `A` and `A#` both give `A`, which `render_enum`
+    resolves with an `_<index>` suffix. A correction naming one of those does not
+    say which position it means, so it is refused rather than resolved by
+    whichever index a dict comprehension happened to keep last.
+    """
+    notes = ("OFF", "A", "A#", "B")
+    xml = AUDIT_XML.replace(
+        b'<Parameter name="CELL" type="comboBox" stepNames="LOW,HIGH"',
+        b'<Parameter name="CELL" type="comboBox" stepNames="OFF,A,A#,B"')
+    rows = [_reading(notes, 1, "Ay")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {notes: {1: ("A", "1 drew 'Ay', which is 'A'"), 3: ("B", "x")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(xml), snapshot="s")
+    assert "does not say which" in str(caught.value)
+
+
+def test_an_entry_of_one_position_is_refused(monkeypatch, tmp_path):
+    """A swap needs two. One either deletes a member or contests nothing."""
+    rows = [_reading(SHAPE, 0, "Sft")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {SHAPE: {0: ("HARD", "0 drew 'Sft', which is 'Hard'")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "A swap needs at least two" in str(caught.value)
+
+
+def test_an_empty_entry_is_refused(monkeypatch, tmp_path):
+    """`{labels: {}}` published a contested list with nothing contested in it."""
+    mod = _with_readings(monkeypatch, tmp_path, [])
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS", {SHAPE: {}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "A swap needs at least two" in str(caught.value)
+
+
+def test_a_correction_whose_reason_does_not_quote_the_reading_is_refused(monkeypatch, tmp_path):
+    """The shape checks alone let a FALSE pair through.
+
+    `{0: "SQUARE", 3: "SINE"}` is a closed permutation, and on a list whose
+    screen text abbreviates the contradiction test is satisfied everywhere - so
+    it passed and stamped "the catalog is WRONG at 0, 3".
+
+    Nothing here can prove `WHT` means `White NS`; that is a human's judgement.
+    What the reason must do is QUOTE both strings, so a false pair has to be
+    written out as "0 drew 'Sft', which is 'Wild'" and read as the nonsense it
+    is, instead of appearing as two member names that look fine alone.
+    """
+    rows = [_reading(SHAPE, 0, "Sft"), _reading(SHAPE, 1, "Hrd")]
+    mod = _with_readings(monkeypatch, tmp_path, rows)
+    monkeypatch.setattr(mod, "MEANING_DISAGREEMENTS",
+                        {SHAPE: {0: ("HARD", "because it looks right"),
+                                 1: ("SOFT", "so does this")}})
+    with pytest.raises(SystemExit) as caught:
+        mod.render(catalog.parse_model_repo(AUDIT_XML), snapshot="s")
+    assert "does not quote" in str(caught.value)
