@@ -85,6 +85,18 @@ def test_connect_returns_a_handshaken_client(fake_stack):
     kinds = [type(m).__name__ for m in t.sent]
     assert "ResetCommsBuffersMessage" in kinds
     assert "ConnectionMessage" in kinds
+    assert "FileMessage" in kinds
+
+
+def test_connect_can_defer_the_initial_file_listing(fake_stack):
+    qc = session.connect(settle=0, initial_file_listing=False)
+    t = FakeTransport.instances[0]
+
+    assert not any(type(message).__name__ == "FileMessage" for message in t.sent)
+    assert any(
+        type(message).__name__ == "RecallPresetMessage" for message in t.sent
+    )
+    qc.close()
 
 
 def test_connect_as_context_manager_releases_the_device(fake_stack):
@@ -149,7 +161,8 @@ def test_before_handshake_runs_once_however_many_handshake_attempts_it_takes(
     """
     attempts = {"n": 0}
 
-    def flaky_hello(self, timeout=5.0, settle=2.0):
+    def flaky_hello(self, timeout=5.0, settle=2.0,
+                    initial_file_listing=True):
         attempts["n"] += 1
         if attempts["n"] < 3:
             raise TimeoutError("no response for request_id=1")
@@ -322,7 +335,8 @@ def test_connect_retries_the_handshake_within_its_patience(monkeypatch):
 
     attempts = {"n": 0}
 
-    def flaky_hello(self, timeout=5.0, settle=2.0):
+    def flaky_hello(self, timeout=5.0, settle=2.0,
+                    initial_file_listing=True):
         attempts["n"] += 1
         if attempts["n"] < 3:
             raise TimeoutError("no response for request_id=1")
@@ -364,7 +378,8 @@ def test_connect_gives_up_after_its_patience_with_the_silent_window_explained(mo
                                      zenos_git_hash="4.0.1",
                                      device_serial_number="QCS0000001")
 
-    def never_answers(self, timeout=5.0, settle=2.0):
+    def never_answers(self, timeout=5.0, settle=2.0,
+                      initial_file_listing=True):
         raise TimeoutError("no response for request_id=1")
 
     monkeypatch.setattr(session, "open_device", lambda: QuietDevice())

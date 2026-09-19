@@ -27,8 +27,8 @@ class QuadCortex41(QuadCortex):
     all 16 claimed operations green on CorOS 4.1.0 / app firmware d14e. The
     maintainer has not reproduced that run, which is what
     ``Evidence.CONTRIBUTED`` says here. Profile-aware runs measured the
-    operations in ``VERIFIED`` below; this PR's isolated final-head run follows
-    after #62 merges. Every other inherited operation refuses under
+    operations in ``VERIFIED`` below. ``create_local_backup`` also has its own
+    dated 4.1.0 capture. Every other inherited operation refuses under
     ``Support.VERIFIED`` and runs with a warning under
     ``Support.EXPERIMENTAL``. Its generated constants are bound to the
     contributed CorOS 4.1.0 snapshot rather than the 4.0.1 compatibility
@@ -48,6 +48,7 @@ class QuadCortex41(QuadCortex):
     VERIFIED = frozenset({
         "active_scene",
         "clear_expression",
+        "create_local_backup",
         "read_current_preset",
         "set_bypass",
         "set_chain_input",

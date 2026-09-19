@@ -28,8 +28,11 @@ hardware, including its ``from_index`` and ``swap`` behaviour. See
 ``docs/protocol.md`` for the per-operation coverage table.
 """
 
+import base64
 import functools
+import json
 import logging
+import re
 import time
 import types
 import typing
@@ -51,7 +54,8 @@ from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.proto import Preset_pb2 as preset
 
 from pyquadcortex.protocol.errors import (BlockRefused,  # noqa: F401
-                                          ControlNotDrivable)
+                                          ControlNotDrivable,
+                                          MalformedLocalBackup)
 from pyquadcortex.protocol.support import (EVERYTHING, Evidence, Hardware,
                                            Support, measured_firmware,
                                            unverified_text)
@@ -116,6 +120,10 @@ USER_SETLIST_ROOT = "/media/p4/Presets"
 #: string. So ``label.strip()`` detects a blank scene and ``label == ""`` does not.
 #: :meth:`QuadCortex.set_scene_label` sends this when given ``None``.
 SCENE_UNLABELLED = " "
+
+# Observed backups are around 1.7 MB. 32 MiB is a deliberately chosen safety
+# ceiling, not a measured device limit, so an unrelated stream is not accepted.
+_MAX_LOCAL_BACKUP_BYTES = 32 * 1024 * 1024
 
 
 # -- typed values for the SETTINGS writes -------------------------------------
@@ -541,7 +549,8 @@ class QuadCortex:
     # this is the version captured on the wire.
     CC_VERSION = "4.0.1"
 
-    def _hello(self, timeout: float = 5.0, settle: float = 2.0):
+    def _hello(self, timeout: float = 5.0, settle: float = 2.0,
+               initial_file_listing: bool = True):
         """Perform the full connect handshake Cortex Control performs.
 
         Internal: :func:`pyquadcortex.protocol.connect` calls this for you, so a caller
@@ -561,7 +570,15 @@ class QuadCortex:
              valid CC version).
           3. ``Connection{connected: true}``.
           4. A READ for each state type in ``_SUBSCRIBE_TYPES`` - this is the
-             subscription that makes the device start pushing that state.
+             subscription that makes the device start pushing that state, with
+             one measured exception. The ``File`` READ only ENUMERATES: it
+             immediately dumps the whole folder tree, and omitting it does not
+             stop the push a save announces. Measured 2026-09-09 on CorOS 4.0.1
+             / ``d14e``: an on-unit Save As announced ``File`` identically with
+             the READ sent and with it omitted (``docs/protocol.md`` section
+             4.2, which also says what was NOT measured). So
+             ``initial_file_listing=False`` costs the enumeration and nothing
+             else a save announces.
 
         Returns the echoed ResetCommsBuffers reply. After this, ``read_preset``
         and the device's live-sync pushes work.
@@ -583,7 +600,7 @@ class QuadCortex:
         # now reads identity once, through its OWN Version READ, before ever
         # calling _hello - and the unit answers that: the full reply, then its
         # own Version{READ} tail ~1 ms later (protocol.md section 4.4, "A
-        # Version READ is answered twice"). So a connect() no longer sees just
+        # Version read is answered twice"). So a connect() no longer sees just
         # the one inbound Version this was measured against on 2026-08-27 (d14e)
         # - it sees that identity exchange's two, plus this announce's one.
         self._t.send(
@@ -593,7 +610,10 @@ class QuadCortex:
         )
         self._t.send(pa.ModelRepoMessage(action=pa.MessageAction.READ))
         self._t.send(pa.ConnectionMessage(connected=True))
+        assert "File" in self._SUBSCRIBE_TYPES
         for name in self._SUBSCRIBE_TYPES:
+            if name == "File" and not initial_file_listing:
+                continue
             self._t.send(registry.class_for(pa.CortexMessageType.Enum.Value(name))(
                 action=pa.MessageAction.READ
             ))
@@ -630,7 +650,7 @@ class QuadCortex:
         incomplete reply as if it were complete"). Confirmed after the change,
         same unit and day: five back-to-back calls through this path - a READ
         with no ``request_id`` - all returned the full reply. See
-        ``protocol.md``, "A ``Version`` READ is answered twice".
+        ``protocol.md``, "A ``Version`` read is answered twice".
         """
         return self._t.await_broadcast(
             pa.VersionMessage,
@@ -639,6 +659,136 @@ class QuadCortex:
             match=lambda m: (m.HasField("device_serial_number")
                              or m.HasField("app_fw_version")),
         )
+
+    def create_local_backup(self, timeout: float = 60.0) -> dict[str, typing.Any]:
+        """Create and return the device's portable local-backup document.
+
+        The device answers one ``LocalBackup`` CREATE with an uncorrelated
+        stream of JSON fragments; the final UPDATE carries ``is_last_chunk``.
+        The fragments are joined in arrival order and the portable wrapper is
+        structurally validated before it is returned as a dictionary. Its
+        opaque Base64 payload is deliberately not interpreted, and the native
+        integrity identifier is checked for shape rather than recomputed.
+
+        This does not restore a backup or write a file. The caller can serialize
+        the returned dictionary wherever it keeps backups.
+
+        How many pushes arrive depends on how big the backup is, and 150,000
+        characters is the MOST one push carries rather than the size it always
+        is. Measured 2026-09-09 on CorOS 4.0.1 / d14e: a 130,178-character
+        document arrived in ONE push with the final marker set. Contributed
+        measurement 2026-09-08 on CorOS 4.1.0: 1,794,890 characters arrived as
+        12 pushes, eleven of 150,000 and a final 144,890. So join whatever
+        arrives and stop at the marker, which is what this does.
+
+        The replies carry no ``request_id``, even when the CREATE does, so only
+        one backup should be in flight on a connection at a time. Calling it
+        again afterwards is fine: three back-to-back calls on one connection
+        all returned on 4.0.1, the first taking 9.1 s and the rest about 2.9 s.
+
+        A contributed 4.1.0 capture showed ``can_apply_backup=false`` refusing
+        CREATE. That field never appeared in four runs on 4.0.1, so what it
+        means is inferred from the schema here, not measured. It sits beside
+        ``applied_backup``, so it may belong to restore instead.
+        """
+        def is_chunk(message):
+            return (
+                message.action == pa.MessageAction.UPDATE
+                and (message.HasField("backup_json")
+                     or message.HasField("is_last_chunk")
+                     or message.HasField("can_apply_backup"))
+            )
+
+        def is_final(message):
+            return message.HasField("is_last_chunk") and message.is_last_chunk
+
+        def is_refusal(message):
+            return (
+                message.HasField("can_apply_backup")
+                and not message.can_apply_backup
+            )
+
+        chunks = self._t.collect(
+            pa.LocalBackupMessage,
+            lambda: self._t.send(
+                pa.LocalBackupMessage(action=pa.MessageAction.CREATE)
+            ),
+            seconds=timeout,
+            match=is_chunk,
+            until=lambda message: is_final(message) or is_refusal(message),
+        )
+        if any(is_refusal(message) for message in chunks):
+            raise ControlNotDrivable(
+                "create_local_backup",
+                "the CorOS 4.1.0 unit replied can_apply_backup=false to CREATE.",
+                "Create the backup in Cortex Control and retain the stream for comparison."
+            )
+        finals = [message for message in chunks if is_final(message)]
+        if not chunks or not finals:
+            raise TimeoutError(
+                f"the Quad Cortex did not finish a local backup within "
+                f"{timeout:g} seconds"
+            )
+        if len(finals) != 1:
+            raise MalformedLocalBackup(
+                f"the Quad Cortex marked {len(finals)} local-backup chunks final"
+            )
+        if chunks[-1] is not finals[0]:
+            raise MalformedLocalBackup(
+                "the Quad Cortex sent local-backup messages after the final chunk"
+            )
+
+        backup_json = "".join(
+            message.backup_json
+            for message in chunks
+            if message.HasField("backup_json")
+        )
+        size = len(backup_json.encode("utf-8"))
+        if not backup_json or size > _MAX_LOCAL_BACKUP_BYTES:
+            raise MalformedLocalBackup(
+                f"the Quad Cortex returned an empty or oversized local backup "
+                f"({size} bytes)"
+            )
+        try:
+            document = json.loads(backup_json)
+        except json.JSONDecodeError as error:
+            raise MalformedLocalBackup(
+                f"the Quad Cortex returned malformed local-backup JSON: "
+                f"{error.msg}"
+            ) from error
+        if (
+            not isinstance(document, dict)
+            or document.get("type") != "backup"
+            or document.get("creator") != "quad"
+            or not isinstance(document.get("name"), str)
+            or not document["name"]
+        ):
+            raise MalformedLocalBackup(
+                "the Quad Cortex returned an unsupported local-backup document"
+            )
+
+        payload = document.get("payload")
+        payload_hash = document.get("payload_hash")
+        if (
+            not isinstance(payload, str)
+            or not isinstance(payload_hash, str)
+            or re.fullmatch(r"[0-9a-fA-F]{64}", payload_hash) is None
+        ):
+            raise MalformedLocalBackup(
+                "the Quad Cortex backup is missing its native payload or "
+                "integrity identifier"
+            )
+        try:
+            decoded = base64.b64decode(payload, validate=True)
+        except (ValueError, TypeError) as error:
+            raise MalformedLocalBackup(
+                "the Quad Cortex backup payload is not valid Base64"
+            ) from error
+        if not decoded:
+            raise MalformedLocalBackup(
+                "the Quad Cortex backup payload decodes to no data"
+            )
+        return document
 
     def find_preset(self, name: str, setlist: str = Setlist.USER,
                     timeout: float = 25.0):
@@ -1414,7 +1564,7 @@ class QuadCortex:
         So do not wait on this to confirm an edit landed - it will time out on an
         already-dirty preset, correctly, because the unit said nothing. The
         ``Grid`` echo is the per-edit signal. See ``protocol.md``,
-        "``PresetDirty`` announces a CHANGE of flag, not an edit".
+        "``PresetDirty`` announces a change of the flag, not an edit".
 
         ``is_dirty`` has no field presence, so absent simply IS false - do not
         try to distinguish them. And like most reads here, the FIRST request
@@ -1685,11 +1835,17 @@ class QuadCortex:
         """Set how ONE beat of the bar sounds.
 
         ``beat`` is 1-based, up to 13. ``state`` is a
-        :class:`~pyquadcortex.protocol.enums.MetronomeBeat` - ``NORMAL``, ``OFF``,
-        ``ACCENT`` or ``QUIET``. A plain int is accepted and range-checked::
+        :class:`~pyquadcortex.protocol.enums.MetronomeBeat` - ``OFF``, ``MUTE``,
+        ``DOWN`` or ``ON``. A plain int is accepted and range-checked::
 
-            qc.set_beat(1, MetronomeBeat.ACCENT)   # the downbeat
-            qc.set_beat(3, MetronomeBeat.OFF)      # skip beat 3
+            qc.set_beat(1, MetronomeBeat.DOWN)   # the downbeat accent
+            qc.set_beat(3, MetronomeBeat.MUTE)   # silence beat 3
+
+        These four are the device's own words and they do not mean what they
+        look like: they name the ACCENT, not whether the beat sounds. ``OFF`` is
+        the plain click, ``MUTE`` is the silent one. See
+        :class:`~pyquadcortex.protocol.enums.MetronomeBeat`, which has the
+        hardware readings.
 
         These are the cells on the Tempo page, catalog ``STEPSTATE0`` upwards, and
         the mapping was traced by touching them on the unit. Note the enum's order
@@ -3244,6 +3400,37 @@ class QuadCortex:
                 f"read as the index 0 or 1. Name the option, or use an enum from "
                 f"pyquadcortex.protocol.options."
             )
+        # A NAME the catalog gets wrong must not quietly select the position it
+        # names. A Mono Synth's waveform list is the case: the catalog calls
+        # position 5 "Pink NS" and the screen draws WHT there, so matching the
+        # string would hand back white noise for a pink request. The string
+        # stays in OPTION_LABELS because the device publishes it; what is
+        # refused is USING it to choose.
+        if isinstance(option, str):
+            # `options_module` is the 4.0.1 shim, not `self.options` - the same
+            # choice the OPTION_LABELS check below makes, and it is wrong in
+            # BOTH directions on another profile. A labels tuple spelled
+            # differently will not match, so the refusal silently does not fire.
+            # And a firmware that keeps these labels but FIXES the swap would be
+            # refused a name that is correct on it - the profile-guard inversion
+            # again, where the profile that measured something is the one the
+            # guard gets backwards. It stays here because a correction is per
+            # snapshot and only 4.0.1 has been read; the lookup moves to
+            # `self.options` when a second profile records its own.
+            contested = options_module.OPTION_CONTESTED.get(tuple(names), {})
+            wrong = {label: i for i, label in contested.items()}
+            if option in wrong:
+                index_of = wrong[option]
+                raise ValueError(
+                    f"{option!r} is the catalog's name for position "
+                    f"{index_of} of this list, and the unit's screen shows "
+                    f"something else there - the catalog has these positions "
+                    f"swapped (read on the unit 2026-09-14, see "
+                    f"docs/domain-model.md). Selecting by this name would give "
+                    f"you the other one. Name the position with an enum member "
+                    f"from pyquadcortex.protocol.options, which follows the "
+                    f"screen, or pass the index."
+                )
         # An IntEnum member is an int, so a member of the WRONG list converts
         # silently: DynMode3.GATE and SplitterType.CROSSOVER are both 2, and
         # both would be accepted here. Check the enum describes THIS list.
@@ -4499,9 +4686,28 @@ def option_value(options, option) -> float:
     the same choice. ``options`` comes from :func:`param_options`.
 
     ``option`` may be the name or the index.
+
+    A NAME the catalog gets wrong is refused here as well as in
+    :meth:`QuadCortex.set_param_option`, because this function is exported and a
+    caller reaching it directly would get the same silently wrong answer the
+    method exists to prevent: on a Mono Synth's waveform list the catalog calls
+    position 5 "Pink NS" and the unit draws WHT there.
     """
     if not options:
         raise ValueError("no options: read them with param_options() first")
+    if isinstance(option, str):
+        contested = options_module.OPTION_CONTESTED.get(tuple(options), {})
+        for position, label in contested.items():
+            if option == label:
+                raise ValueError(
+                    f"{option!r} is the catalog's name for position {position} "
+                    f"of this list, and the unit draws something else there - "
+                    f"the catalog has these positions swapped (read on the unit "
+                    f"2026-09-14, see docs/domain-model.md). Selecting by this "
+                    f"name would give you the other one. Use an enum member "
+                    f"from pyquadcortex.protocol.options, which follows the "
+                    f"screen, or pass the index."
+                )
     index = options.index(option) if isinstance(option, str) else int(option)
     if not 0 <= index < len(options):
         raise ValueError(f"option index {index} outside 0..{len(options) - 1}")

@@ -260,7 +260,7 @@ def _sweep_end(wire, spec):
     **Wire 0.0 is not the bottom of the dB scale on the level family - it is an
     OFF detent**, and this is the whole reason this is a function rather than a
     `to_real` call. A lane VOLUME's law runs to -40 dB while its lowest NUMERIC
-    step is -39.5, so converting wire 0.0 reports -40 dB: a value the screen
+    value is -39.99, so converting wire 0.0 reports -40 dB: a value the screen
     never shows and one `to_normalized` REFUSES if you hand it back. The first
     version of this reader did exactly that, and the full sweep it got wrong is
     the commonest assignment there is.

@@ -37,7 +37,7 @@ SNAPSHOTS = [
 def test_the_public_module_covers_the_4_0_1_lists_the_generator_found():
     assert len(options.OPTION_LABELS) == 110
     assert set(options.__all__) == {e.__name__ for e in options.OPTION_LABELS} | {
-        "OPTION_LABELS"}
+        "OPTION_LABELS", "OPTION_AUDIT", "OPTION_USAGE", "OPTION_CONTESTED"}
 
 
 @pytest.mark.parametrize("snapshot,module,count", SNAPSHOTS,
