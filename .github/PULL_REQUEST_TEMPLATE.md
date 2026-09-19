@@ -25,5 +25,5 @@
 - [ ] Opened as a draft; the Hardware section above is filled in before marking ready
 - [ ] Tests pass locally (`python -m pytest -q`)
 - [ ] Added or updated tests for the change
-- [ ] Updated documentation if behavior or the public API changed
+- [ ] Updated documentation if behaviour or the public API changed, following `docs/writing.md`
 - [ ] No unrelated changes bundled in
