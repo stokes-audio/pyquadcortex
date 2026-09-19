@@ -1,44 +1,183 @@
 # pyquadcortex - Claude Guidance
 
-Steering for this repo: `docs/STEERING.md`
-Decisions for this repo: `docs/ADR.md`
+> Purpose: the rules an agent follows in this repository, one bullet each, pointing at the document that holds the detail.
 
-Read `docs/STEERING.md` before non-trivial work (new operations, transport or framing changes, unfamiliar subsystems). Skip for trivial changes (typos, dep bumps, docs).
+Steering: `docs/STEERING.md`. Decisions: `docs/ADR.md`. Writing rules: `docs/writing.md`.
+
+Read `docs/STEERING.md` before non-trivial work: a new operation, a transport or
+framing change, an unfamiliar subsystem. Skip it for typos, dependency bumps and
+small documentation fixes.
 
 ## Conventions
 
-- Dev setup: `uv venv && uv pip install -e ".[dev]"` (or plain venv + pip, see contributing.md). Run tests with `.venv/bin/python -m pytest`. The suite passes offline - no hardware, no `hid` import, no `DYLD_LIBRARY_PATH`. The hardware suite's `--hardware` gate is two hooks in `tests/hardware/conftest.py` and stays two: pytest skips `pytest_ignore_collect` for a path named on the command line, so `pytest_collection_modifyitems` refuses that one loudly. Never fold them into one; `tests/test_hardware_gate.py` proves both. A module in `tests/hardware/` also needs a basename no module under `tests/` owns - pytest maps `tests/hardware/test_scales.py` and `tests/test_scales.py` to one module name and refuses the second, which is why two files there end `_on_unit`. Rename; do not reach for `__init__.py` or `consider_namespace_packages`, because three offline modules do `from waiting import ...` and that works only while pytest puts `tests/` on `sys.path`. A hardware test names what it verifies AND actually asserts on with `@pytest.mark.verifies(*operations)`, checked against `QuadCortex.operations()` at collection; `--verifies NAME` narrows a run to the tests naming it, and refuses a name that is not an operation or that no collected test names. `--profile CLASSNAME` (with `--hardware`) connects as that profile class instead of the one the unit resolves to, which is how a unit the registry would refuse - an unmeasured firmware, or a Mini - gets measured by the suite that measures it. `scratch_preset` is the fixture for getting a disposable copy of the loaded preset to edit. An operation no hardware test names has to appear in `tests/test_hardware_markers.py`'s `UNMARKED_OPERATIONS`, with the reason - that dict is the list a new operation must come through if no hardware test names it.
-- Two namespaces, one package (ADR-0006): `pyquadcortex` is the model of the unit, `pyquadcortex.protocol` is the message-level API. The model's code lives in `pyquadcortex/device/` - not `model/`, because in this codebase the identifier `model` means an amp or pedal block (`protocol/models.py`, `catalog.Model`, `ModelCatalog`, `set_block(model=...)`). The model imports the protocol layer; nothing under `pyquadcortex/protocol/` may import from `pyquadcortex/device/`.
-- Every conversion between a screen value and a wire value lives in the `pyquadcortex/device/translate/` PACKAGE and nowhere else in the package outside `pyquadcortex/protocol/` - the whole package, not just `device/`, because a rule scoped to a directory is satisfied by moving the code one directory up. It covers rows 1-4, slots 1-8, scene and footswitch letters, preset addresses and display units. Outside the boundary that means no `+1`/`-1` on a coordinate AND none of the other spellings of the same conversion (`ord`/`chr`, a letter table in any container, `divmod` on a position, a one-based `enumerate`, `ROWS.index(...)`), and no module reaching past the boundary for a protocol-layer name that carries a coordinate or a raw scale - the converters and also the readers that hand back wire indexes, such as `protocol.stomp_assignments`. `tests/test_translation.py` reads the source and proves both, and pins where each check stops seeing rather than implying it sees everything. The boundary is a package, so its exemption covers a DIRECTORY: `BOUNDARY_MODULES` in that file names the modules inside it, and adding `translate/anything.py` has to come through that list with a reason - otherwise the arithmetic scan skips the new file for the same reason it skips the real converters. The same file now carries a second list, `PROTOCOL_NON_CONVERSIONS`, for protocol-layer names the boundary uses that are NOT conversions (`field_present`, the port enums). It exists because the boundary reads whole presets now, so "everything it reaches for is a conversion" stopped being true; a name has to be on one list or the other, and which one is a judgement a reviewer makes from the reason written beside it. A model API takes `FootswitchLetter`, never a bare footswitch integer, because a footswitch index and a block's column are different numbers that usually agree. A new conversion goes in that module with its own test, however small it is, and its protocol-layer name joins that file's allowlist in the same commit.
-- The model represents what the unit shows, in the unit's own words, and never guesses. A control we understand but cannot yet drive is modelled and REFUSES the operation (ADR-0007); a control we do not understand is omitted, with the reason recorded in `docs/domain-model.md`'s appendix. Nothing ships with a "this might be stale or wrong" caveat. A refusal is `protocol.ControlNotDrivable(control, evidence, workaround)` - never a bare `ValueError` and never a message-only raise. All three fields are required, and `evidence` records what was actually tried, because a refusal nobody can audit is the guess the rule exists to prevent. Before writing one, ADR-0010 applies: the differential capture comes first, and "the unit broadcasts nothing" is not on its own a finding about the wire. Do not derive a refusal from a RULE about parameter types either - the first instance had three plausible rules tried against hardware and all three were false, so `LANE_OUTPUT_UNASSIGNABLE` is a measured list with the disproofs written beside it.
-- A model property that reads a device field checks the field is PRESENT (`protocol.field_present`) before reporting it. Most of this schema sits in synthetic `oneof`s, so protobuf returns `""` or `0` for a field the unit never sent, and reporting that as the answer is the guess the rule above forbids. `device/state.py` does this structurally - an absent field is simply not in the entry's copy - so a property reads through it rather than checking by hand. The exception is a field the schema gives no presence at all, where absent and default are the same bytes: those are declared in the entry's `FieldPlan.no_presence` WITH the recorded evidence for what the default means, and `tests/test_state.py` holds the declaration against the schema. Never assume; declare.
-- The cache holds a COPY of any submessage it keeps, never the container the RX thread decoded - that one is shared with every other listener and read afterwards from other threads. `entries._held` does it; `tests/test_state.py` proves it by mutating the source afterwards.
-- Never cache an incomplete reply AS IF IT WERE COMPLETE. Per field is the rule: the cache keeps what the unit actually sent and re-reads for what it did not, so a retry recovers the missing half without re-asking for the half already answered. What must never happen is a field the unit never sent being handed back as a value.
-- Model state lives in `device/state.py`, and what is tracked is a `StateEntry` in `device/entries.py` - not an attribute a property fills in itself (ADR-0011). Pushes MERGE (an absent field means "not mentioned", never "reset to default"); a read REPLACES, because it is the unit's whole answer. A read consumes a mark only when every meaningful message in its window restates that answer exactly; any different push preserves the mark. It also counts marks set by everything else: anything that stops trusting an entry for a reason other than a message for that entry - a recall's `resets`, the write watchdog - calls `mark_for_reread` and never sets `needs_read` itself, or a read in flight throws the mark away. A message that sets any field the entry does not keep - a schema field or a field number the bindings have never heard of - marks that entry for one re-read; there is no "harmless field" category. `FieldPlan.accepts` is only for two independent conversations sharing one protobuf type, and an accepted message still gets the full unknown-field check. A message type no entry tracks is ignored outright, which is what makes the metronome's tempo stream free.
-- A new entry decides for itself what `action` means on the types that feed it. The shared `SCAFFOLDING` skip covers the plain entries because `action` gives them no meaning, and that is NOT true of `Grid`, where `action: DELETE` is what removes a block and an `UPDATE` with the same payload does nothing. Never widen `SCAFFOLDING` to make a new entry quiet. `Grid` made its decision and it is `FieldPlan(invalidates=True)`: `action` does not matter, because every `Grid` push means the grid moved, and the entry re-reads rather than merging (ADR-0012). `invalidates` is also the answer where the per-field check is BLIND - `SceneLabel` gives `index` and `label` no presence, so renaming a scene to a blank label sets nothing at all in `ListFields()`. A push carrying every field an entry keeps clears the mark, because that is what a read returns; judge it on what the message carried, not on what its plan could carry.
-- Anything the model caches is valid only while its connection is. A closed `Device` refuses reads rather than answering from cache, because a model that reports the unit's state through an object with no unit behind it is the failure the whole layer exists to avoid. `Device.close()` closes the state layer first, so a `Device` built by `from_client` stops listening on a connection it never owned.
-- `import hid` appears exactly once, lazily, inside `session.open_device()`. Never import `hid` at module scope. A new module that needs it imports it inside the function that opens the device; `tests/test_import_cleanliness.py` walks the whole package and proves it.
-- Never gitignore or delete `pyquadcortex/protocol/proto/*_pb2.py` - the generated bindings are committed on purpose (ADR-0001, written before the proto directory was moved). Regenerate only via `scripts/compile_protos.sh`, and bump the `protobuf` pin in `pyproject.toml` in the same commit as regenerated bindings. The `grpcio-tools` floor in the dev extra is part of that same commit: `grpcio-tools` carries its own protoc, so the installed version decides the gencode, and an older one emits older gencode that still imports and quietly walks the pin backwards (ADR-0008). Both directions are now guarded - the script refuses to write a downgrade, and `tests/test_packaging.py` proves the committed gencode equals the pin floor - so trust the failure and fix the cause rather than working around either. Never read the floor off `grpcio-tools` metadata; 1.82.1 declares `protobuf>=7.35.1` and emits 7.35.0. Run the compiler and read the stamp. CI's `build` job runs `scripts/check_artifacts.py`, which proves the bindings are inside the wheel and the sdist.
-- New operations follow `docs/architecture.md` "How to add a new operation": register the type, add a thin client method (no HID, no bytes, no sleeps in `protocol/client.py`), add an offline test asserting the exact wire shape, then verify on hardware and update the coverage table in `docs/protocol.md`.
-- Grid mutations use the row/column-keyed pattern (`set_param` / `set_bypass`) - never extend the wholesale `write_preset` path.
-- A parameter's scale comes from the CATALOG, never from a table beside it (ADR-0015). `min`, `max` and `skew` describe every knob, and `real = min + (max - min) * wire ** (1 / skew)` is the one law - confirmed on hardware in both directions, including `LOG_SKEW`, which is a power law at skew 0.3 and NOT a log sweep. What this library keeps is only the numbers the catalog NAMES and does not spell out: `min="MIN_CABSIM_DB"` is a firmware constant, and `units.FIRMWARE_CONSTANTS` holds fourteen of them, each with the evidence for its value beside it. A name this build has never met RAISES - do not add a fallback, because a fallback to `0..1` is exactly what invented the "placeholder range" this replaced, hid a wrong linear conversion on 615 parameters, and cost days of screen readings for numbers the device was publishing. A bound nobody can measure goes in `units.UNMEASURED_BOUNDS` and the parameter refuses; there is one, and its block crashes the unit. There is exactly ONE span the library overrides rather than reads, and it is measured: a parameter carrying `min_string`, `mid_string` AND `max_string` is a pan-style control drawn over `units.LABELLED_END_SPAN` (-50..+50), because the catalog declares that one drawn control four contradictory ways and none of them is what the screen shows. Keyed by the label triple, never by the law - `(0.0, 1.0, 1.0)` is a common law and almost none of it is a pan. A SECOND override is not a precedent to follow; stop and write a record. Screen readings are EVIDENCE and belong in `tests/test_scales.py`, where they assert the catalog reproduces the display exactly at its own precision - a failure there is a finding about the device, not a tolerance to widen. Before parsing a new catalog attribute, check `docs/domain-model.md`'s appendix, which lists the ones we can see and cannot yet explain.
-- A parameter value SAYS WHICH SCALE IT IS ON (ADR-0016). Every knob has two number lines: the screen's, which differs per knob, and the device's, which is 0..1 for all 3,809 of them. `set_param` takes one value and it must be typed - `Real` for the screen's line, `Db`/`Hertz`/`Percent`/`Milliseconds`/`Seconds`/`Semitones`/`Cents`/`Bpm` to name the unit and have it checked against the catalog, `Encoded` for the device's line, and a bare string for a string parameter. A bare number is REFUSED, because on a lane VOLUME `Real(0.0)` is unity and `Encoded(0.0)` is silence and nothing in a plain `0.0` says which was meant. `Encoded` stays accepted everywhere and is NEVER advertised where a unit type would serve. Two source-reading tests hold that, and between them they say exactly how far it reaches: `tests/test_examples.py` covers `examples/`, and `tests/test_docs.py` covers the code blocks inside docstrings. Each use must carry a written reason nearby. NOT covered, deliberately: prose in `docs/`, which needs judgement rather than a regex, and the error messages that OFFER `Encoded` to a caller who has just been refused - that is the message's job. `values.py` is exempt because it is where the two scales are defined against each other. Only `Encoded` works with no device attached, since the other two need the catalog. This is protocol-layer work on purpose - the translation boundary governs coordinates this library CHOOSES (rows 1-4, scene letters), not units the device PUBLISHES.
-- EVERY method that writes a value takes a typed one, not just `set_param` (ADR-0017). The settings are not catalog models, so the scale comes from somewhere else - and there are three cases, which must not be blurred. A wire 0..1 with a KNOWN scale (an input port's GAIN, -12..+60 dB; a Global EQ band's GAIN, -12..+12 dB - both measured, but not the same way, see below) takes the unit type and converts, through a real `catalog.Parameter` so it gets the one law rather than a private copy. A wire 0..1 with NO known scale (output level, USB level, master volume, Global EQ frequency/Q/OUT level, a Global EQ index) takes `Encoded` only, and a `Real` raises `ControlNotDrivable` naming what would settle it - never an invented span. A setting with no 0..1 line at all (the HOLD threshold in ms, the tuner offset in Hz) refuses `Encoded`, because the wire carries the real number. `units.SETTING_SPANS` holds the two known spans WITH how each is known, and they differ: the input port's four points all sit in the bottom half of its travel and lean on the spec sheet for the top, while the Global EQ gain's four were driven on screen across the whole travel, ends included. A span measured only in the middle is the open kind - two close points could not tell -40..+12 from -100..+30 for the lane family, and the Global EQ gain shipped for two releases on the manual's span plus two interior points before the ENDS were read. SELECTORS are not values and stay plain - impedance, input type, ground lift, hp_select, dry_wet, filter type, mute and bypass take an enum or a bool.
-- A generated parameter constant CARRIES ITS UNIT in its type (ADR-0018), so a type checker rejects `set_param(LaneOutputParam.VOLUME, Hertz(217))` before it runs. mypy is a BLOCKING CI job over the whole package, with ONE suppression in the whole config (`ignore_missing_imports` for `hid`, which ships no stubs) - the ~195 phantom errors from the generated bindings are fixed by committing `*_pb2.pyi` stubs emitted in the same protoc run. `scripts/compile_protos.sh` refuses to write bindings without them AND rewrites their cross-references package-relative: protoc emits `import Preset_pb2` flat, the bindings survive that through the sys.path shim in `proto/__init__.py`, and a type checker cannot - so every field carrying a `Preset` type would read as `Any` while mypy reported success. `tests/test_packaging.py` holds both halves. The runtime check is unchanged and still covers every other caller. What is easy to break: `set_param`'s three overloads. A `Param` IS an `int`, so an int overload that accepts real values swallows every wrong-unit call - overload resolution takes the first MATCH and a failing first overload falls through. The int overload therefore takes only `Encoded`, a string or a switch, which makes `set_param(target, 21, Real(3))` a static error although it runs; address by index and say `Encoded`, or name the parameter. `tests/test_typing.py` holds both directions and is mutation-tested, because a checker that stops catching things stays green and one that cries wolf gets turned off.
-- A connection resolves a DEVICE PROFILE before the handshake (ADR-0020): `device_type` plus `zenos_git_hash` from the unit's own `Version` reply, looked up in a registry of measured profiles. An unknown pair REFUSES to connect; there is no fallback to the nearest profile, and `profile=` is the deliberate way to measure an unmeasured unit. Everything that differs by firmware or model lives on the profile - the generated constants snapshot, the announce string, the hardware facts, the operations measured to differ - and no other module tests a version string. A profile that has not measured an operation refuses it with `ControlNotDrivable` whose evidence says so. Name a profile by CorOS version, never by `app_fw`: a contributor reports d14e on 4.1.0 as well as 4.0.1 (PR #44). `protocol.models`/`params`/`options` are shims over the QC 4.0.1 snapshot in `protocol/catalogs/coros_4_0_1/`; a connection's own snapshot is `qc.models`. An observation from another profile goes BESIDE the 4.0.1 record in `docs/protocol.md`, dated and named, never in its place. `version()` accepts only a `Version` carrying an identity field (serial or firmware) because the unit answers a `Version` READ twice and `request()` cannot tell the full reply from the device's own READ; a PARTIAL reply is still accepted, because the per-field cache rule owns incomplete answers. A subclass of `QuadCortex` lists what it has verified in `VERIFIED`; everything else it inherits is guarded and refuses under `Support.VERIFIED`. Never put a version check in a method body - override on the profile class, and list the override in `VERIFIED`.
-- Docstrings state their evidence: confirmed on hardware vs inferred from the schema. When you verify something on hardware, record it (docstring + coverage table) in the same change.
-- The frame trailer's two flag bytes are REPORTED, and never decide what happens to a payload (ADR-0019). `framing.decode_reports` returns a `Frame` naming all of it: type, `encrypted` (`n+4`), `compressed` (`n+5`), `device_bytes` (`n+6`, still meaningless). Compression is detected by the gzip magic bytes and NOT by the flag - CortexUSB reads the flag and needed a skip-list for types 32 and 33 to make it work, which is the argument. The RX path does compare the two and logs a line when they disagree, because the 15675/15675 agreement was measured on CorOS 4.0.1 only and a firmware that broke it must not do so quietly. And nothing here decrypts: an encrypted payload gets labelled and dropped, because the messages behind that flag are `License` and `CloudLogin` and the key derivation would be reimplemented from someone else's MIT source. Both flags describe the FRAME, not the type - a `License` READ is unflagged and its reply is encrypted - so never key either one off a message type. Wanting the decryption means reopening ADR-0019, not adding coverage.
-- Code in the RX path preserves "the RX thread never dies": wrap every decode, skip unknown types at debug level, reset the reassembly buffer on anything malformed.
-- A `Transport.add_listener` listener runs ON the RX thread (ADR-0009). It applies what the push carries, notes what needs re-reading, and returns. It never reads from the device - `request`, `await_broadcast` and `collect` refuse to run on that thread, and that refusal is not to be relaxed for convenience. That binds `device/state.py` as much as the transport: `apply_push` and everything it calls merge and mark, and the caller's thread does the reading. Anything registering a listener that must see the connect handshake's burst registers it through `protocol.connect(before_handshake=...)`; by the time `connect()` returns, the burst is still seconds away.
-- Hardware sessions: quit Cortex Control first - it holds the HID interface exclusively.
-- Describe the protocol work as documenting the device's protocol as-is (recovered schema, observed traffic). Do not call it "reverse engineering" in docs, comments, commit messages, or issues.
-- Changed code under a path listed in `docs/STEERING.md` § Owned Paths? Diff and update STEERING/CLAUDE/ADR in the same PR.
-- A pull request opens as a DRAFT (`gh pr create --draft`). It is marked ready only after `pytest tests/hardware --hardware` has run on its final commit, with the commit hash, the unit's CorOS version, the `operations on ...` block and pytest's last line in the description - or after the human has waived the run explicitly in the description, which they may do for a change that cannot reach the wire. The offline suite and mypy are not a substitute: they prove the library agrees with itself, not that it agrees with the unit. PR #53 is the evidence: the 2026-09-07 post-merge run found two stale records that a green offline suite had passed. Never waive the run yourself, and never present a pull request as ready that has not been through this. `contributing.md` § "Before you mark a pull request ready" states the rule for contributors, with one more state for a contributor who has no unit (say so, mark ready, a maintainer runs it before merging); you always work where the unit is, so that state is not yours.
+### Working in this repository
+
+- Dev setup: `uv venv && uv pip install -e ".[dev]"`. Run tests with
+  `.venv/bin/python -m pytest`. The suite runs offline: no unit, no `hid` import,
+  no `DYLD_LIBRARY_PATH`.
+- Hardware tests live in `tests/hardware/` behind `--hardware`. How to run them,
+  how a test names what it verifies, and how to add one: `tests/hardware/readme.md`.
+  Every module there stays importable offline; `tests/test_hardware_gate.py` and
+  `tests/test_scene_echo_predicates.py` hold that.
+- Quit Cortex Control before a hardware session. It holds the HID interface
+  exclusively.
+- A pull request opens as a draft (`gh pr create --draft`). It is marked ready
+  only after the hardware suite has run on its final commit, with the run recorded
+  in the description, or the owner has waived the run there. The rule and the
+  three states: `contributing.md`, "Before you mark a pull request ready".
+- Never waive the run yourself. The contributor's no-unit state is not yours: you
+  work where the unit is.
+- A draft is not a handover. The sequence is one unit of work: open the draft,
+  run the hardware suite on the final commit, run `/triage-pr` on that commit
+  through a subagent, fix what it finds, re-run whatever the fixes invalidated,
+  mark ready with `gh pr ready`, then send the link. Triage again after any
+  substantive change.
+- A finding you choose not to fix is named in the pull request description, with
+  the reason.
+- Changed code under a path in `docs/STEERING.md` section 4? Update STEERING,
+  this file and `docs/ADR.md` in the same pull request.
+- Write every document by `docs/writing.md`. `tests/test_writing.py` checks the
+  mechanical part.
+- Describe the protocol work as documenting the device's protocol as it is. Do
+  not write "reverse engineering" in docs, comments, commits or issues.
+
+### Two namespaces, one package (ADR-0006)
+
+- `pyquadcortex` is the model of the unit. `pyquadcortex.protocol` is the
+  message API. Nothing under `pyquadcortex/protocol/` imports from
+  `pyquadcortex/device/`.
+- The model's code lives in `pyquadcortex/device/`, not `model/`. In this
+  codebase `model` means an amp or pedal block.
+
+### Rules that tests prove
+
+- Every conversion between a screen value and a wire value lives in the
+  `pyquadcortex/device/translate/` package. No other module outside `protocol/`
+  may do that arithmetic in any spelling. A new module inside the package joins
+  `BOUNDARY_MODULES` in `tests/test_translation.py` with a reason. A protocol
+  name the boundary reaches for joins `PROTOCOL_CONVERSIONS` or
+  `PROTOCOL_NON_CONVERSIONS` there. (ADR-0013)
+- A model API takes `FootswitchLetter`, never a bare footswitch number. A
+  footswitch index and a block's column are different numbers that usually agree.
+- `import hid` appears once, lazily, inside `session.open_device()`.
+  `tests/test_import_cleanliness.py` proves it.
+- Never gitignore or delete `pyquadcortex/protocol/proto/*_pb2.py` or `*_pb2.pyi`.
+  Regenerate only with `scripts/compile_protos.sh`, and bump the `protobuf` pin
+  and the `grpcio-tools` floor in the same commit. Details in
+  `docs/architecture.md`, "The generated protobuf bindings". (ADR-0001, ADR-0008)
+- mypy is a blocking CI job with one suppression, for `hid`. Keep `set_param`'s
+  `int` overload to `Encoded`, a string or a switch; `tests/test_typing.py` holds
+  both directions. (ADR-0018)
+- A hardware test names the operations it verifies and asserts on with
+  `@pytest.mark.verifies(...)`. An operation no hardware test names goes in
+  `UNMARKED_OPERATIONS` in `tests/test_hardware_markers.py` with a reason.
+- A new `StateEntry` comes through `BURST_TAIL`, `OUTSIDE_THE_BURST` or
+  `NOT_WARMED_BY_THE_BURST` in `tests/test_handshake_burst_recorder.py`, with a
+  reason. Wait for the connect burst as a group, never for one message of it.
+
+### The model never guesses
+
+- A state-cache read clears its reread mark only when concurrent messages
+  restate its answer exactly. `FieldPlan.accepts` separates independent
+  conversations sharing a protobuf type; it never suppresses fields within one
+  conversation. See ADR-0011.
+
+- The model shows what the unit shows, in the unit's words. A control we
+  understand but cannot drive is modelled and refuses with
+  `protocol.ControlNotDrivable(control, evidence, workaround)`, all three fields
+  filled. A control we do not understand is left out, with the reason in
+  `docs/domain-model.md`'s appendix. (ADR-0007)
+- Before writing a refusal, run the differential capture in `docs/capture.md`,
+  "Diff the whole state". "The unit announces nothing" is not evidence about the
+  wire. Do not derive a refusal from a rule about parameter types;
+  `LANE_OUTPUT_UNASSIGNABLE` is a measured list. (ADR-0010)
+- A property reads a field only if it is present (`protocol.field_present`).
+  `device/state.py` does this for you. A field the schema gives no presence is
+  declared in its entry's `FieldPlan.no_presence` with evidence, held by
+  `tests/test_state.py`.
+- The cache keeps a copy of any submessage, never the container the RX thread
+  decoded and shares with every listener.
+- Never cache an incomplete reply as if it were complete. The cache keeps what
+  the unit sent and re-reads for the rest.
+- Model state is a `StateEntry` in `device/entries.py`, read through
+  `device/state.py`. A push merges; a read replaces. Anything that stops trusting
+  an entry without a message for it calls `mark_for_reread`. A message that sets
+  a field the entry does not keep marks it; there is no "harmless field" list.
+  (ADR-0011)
+- `Grid` pushes invalidate rather than merge (`FieldPlan(invalidates=True)`), and
+  so does `SceneLabel`, whose `index` and `label` have no presence and so blind
+  the per-field check. Never widen the shared `SCAFFOLDING` skip to quiet a new
+  entry. (ADR-0012)
+- A closed `Device` refuses reads. `Device.close()` closes the state layer first.
+
+### Parameters and scales
+
+- A parameter's scale comes from the catalog: `min`, `max`, `skew`, one law.
+  The numbers the catalog names but does not spell out live in
+  `units.FIRMWARE_CONSTANTS`, each with evidence; an unknown name raises. The
+  one measured override is `units.LABELLED_END_SPAN`; a second needs a new ADR.
+  Screen readings are tests in `tests/test_scales.py`. (ADR-0015)
+- A bound nobody can measure goes in `units.UNMEASURED_BOUNDS` and the parameter
+  refuses. There is one, and its block crashes the unit.
+- Before parsing a new catalog attribute, check `docs/domain-model.md`, "Catalog
+  attributes", which lists the ones we can see and cannot yet explain.
+- The catalog is trusted for structure (option count, wire index of each option,
+  parameter index) and not for what the unit draws (option names, drawn order,
+  `display_pos`). A two-position list is read by driving each position. Readings
+  go in `tests/fixtures/catalog/option_readings.json`, one row per position;
+  `absent` means someone looked and did not find the control. Detail:
+  `docs/domain-model.md`, "Catalog attributes".
+- A screen that shortens a word is a fact about that control, not about the
+  catalog's text: a Flanger Engine spells `Sine` out where a Mono Synth draws
+  `SIN`. What predicts a shortened control is unknown. `Parameter.hidden` is a
+  candidate on two readings, and two readings are not a rule.
+- `options.OPTION_USAGE` says how many parameters each option list decides.
+  Quote it rather than counting again; `tests/test_option_audit.py` holds
+  `docs/domain-model.md` to the snapshot's own numbers.
+- A value says which scale it is on: `Real` or a unit type for the screen's line,
+  `Encoded` for the device's 0..1, a string for a string parameter. A bare number
+  is refused. `Encoded` is accepted everywhere and advertised nowhere a unit type
+  would serve; `tests/test_examples.py` and `tests/test_docs.py` hold that.
+  (ADR-0016)
+- Every method that writes a value takes a typed one. A known span converts
+  through a `catalog.Parameter`. An unknown span takes `Encoded` only and refuses
+  `Real` with `ControlNotDrivable`. A setting with no 0..1 line refuses `Encoded`.
+  Spans and their evidence: `units.SETTING_SPANS`. Selectors stay enums or bools.
+  (ADR-0017)
+- Grid edits use the row/column-keyed writes (`set_param`, `set_bypass`). Never
+  extend `write_preset`.
+
+### Profiles and the wire
+
+- `connect()` resolves a device profile from `device_type` and `zenos_git_hash`
+  and refuses an unknown pair. Everything that differs by firmware or model
+  lives on the profile class, named by CorOS version; nothing else tests a
+  version string. `protocol.models` is the 4.0.1 snapshot; a connection's own is
+  `qc.models`. (ADR-0020)
+- An observation from another profile goes beside the 4.0.1 record in
+  `docs/protocol.md`, dated and named.
+- A docstring states its evidence: confirmed on hardware, or inferred from the
+  schema. Record a hardware verification in the docstring and in
+  `docs/protocol.md`'s coverage table in the same change.
+- The frame trailer's two flag bytes are reported and never decide what happens
+  to a payload. Compression is detected by the gzip magic bytes. Nothing decrypts.
+  (ADR-0019)
+- The RX thread never dies: wrap every decode, skip unknown types at debug level,
+  reset the reassembly buffer on anything malformed.
+- A `Transport.add_listener` listener runs on the RX thread. It merges, marks and
+  returns. It never reads from the device; `request`, `await_broadcast` and
+  `collect` refuse on that thread. To see the connect burst, register through
+  `protocol.connect(before_handshake=...)`. (ADR-0009)
+- New operations follow `docs/architecture.md`, "How to add a new operation".
 
 ## Do not
 
-- Send anything to the firmware `Updater` surface - permanently out of scope; a botched firmware write is the one mistake a factory reset cannot fix.
-- Drive cloud or account messages (`CloudLogin`, `CloudBackup`, capture sharing) without the owner's explicit go-ahead.
-- Depend on the two unexplained trailer bytes (`n+6`). The "raw-payload flag" that used to sit beside them in this list is no longer an inference - it is the ENCRYPTED and COMPRESSED bytes, confirmed and governed by ADR-0019 above.
-- Run the IR-import probing unattended - a past run killed the USB link and required a power cycle.
-- Treat the schema as ground truth for unobserved message types - it is a starting hypothesis until verified on hardware.
+- Send anything to the `Updater` surface. A botched firmware write is the one
+  mistake a factory reset cannot fix.
+- Drive cloud or account messages (`CloudLogin`, `CloudBackup`, capture sharing)
+  without the owner's explicit go-ahead.
+- Depend on the two device-filled trailer bytes at `n+6`.
+- Run IR-import probing unattended. A past run killed the USB link and needed a
+  power cycle.
+- Treat the schema as ground truth for an unobserved message type. It is a
+  hypothesis until measured.
