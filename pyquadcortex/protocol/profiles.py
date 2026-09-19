@@ -22,11 +22,11 @@ class QuadCortex41(QuadCortex):
     PR #42's description (2026-09-03) reports ``pytest --hardware``: 2742
     passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
     d14e, by tony-xmelon. That is a contributor's report and the maintainer has
-    not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here. The
-    connection is therefore known to work with this handshake and announce
-    string. ``preset_screenshot`` has its own dated 4.1.0 capture and is
-    VERIFIED; other inherited operations refuse under ``Support.VERIFIED`` and
-    run with a warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
+    not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here.
+    ``create_local_backup`` and ``preset_screenshot`` have dated 4.1.0 captures
+    and are VERIFIED;
+    other inherited operations refuse under ``Support.VERIFIED`` and run with
+    a warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
     binding the 4.0.1 constants would hand a 4.1 user names their unit does not
     use.
 
@@ -43,7 +43,7 @@ class QuadCortex41(QuadCortex):
 
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
-    VERIFIED = frozenset({"preset_screenshot"})
+    VERIFIED = frozenset({"create_local_backup", "preset_screenshot"})
     models = NoSnapshot("coros_4_1_0")
     params = NoSnapshot("coros_4_1_0")
     options = NoSnapshot("coros_4_1_0")
