@@ -31,9 +31,14 @@ def load(name):
 #: of the LAW, and a catalog without it cannot tell a reader the difference -
 #: which is how the first version of `grid.pedals` came to report -40 dB for
 #: the commonest assignment there is, with every test passing.
+#:
+#: Hand-built, so it has to be kept in step with what the parser produces - the
+#: numbers below were 0.01/-39.5 until 2026-09-12 and stayed green after the
+#: real ones moved, which hid a 50x change in how wide a sweep end reads as Off.
 LANE_VOLUME = protocol.catalog.Parameter(
     index=0, name="VOLUME", minimum=-40.0, maximum=12.0, default=0.0,
-    units="dB", type="float", floor_wire=0.01, floor_display=-39.5)
+    units="dB", type="float", min_label="OFF",
+    floor_wire=0.000192307692, floor_display=-39.99)
 
 #: A knob with no unit and no detent, so every position is a number.
 PLAIN_KNOB = protocol.catalog.Parameter(
@@ -471,7 +476,7 @@ def _with_params(wire, parameters, active=SceneLetter.A):
 def test_a_sweep_end_at_the_off_detent_is_reported_as_off(structural):
     """The bug this reader shipped with, and the reason it went unseen.
 
-    A lane VOLUME's law runs to -40 dB and its lowest NUMERIC step is -39.5:
+    A lane VOLUME's law runs to -40 dB and its lowest NUMERIC step is -39.99:
     wire 0.0 is an OFF detent, which is a word on the screen. Converting it
     reports -40 dB - a value `to_normalized` REFUSES if you hand it back, so
     the model was reporting something the library itself rejects. The fixture's
@@ -483,6 +488,49 @@ def test_a_sweep_end_at_the_off_detent_is_reported_as_off(structural):
     assert float(one.maximum) == pytest.approx(12.0), "the top still converts"
     assert not one.in_real_units, "an OFF end is not a value in the knob's units"
     assert "Off to 12 dB" in repr(one)
+
+
+def test_the_off_band_is_as_narrow_as_the_measured_detent():
+    """How wide "Off" is, pinned - it moved 50x on 2026-09-12 with nothing green.
+
+    `_sweep_end` flags an end as Off when the wire sits below `floor_wire`, so
+    the width of that band IS the floor. While the floor was the encoder's
+    0.01, a sweep heel at wire 0.005 read as Off; the measured detent is
+    0.000192, so the same heel now reads -39.74 dB, which is what the screen
+    shows there.
+
+    Nothing covered this: the only lane-volume fixture in this file is
+    hand-built and kept the old numbers, so the producer changed and the
+    consumer's copy did not.
+    """
+    from pyquadcortex.device.translate.grid import _sweep_end
+    value, is_off = _sweep_end(0.005, LANE_VOLUME)
+    assert not is_off, "0.005 is above the measured detent"
+    assert float(value) == pytest.approx(-39.74, abs=0.01)
+    _, still_off = _sweep_end(0.0001, LANE_VOLUME)
+    assert still_off, "0.0001 is inside it"
+    _, at_zero = _sweep_end(0.0, LANE_VOLUME)
+    assert at_zero, "the detent itself"
+
+
+def test_the_hand_built_lane_volume_matches_what_the_parser_produces():
+    """`LANE_VOLUME` is written by hand, so it can drift from the real thing.
+
+    It did: it carried the pre-2026-09-12 floor and every test here stayed
+    green while the parser's floor moved under it. This builds the same
+    parameter through the catalog parser and holds the two together.
+    """
+    from tests.test_catalog import make_payload
+    xml = ('<Models><Category id="23" name="Utility">'
+           '<Model id="23000" name="LaneOutputControl">'
+           '<Parameter name="VOLUME" type="float" units="dB" defaultValue="0.0"'
+           ' min="MIN_MIXER_DB" max="MAX_MIXER_DB" min_string="OFF"/>'
+           '</Model></Category></Models>')
+    parsed = protocol.catalog.parse_model_repo(make_payload(xml))[23000].parameters[0]
+    for field in ("minimum", "maximum", "skew", "min_label",
+                  "floor_display", "show_as_integer"):
+        assert getattr(LANE_VOLUME, field) == getattr(parsed, field), field
+    assert LANE_VOLUME.floor_wire == pytest.approx(parsed.floor_wire, rel=1e-6)
 
 
 def test_a_knob_with_no_detent_converts_both_ends(structural):

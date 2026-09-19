@@ -57,10 +57,16 @@ def test_constants_are_usable_where_a_model_is_expected():
 
 
 def test_count_is_the_full_factory_set():
-    # 412 factory models on CorOS as captured; a drift here means the generator
+    # 414 factory models on CorOS as captured; a drift here means the generator
     # was re-run against a device with different content - re-check before
     # updating this number.
-    assert len(models.ALL) == 412
+    #
+    # It was 412 until 2026-09-15. `Model.hidden` read the XML attribute by
+    # PRESENCE, and two amps carry `hidden="false"` - Bogna Uber Clean (1130)
+    # and Bogna Uber Lead (1131). Both were reported hidden, so `is_factory`
+    # dropped them and neither had a constant. The unit places both on request,
+    # which is how it was settled rather than by reading the attribute again.
+    assert len(models.ALL) == 414
 
 
 def test_unknown_attribute_raises():
