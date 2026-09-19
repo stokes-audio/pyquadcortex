@@ -424,7 +424,8 @@ inbound `Version` messages, the full reply (15 fields, at +0.71 s), the unit's
 own `Version{READ}` about 1 ms behind it, and the answer to the announce
 (carrying `cortex_control_version_valid`, at +0.73 s).
 CorOS 4.1.0 produced the same three shapes in a contributed 2026-09-11 capture:
-identity UPDATE, the unit's action-only READ, then the compatibility UPDATE.
+identity `UPDATE`, the unit's action-only `READ`, then the compatibility
+`UPDATE`.
 
 ### 4.3 Keepalive and disconnect
 
