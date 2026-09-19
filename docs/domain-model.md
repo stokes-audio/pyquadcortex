@@ -1211,7 +1211,7 @@ omitted with the reason written down.
 Numeric parameter `replaces` values are inherited wire indexes on a model that
 declares `clones`; the parser resolves them before publishing the model.
 `Model/@clones` names the parent layout. The nonnumeric `replaces="INTENSITY"`
-on MX Vibe remains unexplained and makes only that model fall back to its local
+on `MX Vibe` remains unexplained and makes only that model fall back to its local
 parameter order.
 
 ### `type` names the widget, and two of its values are readouts
