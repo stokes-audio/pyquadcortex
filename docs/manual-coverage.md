@@ -18,10 +18,10 @@ A "candidate" names a message type from the unit's own schema or a field in
 
 ## Summary
 
-Of 105 features audited: **65 yes**, **9 partly**, **20 no**, **11 n/a**.
+Of 105 features audited: **68 yes**, **8 partly**, **18 no**, **11 n/a**.
 
-Of the 94 features a host could plausibly drive, 65 are fully covered and 9 are
-partly covered. Twenty remain untouched. Of those, a few are writes confirmed to
+Of the 94 features a host could plausibly drive, 68 are fully covered and 8 are
+partly covered. Eighteen remain untouched. Of those, a few are writes confirmed to
 do nothing with no route found (preset tags, duplicating a setlist as one
 operation), and two whole features need the physical world: creating a Neural
 Capture, and loading from the factory Captures Library. How an unknown gets
