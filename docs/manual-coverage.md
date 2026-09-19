@@ -18,9 +18,9 @@ A "candidate" names a message type from the unit's own schema or a field in
 
 ## Summary
 
-Of 105 features audited: **65 yes**, **9 partly**, **20 no**, **11 n/a**.
+Of 106 features audited: **66 yes**, **9 partly**, **20 no**, **11 n/a**.
 
-Of the 94 features a host could plausibly drive, 65 are fully covered and 9 are
+Of the 95 features a host could plausibly drive, 66 are fully covered and 9 are
 partly covered. Twenty remain untouched. Of those, a few are writes confirmed to
 do nothing with no route found (preset tags, duplicating a setlist as one
 operation), and two whole features need the physical world: creating a Neural
@@ -112,7 +112,7 @@ settled is in [capture.md](capture.md).
 | Create a folder, nested navigation | yes | `create_setlist(name)`. Setlists are siblings under `/media/p4/Presets`, not children of My Presets |
 | Favorites and Recents | yes | `recents()` and `favorites()` read the two lists. The request's `is_favorites` flag selects which; the reply never sets it, so correlate on `request_id`. `add_favorite()` and `remove_favorite()` write one entry at a time. Only presets can be favourited |
 | Bulk actions | partly | no host-drivable bulk copy; `BulkOperation` only narrates progress. `copy_preset()` and `duplicate_setlist()` do it by recall plus save, a few seconds per preset |
-| Physical screen remote control | yes on CorOS 4.1 | `capture_screen()`, `graphics_tree()`, `tap_screen()` and `swipe_screen()` use measured 4.1.0 `RemoteControl` shapes; the 4.0.1 profile refuses them pending measurement |
+| Physical screen remote control | yes | `capture_screen()`, `graphics_tree()`, `tap_screen()` and `swipe_screen()` use measured CorOS 4.1.0 `RemoteControl` shapes; the 4.0.1 profile refuses them pending measurement |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
 | Neural Captures: list | yes | `captures()` browses the library, over 2000 entries. Not the catalog, which does not grow when a capture is saved |

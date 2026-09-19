@@ -1783,10 +1783,10 @@ every entry for that id.
 ### 11.8 CorOS 4.1 physical-screen remote control
 
 `RemoteControl{READ, screenshot:{}}` produces an uncorrelated `UPDATE` carrying
-a complete 800 x 480 PNG. A graphics-tree read returns nonblank zenUI text.
+a complete 800 x 480 `PNG`. A graphics-tree read returns nonblank zenUI text.
 Touch input uses measured atomic mouse sequences after a capture primes the
-connection: tap sends RELEASE then PRESS, while swipe sends RELEASE, DRAG with
-both endpoints, then PRESS. Host bounds reject coordinates outside the display.
+connection: tap sends `RELEASE` then `PRESS`, while swipe sends `RELEASE`,
+`DRAG` with both endpoints, then `PRESS`. Host bounds reject coordinates outside the display.
 These shapes have contributed CorOS 4.1.0 evidence and are refused by the
 unmeasured 4.0.1 profile.
 
