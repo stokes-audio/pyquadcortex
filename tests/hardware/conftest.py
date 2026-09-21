@@ -698,8 +698,8 @@ def a_clean_preset(qc, preset_dirty_at_start, reload_the_loaded_preset):
     ``PresetDirty`` announces a change of the flag rather than an edit, so one
     transition is available per run and a test watching for it has to start
     from clear. It will not be: an undo is a write, so any earlier module that
-    wrote a grid value leaves the flag set, and two of them sort ahead of every
-    module that wants this. Reloading is what clears it.
+    wrote a grid value leaves the flag set, and one sorts ahead of the module
+    that wants this. Reloading is what clears it.
 
     Skips rather than reloads when the preset was already edited before the
     session began. Those edits are the owner's and a recall would discard them.
