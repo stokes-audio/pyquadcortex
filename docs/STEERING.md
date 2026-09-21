@@ -234,13 +234,11 @@ behind each one is in the lab repository,
 ### 2026-09-21 - The hardware suite puts the edited flag back
 
 - **What changed:** a session teardown clears the preset's edited flag with a
-  recall. The option-structure fixture now asks whose the edits are, not whether
-  any exist.
+  recall. Fixtures now ask whose the edits are, not whether any exist, so two
+  tests that refused on every full run can run.
 - **Why:** a write marks the preset edited and an undo is a write, so every run
-  handed the unit back edited, and that fixture refused on every full run.
-- **Scope:** `tests/hardware/`, its readme, `tests/test_hardware_report.py`,
-  which drives every row of the decision offline. `a_clean_preset` reloads for
-  the one test that needs the flag to change, which never ran on a full suite.
+  handed the unit back edited.
+- **Scope:** `tests/hardware/`, its readme, `tests/test_hardware_report.py`.
   No decision record: ADR-0005 already promises this.
 
 ### 2026-09-17 - The environment is held to the pins it claims to satisfy
