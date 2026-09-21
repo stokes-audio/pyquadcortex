@@ -84,6 +84,9 @@ offline modules do `from waiting import ...`, which works only while pytest puts
 
 - Quit Cortex Control. It holds the USB HID interface exclusively.
 - Expect the unit to be edited. The edits are real while they happen.
+- Do not touch the unit while a run is going. The suite reads the edited flag
+  once, before the first test, to tell your unsaved edits from its own; an edit
+  you make after that reads as the suite's and is discarded at the end.
 - `test_model_state.py` needs a loaded preset with no unsaved changes, because
   `PresetDirty` announces a change of the flag rather than an edit, so only the
   first edit of a run produces one. The test skips with a message if the preset

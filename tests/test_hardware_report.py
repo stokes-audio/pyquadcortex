@@ -509,3 +509,115 @@ def test_a_full_user_setlist_stops_the_run(conftest):
 
     with pytest.raises(pytest.fail.Exception, match="free slot"):
         conftest._scratch_slot(listing, "pyquadcortex scratch")
+# --- putting the edited flag back --------------------------------------------
+#
+# The one call in the hardware suite that can discard a person's unsaved work.
+# It runs at session teardown against a real unit, so every row of its decision
+# is driven here instead, where a wrong answer costs nothing. Flipping the
+# guard's `if dirty_at_start` to its opposite passes every other check in this
+# repository and is found by discarding somebody's playing.
+
+
+class _FakePreset:
+    """Enough of a unit to drive the reload: slot, scene and the edited flag."""
+
+    def __init__(self, dirty_now, recall_raises=None):
+        self.calls = []
+        self._dirty = dirty_now
+        self._recall_raises = recall_raises
+
+    def preset_dirty(self, timeout=None):
+        self.calls.append(("preset_dirty",))
+        return self._dirty
+
+    class _Slot:
+        """A loaded position with the three fields the reload reads."""
+        folder_key = "user"
+        position = 3
+        is_factory = False
+
+    def loaded_position(self):
+        return self._Slot
+
+    def active_scene(self, timeout=None):
+        return "B"
+
+    def recall_preset(self, folder_key, position, is_factory=False):
+        self.calls.append(("recall", folder_key, position))
+        if self._recall_raises is not None:
+            raise self._recall_raises
+        self._dirty = False
+
+    def switch_scene(self, scene):
+        self.calls.append(("switch_scene", scene))
+
+
+def _recalled(qc):
+    return [call for call in qc.calls if call[0] == "recall"]
+
+
+def test_the_flag_this_suite_set_is_cleared(conftest):
+    """Clean at the start and edited now: the edits are the suite's own."""
+    qc = _FakePreset(dirty_now=True)
+
+    conftest.put_the_edited_flag_back(qc, dirty_at_start=False,
+                                      away=0.0, settle=0.0)
+
+    assert _recalled(qc), "the flag this suite set was left on the unit"
+    assert ("switch_scene", "B") in qc.calls, (
+        "a recall resets the active scene, so the reload has to put it back")
+
+
+def test_edits_that_were_already_there_are_never_recalled_away(conftest):
+    """The row that protects a person's unsaved playing.
+
+    Edited before the session started means the edits are the owner's. Nothing
+    here can put them back, so nothing here may throw them away.
+    """
+    qc = _FakePreset(dirty_now=True)
+
+    conftest.put_the_edited_flag_back(qc, dirty_at_start=True,
+                                      away=0.0, settle=0.0)
+
+    assert not _recalled(qc), (
+        "the owner's unsaved edits were discarded by a recall")
+    assert qc.calls == [], "the unit was touched at all"
+
+
+def test_a_preset_that_is_already_clean_is_left_alone(conftest):
+    """Nothing to clear, so nothing to do - and no recall to cost 14 seconds."""
+    qc = _FakePreset(dirty_now=False)
+
+    conftest.put_the_edited_flag_back(qc, dirty_at_start=False,
+                                      away=0.0, settle=0.0)
+
+    assert not _recalled(qc)
+
+
+def test_a_reload_that_fails_reports_the_agreed_sentence(conftest):
+    """The owner is told in the same words every other restore path uses."""
+    qc = _FakePreset(dirty_now=True, recall_raises=TimeoutError("no reply"))
+
+    with pytest.raises(AssertionError) as caught:
+        conftest.put_the_edited_flag_back(qc, dirty_at_start=False,
+                                          away=0.0, settle=0.0)
+
+    assert "COULD NOT RESTORE THE UNIT" in str(caught.value)
+    assert "edited flag" in str(caught.value)
+
+
+def test_a_dead_link_reports_the_sentence_rather_than_a_traceback(conftest):
+    """The read is inside the try, because that is when it matters.
+
+    A link that died during the run is exactly the case where the unit is left
+    edited, so the owner needs the sentence naming what to fix by hand.
+    """
+    class _Dead(_FakePreset):
+        def preset_dirty(self, timeout=None):
+            raise TimeoutError("the unit stopped answering")
+
+    with pytest.raises(AssertionError) as caught:
+        conftest.put_the_edited_flag_back(_Dead(dirty_now=True),
+                                          dirty_at_start=False)
+
+    assert "COULD NOT RESTORE THE UNIT" in str(caught.value)

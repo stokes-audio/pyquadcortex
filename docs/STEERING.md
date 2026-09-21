@@ -238,8 +238,9 @@ behind each one is in the lab repository,
   any exist.
 - **Why:** a write marks the preset edited and an undo is a write, so every run
   handed the unit back edited, and that fixture refused on every full run.
-- **Scope:** `tests/hardware/`, its readme. No decision record: ADR-0005 already
-  promises this.
+- **Scope:** `tests/hardware/`, its readme, `tests/test_hardware_report.py`,
+  which drives every row of the decision offline. No decision record: ADR-0005
+  already promises this.
 
 ### 2026-09-17 - The environment is held to the pins it claims to satisfy
 
