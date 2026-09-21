@@ -615,8 +615,9 @@ def test_the_scene_is_waited_for_rather_than_read_once(conftest):
     A scene switch is not instantaneous, so a single read taken right after
     sending one catches the unit mid-change and reports a break that is not
     there. A single read is also what a later simplification would leave
-    behind, and in every other test here the loop body never runs: their fakes
-    report the wanted scene on the first read.
+    behind, and in every other test here the loop body never runs: most return
+    or raise before reaching it, one gets the wanted scene on the first read,
+    and the one whose scene never lands passes `scene_patience=0.0`.
     """
     class _Slow(_FakePreset):
         def __init__(self):

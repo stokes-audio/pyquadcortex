@@ -661,9 +661,9 @@ def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0,
 def reload_the_loaded_preset(qc):
     """:func:`reload_loaded_preset` bound to the connection, as a callable.
 
-    A fixture rather than an import: importing this conftest from a test module
-    loads it a SECOND time under another module name, which is a trap for
-    anything stateful beside the function being borrowed.
+    A fixture rather than an import: pytest keeps ONE module named ``conftest``,
+    and it is whichever was imported last, so ``import conftest`` from a test
+    module can hand back ``tests/conftest.py`` instead of the file beside it.
 
     The slot is read HERE, when the fixture is set up and before the test runs,
     so the reload comes back to where the test started rather than to wherever
