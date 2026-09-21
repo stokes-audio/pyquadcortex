@@ -231,6 +231,16 @@ Entries are short by design ([`writing.md`](writing.md)). The full narrative
 behind each one is in the lab repository,
 `doc/pyquadcortex/history/steering-change-log.md`, and in the pull requests.
 
+### 2026-09-21 - The hardware suite puts the edited flag back
+
+- **What changed:** a session teardown clears the preset's edited flag with a
+  recall. The option-structure fixture now asks whose the edits are, not whether
+  any exist.
+- **Why:** a write marks the preset edited and an undo is a write, so every run
+  handed the unit back edited, and that fixture refused on every full run.
+- **Scope:** `tests/hardware/`, its readme. No decision record: ADR-0005 already
+  promises this.
+
 ### 2026-09-17 - The environment is held to the pins it claims to satisfy
 
 - **What changed:** `tests/test_packaging.py` compares each installed version

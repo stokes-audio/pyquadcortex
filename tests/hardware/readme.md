@@ -71,6 +71,11 @@ offline modules do `from waiting import ...`, which works only while pytest puts
   fixture re-raises at the end naming every item it could not put back. Global
   settings are the ones to check first after a failure, since they survive a
   preset recall.
+- **The edited flag is put back once, at the end.** A write marks the preset
+  edited, and writing the original value back is another write, so the undo
+  callables put the grid right and leave the flag set. A session teardown clears
+  it with a recall, and only when the preset was clean before the first test:
+  unsaved edits that were already there are the owner's.
 - **It edits a scratch copy.** `scratch_preset` hands a test a disposable copy of
   the loaded preset. Nothing here saves a preset, so if a run dies badly,
   recalling any preset discards whatever it left on the grid.

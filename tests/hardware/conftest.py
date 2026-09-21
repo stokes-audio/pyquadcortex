@@ -595,6 +595,88 @@ def _unrestored(failed):
         + "\n  ".join(failed))
 
 
+def reload_loaded_preset(qc, away=6.0, settle=8.0):
+    """Reload the slot the unit is on, which is the only way to clear the flag.
+
+    A write marks the preset edited, and writing the original value back is
+    another write, so the per-test undo callables put the GRID right and leave
+    the FLAG set. Only a recall clears it.
+
+    Recalling the SAME slot does nothing: the unit sees no change. So this
+    recalls a different slot first and comes back. ``position`` is a linear slot
+    index, so the other slot is 0 or 1 rather than a neighbour - any slot the
+    unit actually loads will do, and the checks below prove one did.
+
+    A recall DISCARDS unsaved edits, so every caller has to have established
+    that the edits are this suite's own. ``preset_dirty_at_start`` is how.
+    """
+    before = qc.loaded_position()
+    other = 1 if before.position != 1 else 0
+    qc.recall_preset(before.folder_key, other, is_factory=before.is_factory)
+    time.sleep(away)
+    qc.recall_preset(before.folder_key, before.position,
+                     is_factory=before.is_factory)
+    time.sleep(settle)
+    now = qc.loaded_position()
+    assert now.position == before.position, (
+        f"the unit is on slot {now.position}, not {before.position} where it "
+        f"started")
+    # Back on the right slot and still edited means the reload was a no-op -
+    # the other slot was probably empty - and the writes are still on the grid.
+    assert qc.preset_dirty(timeout=15.0) is False, (
+        f"slot {before.position} is still showing unsaved edits, so the reload "
+        f"did not take and the writes are still on the grid")
+
+
+@pytest.fixture
+def reload_the_loaded_preset(qc):
+    """:func:`reload_loaded_preset` bound to the connection, as a callable.
+
+    A fixture rather than an import: importing this conftest from a test module
+    loads it a SECOND time under another module name, which is a trap for
+    anything stateful beside the function being borrowed.
+    """
+    return lambda: reload_loaded_preset(qc)
+
+
+@pytest.fixture(scope="session")
+def preset_dirty_at_start(_connection):
+    """Whether the loaded preset had unsaved edits before any test ran.
+
+    Whose edits they are decides what may be done with them. Edits already here
+    are the OWNER's: nothing in this suite can put them back, so anything that
+    restores by recalling refuses to run. Edits that appear later are the
+    suite's own, and a recall is how they are cleared.
+
+    One ``PresetDirty{READ}``, 2-11 ms, taken before any test can write.
+    """
+    return _connection[0].preset_dirty(timeout=15.0)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _preset_left_as_found(_connection, preset_dirty_at_start):
+    """Put the edited flag back, which a value restore cannot (ADR-0005).
+
+    ADR-0005 promises a successful run leaves the unit exactly as it found it.
+    The per-test ``restores`` callables cannot deliver that on their own: they
+    write the original VALUE back, and a write is what marks the preset edited,
+    so the grid ends right and the flag ends set. The unit was then handed back
+    showing unsaved edits it did not start with.
+
+    Runs once, after every test, and only when the preset was CLEAN at the
+    start. Unsaved edits that were already there are the owner's and a recall
+    would discard them.
+    """
+    yield
+    qc = _connection[0]
+    if preset_dirty_at_start or not qc.preset_dirty(timeout=15.0):
+        return
+    try:
+        reload_loaded_preset(qc)
+    except Exception as exc:                         # noqa: BLE001 - reported, not swallowed
+        raise _unrestored([f"clear the edited flag this suite set: {exc!r}"])
+
+
 @pytest.fixture
 def restores():
     """Register undo callables; they run in reverse, failure or not.

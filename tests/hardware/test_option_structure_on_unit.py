@@ -68,7 +68,7 @@ def live_catalog(qc):
 
 
 @pytest.fixture
-def restored(qc, restores):
+def restored(restores, preset_dirty_at_start, reload_the_loaded_preset):
     """Reload the preset afterwards, which undoes every write this made.
 
     Goes through the `restores` fixture rather than doing its own teardown: that
@@ -78,41 +78,21 @@ def restored(qc, restores):
     a SECOND time under another module name - harmless for a pure function and a
     trap for anything stateful beside it.
 
-    A recall DISCARDS unsaved edits, so this refuses to run at all on a preset
-    that already has some - they would be the owner's, and nothing here could
-    put them back.
+    A recall DISCARDS unsaved edits, so this asks WHOSE they are rather than
+    whether there are any. Edits present before the session started are the
+    owner's and nothing here could put them back. Edits that appear during the
+    run are this suite's own: the modules that write a grid value restore the
+    value and leave the preset marked edited, and both of them sort ahead of
+    this one, so asking `preset_dirty()` here refused every full-suite run.
     """
-    assert qc.preset_dirty(timeout=15.0) is False, (
-        "the loaded preset already has unsaved edits. This test restores by "
-        "recalling, which would throw them away - save or reload the preset on "
-        "the unit and run again.")
-    before = qc.loaded_position()
+    assert preset_dirty_at_start is False, (
+        "the loaded preset already had unsaved edits when this session "
+        "started. This test restores by recalling, which would throw them "
+        "away - save or reload the preset on the unit and run again.")
 
-    def reload_it():
-        # Recalling the SAME slot does not reload it: the unit sees no change
-        # and does nothing. So this recalls a DIFFERENT slot first and comes
-        # back. `position` is a linear slot index, not an offset, so the other
-        # slot is 0 or 1 rather than a neighbour - any slot the unit actually
-        # loads will do, and the checks below prove one did rather than the
-        # comment claiming it.
-        other = 1 if before.position != 1 else 0
-        qc.recall_preset(before.folder_key, other, is_factory=before.is_factory)
-        time.sleep(6.0)
-        qc.recall_preset(before.folder_key, before.position,
-                         is_factory=before.is_factory)
-        time.sleep(8.0)
-        now = qc.loaded_position()
-        assert now.position == before.position, (
-            f"the unit is on slot {now.position}, not {before.position} where "
-            f"it started")
-        # Back on the right slot and still dirty means the reload was a no-op -
-        # the other slot was probably empty - and every write this test made is
-        # still on the owner's grid.
-        assert qc.preset_dirty(timeout=15.0) is False, (
-            f"slot {before.position} is still showing unsaved edits, so the "
-            f"reload did not take and this test's writes are still on the grid")
-
-    restores("the loaded preset", reload_it)
+    # One spelling of the recall-away-and-back dance, in conftest, because the
+    # session teardown that puts the edited flag back needs the same one.
+    restores("the loaded preset", reload_the_loaded_preset)
     yield
 
 
