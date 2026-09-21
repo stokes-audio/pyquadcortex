@@ -621,8 +621,9 @@ def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0,
     established that the edits are this suite's own. ``preset_dirty_at_start``
     is how.
 
-    ``away`` and ``settle`` are the pauses either side, and only the offline
-    tests in ``tests/test_hardware_report.py`` pass anything but the real ones.
+    ``away``, ``settle`` and ``scene_patience`` are the three waits, and only
+    the offline tests in ``tests/test_hardware_report.py`` pass anything but the
+    real ones.
     """
     before = qc.loaded_position() if before is None else before
     scene = qc.active_scene()

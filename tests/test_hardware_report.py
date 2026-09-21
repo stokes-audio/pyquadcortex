@@ -609,6 +609,36 @@ def test_a_preset_the_owner_left_edited_is_untouched_even_when_it_reads_clean(co
     assert qc.calls == [], "the unit was asked about, or touched at all"
 
 
+def test_the_scene_is_waited_for_rather_than_read_once(conftest):
+    """The waiting is the fix, so deleting it has to fail something.
+
+    A scene switch is not instantaneous, so a single read taken right after
+    sending one catches the unit mid-change and reports a break that is not
+    there. A single read is also what a later simplification would leave
+    behind, and every other test here passes `scene_patience=0.0`, where the
+    loop body never runs.
+    """
+    class _Slow(_FakePreset):
+        def __init__(self):
+            super().__init__(dirty_now=True)
+            self.after_switch = 0
+
+        def active_scene(self, timeout=None):
+            if not any(call[0] == "switch_scene" for call in self.calls):
+                return "B"                       # the scene it started on
+            self.after_switch += 1
+            return "A" if self.after_switch == 1 else "B"   # lands on the second
+
+    qc = _Slow()
+
+    conftest.put_the_edited_flag_back(qc, dirty_at_start=False,
+                                      away=0.0, settle=0.0, scene_patience=2.0)
+
+    assert qc.after_switch >= 2, (
+        "the scene was read once and not waited for, so a switch that lands a "
+        "moment later reads as a failure")
+
+
 def test_a_scene_that_never_comes_back_is_reported(conftest):
     """A recall resets the scene, so a switch that does not land is a break.
 
@@ -616,10 +646,9 @@ def test_a_scene_that_never_comes_back_is_reported(conftest):
     and the unit is handed back on the wrong scene looking correct.
     """
     class _Stuck(_FakePreset):
-        def switch_scene(self, scene):
-            self.calls.append(("switch_scene", scene))   # sent, never lands
-
         def active_scene(self, timeout=None):
+            # The switch is sent and never lands: the scene reads back wrong
+            # for as long as anyone is willing to wait.
             return "A" if self.calls.count(("switch_scene", "B")) else "B"
 
     with pytest.raises(AssertionError) as caught:
