@@ -662,9 +662,10 @@ def reload_the_loaded_preset(qc):
     """:func:`reload_loaded_preset` bound to the connection, as a callable.
 
     A fixture rather than an import: pytest keeps ONE module named ``conftest``
-    and it is whichever the run loaded last - this file when ``tests/hardware/``
-    is collected, ``tests/conftest.py`` when it is not - so the name is not a
-    stable way to reach this module. Measured on pytest 9.1.1, three targets.
+    and it is whichever DIRECTORY pytest walked into last, which is not the same
+    as what it collected - a plain offline run collects no hardware test and
+    imports this file anyway, for ``pytest_ignore_collect``. So the name is not
+    a stable way to reach this module. Measured on pytest 9.1.1, four targets.
 
     The slot is read HERE, when the fixture is set up and before the test runs,
     so the reload comes back to where the test started rather than to wherever

@@ -76,8 +76,8 @@ def restored(restores, preset_dirty_at_start, reload_the_loaded_preset):
     is where ADR-0005's one spelling of "COULD NOT RESTORE THE UNIT" lives, and
     a second copy of it here would be a second one to keep right. An earlier
     version imported `_unrestored` from conftest directly. pytest keeps one
-    module named `conftest` and it is whichever the run loaded last, so the
-    name is not a stable way to reach the file beside this one.
+    module named `conftest` and it is whichever directory pytest walked into
+    last, so the name is not a stable way to reach the file beside this one.
 
     A recall DISCARDS unsaved edits, so this asks WHOSE they are rather than
     whether there are any. Edits present before the session started are the
