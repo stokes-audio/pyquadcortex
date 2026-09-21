@@ -89,8 +89,9 @@ offline modules do `from waiting import ...`, which works only while pytest puts
   you make after that reads as the suite's and is discarded at the end.
 - `test_model_state.py` needs a loaded preset with no unsaved changes, because
   `PresetDirty` announces a change of the flag rather than an edit, so only the
-  first edit of a run produces one. The test skips with a message if the preset
-  arrives already dirty. Save or reload the preset on the unit and run again.
+  first edit of a run produces one. The `a_clean_preset` fixture reloads to get
+  it. It skips instead when the preset was already edited before the session
+  started, since clearing that would discard your work.
 
 ## One connection, and the connect burst
 

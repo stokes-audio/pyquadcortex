@@ -661,9 +661,10 @@ def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0,
 def reload_the_loaded_preset(qc):
     """:func:`reload_loaded_preset` bound to the connection, as a callable.
 
-    A fixture rather than an import: pytest keeps ONE module named ``conftest``,
-    and it is whichever was imported last, so ``import conftest`` from a test
-    module can hand back ``tests/conftest.py`` instead of the file beside it.
+    A fixture rather than an import: pytest keeps ONE module named ``conftest``
+    and it is whichever the run loaded last - this file when ``tests/hardware/``
+    is collected, ``tests/conftest.py`` when it is not - so the name is not a
+    stable way to reach this module. Measured on pytest 9.1.1, three targets.
 
     The slot is read HERE, when the fixture is set up and before the test runs,
     so the reload comes back to where the test started rather than to wherever
@@ -687,6 +688,30 @@ def _dirty_now(connection):
     if held and "is_dirty" in held:
         return bool(held["is_dirty"])
     return connection[0].preset_dirty(timeout=15.0)
+
+
+@pytest.fixture
+def a_clean_preset(qc, preset_dirty_at_start, reload_the_loaded_preset):
+    """A loaded preset with the edited flag clear, for a test that needs it to
+    CHANGE.
+
+    ``PresetDirty`` announces a change of the flag rather than an edit, so one
+    transition is available per run and a test watching for it has to start
+    from clear. It will not be: an undo is a write, so any earlier module that
+    wrote a grid value leaves the flag set, and two of them sort ahead of every
+    module that wants this. Reloading is what clears it.
+
+    Skips rather than reloads when the preset was already edited before the
+    session began. Those edits are the owner's and a recall would discard them.
+    """
+    if preset_dirty_at_start:
+        pytest.skip(
+            "the loaded preset already had unsaved changes when this session "
+            "started. Clearing them means a recall, which would throw the "
+            "owner's work away. Save or reload the preset on the unit and run "
+            "this again.")
+    if qc.preset_dirty(timeout=15.0):
+        reload_the_loaded_preset()
 
 
 @pytest.fixture(scope="session")

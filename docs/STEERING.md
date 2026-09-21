@@ -239,8 +239,9 @@ behind each one is in the lab repository,
 - **Why:** a write marks the preset edited and an undo is a write, so every run
   handed the unit back edited, and that fixture refused on every full run.
 - **Scope:** `tests/hardware/`, its readme, `tests/test_hardware_report.py`,
-  which drives every row of the decision offline. No decision record: ADR-0005
-  already promises this.
+  which drives every row of the decision offline. `a_clean_preset` reloads for
+  the one test that needs the flag to change, which never ran on a full suite.
+  No decision record: ADR-0005 already promises this.
 
 ### 2026-09-17 - The environment is held to the pins it claims to satisfy
 
