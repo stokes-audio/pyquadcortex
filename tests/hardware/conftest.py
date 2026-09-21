@@ -595,7 +595,8 @@ def _unrestored(failed):
         + "\n  ".join(failed))
 
 
-def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0):
+def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0,
+                         scene_patience=5.0):
     """Reload the slot the unit is on, which is the only way to clear the flag.
 
     A write marks the preset edited, and writing the original value back is
@@ -608,9 +609,10 @@ def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0):
     unit actually loads will do, and the checks below prove one did.
 
     ``before`` is the slot to come back to. A caller that knew it before the
-    test ran passes it, and the position check then also catches a test that
-    left the unit somewhere else; the session teardown passes nothing and
-    reloads whatever is loaded.
+    test ran passes it, so the reload returns to where the test STARTED rather
+    than to wherever it ended, and the position check then fails if that slot
+    will not load - emptied, or the setlist moved under it. The session teardown
+    passes nothing and reloads whatever is loaded.
 
     A recall RESETS the active scene (``_A_RECALL_RESETS`` in
     ``device/entries.py``), so the scene is read first and put back after.
@@ -622,7 +624,7 @@ def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0):
     ``away`` and ``settle`` are the pauses either side, and only the offline
     tests in ``tests/test_hardware_report.py`` pass anything but the real ones.
     """
-    before = before or qc.loaded_position()
+    before = qc.loaded_position() if before is None else before
     scene = qc.active_scene()
     other = 1 if before.position != 1 else 0
     qc.recall_preset(before.folder_key, other, is_factory=before.is_factory)
@@ -630,7 +632,19 @@ def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0):
     qc.recall_preset(before.folder_key, before.position,
                      is_factory=before.is_factory)
     time.sleep(settle)
+    # Confirmed, not sent and hoped for. A scene switch is not instantaneous -
+    # `test_preset_surface.py` needs a watch with a 5 s timeout to see the unit
+    # echo one - and a switch that never landed is the state-neutrality break
+    # this line exists to prevent, silently.
     qc.switch_scene(scene)
+    deadline = time.monotonic() + scene_patience
+    back = qc.active_scene()
+    while back != scene and time.monotonic() < deadline:
+        time.sleep(0.2)
+        back = qc.active_scene()
+    assert back == scene, (
+        f"the unit is on scene {back}, not {scene} where it started; the recall "
+        f"reset it and the switch back did not land")
     now = qc.loaded_position()
     assert now.position == before.position, (
         f"the unit is on slot {now.position}, not {before.position} where the "
