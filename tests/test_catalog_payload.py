@@ -92,6 +92,11 @@ def test_the_payload_still_generates_the_committed_snapshot(payload, name):
     gen, com = generated.splitlines(), committed.splitlines()
     first = next((i for i, (a, b) in enumerate(zip(gen, com)) if a != b),
                  min(len(gen), len(com)))
+    if gen == com:                          # identical lines, so it is the tail
+        pytest.fail(
+            f"{snapshot}/{name}.py has the same lines as the payload generates "
+            f"but not the same bytes: {len(committed)} committed against "
+            f"{len(generated)} generated. Suspect the trailing newline.")
     pytest.fail(
         f"{snapshot}/{name}.py no longer matches what the committed payload "
         f"generates. First difference at line {first + 1}:\n"
