@@ -660,6 +660,41 @@ class QuadCortex:
                              or m.HasField("app_fw_version")),
         )
 
+    def set_device_name(self, name: str):
+        """Set the user-visible device name.
+
+        The update is deliberately sparse: only ``custom_name`` is sent, so
+        none of the other version/identity fields can be overwritten.
+        Confirmed on CorOS 4.0.1 and 4.1.0, firmware d14e: the unit echoed a
+        sparse Version UPDATE, and read-back and restoration matched.
+        """
+        if not isinstance(name, str):
+            raise TypeError("name must be a string")
+        self._t.send(pa.VersionMessage(
+            action=pa.MessageAction.UPDATE, custom_name=name
+        ))
+
+    def undo(self):
+        """Undo the most recent editable-preset operation.
+
+        Confirmed on CorOS 4.0.1 and 4.1.0, firmware d14e: a bypass edit was
+        reversed. Behaviour when the edit history is empty is not established.
+        """
+        self._t.send(pa.UndoRedoMessage(
+            action=pa.MessageAction.UPDATE, undo=True
+        ))
+
+    def redo(self):
+        """Redo the most recently undone editable-preset operation.
+
+        Confirmed on CorOS 4.0.1 and 4.1.0, firmware d14e: the bypass edit
+        reversed by :meth:`undo` was reapplied. Behaviour when the edit history
+        is empty is not established.
+        """
+        self._t.send(pa.UndoRedoMessage(
+            action=pa.MessageAction.UPDATE, redo=True
+        ))
+
     def create_local_backup(self, timeout: float = 60.0) -> dict[str, typing.Any]:
         """Create and return the device's portable local-backup document.
 
@@ -2923,6 +2958,25 @@ class QuadCortex:
         return self._read_state(pa.GlobalEQMessage,
                                 lambda m: m.HasField("bypassed"), timeout)
 
+    def inhibited_modules(self, timeout: float = 10.0):
+        """Whether DSP load has automatically disabled the Input Gate or Global EQ.
+
+        Returns the raw ``CompilerInhibitedModules`` message. The schema names
+        ``global_gate`` and ``global_eq`` as the corresponding inhibited states;
+        only the explicit false/false reply has been observed. Both fields are
+        required so an absent optional field is never mistaken for false.
+
+        Confirmed read-only on hardware: a ``CompilerInhibitedModules{READ}``
+        returned ``08 01 18 00 20 00`` with both fields explicit on Quad Cortex,
+        CorOS 4.0.1 and 4.1.0 / firmware d14e. The same message type was already
+        observed after grid edits when DSP load changes the inhibited state.
+        """
+        return self._read_state(
+            pa.CompilerInhibitedModulesMessage,
+            lambda m: m.HasField("global_gate") and m.HasField("global_eq"),
+            timeout,
+        )
+
     def set_global_eq_bypassed(self, bypassed: bool = True):
         """Turn the Global EQ off or on. Confirmed writable on hardware.
 
@@ -4187,7 +4241,8 @@ class QuadCortex:
                 return e.name
         return None
 
-    def _stored_preset_key(self, setlist_path: str, preset) -> str:
+    def _stored_preset_key(self, setlist_path: str,
+                           preset: str | pa.ProductData) -> str:
         """Resolve a display name or validate a listed ProductData key."""
         if not isinstance(preset, pa.ProductData):
             # Backward-compatible and deliberately listing-free: hardware
@@ -4210,14 +4265,23 @@ class QuadCortex:
                 f"setlist {setlist_path!r}")
         return preset.key
 
-    def delete_preset(self, setlist_path: str, preset):
+    def delete_preset(self, setlist_path: str, preset: str | pa.ProductData):
         """Delete a stored preset from ``setlist_path``.
 
         ``preset`` is either its exact display name or the ``ProductData``
-        returned by :meth:`list_presets`. On three CorOS 4.0.1 captures every
-        occupied entry's key was exactly ``<setlist>/<name>.pb``; passing a
-        listing entry avoids reconstructing it, while the name form remains a
-        listing-free compatibility path for best-effort cleanup.
+        returned by :meth:`list_presets`. Passing a listing entry sends the
+        device's own key. The name form stays listing-free, for cleanup that
+        cannot wait for a listing read.
+
+        Confirmed by capture: deleting "Test save to user sl" from slot 28E
+        sent ``File{action: DELETE, type: 0, folder{key: <setlist path>,
+        is_factory: false, files{key: "<setlist path>/<name>.pb"}}}`` - the
+        preset is addressed by its device FILE PATH (name-based, ``.pb``
+        extension), NOT by slot index. ``folder.is_factory`` is present and
+        false; ``folder.is_downloads`` is absent. One captured ``DELETE``,
+        session 02 frame 19033, decoded 2026-09-21. Separately, every occupied
+        preset-setlist entry in all three recorded sessions carried that same
+        key shape.
         """
         msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
         msg.folder.key = setlist_path
@@ -4226,14 +4290,24 @@ class QuadCortex:
             setlist_path, preset)
         return self._file_operation(msg)
 
-    def move_preset(self, setlist_path: str, preset, to_position):
+    def move_preset(self, setlist_path: str, preset: str | pa.ProductData,
+                    to_position):
         """Move a stored preset into ``to_position`` in the same setlist.
 
         ``to_position`` is either the linear slot index or the slot name shown on
         the unit (``"28D"``). ``preset`` may be its exact display name or the
         ``ProductData`` returned by :meth:`list_presets`; the latter supplies
-        the device's own key. Cortex Control 4.0.1 was captured adding
-        ``is_downloads: false`` to this MOVE shape.
+        the device's own key.
+
+        Confirmed by capture: dragging "Darkglass AO900 2_1" onto slot 28D
+        sent ``File{action: MOVE, type: 0, folder{key: <setlist path>,
+        is_factory: false, is_downloads: false, files{key: "<setlist
+        path>/<name>.pb"}}, to_folder{key: <setlist path>, files{index:
+        219}}}`` - source by FILE PATH, destination by LINEAR slot index.
+        Both ``folder`` flags are present and false; ``to_folder`` carries
+        neither. ``is_downloads`` is absent from the DELETE in the same
+        session. One captured ``MOVE``, session 02 frame 25825, decoded
+        2026-09-21.
         """
         msg = pa.FileMessage(action=pa.MessageAction.MOVE, type=0)
         msg.folder.key = setlist_path
