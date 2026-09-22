@@ -1369,12 +1369,24 @@ File{action: DELETE, type: 0,
 
 ```
 File{action: MOVE, type: 0,
-     folder{key: <setlist path>, files{key: "<setlist path>/<name>.pb"}},
+     folder{key: <setlist path>, is_factory: false, is_downloads: false,
+            files{key: "<setlist path>/<name>.pb"}},
      to_folder{key: <setlist path>, files{index: 219}}}
 ```
 
 Source by file path, destination by linear index. Only same-setlist moves have
 been observed. `delete_from_library` exists in the schema and was never sent.
+
+Both explicit false flags are measured. The three recorded CorOS 4.0.1
+sessions hold one `MOVE` (session 02, frame 25825) and one `DELETE` (session
+02, frame 19033); this is what each carries, decoded 2026-09-21.
+
+| field | `DELETE` | `MOVE` |
+|---|---|---|
+| `folder.is_factory` | present, false | present, false |
+| `folder.is_downloads` | absent | present, false |
+| `to_folder.is_factory` | n/a | absent |
+| `to_folder.is_downloads` | n/a | absent |
 
 ### 10.3 Setlists
 
@@ -1789,8 +1801,9 @@ every entry for that id.
 **Undo and redo** are drivable: a sparse `UndoRedo{UPDATE, undo: true}`
 (`08 01 28 01`) reverses the last grid edit and `redo: true` (`08 01 30 01`)
 reapplies it. Measured 2026-09-03 on CorOS 4.0.1 by preset read-back, and by a
-contributor on 4.1.0 (PR #42, where `undo()` and `redo()` land). `UndoRedo` also
-arrives after every accepted grid edit, which makes it an acceptance signal.
+contributor on 4.1.0. `undo()` and `redo()` send these messages. `UndoRedo`
+also arrives after every accepted grid edit, which makes it an acceptance
+signal.
 
 ## 12. What the unit announces, and when
 
@@ -2101,6 +2114,8 @@ wire, with no independent read-back.
 |---|---|---|---|
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
 | version read | `Version{action: READ}` | read-back | two messages come back; `version()` accepts only one carrying `device_serial_number` or `app_fw_version` (section 4.4) |
+| `set_device_name` | `Version{UPDATE, custom_name}` | read-back + on-unit | sparse echo, read-back, and restoration confirmed on CorOS 4.0.1 and 4.1.0 |
+| `inhibited_modules` | `CompilerInhibitedModules{READ}` | read-back | explicit false/false reply on CorOS 4.0.1 and 4.1.0; true semantics are schema-derived, not yet observed |
 | `create_local_backup` | `LocalBackup{CREATE}` then `LocalBackup{UPDATE, backup_json}` pushes, the last with `is_last_chunk` | captured only | section 10.5. `can_apply_backup` never appeared, so the refusal path is unverified |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply with `reason` |
@@ -2113,8 +2128,8 @@ wire, with no independent read-back.
 | `set_scene_label` / `set_scene_color` | `SceneLabel` / `SceneColor{UPDATE, index, label/color}` | read-back | colour is ARGB uint32; exact round-trip |
 | `copy_scene` | `SceneCopy{UPDATE, from_index, to_index, is_swap}` | read-back + on-unit | `from_index` and `is_swap` confirmed; label and colour travel with the state |
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the grid; `preset_payload` is ignored |
-| `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | three Cortex Control 4.0.1 captures + read-back | Every occupied entry in those captures exposed that exact key. The API also accepts the listing's `ProductData`, validates that its device-provided key belongs to the named setlist, and sends the key unchanged. Works, but asynchronously: a listing within about 2 s is stale, about 5 s is reliable |
-| `move_preset` | `File{MOVE, folder{is_downloads: false, files{key}}, to_folder{files{index}}}` | Cortex Control 4.0.1 capture + read-back | Source by file path, destination by index; asynchronous like delete. The explicit false flag is present on the captured wire shape. The API accepts either the exact name or a listing `ProductData` and never waits for a listing before sending |
+| `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | one captured `DELETE` + three-session key evidence + read-back | Every occupied entry in those captures exposed that exact key. The API also accepts the listing's `ProductData`, validates that its device-provided key belongs to the named setlist, and sends the key unchanged. Works, but asynchronously: a listing within about 2 s is stale, about 5 s is reliable |
+| `move_preset` | `File{MOVE, folder{is_factory: false, is_downloads: false, files{key}}, to_folder{files{index}}}` | one captured `MOVE` + read-back | Source by file path, destination by index; asynchronous like delete. The explicit false flag is present on the captured wire shape. The API accepts either the exact name or a listing `ProductData` and never waits for a listing before sending |
 | `set_param_scene_mode` | `Grid{UPDATE, ..., params{index, scene_mode}}` (flag alone) | read-back | a value in the same message voids it |
 | `set_chain_output` | `Grid{UPDATE, preset{chains{row, out_portid}}}` | read-back | required for a new chain: the unit never assigns an output on its own |
 | `set_param(Mixer(row), ...)` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |
@@ -2163,7 +2178,7 @@ wire, with no independent read-back.
 | `io_settings` / `set_input_level` / `set_output_level` | `IOSettings{READ}` / `{UPDATE, settings{in_port` or `out_port{port_id, level}}}` | read-back | also reports impedance, type, ground lift and `plugged` |
 | `global_eq` / `set_global_eq_bypassed` | `GlobalEQ{READ}` / `{UPDATE, bypassed}` | read-back | five bands reported as 28 parameters |
 | `mode` / `set_mode` | `Mode{READ}` / `{UPDATE, mode}` | read-back | a slot index; `available_modes` lists the configured slots |
-| host undo / redo (`undo()` / `redo()` land in PR #42) | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | preset read-back | measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0 |
+| `undo` / `redo` | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | preset read-back | measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0; a bypass edit was reversed and reapplied on disposable preset copies; empty-history behaviour is unknown |
 | `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as `UPDATE` in 2 to 11 ms; `is_dirty` has no presence; pushed unsolicited only when the flag changes |
 | `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
 | `set_param(LaneInput(row), ...)` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | `NOISE REDUCTION`, `BYPASS` and `INPUT GAIN`, per-scene included |

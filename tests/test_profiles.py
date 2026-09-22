@@ -256,7 +256,7 @@ def test_the_4_1_profile_connects_with_its_snapshot_and_measured_operations():
     assert cls.VERIFIED == frozenset({
         "active_scene", "clear_expression", "create_local_backup",
         "read_current_preset", "set_bypass",
-        "set_chain_input", "set_expression", "set_global_eq", "set_hold_timing",
+        "set_chain_input", "set_device_name", "set_expression", "set_global_eq", "set_hold_timing",
         "set_input_port", "set_param", "set_scene_color", "set_scene_label", "set_tempo_mode",
         "switch_scene", "tempo_mode", "update_settings",
     })

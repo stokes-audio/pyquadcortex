@@ -20,7 +20,7 @@ _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
 
 
 class QuadCortex41(QuadCortex):
-    """Quad Cortex on CorOS 4.1 - connects with 17 measured operations.
+    """Quad Cortex on CorOS 4.1 - connects with 18 measured operations.
 
     Contributor hardware run on 2026-09-11 (fork commit ``99a5cd5``), combining
     this profile with PR #62's live-preset fix, passed 95 tests with 4
@@ -28,7 +28,8 @@ class QuadCortex41(QuadCortex):
     app firmware d14e. The maintainer has not reproduced that run, which is what
     ``Evidence.CONTRIBUTED`` says here. Profile-aware runs measured the
     operations in ``VERIFIED`` below. ``create_local_backup`` also has its own
-    dated 4.1.0 capture. Every other inherited operation refuses under
+    dated 4.1.0 capture, and the separately contributed device-name round trip
+    verifies ``set_device_name``. Every other inherited operation refuses under
     ``Support.VERIFIED`` and runs with a warning under
     ``Support.EXPERIMENTAL``. Its generated constants are bound to the
     contributed CorOS 4.1.0 snapshot rather than the 4.0.1 compatibility
@@ -56,6 +57,7 @@ class QuadCortex41(QuadCortex):
         "set_global_eq",
         "set_hold_timing",
         "set_input_port",
+        "set_device_name",
         "set_param",
         "set_scene_color",
         "set_scene_label",
