@@ -26,9 +26,10 @@ pinned offline and were exercised on CorOS 4.0.1 and 4.1.0 hardware.
 
 `delete_preset()` and `move_preset()` now also accept the `ProductData` returned
 by `list_presets()`, validate that its key belongs to the requested setlist, and
-send that key unchanged. The exact-name form remains listing-free and preserves
-the measured CorOS 4.0.1 `<setlist>/<name>.pb` wire shape, including hardware
-cleanup when listing reads are silent. The captured move shape now also carries
+send that key unchanged. Both take `str | ProductData`, so a caller that passes
+anything else is a type error. The exact-name form remains listing-free and
+preserves the measured CorOS 4.0.1 `<setlist>/<name>.pb` wire shape, including
+hardware cleanup when listing reads are silent. The captured move shape carries
 its explicit `is_downloads: false` field. Unmeasured rename and occupied-slot
 swap behavior are deliberately not exposed.
 

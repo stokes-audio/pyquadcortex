@@ -1363,12 +1363,24 @@ File{action: DELETE, type: 0,
 
 ```
 File{action: MOVE, type: 0,
-     folder{key: <setlist path>, files{key: "<setlist path>/<name>.pb"}},
+     folder{key: <setlist path>, is_factory: false, is_downloads: false,
+            files{key: "<setlist path>/<name>.pb"}},
      to_folder{key: <setlist path>, files{index: 219}}}
 ```
 
 Source by file path, destination by linear index. Only same-setlist moves have
 been observed. `delete_from_library` exists in the schema and was never sent.
+
+Both explicit false flags are measured. The three recorded CorOS 4.0.1
+sessions hold one `MOVE` (session 02, frame 25825) and one `DELETE` (session
+02, frame 19033); this is what each carries, decoded 2026-09-21.
+
+| field | `DELETE` | `MOVE` |
+|---|---|---|
+| `folder.is_factory` | present, false | present, false |
+| `folder.is_downloads` | absent | present, false |
+| `to_folder.is_factory` | n/a | absent |
+| `to_folder.is_downloads` | n/a | absent |
 
 ### 10.3 Setlists
 
@@ -2106,8 +2118,8 @@ wire, with no independent read-back.
 | `set_scene_label` / `set_scene_color` | `SceneLabel` / `SceneColor{UPDATE, index, label/color}` | read-back | colour is ARGB uint32; exact round-trip |
 | `copy_scene` | `SceneCopy{UPDATE, from_index, to_index, is_swap}` | read-back + on-unit | `from_index` and `is_swap` confirmed; label and colour travel with the state |
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the grid; `preset_payload` is ignored |
-| `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | three Cortex Control 4.0.1 captures + read-back | Every occupied entry in those captures exposed that exact key. The API also accepts the listing's `ProductData`, validates that its device-provided key belongs to the named setlist, and sends the key unchanged. Works, but asynchronously: a listing within about 2 s is stale, about 5 s is reliable |
-| `move_preset` | `File{MOVE, folder{is_downloads: false, files{key}}, to_folder{files{index}}}` | Cortex Control 4.0.1 capture + read-back | Source by file path, destination by index; asynchronous like delete. The explicit false flag is present on the captured wire shape. The API accepts either the exact name or a listing `ProductData` and never waits for a listing before sending |
+| `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | one captured `DELETE` + three-session key evidence + read-back | Every occupied entry in those captures exposed that exact key. The API also accepts the listing's `ProductData`, validates that its device-provided key belongs to the named setlist, and sends the key unchanged. Works, but asynchronously: a listing within about 2 s is stale, about 5 s is reliable |
+| `move_preset` | `File{MOVE, folder{is_factory: false, is_downloads: false, files{key}}, to_folder{files{index}}}` | one captured `MOVE` + read-back | Source by file path, destination by index; asynchronous like delete. The explicit false flag is present on the captured wire shape. The API accepts either the exact name or a listing `ProductData` and never waits for a listing before sending |
 | `set_param_scene_mode` | `Grid{UPDATE, ..., params{index, scene_mode}}` (flag alone) | read-back | a value in the same message voids it |
 | `set_chain_output` | `Grid{UPDATE, preset{chains{row, out_portid}}}` | read-back | required for a new chain: the unit never assigns an output on its own |
 | `set_param(Mixer(row), ...)` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |
