@@ -20,12 +20,12 @@ _DEVICE_NAMES = {pa.VersionMessage.QC: "Quad Cortex",
 
 
 class QuadCortex41(QuadCortex):
-    """Quad Cortex on CorOS 4.1 - connects with 16 measured operations.
+    """Quad Cortex on CorOS 4.1 - connects with 17 measured operations.
 
-    Contributor hardware run 99a5cd5 on 2026-09-11, combining this profile with
-    PR #62's live-preset fix, passed 95 tests with 4 fixture-dependent skips and
-    all 16 claimed operations green on CorOS 4.1.0 / app firmware d14e. The
-    maintainer has not reproduced that run, which is what
+    Contributor hardware run on 2026-09-11 (fork commit ``99a5cd5``), combining
+    this profile with PR #62's live-preset fix, passed 95 tests with 4
+    fixture-dependent skips and all 16 claimed operations green on CorOS 4.1.0 /
+    app firmware d14e. The maintainer has not reproduced that run, which is what
     ``Evidence.CONTRIBUTED`` says here. Profile-aware runs measured the
     operations in ``VERIFIED`` below. ``create_local_backup`` also has its own
     dated 4.1.0 capture. Every other inherited operation refuses under

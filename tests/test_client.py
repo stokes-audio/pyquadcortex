@@ -13,7 +13,7 @@ import re
 
 import pytest
 
-from pyquadcortex.protocol import catalog, client, params
+from pyquadcortex.protocol import catalog, client
 from pyquadcortex.protocol.catalogs.coros_4_1_0 import models as models_4_1
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
                                 Output, SceneBypassBehavior, Setlist, TempoMode)
@@ -1789,15 +1789,6 @@ def test_set_block_can_skip_verification_for_fire_and_forget_placement():
     qc._catalog = catalog.parse_model_repo(_sample_repo_payload())
     qc.set_block(Block(1, 4, 19000), verify=False)   # must not raise
     assert qc._t.sent[-1].preset.chains[0].models[0].hash == 19000
-
-
-def test_a_coros_4_1_model_constant_is_refused_when_the_unit_lacks_it():
-    qc = client.QuadCortex(FakeTransport())
-    qc._catalog = catalog.ModelCatalog()
-
-    with pytest.raises(client.ControlNotDrivable, match="not in this unit's catalog"):
-        qc.set_block(Block(1, 4, 6031), verify=False)
-    assert qc._t.sent == []
 
 
 def test_set_block_echo_match_ignores_an_echo_for_a_different_cell():

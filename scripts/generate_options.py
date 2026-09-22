@@ -663,6 +663,8 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
         1 for model in cat for parameter in model.parameters
         if parameter.dynamic
     )
+    # Spelled out at 12 so the committed 4.0.1 module regenerates byte for
+    # byte; every other count renders as a numeral.
     dynamic_count = (
         "Twelve" if dynamic_parameters == 12 else str(dynamic_parameters)
     )

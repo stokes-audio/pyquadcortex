@@ -45,6 +45,7 @@ import pytest
 
 from pyquadcortex.device import entries
 from pyquadcortex.device.watch import WatchOutcome
+from pyquadcortex.protocol import profiles
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
 from pyquadcortex.protocol.targets import Block
 
@@ -302,7 +303,7 @@ def test_a_version_read_is_answered_and_then_questioned(
         f"one Version READ brought back {len(answers)} identity answers: {seen}")
     assert len(reads) == 1, (
         f"one Version READ brought back {len(reads)} unit questions: {seen}")
-    if profile.__name__ == "QuadCortex41":
+    if issubclass(profile, profiles.QuadCortex41):
         assert len(announce_answers) <= 1, (
             "the earlier 4.1 connect announce was answered "
             f"{len(announce_answers)} times")
