@@ -225,33 +225,6 @@ Then replay the captured shape host to device, save, and read it back. A shape i
 confirmed once the value survives a save and recall; see
 [Operation coverage](protocol.md#operation-coverage).
 
-## The catalog payload is saved, so you do not need the unit
-
-The three generators in `scripts/` read a `ModelRepo` payload, live or saved:
-
-    python scripts/generate_options.py --snapshot coros_4_0_1 \
-        --payload tests/fixtures/catalog/model_repo_coros_4_0_1.bin
-
-`tests/fixtures/catalog/model_repo_coros_4_0_1.bin` is that payload for CorOS
-4.0.1, read from the baseline unit on 2026-09-22 (`zenos_git_hash` 4.0.1,
-`app_fw_version` d14e, `device_type` `QC`). Regenerating the 4.0.1 snapshot needs
-this file, not the unit.
-
-Two things it is useful to know about the payload.
-
-It describes every model the firmware knows, including plugin content the unit
-holds no licence for. `Model.is_factory` is false for anything carrying a `sku`
-or a `plugin_id`, and that marks a model as purchasable, not purchased. The
-baseline unit has no plugin purchases and its catalog still lists the Gojira,
-Cory Wong, Nolly and Plini families. So the catalog is a firmware fact, and the
-generated snapshot does not vary with what a unit owns. Neural Capture slots are
-user content and carry no option lists at all.
-
-Each read rotates a per-model `blob` token, so two payloads never match byte for
-byte. Blank the 351 `blob` attributes and the catalog read on 2026-07-26 is
-identical to the one read on 2026-09-22. Compare parsed catalogs, never payload
-hashes.
-
 ## Caveats
 
 `_dispatch` and `_t` are private. This is a debugging technique, not an API.

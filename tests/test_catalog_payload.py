@@ -17,37 +17,44 @@ still matches its own recorded input, which is what makes regeneration
 reproducible for someone who has no unit.
 """
 import importlib.util
+import json
 import pathlib
+import sys
 
 import pytest
 
 from pyquadcortex.protocol import catalog
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "scripts"))
 
-#: Each committed payload and the snapshot package it generates. A new profile
-#: that saves its payload adds a row here, and is then held the same way.
+import _snapshots  # noqa: E402  (snapshot_version, so the version is derived not repeated)
+
+#: Each committed payload, the snapshot package it generates, and that
+#: catalog's recorded shape as `(models, factory models, factory categories)`.
+#: A new profile that saves its payload adds a row here, and is then held the
+#: same way. The shape lives in the row rather than in the test, so a payload
+#: cannot be added and silently go unchecked.
 PAYLOADS = [
-    ("coros_4_0_1", "tests/fixtures/catalog/model_repo_coros_4_0_1.bin"),
+    ("coros_4_0_1", "tests/fixtures/catalog/model_repo_coros_4_0_1.bin", (533, 414, 22)),
 ]
 
 GENERATORS = ("models", "params", "options")
 
 
-def _generator(name):
-    spec = importlib.util.spec_from_file_location(
-        f"qc_{name}", REPO / "scripts" / f"generate_{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+#: `tests/test_generators.py` already loads these, registers them in
+#: `sys.modules` and caches them. Reuse it rather than keeping a second copy:
+#: each bare exec of a generator inserts the repo root and `scripts/` at
+#: `sys.path[0]` again, and those entries outlive the test that made them.
+from test_generators import _load as _generator  # noqa: E402
 
 
-@pytest.fixture(scope="module", params=PAYLOADS, ids=[s for s, _ in PAYLOADS])
+@pytest.fixture(scope="module", params=PAYLOADS, ids=[row[0] for row in PAYLOADS])
 def payload(request):
-    snapshot, relative = request.param
+    snapshot, relative, shape = request.param
     path = REPO / relative
     assert path.exists(), f"{relative} is missing; it is the snapshot's input"
-    return snapshot, catalog.parse_model_repo(path.read_bytes())
+    return snapshot, catalog.parse_model_repo(path.read_bytes()), shape
 
 
 @pytest.mark.parametrize("name", GENERATORS)
@@ -62,8 +69,8 @@ def test_the_payload_still_generates_the_committed_snapshot(payload, name):
         python scripts/generate_<name>.py --snapshot <snapshot> \\
             --payload tests/fixtures/catalog/model_repo_<snapshot>.bin
     """
-    snapshot, parsed = payload
-    generated = _generator(name).render(parsed, snapshot=snapshot)
+    snapshot, parsed, _ = payload
+    generated = _generator(f"generate_{name}").render(parsed, snapshot=snapshot)
     committed_path = (REPO / "pyquadcortex" / "protocol" / "catalogs"
                       / snapshot / f"{name}.py")
     committed = committed_path.read_text(encoding="utf-8")
@@ -83,17 +90,43 @@ def test_the_payload_still_generates_the_committed_snapshot(payload, name):
         f"and read the diff. Never edit a generated file by hand.")
 
 
-def test_the_payload_is_the_catalog_it_claims_to_be(payload):
-    """A shape tripwire, so a truncated or wrong-firmware payload is caught here.
+def test_the_payload_still_has_the_shape_its_row_records(payload):
+    """A named shape, so a swapped payload says what changed and not just where.
 
-    The numbers are the 4.0.1 catalog's own, recorded when the generators last
-    ran: 533 models, of which 414 are factory across 22 categories. They are
-    asserted rather than derived so that replacing the file with a different
-    unit's reply fails loudly instead of quietly regenerating a new snapshot.
+    This catches nothing the byte-for-byte test misses: a truncated payload
+    raises while the fixture parses it, and a different unit's reply already
+    fails the comparison above. What it adds is the failure message. "533 models
+    became 471" names the problem; "first difference at line 812" does not.
     """
-    snapshot, parsed = payload
-    if snapshot != "coros_4_0_1":
-        pytest.skip(f"no recorded shape for {snapshot}")
+    _, parsed, (models, factory_models, factory_categories) = payload
     factory = [m for m in parsed if m.is_factory]
-    assert (len(parsed), len(factory)) == (533, 414)
-    assert len({m.category for m in factory}) == 22
+    assert (len(parsed), len(factory)) == (models, factory_models)
+    assert len({m.category for m in factory}) == factory_categories
+
+
+def test_every_payload_records_which_unit_produced_it(payload):
+    """A payload cannot say what firmware it came from, so a sibling file does.
+
+    The XML root carries no attributes and the tar member no metadata, so
+    nothing in the payload states its own origin. Without the record beside it,
+    "this is the 4.0.1 catalog" rests on the committer's word and no later
+    reader can check which unit generated the snapshot.
+
+    The record holds the firmware fields of the `Version` reply and leaves out
+    the serial number, MAC address and custom name. Those identify an owner's
+    unit and say nothing about the firmware.
+    """
+    snapshot, _, _ = payload
+    relative = next(r for s, r, _ in PAYLOADS if s == snapshot)
+    record = (REPO / relative).with_suffix(".provenance.json")
+    assert record.exists(), (
+        f"{record.relative_to(REPO)} is missing. A payload with no provenance "
+        f"record cannot be checked against the firmware it claims to be from.")
+    data = json.loads(record.read_text(encoding="utf-8"))
+    reply = data["version_reply"]
+    assert reply["zenos_git_hash"] == _snapshots.snapshot_version(snapshot)
+    assert reply["device_type"] and reply["app_fw_version"]
+    for owners in ("device_serial_number", "mac_address", "custom_name"):
+        assert owners not in reply, (
+            f"{owners} identifies a unit's owner, not its firmware; "
+            f"it does not belong in a committed record")

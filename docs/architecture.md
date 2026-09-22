@@ -510,7 +510,7 @@ On the unit it covers:
    modules on the new class. Each generator also takes `--payload`, a saved
    `ModelRepo` reply, so a snapshot can be rebuilt with no unit attached;
    `tests/fixtures/catalog/model_repo_coros_4_0_1.bin` is that reply for 4.0.1.
-   Save the new profile's alongside it. `tests/test_catalog_payload.py` holds
+   Save the new profile's payload alongside it. `tests/test_catalog_payload.py` holds
    each committed payload to the snapshot it generates.
 2. **Run the suite.** `pytest tests/hardware --hardware --profile YourClass`.
    `--profile` connects as that class instead of the one the unit resolves to, so
