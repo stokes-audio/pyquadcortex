@@ -425,7 +425,10 @@ own `Version{READ}` about 1 ms behind it, and the answer to the announce
 (carrying `cortex_control_version_valid`, at +0.73 s).
 CorOS 4.1.0 produced the same three shapes in a contributed 2026-09-11 capture:
 identity `UPDATE`, the unit's action-only `READ`, then the compatibility
-`UPDATE`.
+`UPDATE`. Four narrower 4.1.0 connection observations on 2026-09-04 did not see
+that final answer before their observation windows ended. The later complete
+capture is why the missing answer is recorded here without treating it as a
+profile difference.
 
 ### 4.3 Keepalive and disconnect
 
