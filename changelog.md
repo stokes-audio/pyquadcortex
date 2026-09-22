@@ -15,21 +15,14 @@ sustained stretch without a correction.
 
 ## Unreleased
 
-### `delete_preset()` and `move_preset()` say which types they take
-
-Both declare `str | ProductData` again. The previous entry left the parameter
-unannotated, so a downstream caller passing a number type-checked and then sent
-a delete for a preset named after it. The captured `DELETE` and `MOVE` shapes
-are back in the docstrings with their dates, and `protocol.md` section 10.2
-prints `is_downloads` on `MOVE`, matching the coverage table.
-
 ### Preserve device-provided preset keys without adding a listing dependency
 
 `delete_preset()` and `move_preset()` now also accept the `ProductData` returned
 by `list_presets()`, validate that its key belongs to the requested setlist, and
-send that key unchanged. The exact-name form remains listing-free and preserves
-the measured CorOS 4.0.1 `<setlist>/<name>.pb` wire shape, including hardware
-cleanup when listing reads are silent. The captured move shape now also carries
+send that key unchanged. Both take `str | ProductData`, so a caller that passes
+anything else is a type error. The exact-name form remains listing-free and
+preserves the measured CorOS 4.0.1 `<setlist>/<name>.pb` wire shape, including
+hardware cleanup when listing reads are silent. The captured move shape carries
 its explicit `is_downloads: false` field. Unmeasured rename and occupied-slot
 swap behavior are deliberately not exposed.
 

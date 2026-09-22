@@ -4223,9 +4223,11 @@ class QuadCortex:
         sent ``File{action: DELETE, type: 0, folder{key: <setlist path>,
         is_factory: false, files{key: "<setlist path>/<name>.pb"}}}`` - the
         preset is addressed by its device FILE PATH (name-based, ``.pb``
-        extension), NOT by slot index. Measured 2026-09-21: every occupied
-        preset-setlist entry in the three recorded CorOS 4.0.1 sessions
-        carried that same key shape.
+        extension), NOT by slot index. ``folder.is_factory`` is present and
+        false; ``folder.is_downloads`` is absent. One captured ``DELETE``,
+        session 02 frame 19033, decoded 2026-09-21. Separately, every occupied
+        preset-setlist entry in all three recorded sessions carried that same
+        key shape.
         """
         msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
         msg.folder.key = setlist_path
@@ -4248,8 +4250,10 @@ class QuadCortex:
         is_factory: false, is_downloads: false, files{key: "<setlist
         path>/<name>.pb"}}, to_folder{key: <setlist path>, files{index:
         219}}}`` - source by FILE PATH, destination by LINEAR slot index.
-        ``is_downloads`` is present and false here and absent from the DELETE
-        in the same session. Measured 2026-09-21.
+        Both ``folder`` flags are present and false; ``to_folder`` carries
+        neither. ``is_downloads`` is absent from the DELETE in the same
+        session. One captured ``MOVE``, session 02 frame 25825, decoded
+        2026-09-21.
         """
         msg = pa.FileMessage(action=pa.MessageAction.MOVE, type=0)
         msg.folder.key = setlist_path
