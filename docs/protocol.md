@@ -1795,8 +1795,9 @@ every entry for that id.
 **Undo and redo** are drivable: a sparse `UndoRedo{UPDATE, undo: true}`
 (`08 01 28 01`) reverses the last grid edit and `redo: true` (`08 01 30 01`)
 reapplies it. Measured 2026-09-03 on CorOS 4.0.1 by preset read-back, and by a
-contributor on 4.1.0 (PR #42, where `undo()` and `redo()` land). `UndoRedo` also
-arrives after every accepted grid edit, which makes it an acceptance signal.
+contributor on 4.1.0. `undo()` and `redo()` send these messages. `UndoRedo`
+also arrives after every accepted grid edit, which makes it an acceptance
+signal.
 
 ## 12. What the unit announces, and when
 
@@ -2104,7 +2105,6 @@ wire, with no independent read-back.
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
 | version read | `Version{action: READ}` | read-back | two messages come back; `version()` accepts only one carrying `device_serial_number` or `app_fw_version` (section 4.4) |
 | `set_device_name` | `Version{UPDATE, custom_name}` | read-back + on-unit | sparse echo, read-back, and restoration confirmed on CorOS 4.0.1 and 4.1.0 |
-| `undo` / `redo` | `UndoRedo{UPDATE, undo}` / `{UPDATE, redo}` | read-back + on-unit | a bypass edit was reversed and reapplied on disposable preset copies; empty-history behaviour is unknown |
 | `inhibited_modules` | `CompilerInhibitedModules{READ}` | read-back | explicit false/false reply on CorOS 4.0.1 and 4.1.0; true semantics are schema-derived, not yet observed |
 | `create_local_backup` | `LocalBackup{CREATE}` then `LocalBackup{UPDATE, backup_json}` pushes, the last with `is_last_chunk` | captured only | section 10.5. `can_apply_backup` never appeared, so the refusal path is unverified |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
@@ -2168,7 +2168,7 @@ wire, with no independent read-back.
 | `io_settings` / `set_input_level` / `set_output_level` | `IOSettings{READ}` / `{UPDATE, settings{in_port` or `out_port{port_id, level}}}` | read-back | also reports impedance, type, ground lift and `plugged` |
 | `global_eq` / `set_global_eq_bypassed` | `GlobalEQ{READ}` / `{UPDATE, bypassed}` | read-back | five bands reported as 28 parameters |
 | `mode` / `set_mode` | `Mode{READ}` / `{UPDATE, mode}` | read-back | a slot index; `available_modes` lists the configured slots |
-| host undo / redo (`undo()` / `redo()` land in PR #42) | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | preset read-back | measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0 |
+| `undo` / `redo` | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | preset read-back | measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0; a bypass edit was reversed and reapplied on disposable preset copies; empty-history behaviour is unknown |
 | `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as `UPDATE` in 2 to 11 ms; `is_dirty` has no presence; pushed unsolicited only when the flag changes |
 | `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
 | `set_param(LaneInput(row), ...)` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | `NOISE REDUCTION`, `BYPASS` and `INPUT GAIN`, per-scene included |
