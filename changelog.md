@@ -57,9 +57,13 @@ all seven out, read on the unit 2026-09-16 with positions 0 and 3 driven from a
 host. The same word draws two ways on two controls, so nothing in the catalog's
 text predicts which.
 
-Nineteen controls have now been read. Two shorten a word, four draw circles
+Twenty controls have now been read. Three shorten a word, four draw circles
 instead of words, and the other thirteen match the catalog. `Osc1Wave` is still
-the only enum whose names are known to differ from what the screen shows.
+the only enum whose names are known to differ from what the screen shows. The
+CorOS 4.1 `Overlord Synth` rename was re-driven across all seven positions on
+2026-09-23; it confirms that catalog position 5 displays `WHT` and position 6
+displays `PNK`, so the 4.1 enum now carries the same guarded correction as the
+4.0.1 snapshot.
 
 ### New: `options.OPTION_USAGE` says how many parameters each option list decides
 
