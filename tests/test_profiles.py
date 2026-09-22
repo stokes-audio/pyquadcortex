@@ -256,7 +256,7 @@ def test_the_4_1_profile_exposes_only_operations_with_contributed_evidence():
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
     verified = {
         "capture_screen", "create_local_backup", "graphics_tree",
-        "swipe_screen", "tap_screen",
+        "set_device_name", "swipe_screen", "tap_screen",
     }
     assert cls.VERIFIED == frozenset(verified)
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"

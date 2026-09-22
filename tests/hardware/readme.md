@@ -9,6 +9,11 @@ successful run leaves the unit exactly as it found it.
 pytest tests/hardware --hardware
 ```
 
+The undo/redo test makes a disposable copy of the loaded preset, edits that
+copy, then independently restores the original and deletes the copy. Saving the
+copy clears its instrument tag and makes the scene active at save time its
+default scene; those metadata changes affect only the disposable copy.
+
 `pytest --hardware` from the repo root also works, and runs both suites, the
 offline one and this one. Name the directory unless you want that.
 
@@ -76,9 +81,10 @@ offline modules do `from waiting import ...`, which works only while pytest puts
   callables put the grid right and leave the flag set. A session teardown clears
   it with a recall, and only when the preset was clean before the first test:
   unsaved edits that were already there are the owner's.
-- **It edits a scratch copy.** `scratch_preset` hands a test a disposable copy of
-  the loaded preset. Nothing here saves a preset, so if a run dies badly,
-  recalling any preset discards whatever it left on the grid.
+- **It edits a scratch copy.** `scratch_preset` saves a disposable copy of the
+  loaded preset and hands that copy to the test. It never saves over one of the
+  owner's presets; if a run dies badly, the fixed scratch name identifies the
+  copy that may need removing.
 
 ## Before you run it
 

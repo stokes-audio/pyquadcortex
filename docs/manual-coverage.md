@@ -18,10 +18,10 @@ A "candidate" names a message type from the unit's own schema or a field in
 
 ## Summary
 
-Of 106 features audited: **66 yes**, **9 partly**, **20 no**, **11 n/a**.
+Of 106 features audited: **69 yes**, **8 partly**, **18 no**, **11 n/a**.
 
-Of the 95 features a host could plausibly drive, 66 are fully covered and 9 are
-partly covered. Twenty remain untouched. Of those, a few are writes confirmed to
+Of the 95 features a host could plausibly drive, 69 are fully covered and 8 are
+partly covered. Eighteen remain untouched. Of those, a few are writes confirmed to
 do nothing with no route found (preset tags, duplicating a setlist as one
 operation), and two whole features need the physical world: creating a Neural
 Capture, and loading from the factory Captures Library. How an unknown gets
@@ -70,7 +70,7 @@ settled is in [capture.md](capture.md).
 | Remove a block | yes | `remove_block()` (the `DELETE` action; an `UPDATE` with `hash: 0` is ignored) |
 | Move a block | yes | `move_block(source, destination)`; a cross-row move makes the unit create a branch |
 | DSP capacity refusal | partly | detected, not predicted: a refused placement raises `BlockRefused`. Headroom cannot be read; `CPULoad` never arrives |
-| Global EQ / Input Gate auto-disable under load | partly | `CompilerInhibitedModules{global_gate, global_eq}` is decoded and arrives on grid edits. Not surfaced in the API |
+| Global EQ / Input Gate auto-disable under load | yes | `inhibited_modules()` reads `CompilerInhibitedModules{global_gate, global_eq}`; the same state also arrives on grid edits |
 | Input blocks: assign a physical input | yes | `set_chain_input()` |
 | Output blocks: assign a destination | yes | `set_chain_output()`. 16 to 18 are internal row-to-row; 19 (`MULTIPLE`) is the Multi-Out |
 | Input Gate Control | yes | `set_param(LaneInput(row), ...)`: `NOISE REDUCTION`, `BYPASS`, `INPUT GAIN`, per scene. `GAIN REDUCTION` is a meter |
@@ -93,7 +93,7 @@ settled is in [capture.md](capture.md).
 | Set Parameters as Defaults | no | `DefaultParameters` is decoded and subscribed; never written |
 | Looper X: place the block | yes | an ordinary catalog model |
 | Looper X: transport actions and parameters | partly | `looper()` reads the full status and `LooperState` names five states. The transport is not driven from here; MIDI CC#48 to 61 is the documented route |
-| Undo / redo | no | `UndoRedo` is decoded and subscribed. It arrives after accepted grid edits, so it is useful as an acceptance signal |
+| Undo / redo | yes | `undo()` and `redo()` send sparse `UndoRedo{UPDATE}` commands; a bypass edit was reversed and reapplied on disposable preset copies |
 
 ## 05 The Directory
 
@@ -160,7 +160,7 @@ the menu; fifteen of its fields are confirmed writable one at a time.
 | STOMP MODE BYPASS (auto-assign on load) | yes | `update_settings(stomp_mode_auto_assign=...)` |
 | HOLD TIMING, SWAP TEMPO AND TUNER, GIG VIEW ACCESS | yes | all three via `update_settings()`. `set_hold_timing()` takes `Milliseconds` and writes the index the unit stores (500 to 1000 ms in 100 ms steps); `hold_timing_ms()` reads it back |
 | LATENCY COMPENSATION | yes | `update_settings(enable_dynamic_delay_compensation=...)` |
-| Device name | no | candidates `Serialization`, `GeneralSettings` |
+| Device name | yes | `set_device_name()` sends sparse `Version{UPDATE, custom_name}`; read-back and restoration matched on CorOS 4.0.1 and 4.1.0 |
 | Firmware and serial | yes | `version()` |
 | Diagnostics (DSP, footswitches, USB) | no | `ModuleStats` is decoded and subscribed; `Diagnostics` and `DSPCommsDiagnostics` are not |
 | CorOS updates | no | `Updater` is decoded and subscribed; never driven, and out of scope for good |

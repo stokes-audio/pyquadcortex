@@ -30,7 +30,8 @@ class QuadCortex41(QuadCortex):
     showed its editor. ``swipe_screen`` and ``graphics_tree`` were subsequently
     exercised during physical 4.1.0 screen sweeps on 2026-09-08; this branch
     pins their protobuf wire shapes and host bounds.
-    These four operations and ``create_local_backup`` are VERIFIED; other
+    These four operations, ``create_local_backup``, and the separately
+    contributed ``set_device_name`` round trip are VERIFIED; other
     inherited operations refuse
     under ``Support.VERIFIED`` and run with a warning under
     ``Support.EXPERIMENTAL``. The snapshot is deliberately absent: binding the
@@ -51,7 +52,7 @@ class QuadCortex41(QuadCortex):
     EVIDENCE = Evidence.CONTRIBUTED
     VERIFIED = frozenset({
         "capture_screen", "create_local_backup", "graphics_tree",
-        "swipe_screen", "tap_screen",
+        "set_device_name", "swipe_screen", "tap_screen",
     })
     models = NoSnapshot("coros_4_1_0")
     params = NoSnapshot("coros_4_1_0")
