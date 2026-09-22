@@ -4187,7 +4187,8 @@ class QuadCortex:
                 return e.name
         return None
 
-    def _stored_preset_key(self, setlist_path: str, preset) -> str:
+    def _stored_preset_key(self, setlist_path: str,
+                           preset: str | pa.ProductData) -> str:
         """Resolve a display name or validate a listed ProductData key."""
         if not isinstance(preset, pa.ProductData):
             # Backward-compatible and deliberately listing-free: hardware
@@ -4210,14 +4211,21 @@ class QuadCortex:
                 f"setlist {setlist_path!r}")
         return preset.key
 
-    def delete_preset(self, setlist_path: str, preset):
+    def delete_preset(self, setlist_path: str, preset: str | pa.ProductData):
         """Delete a stored preset from ``setlist_path``.
 
         ``preset`` is either its exact display name or the ``ProductData``
-        returned by :meth:`list_presets`. On three CorOS 4.0.1 captures every
-        occupied entry's key was exactly ``<setlist>/<name>.pb``; passing a
-        listing entry avoids reconstructing it, while the name form remains a
-        listing-free compatibility path for best-effort cleanup.
+        returned by :meth:`list_presets`. Passing a listing entry sends the
+        device's own key. The name form stays listing-free, for cleanup that
+        cannot wait for a listing read.
+
+        Confirmed by capture: deleting "Test save to user sl" from slot 28E
+        sent ``File{action: DELETE, type: 0, folder{key: <setlist path>,
+        is_factory: false, files{key: "<setlist path>/<name>.pb"}}}`` - the
+        preset is addressed by its device FILE PATH (name-based, ``.pb``
+        extension), NOT by slot index. Measured 2026-09-21: every occupied
+        preset-setlist entry in the three recorded CorOS 4.0.1 sessions
+        carried that same key shape.
         """
         msg = pa.FileMessage(action=pa.MessageAction.DELETE, type=0)
         msg.folder.key = setlist_path
@@ -4226,14 +4234,22 @@ class QuadCortex:
             setlist_path, preset)
         return self._file_operation(msg)
 
-    def move_preset(self, setlist_path: str, preset, to_position):
+    def move_preset(self, setlist_path: str, preset: str | pa.ProductData,
+                    to_position):
         """Move a stored preset into ``to_position`` in the same setlist.
 
         ``to_position`` is either the linear slot index or the slot name shown on
         the unit (``"28D"``). ``preset`` may be its exact display name or the
         ``ProductData`` returned by :meth:`list_presets`; the latter supplies
-        the device's own key. Cortex Control 4.0.1 was captured adding
-        ``is_downloads: false`` to this MOVE shape.
+        the device's own key.
+
+        Confirmed by capture: dragging "Darkglass AO900 2_1" onto slot 28D
+        sent ``File{action: MOVE, type: 0, folder{key: <setlist path>,
+        is_factory: false, is_downloads: false, files{key: "<setlist
+        path>/<name>.pb"}}, to_folder{key: <setlist path>, files{index:
+        219}}}`` - source by FILE PATH, destination by LINEAR slot index.
+        ``is_downloads`` is present and false here and absent from the DELETE
+        in the same session. Measured 2026-09-21.
         """
         msg = pa.FileMessage(action=pa.MessageAction.MOVE, type=0)
         msg.folder.key = setlist_path

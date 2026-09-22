@@ -15,6 +15,14 @@ sustained stretch without a correction.
 
 ## Unreleased
 
+### `delete_preset()` and `move_preset()` say which types they take
+
+Both declare `str | ProductData` again. The previous entry left the parameter
+unannotated, so a downstream caller passing a number type-checked and then sent
+a delete for a preset named after it. The captured `DELETE` and `MOVE` shapes
+are back in the docstrings with their dates, and `protocol.md` section 10.2
+prints `is_downloads` on `MOVE`, matching the coverage table.
+
 ### Preserve device-provided preset keys without adding a listing dependency
 
 `delete_preset()` and `move_preset()` now also accept the `ProductData` returned

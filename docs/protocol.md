@@ -1363,12 +1363,18 @@ File{action: DELETE, type: 0,
 
 ```
 File{action: MOVE, type: 0,
-     folder{key: <setlist path>, files{key: "<setlist path>/<name>.pb"}},
+     folder{key: <setlist path>, is_factory: false, is_downloads: false,
+            files{key: "<setlist path>/<name>.pb"}},
      to_folder{key: <setlist path>, files{index: 219}}}
 ```
 
 Source by file path, destination by linear index. Only same-setlist moves have
 been observed. `delete_from_library` exists in the schema and was never sent.
+
+`is_downloads` is present and false on `MOVE` and absent from the `DELETE` in
+the same session. Measured 2026-09-21 in the three recorded CorOS 4.0.1
+sessions, which hold one `MOVE` (session 02, frame 25825) and one `DELETE`
+(session 02, frame 19033).
 
 ### 10.3 Setlists
 

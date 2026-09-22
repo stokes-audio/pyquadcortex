@@ -666,7 +666,12 @@ def test_move_preset_uses_an_authoritative_key_and_the_captured_flag():
     assert not sent.to_folder.HasField("is_factory")
 
 
-def test_move_preset_matches_the_captured_cortex_builder_bytes():
+def test_move_preset_serializes_the_captured_field_order_and_flags():
+    # Pins field numbering, field ORDER and the explicit false flags against the
+    # shape measured in windows-session-02 frame 25825 (CorOS 4.0.1). The key
+    # below is this test's own string, not a device-supplied one, so this says
+    # nothing about which key the caller should send - see the tests above for
+    # that. It does catch is_downloads or is_factory going away.
     setlist = "/media/p4/Presets/My Presets"
     product_key = f"{setlist}/Numb.pb"
     listing = _preset_listing(
@@ -1047,17 +1052,19 @@ def test_file_operations_do_not_raise_when_the_device_stays_silent():
     # File ops are asynchronous and every host write is STALLed, so a missing reply
     # says nothing about success. Raising made callers wrap each one in
     # try/except and verify by re-reading anyway.
-    transport = TimingOutTransport()
-    transport.broadcast = _preset_listing(
+    # Both forms of ``preset``. The by-name form is the one hardware teardown
+    # uses (tests/hardware/conftest.py), and a silent device is exactly the case
+    # it has to survive, so testing only the ProductData form leaves that hole.
+    source = _preset_listing(
         str(Setlist.USER),
         {"index": 1, "name": "Some Preset",
          "key": f"{Setlist.USER}/opaque-source"},
-        {"index": 219, "name": "Unsaved"},
-    )
-    qc = client.QuadCortex(transport)
-    source = transport.broadcast.folder.files[0]
-    assert qc.delete_preset(Setlist.USER, source) is None
-    assert qc.move_preset(Setlist.USER, source, "28D") is None
+    ).folder.files[0]
+    for preset in ("Some Preset", source):
+        qc = client.QuadCortex(TimingOutTransport())
+        assert qc.delete_preset(Setlist.USER, preset) is None
+        assert qc.move_preset(Setlist.USER, preset, "28D") is None
+    qc = client.QuadCortex(TimingOutTransport())
     assert qc.save_current_preset(Setlist.USER, "30A", "Some Preset") == "Some Preset"
 
 
