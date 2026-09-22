@@ -38,9 +38,8 @@ class FakeTransport:
     def send(self, msg):
         self.sent.append(msg)
 
-    def request(self, msg, timeout=5.0, match=None):
+    def request(self, msg, timeout=5.0):
         self.sent.append(msg)
-        self.last_match = match
         return self.canned.get(type(msg).__name__)
 
     def next_request_id(self):

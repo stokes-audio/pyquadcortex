@@ -25,7 +25,7 @@ class QuadCortex41(QuadCortex):
     not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here.
     ``create_local_backup`` has its own dated 4.1.0 capture. The contributed
     device-name round trip also verified ``set_device_name``; both are VERIFIED.
-    other inherited operations refuse under ``Support.VERIFIED`` and run with
+    Other inherited operations refuse under ``Support.VERIFIED`` and run with
     a warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
     binding the 4.0.1 constants would hand a 4.1 user names their unit does not
     use.

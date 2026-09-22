@@ -114,7 +114,7 @@ class LoopbackTransport:
         self.push(reply)
         return reply
 
-    def request(self, message, timeout=5.0, match=None):
+    def request(self, message, timeout=5.0):
         name = type(message).__name__
         self.sent.append(message)
         self.reads[name] += 1
@@ -126,8 +126,6 @@ class LoopbackTransport:
         if callable(reply):
             reply = reply()
         self.push(reply)          # every listener sees it first...
-        if match is not None and not match(reply):
-            raise TimeoutError(f"the canned {name} did not satisfy the waiter")
         return reply              # ...and only then does the caller wake
 
     # -- the unit's side ------------------------------------------------------
