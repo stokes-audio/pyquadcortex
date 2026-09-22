@@ -50,7 +50,19 @@ dependencies = [
 # Ask the compiler, never the metadata: grpcio-tools versions do not track
 # protobuf ones, and 1.82.1 declares `protobuf>=7.35.1` while still emitting
 # gencode 7.35.0.
-dev = ["pytest>=8", "grpcio-tools>=1.83.0", "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
+#
+# The `<2` on mypy is not in a decision record. Its reason is in b726d3e: "mypy
+# is pinned below 2 so the enforcer cannot change under CI". Whether to raise it
+# is an open question in `docs/STEERING.md` section 8.
+#
+# `packaging` is named because `tests/test_packaging.py` parses these requirement
+# strings with it: the module that holds every declared dependency to its pin
+# should not rest on one nothing declares. Every pytest this extra allows brings
+# it, so nothing new installs. The floor is pytest 9's own; pytest 8 declares
+# `packaging` with no floor, so on pytest 8 this can raise it, which costs
+# nothing because every API used here predates 22.
+dev = ["pytest>=8", "packaging>=22", "grpcio-tools>=1.83.0",
+       "mypy-protobuf>=3.6", "mypy>=1.15,<2"]
 
 [project.scripts]
 qcctl = "pyquadcortex.protocol.cli:main"

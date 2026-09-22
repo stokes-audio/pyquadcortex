@@ -595,6 +595,192 @@ def _unrestored(failed):
         + "\n  ".join(failed))
 
 
+def reload_loaded_preset(qc, before=None, away=6.0, settle=8.0,
+                         scene_patience=5.0):
+    """Reload the slot the unit is on, which is the only way to clear the flag.
+
+    A write marks the preset edited, and writing the original value back is
+    another write, so the per-test undo callables put the GRID right and leave
+    the FLAG set. Only a recall clears it.
+
+    Recalling the SAME slot does nothing: the unit sees no change. So this
+    recalls a different slot first and comes back. ``position`` is a linear slot
+    index, so the other slot is 0 or 1 rather than a neighbour - any slot the
+    unit actually loads will do, and the checks below prove one did.
+
+    ``before`` is the slot to come back to. A caller that knew it before the
+    test ran passes it, so the reload returns to where the test STARTED rather
+    than to wherever it ended, and the position check then fails if that slot
+    will not load - emptied, or the setlist moved under it. The session teardown
+    passes nothing and reloads whatever is loaded.
+
+    A recall RESETS the active scene (``_A_RECALL_RESETS`` in
+    ``device/entries.py``), so the scene is read first and put back after.
+
+    A recall also DISCARDS unsaved edits, so every caller has to have
+    established that the edits are this suite's own. ``preset_dirty_at_start``
+    is how.
+
+    ``away``, ``settle`` and ``scene_patience`` are the three waits, and only
+    the offline tests in ``tests/test_hardware_report.py`` pass anything but the
+    real ones.
+    """
+    before = qc.loaded_position() if before is None else before
+    scene = qc.active_scene()
+    other = 1 if before.position != 1 else 0
+    qc.recall_preset(before.folder_key, other, is_factory=before.is_factory)
+    time.sleep(away)
+    qc.recall_preset(before.folder_key, before.position,
+                     is_factory=before.is_factory)
+    time.sleep(settle)
+    # Confirmed, not sent and hoped for. A scene switch is not instantaneous -
+    # `test_preset_surface.py` needs a watch with a 5 s timeout to see the unit
+    # echo one - and a switch that never landed is the state-neutrality break
+    # this line exists to prevent, silently.
+    qc.switch_scene(scene)
+    deadline = time.monotonic() + scene_patience
+    back = qc.active_scene()
+    while back != scene and time.monotonic() < deadline:
+        time.sleep(0.2)
+        back = qc.active_scene()
+    assert back == scene, (
+        f"the unit is on scene {back}, not {scene} where it started; the recall "
+        f"reset it and the switch back did not land")
+    now = qc.loaded_position()
+    assert now.position == before.position, (
+        f"the unit is on slot {now.position}, not {before.position} where the "
+        f"reload was told to come back to")
+    # Back on the right slot and still edited means the reload was a no-op -
+    # the other slot was probably empty - and the writes are still on the grid.
+    assert qc.preset_dirty(timeout=15.0) is False, (
+        f"slot {before.position} is still showing unsaved edits, so the reload "
+        f"did not take and the writes are still on the grid")
+
+
+@pytest.fixture
+def reload_the_loaded_preset(qc):
+    """:func:`reload_loaded_preset` bound to the connection, as a callable.
+
+    A fixture rather than an import: pytest keeps ONE module named ``conftest``
+    and it is whichever DIRECTORY pytest walked into last, which is not the same
+    as what it collected - a plain offline run collects no hardware test and
+    imports this file anyway, for ``pytest_ignore_collect``. So the name is not
+    a stable way to reach this module. Measured on pytest 9.1.1, four targets.
+
+    The slot is read HERE, when the fixture is set up and before the test runs,
+    so the reload comes back to where the test started rather than to wherever
+    the test left the unit.
+    """
+    before = qc.loaded_position()
+    return lambda: reload_loaded_preset(qc, before=before)
+
+
+def _dirty_now(connection):
+    """The edited flag, from the burst's own snapshot when it warmed one.
+
+    ``PresetDirtyMessage`` is in :data:`HandshakeBurst.BURST_TAIL`, so the unit
+    announces the flag during the connect burst and the cache has it before any
+    test runs. Reading the snapshot costs no request, and ``preset_dirty``
+    documents that the FIRST request after connecting is sometimes dropped -
+    which, session-scoped, would fail every collected test rather than one.
+    Falls back to the read when the burst warmed nothing.
+    """
+    held = connection[3].get("dirty")
+    if held and "is_dirty" in held:
+        return bool(held["is_dirty"])
+    return connection[0].preset_dirty(timeout=15.0)
+
+
+@pytest.fixture
+def a_clean_preset(qc, preset_dirty_at_start, reload_the_loaded_preset):
+    """A loaded preset with the edited flag clear, for a test that needs it to
+    CHANGE.
+
+    ``PresetDirty`` announces a change of the flag rather than an edit, so one
+    transition is available per run and a test watching for it has to start
+    from clear. It will not be: an undo is a write, so any earlier module that
+    wrote a grid value leaves the flag set, and one sorts ahead of the module
+    that wants this. Reloading is what clears it.
+
+    Skips rather than reloads when the preset was already edited before the
+    session began. Those edits are the owner's and a recall would discard them.
+    """
+    if preset_dirty_at_start:
+        pytest.skip(
+            "the loaded preset already had unsaved changes when this session "
+            "started. Clearing them means a recall, which would throw the "
+            "owner's work away. Save or reload the preset on the unit and run "
+            "this again.")
+    if qc.preset_dirty(timeout=15.0):
+        reload_the_loaded_preset()
+
+
+@pytest.fixture(scope="session")
+def preset_dirty_at_start(_connection):
+    """Whether the loaded preset had unsaved edits before any test ran.
+
+    Whose edits they are decides what may be done with them. Edits already here
+    are the OWNER's: nothing in this suite can put them back, so anything that
+    restores by recalling refuses to run. Edits that appear later are the
+    suite's own, and a recall is how they are cleared.
+
+    This cannot see an edit the owner makes on the unit DURING a run; the suite
+    already requires exclusive access, and the readme says not to touch it.
+    """
+    return _dirty_now(_connection)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _preset_left_as_found(_connection, preset_dirty_at_start):
+    """Put the edited flag back, which a value restore cannot (ADR-0005).
+
+    ADR-0005 promises a successful run leaves the unit exactly as it found it.
+    The per-test ``restores`` callables cannot deliver that on their own: they
+    write the original VALUE back, and a write is what marks the preset edited,
+    so the grid ends right and the flag ends set. The unit was then handed back
+    showing unsaved edits it did not start with.
+
+    Runs once, after every test, and only when the preset was CLEAN at the
+    start. Unsaved edits that were already there are the owner's and a recall
+    would discard them.
+
+    The decision is :func:`put_the_edited_flag_back`, which is a plain function
+    so that ``tests/test_hardware_report.py`` can drive all four of its rows
+    with no unit attached. It is the one call in this suite that can discard a
+    person's unsaved work, so it is not taken on trust.
+    """
+    yield
+    put_the_edited_flag_back(_connection[0], preset_dirty_at_start)
+
+
+def put_the_edited_flag_back(qc, dirty_at_start, **reload):
+    """Clear the edited flag when this suite is the one that set it.
+
+    Four rows, and only the first one touches the unit:
+
+    ===================  ==========  ===========================================
+    dirty at start       dirty now   what happens
+    ===================  ==========  ===========================================
+    no                   yes         reload, which clears the flag
+    yes                  either      nothing: the edits are the owner's
+    no                   no          nothing: there is nothing to clear
+    ===================  ==========  ===========================================
+
+    The read is inside the try with the reload. A link that died during the run
+    makes it raise, and that is exactly when the unit is left edited and the
+    owner needs the agreed sentence rather than a traceback.
+    """
+    if dirty_at_start:
+        return
+    try:
+        if not qc.preset_dirty(timeout=15.0):
+            return
+        reload_loaded_preset(qc, **reload)
+    except Exception as exc:                         # noqa: BLE001 - reported, not swallowed
+        raise _unrestored(
+            [f"clear the edited flag this suite set on the loaded preset: {exc!r}"])
+
+
 @pytest.fixture
 def restores():
     """Register undo callables; they run in reverse, failure or not.
@@ -688,7 +874,7 @@ def _release_scratch(qc, before, setlist, name, settle=3.0):
 
 
 @pytest.fixture
-def scratch_preset(qc):
+def scratch_preset(qc, preset_dirty_at_start):
     """A disposable copy of the loaded preset in a free User slot.
 
     Yields ``(folder_key, position, name)``. Teardown recalls the original slot
@@ -697,7 +883,13 @@ def scratch_preset(qc):
     """
     from pyquadcortex.protocol import Setlist
     before = qc.loaded_position()
-    assert qc.preset_dirty() is False, "the loaded preset has unsaved edits; save or reload it first"
+    # The same question `restored` asks, for the same reason: this saves a copy
+    # of the grid and recalls the original afterwards, so edits that were the
+    # owner's would be captured into the copy and then discarded from the slot.
+    # Edits a previous test made are the suite's own and go the same way.
+    assert preset_dirty_at_start is False, (
+        "the loaded preset already had unsaved edits when this session started; "
+        "save or reload it on the unit and run again")
     free = _scratch_slot(qc.list_presets(Setlist.USER, include_empty=True),
                          SCRATCH_NAME)
     # The try opens BEFORE the save, because the save is itself a way to leave
