@@ -17,10 +17,11 @@ sustained stretch without a correction.
 
 ### Conditional editor metadata is exposed
 
-Catalog parameters now preserve `toggleOn`, `toggleOff`, and `toggleStep` as
-integer tuples. They are published as device metadata without guessing how a
-host editor should interpret them; self-references and unknown tokens remain
-safe and local to the affected parameter.
+Catalog parameters now expose `toggle_on`, `toggle_off`, and `toggle_steps` as
+integer tuples: the catalog's own conditional-editor references, published
+without a claim about how a host editor should act on them. Read from the CorOS
+4.0.1 catalog, where 132, 83 and 13 parameters carry them.
+
 ### Rename the unit, drive undo/redo, and read inhibited modules
 
 `set_device_name()` sends a sparse Version update. `undo()` and `redo()` drive

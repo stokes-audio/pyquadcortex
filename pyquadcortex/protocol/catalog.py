@@ -232,9 +232,14 @@ class Parameter:
     #: Addressing a parameter keeps using the index. This says where a control
     #: is drawn, not what selects it.
     display_pos: int | None = None
-    #: Parameter indexes named by the catalog's conditional-editor metadata.
-    #: They are exposed as evidence, not interpreted as host-side behaviour.
+    #: Parameter indexes named by the catalog's conditional-editor metadata,
+    #: on 132 and 83 parameters. Inferred from the catalog's shape, not measured
+    #: on a unit: the Splitter is the clearest case, where the three options of
+    #: its ``TYPE`` switch partition the block - ``BALANCE`` on step 0, the two
+    #: ``LEVEL TO`` knobs on step 1, ``FREQUENCY`` and ``MODE`` on step 2.
+    #: Three Mono Synth parameters name their own index and are unexplained.
     toggle_on: tuple[int, ...] = ()
+    #: The counterpart of :attr:`toggle_on`.
     toggle_off: tuple[int, ...] = ()
     #: Option indexes named by ``toggleStep``.
     toggle_steps: tuple[int, ...] = ()

@@ -5,6 +5,7 @@ a single ``ModelRepo.xml``. These tests build that container from a small
 synthetic XML fixture, so they run offline and ship no vendor data.
 """
 
+import collections
 import gzip
 import io
 import json
@@ -162,23 +163,37 @@ def test_real_catalog_editor_metadata_evidence_is_pinned():
     facts = json.loads(path.read_text(encoding="utf-8"))
 
     assert facts["firmware"] == "CorOS 4.0.1"
-    assert facts["mid_string"] == {
-        "total": 36, "C": 35, "A/B": 1,
-        "all_have_min_and_max_labels": True, "all_have_skew": 1.0,
-    }
+    midpoint_rows = facts["mid_string"]["rows"]
+    assert len(midpoint_rows) == 36
+    assert collections.Counter(
+        row["raw"]["mid_string"] for row in midpoint_rows
+    ) == {"C": 35, "A/B": 1}
+    assert all(
+        "min_string" in row["raw"] and "max_string" in row["raw"]
+        for row in midpoint_rows)
+    assert all(float(row["raw"].get("skew", 1.0)) == 1.0
+               for row in midpoint_rows)
     assert facts["displayPos"]["carriers"] == 1446
-    assert facts["displayPos"]["collision_models"] == 5
-    assert facts["displayPos"]["gap_models"] == 18
+    assert len(facts["displayPos"]["collision_models"]) == 5
+    assert len(facts["displayPos"]["gap_models"]) == 18
     assert facts["displayPos"]["device_typo"] == {
-        "model": "Analog Delay (ST)", "parameter_index": 20,
-        "parameter": "FEEDBACK DEPTH", "attribute": "isplayPos", "value": 18,
+        "model_id": 6010, "model": "Analog Delay (ST)", "index": 20,
+        "raw": {"isplayPos": "18", "name": "FEEDBACK DEPTH"},
     }
-    assert facts["toggle"]["counts"] == {"on": 132, "off": 83, "step": 13}
+    assert facts["toggle"]["counts"] == {
+        "toggleOn": 132, "toggleOff": 83, "toggleStep": 13}
+    assert len(facts["toggle"]["step_rows"]) == 13
+    assert all(
+        "toggleOn" in row["raw"] or "toggleOff" in row["raw"]
+        for row in facts["toggle"]["step_rows"])
     assert facts["toggle"]["all_step_carriers_have_on_or_off"] is True
-    assert facts["toggle"]["self_references"] == [
-        {"model": "Mono Synth", "index": 15, "parameter": "OSC2 WAVE", "attribute": "toggleOn"},
-        {"model": "Mono Synth", "index": 24, "parameter": "SLOPE", "attribute": "toggleOn"},
-        {"model": "Mono Synth", "index": 48, "parameter": "FREE RATE", "attribute": "toggleOff"},
+    assert [
+        (row["model"], row["index"], row["raw"]["name"], row["attribute"])
+        for row in facts["toggle"]["self_references"]
+    ] == [
+        ("Mono Synth", 15, "OSC2 WAVE", "toggleOn"),
+        ("Mono Synth", 24, "SLOPE", "toggleOn"),
+        ("Mono Synth", 48, "FREE RATE", "toggleOff"),
     ]
 
 
@@ -192,6 +207,8 @@ def test_self_referencing_toggle_metadata_is_preserved_not_interpreted():
     parameter = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
 
     assert parameter.toggle_on == (0,)
+
+
 def test_a_labelled_end_control_carries_the_span_the_unit_draws():
     """A pan reads 50 L .. C .. 50 R on screen whatever span it declares.
 
