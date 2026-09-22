@@ -65,7 +65,7 @@ small documentation fixes.
   footswitch index and a block's column are different numbers that usually agree.
 - `import hid` appears once, lazily, inside `session.open_device()`.
   `tests/test_import_cleanliness.py` proves it.
-- Never gitignore, delete or edit `tests/fixtures/catalog/model_repo_*.bin`.
+- Never gitignore, delete or edit `tests/fixtures/catalog/*.bin`.
   Each is the captured input its snapshot is generated from, and deleting one
   puts regeneration back behind a unit nobody else has.
   `tests/test_catalog_payload.py` holds each payload to the snapshot it

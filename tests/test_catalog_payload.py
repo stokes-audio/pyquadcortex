@@ -27,6 +27,19 @@ from pyquadcortex.protocol import catalog
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
+from test_generators import _load  # noqa: E402
+
+#: `test_generators._load` is the one loader for these scripts, so this file
+#: borrows it rather than keeping a second copy. It does NOT cache: it re-execs
+#: on every call, and every generator inserts the repo root and `scripts/` at
+#: `sys.path[0]` as it runs, two entries each, which nothing removes.
+#:
+#: The wrapper does nothing today. This module asks for four distinct names -
+#: three generators and `_snapshots` - so every call is a miss and each execs
+#: once, which is the minimum. It starts earning its place when `PAYLOADS`
+#: gains a second row and the same names are asked for again per payload.
+_script = functools.cache(_load)
+
 #: Each committed payload, the snapshot package it generates, and that
 #: catalog's recorded shape as `(models, factory models, factory categories)`.
 #: A new profile that saves its payload adds a row here, and is then held the
@@ -38,21 +51,10 @@ PAYLOADS = [
     ("coros_4_0_1", "tests/fixtures/catalog/model_repo_coros_4_0_1.bin", (533, 414, 22)),
 ]
 
-GENERATORS = ("models", "params", "options")
-
-
-from test_generators import _load  # noqa: E402
-
-#: `test_generators._load` is the one loader for these scripts, so this file
-#: borrows it rather than keeping a second copy. It does NOT cache: it re-execs
-#: on every call, and every generator inserts the repo root and `scripts/` at
-#: `sys.path[0]` as it runs, two entries each, which nothing removes.
-#:
-#: The wrapper does nothing today. The three parametrized cases ask for three
-#: DIFFERENT generators, so each is a miss and each execs once, which is the
-#: minimum. It starts earning its place when `PAYLOADS` gains a second row and
-#: the same three generators are asked for again per payload.
-_generator = functools.cache(_load)
+#: Taken from `_snapshots.MODULES`, the one list of what a snapshot package
+#: holds, so a fourth generator joins this check by existing rather than by
+#: someone remembering to add it here.
+GENERATORS = _script("_snapshots").MODULES
 
 
 @pytest.fixture(scope="module", params=PAYLOADS, ids=[row[0] for row in PAYLOADS])
@@ -79,7 +81,7 @@ def test_the_payload_still_generates_the_committed_snapshot(payload, name):
             --payload tests/fixtures/catalog/model_repo_<snapshot>.bin
     """
     snapshot, relative, parsed, _ = payload
-    generated = _generator(f"generate_{name}").render(parsed, snapshot=snapshot)
+    generated = _script(f"generate_{name}").render(parsed, snapshot=snapshot)
     committed_path = (REPO / "pyquadcortex" / "protocol" / "catalogs"
                       / snapshot / f"{name}.py")
     committed = committed_path.read_text(encoding="utf-8")
@@ -134,7 +136,7 @@ def test_every_payload_records_which_unit_produced_it(payload):
     raw = record.read_text(encoding="utf-8")
     data = json.loads(raw)
     reply = data["version_reply"]
-    assert reply["zenos_git_hash"] == _generator("_snapshots").snapshot_version(snapshot)
+    assert reply["zenos_git_hash"] == _script("_snapshots").snapshot_version(snapshot)
     assert reply["device_type"] and reply["app_fw_version"]
 
     # The record also states the size and digest of the file beside it, and a
