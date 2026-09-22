@@ -2107,8 +2107,8 @@ wire, with no independent read-back.
 | `set_scene_label` / `set_scene_color` | `SceneLabel` / `SceneColor{UPDATE, index, label/color}` | read-back | colour is ARGB uint32; exact round-trip |
 | `copy_scene` | `SceneCopy{UPDATE, from_index, to_index, is_swap}` | read-back + on-unit | `from_index` and `is_swap` confirmed; label and colour travel with the state |
 | `save_current_preset` | `File{CREATE, folder{key, files{index, name, instrument}}}` | read-back | snapshots the grid; `preset_payload` is ignored |
-| `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | read-back | asynchronous: a listing within about 2 s is stale, about 5 s is reliable |
-| `move_preset` | `File{MOVE, folder{files{key}}, to_folder{files{index}}}` | read-back | source by file path, destination by index; asynchronous like delete |
+| `delete_preset` | `File{DELETE, folder{files{key: "<setlist>/<name>.pb"}}}` | three Cortex Control 4.0.1 captures + read-back | Every occupied entry in those captures exposed that exact key. The API also accepts the listing's `ProductData`, validates that its device-provided key belongs to the named setlist, and sends the key unchanged. Works, but asynchronously: a listing within about 2 s is stale, about 5 s is reliable |
+| `move_preset` | `File{MOVE, folder{is_downloads: false, files{key}}, to_folder{files{index}}}` | Cortex Control 4.0.1 capture + read-back | Source by file path, destination by index; asynchronous like delete. The explicit false flag is present on the captured wire shape. The API accepts either the exact name or a listing `ProductData` and never waits for a listing before sending |
 | `set_param_scene_mode` | `Grid{UPDATE, ..., params{index, scene_mode}}` (flag alone) | read-back | a value in the same message voids it |
 | `set_chain_output` | `Grid{UPDATE, preset{chains{row, out_portid}}}` | read-back | required for a new chain: the unit never assigns an output on its own |
 | `set_param(Mixer(row), ...)` | `Grid{UPDATE, preset{chains{row, mixer{params{index, param_values}}}}}` | read-back | supports per-scene; how factory presets build scenes |

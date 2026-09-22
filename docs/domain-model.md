@@ -1301,8 +1301,8 @@ Two readings are not a rule. `hidden` is also the flag that marks a control whic
 is plainly on screen (see below), which is why a list is never marked `absent`
 from it (ADR-0010). The metronome's four cells argue the other way. They are not
 hidden, and they depart from the catalog anyway by drawing circles instead of
-words. Their model is `internal` inside a hidden category, which is a third
-attribute again.
+words. Their model is `internal` and sits in a hidden category. Those are two
+more flags, and neither one is `Parameter.hidden`.
 
 Nineteen controls have been read - the fixture holds 24, but five of those are
 records of looking and finding no control. Two shorten a word and four draw
