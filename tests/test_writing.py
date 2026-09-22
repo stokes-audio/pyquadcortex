@@ -41,7 +41,7 @@ DOCUMENTS = governed_documents()
 
 
 def _ids(path):
-    return str(path.relative_to(ROOT))
+    return path.relative_to(ROOT).as_posix()
 
 
 def _governed_text(path):

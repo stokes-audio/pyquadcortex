@@ -506,7 +506,7 @@ def test_connect_hands_back_the_4_1_class_for_a_4_1_unit(fake_stack):
     qc = session.connect()
     assert type(qc) is profiles.QuadCortex41
     assert qc.unverified_operations == (
-        client.QuadCortex.operations() - {"create_local_backup"}
+        client.QuadCortex.operations() - profiles.QuadCortex41.VERIFIED
     )
     with pytest.raises(errors.ControlNotDrivable):
         qc.switch_scene(1)
