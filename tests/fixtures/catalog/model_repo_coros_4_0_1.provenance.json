@@ -4,8 +4,12 @@
     "Version reply from the unit that produced it. The payload itself states",
     "nothing about its own origin, so without this file nothing can tell which",
     "firmware generated the snapshot beside it.",
-    "The serial number, MAC address, custom name and comms_version are left out",
-    "on purpose. They identify one owner's unit and say nothing about the firmware."
+    "The serial number, MAC address and custom name are left out on purpose:",
+    "they identify one owner's unit and say nothing about the firmware, and",
+    "tests/test_catalog_payload.py holds them out.",
+    "comms_version is left out for a different reason. It is a protocol version",
+    "and not an identity, and being a bytes field it has no faithful JSON",
+    "spelling."
   ],
   "captured_utc": "2026-09-22T18:30:21Z",
   "payload_bytes": 46695,

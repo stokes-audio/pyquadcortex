@@ -20,16 +20,12 @@ import functools
 import hashlib
 import json
 import pathlib
-import sys
 
 import pytest
 
 from pyquadcortex.protocol import catalog
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
-
-import _snapshots  # noqa: E402  (snapshot_version, so the version is derived not repeated)
 
 #: Each committed payload, the snapshot package it generates, and that
 #: catalog's recorded shape as `(models, factory models, factory categories)`.
@@ -49,10 +45,13 @@ from test_generators import _load  # noqa: E402
 
 #: `test_generators._load` is the one loader for these scripts, so this file
 #: borrows it rather than keeping a second copy. It does NOT cache: it re-execs
-#: on every call, and each exec inserts the repo root and `scripts/` at
-#: `sys.path[0]` again (`generate_models.py` does two per run). Three
-#: parametrized cases would leave six entries behind for every later test
-#: module in the session, so the caching is added here.
+#: on every call, and every generator inserts the repo root and `scripts/` at
+#: `sys.path[0]` as it runs, two entries each, which nothing removes.
+#:
+#: The wrapper does nothing today. The three parametrized cases ask for three
+#: DIFFERENT generators, so each is a miss and each execs once, which is the
+#: minimum. It starts earning its place when `PAYLOADS` gains a second row and
+#: the same three generators are asked for again per payload.
 _generator = functools.cache(_load)
 
 
@@ -70,7 +69,10 @@ def test_the_payload_still_generates_the_committed_snapshot(payload, name):
 
     A failure means the payload and the snapshot have parted company. Either
     someone edited a generated file by hand, which nothing may do, or a
-    generator changed its output and the snapshot was not regenerated with it.
+    generator changed its output and the snapshot was not regenerated with it,
+    or - for `options.py` alone - a row was added to
+    `tests/fixtures/catalog/option_readings.json`, which `generate_options`
+    reads besides the payload. The answer is the same in all three cases.
     The fix is to run the generator, never to edit the file:
 
         python scripts/generate_<name>.py --snapshot <snapshot> \\
@@ -132,7 +134,7 @@ def test_every_payload_records_which_unit_produced_it(payload):
     raw = record.read_text(encoding="utf-8")
     data = json.loads(raw)
     reply = data["version_reply"]
-    assert reply["zenos_git_hash"] == _snapshots.snapshot_version(snapshot)
+    assert reply["zenos_git_hash"] == _generator("_snapshots").snapshot_version(snapshot)
     assert reply["device_type"] and reply["app_fw_version"]
 
     # The record also states the size and digest of the file beside it, and a

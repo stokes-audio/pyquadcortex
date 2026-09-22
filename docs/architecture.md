@@ -520,7 +520,7 @@ On the unit it covers:
    differently is written into `protocol.md` next to the existing entry, dated and
    named, and overridden on the new class.
 
-Only step 1 needs the unit for the catalog. Each generator also takes
+Step 1 is the only one of these that needs the unit twice. Each generator also takes
 `--payload`, a saved `ModelRepo` reply, so a snapshot can be rebuilt afterwards
 with nothing attached:
 
