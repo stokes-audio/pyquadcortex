@@ -1095,7 +1095,7 @@ hardware, host concerns or reference text with nothing for a host API to model.
 | Looper X: parameters | `LooperBlock.params` | yes | |
 | Looper X: transport actions | **omitted**; `LooperBlock.state` is readable | partly | transport is not drivable over USB; MIDI CC#48-61 is the documented route |
 | Assign Looper X Actions (footswitch layout) | `device.settings.looper_actions` | yes | `GeneralSettings.looper_stomp_assignments`, global. The MIDI CC follows the action, not the switch |
-| Undo / redo | **omitted** | no | `UndoRedo` arrives as an acceptance signal; drivable, and not modelled |
+| Undo / redo | **omitted from the model** | yes | protocol `undo()` / `redo()` reversed and reapplied a bypass edit on CorOS 4.0.1 and 4.1.0 |
 
 ## Chapter 5 - The Directory
 
@@ -1170,7 +1170,7 @@ hardware, host concerns or reference text with nothing for a host API to model.
 | GIG VIEW ACCESS | `settings.gig_view_access` | yes | |
 | LATENCY COMPENSATION | `settings.latency_compensation` | yes | |
 | MIDI submenu | `settings.midi` | partly | see ch. 8 row |
-| Device name | **omitted** | no | candidates `Serialization`, `GeneralSettings`, unexplored |
+| Device name | **omitted from the model** | yes | protocol `set_device_name()` is confirmed on CorOS 4.0.1 and 4.1.0 |
 | Firmware and serial (Device Information) | `device.firmware`, `device.serial` | yes | |
 | Diagnostics / Send Report | **omitted** | no | decoded but never driven |
 | 3rd-party licenses | - | n/a | reference text |

@@ -23,8 +23,9 @@ class QuadCortex41(QuadCortex):
     passed, 8 skipped, on a Quad Cortex running CorOS 4.1.0 / app firmware
     d14e, by tony-xmelon. That is a contributor's report and the maintainer has
     not reproduced it, which is what ``Evidence.CONTRIBUTED`` says here.
-    ``create_local_backup`` has its own dated 4.1.0 capture and is VERIFIED;
-    other inherited operations refuse under ``Support.VERIFIED`` and run with
+    ``create_local_backup`` has its own dated 4.1.0 capture. The contributed
+    device-name round trip also verified ``set_device_name``; both are VERIFIED.
+    Other inherited operations refuse under ``Support.VERIFIED`` and run with
     a warning under ``Support.EXPERIMENTAL``. The snapshot is deliberately absent:
     binding the 4.0.1 constants would hand a 4.1 user names their unit does not
     use.
@@ -42,7 +43,7 @@ class QuadCortex41(QuadCortex):
 
     MEASURED_ON = ("4.1.0",)
     EVIDENCE = Evidence.CONTRIBUTED
-    VERIFIED = frozenset({"create_local_backup"})
+    VERIFIED = frozenset({"create_local_backup", "set_device_name"})
     models = NoSnapshot("coros_4_1_0")
     params = NoSnapshot("coros_4_1_0")
     options = NoSnapshot("coros_4_1_0")
