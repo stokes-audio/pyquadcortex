@@ -507,7 +507,11 @@ On the unit it covers:
 
 1. **Generate the snapshot.** `scripts/generate_models.py --snapshot coros_x_y_z`
    and the params and options generators, against the new unit. Bind the three
-   modules on the new class.
+   modules on the new class. Each generator also takes `--payload`, a saved
+   `ModelRepo` reply, so a snapshot can be rebuilt with no unit attached;
+   `tests/fixtures/catalog/model_repo_coros_4_0_1.bin` is that reply for 4.0.1.
+   Save the new profile's alongside it. `tests/test_catalog_payload.py` holds
+   each committed payload to the snapshot it generates.
 2. **Run the suite.** `pytest tests/hardware --hardware --profile YourClass`.
    `--profile` connects as that class instead of the one the unit resolves to, so
    the suite runs on a unit the registry would refuse. The suite connects with
