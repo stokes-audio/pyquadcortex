@@ -465,6 +465,13 @@ the oldest release whose protoc emits the committed gencode 7.35.1, and
 `scripts/compile_protos.sh` refuses to install bindings older than the committed
 ones (ADR-0008).
 
+### A third runtime dependency: `typing-extensions`
+
+New since 0.40.0. `pip install` resolves it, so an upgrade needs no action. It
+carries the `TypeVar` defaults that `typing` gained in 3.13, while this package
+supports 3.11. Without them, binding a bare `Real` is a type error for anyone
+who type-checks their own code against `py.typed`.
+
 ## 0.40.0 - 2026-08-10
 
 ### The lane/mixer level span is -40..+12 dB, not -100..+30

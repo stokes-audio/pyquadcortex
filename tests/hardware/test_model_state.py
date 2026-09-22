@@ -325,7 +325,8 @@ def test_state_the_unit_never_announces_costs_one_read_and_then_none(
 @pytest.mark.verifies("set_param")
 def test_an_edit_the_model_did_not_make_reaches_its_cache(qc, model_cache,
                                                           counted, restores,
-                                                          record_property):
+                                                          record_property,
+                                                          a_clean_preset):
     """The story's whole point, on the unit.
 
     The edit goes through the PROTOCOL client, so as far as the model is
@@ -334,16 +335,12 @@ def test_an_edit_the_model_did_not_make_reaches_its_cache(qc, model_cache,
     because the unit says so.
 
     Needs a preset with no unsaved changes, because `PresetDirty` announces a
-    CHANGE of the flag rather than an edit (``protocol.md``). One transition is
-    available per run, and this test is the one that gets it - which is why it
-    comes before the write-through test in this file.
+    CHANGE of the flag rather than an edit (``protocol.md``). The
+    `a_clean_preset` fixture provides one. It used to check the flag itself and
+    skip, which meant it never ran on a full suite: `test_expression_targets.py`
+    writes a grid value and sorts ahead, and an undo is a write, so the flag was
+    always set by the time this got here.
     """
-    if qc.preset_dirty():
-        pytest.skip(
-            "the loaded preset already has unsaved changes, and the unit only "
-            "announces the flag when it CHANGES - so an edit now would tell the "
-            "model nothing and this test could not say anything. Save or reload "
-            "the preset on the unit and run this again.")
     column, was = _first_occupied_block(qc)
     restores("row 1 first block, parameter 0", lambda: qc.set_param(Block(0, column), 0, Encoded(was)))
 
