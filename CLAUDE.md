@@ -15,6 +15,10 @@ small documentation fixes.
 - Dev setup: `uv venv && uv pip install -e ".[dev]"`. Run tests with
   `.venv/bin/python -m pytest`. The suite runs offline: no unit, no `hid` import,
   no `DYLD_LIBRARY_PATH`.
+- The suite holds your environment to the pins in `pyproject.toml`. A package
+  installed outside its pin fails `tests/test_packaging.py`: your run and CI's
+  are then two different checks. Reinstall the dev extra, or move the pin in the
+  same commit. Detail: `docs/STEERING.md` section 6.
 - Hardware tests live in `tests/hardware/` behind `--hardware`. How to run them,
   how a test names what it verifies, and how to add one: `tests/hardware/readme.md`.
   Every module there stays importable offline; `tests/test_hardware_gate.py` and
