@@ -507,11 +507,7 @@ On the unit it covers:
 
 1. **Generate the snapshot.** `scripts/generate_models.py --snapshot coros_x_y_z`
    and the params and options generators, against the new unit. Bind the three
-   modules on the new class. Each generator also takes `--payload`, a saved
-   `ModelRepo` reply, so a snapshot can be rebuilt with no unit attached;
-   `tests/fixtures/catalog/model_repo_coros_4_0_1.bin` is that reply for 4.0.1.
-   Save the new profile's payload alongside it. `tests/test_catalog_payload.py` holds
-   each committed payload to the snapshot it generates.
+   modules on the new class.
 2. **Run the suite.** `pytest tests/hardware --hardware --profile YourClass`.
    `--profile` connects as that class instead of the one the unit resolves to, so
    the suite runs on a unit the registry would refuse. The suite connects with
@@ -523,6 +519,17 @@ On the unit it covers:
 4. **Record differences beside the 4.0.1 record.** Anything that behaved
    differently is written into `protocol.md` next to the existing entry, dated and
    named, and overridden on the new class.
+
+Only step 1 needs the unit for the catalog. Each generator also takes
+`--payload`, a saved `ModelRepo` reply, so a snapshot can be rebuilt afterwards
+with nothing attached:
+
+    python scripts/generate_options.py --snapshot coros_4_0_1 \
+        --payload tests/fixtures/catalog/model_repo_coros_4_0_1.bin
+
+Save the new profile's payload beside that one with its provenance record, and
+add a row to `PAYLOADS` in `tests/test_catalog_payload.py`, which holds each
+committed payload to the snapshot it generates (ADR-0022).
 
 When measuring a new CorOS release, check these in order:
 
