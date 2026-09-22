@@ -19,7 +19,7 @@ from pyquadcortex.protocol.catalogs.coros_4_1_0 import models as models_4_1_0
 FIXTURES = pathlib.Path(__file__).parent / "fixtures/generated"
 SNAPSHOTS = [
     ("coros_4_0_1", models_4_0_1, 414),
-    ("coros_4_1_0", models_4_1_0, 420),
+    ("coros_4_1_0", models_4_1_0, 422),
 ]
 
 

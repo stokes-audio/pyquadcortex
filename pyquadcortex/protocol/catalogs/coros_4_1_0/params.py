@@ -1038,6 +1038,30 @@ class UkC15Topboost(ParamSet):
     OUTPUT: Param[DbUnit] = Param(5, 'OUTPUT')    # float dB
 
 
+class BognaUberClean(ParamSet):
+    """Bogna Uber Clean (Guitar Amplifier)."""
+
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(1, 'MASTER')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
+
+
+class BognaUberLead(ParamSet):
+    """Bogna Uber Lead (Guitar Amplifier)."""
+
+    GAIN: Param[NoUnit] = Param(0, 'GAIN')    # float
+    MASTER: Param[NoUnit] = Param(1, 'MASTER')    # float
+    BASS: Param[NoUnit] = Param(2, 'BASS')    # float
+    MID: Param[NoUnit] = Param(3, 'MID')    # float
+    TREBLE: Param[NoUnit] = Param(4, 'TREBLE')    # float
+    PRESENCE: Param[NoUnit] = Param(5, 'PRESENCE')    # float
+    OUTPUT: Param[DbUnit] = Param(6, 'OUTPUT')    # float dB
+
+
 class UsHpTweedTwnNormal(ParamSet):
     """US HP Tweed TWN Normal (Guitar Amplifier)."""
 
@@ -4207,6 +4231,8 @@ BY_MODEL = {
     1126: UsTweedBassladNormal,
     1127: UkC15Normal,
     1128: UkC15Topboost,
+    1130: BognaUberClean,
+    1131: BognaUberLead,
     1132: UsHpTweedTwnNormal,
     1133: UsHpTweedTwnNormalPatch,
     1134: UsHpTweedTwnBright,

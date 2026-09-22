@@ -17,7 +17,7 @@ sustained stretch without a correction.
 
 ### CorOS 4.1 catalog and measured profile
 
-`QuadCortex41` now binds a generated CorOS 4.1.0 snapshot containing 420 factory
+`QuadCortex41` now binds a generated CorOS 4.1.0 snapshot containing 422 factory
 models and its firmware-specific parameter and option constants. Contributor
 hardware runs on 2026-09-11 verified 16 inherited operations; the independently
 captured local-backup operation is retained as a seventeenth verified method.

@@ -264,7 +264,7 @@ def test_the_4_1_profile_connects_with_its_snapshot_and_measured_operations():
     assert cls.models.__name__.endswith("catalogs.coros_4_1_0.models")
     assert cls.params.__name__.endswith("catalogs.coros_4_1_0.params")
     assert cls.options.__name__.endswith("catalogs.coros_4_1_0.options")
-    assert len(cls.models.ALL) == 420
+    assert len(cls.models.ALL) == 422
     assert len(cls(FakeTransport()).unverified_operations) == (
         len(client.QuadCortex.operations()) - len(cls.VERIFIED)
     )
