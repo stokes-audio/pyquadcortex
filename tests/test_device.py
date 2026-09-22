@@ -82,12 +82,14 @@ class ReplyingTransport:
     def send(self, msg):
         self.sent.append(msg)
 
-    def request(self, msg, timeout=5.0):
+    def request(self, msg, timeout=5.0, match=None):
         self.sent.append(msg)
         reply = self.canned[type(msg).__name__]
         for message in [reply] + self.trailing:
             for listener in list(self.listeners):
                 listener(message)   # listeners see a reply first (ADR-0009)
+        if match is not None and not match(reply):
+            raise TimeoutError(f"canned {type(reply).__name__} did not match")
         return reply
 
     def await_broadcast(self, expected_class, trigger, timeout=5.0, match=None):

@@ -15,6 +15,13 @@ sustained stretch without a correction.
 
 ## Unreleased
 
+### Rename the unit, drive undo/redo, and read inhibited modules
+
+`set_device_name()` sends a sparse Version update. `undo()` and `redo()` drive
+the unit's native editable-preset history, and `inhibited_modules()` reads the
+explicit Global EQ/Input Gate load-inhibition flags. All three wire shapes are
+pinned offline and were exercised on CorOS 4.0.1 and 4.1.0 hardware.
+
 ### Preserve device-provided preset keys without adding a listing dependency
 
 `delete_preset()` and `move_preset()` now also accept the `ProductData` returned

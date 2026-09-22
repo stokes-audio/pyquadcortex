@@ -2103,6 +2103,9 @@ wire, with no independent read-back.
 |---|---|---|---|
 | connect handshake | `ResetCommsBuffers` + `Version` UPDATE + `ModelRepo` READ + `Connection` + subscribe READs | read-back | the connect gate; state pushes flow only after it |
 | version read | `Version{action: READ}` | read-back | two messages come back; `version()` accepts only one carrying `device_serial_number` or `app_fw_version` (section 4.4) |
+| `set_device_name` | `Version{UPDATE, custom_name}` | read-back + on-unit | sparse echo, read-back, and restoration confirmed on CorOS 4.0.1 and 4.1.0 |
+| `undo` / `redo` | `UndoRedo{UPDATE, undo}` / `{UPDATE, redo}` | read-back + on-unit | a bypass edit was reversed and reapplied on disposable preset copies; empty-history behaviour is unknown |
+| `inhibited_modules` | `CompilerInhibitedModules{READ}` | read-back | explicit false/false reply on CorOS 4.0.1 and 4.1.0; true semantics are schema-derived, not yet observed |
 | `create_local_backup` | `LocalBackup{CREATE}` then `LocalBackup{UPDATE, backup_json}` pushes, the last with `is_last_chunk` | captured only | section 10.5. `can_apply_backup` never appeared, so the refusal path is unverified |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply with `reason` |
