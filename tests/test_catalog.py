@@ -902,11 +902,11 @@ def test_a_padding_value_that_is_not_a_number_is_kept_rather_than_dropped():
 def test_the_sorting_recipe_the_changelog_publishes_actually_works():
     """`changelog.md` hands users a key for laying out a block's controls.
 
-    Nothing was executing it. `tests/test_docs.py` covers the code blocks inside
-    docstrings, not `changelog.md`, so the one snippet a reader is most likely
-    to copy had no guard at all - and it is easy to get wrong, because
-    `display_pos` is `None` on controls the catalog does not place and `None`
-    does not compare against an int.
+    `tests/test_docs.py` does read `changelog.md`'s fences - it joined that
+    file's `SNIPPET_SOURCES` in 0ae9102 - but nothing there EXECUTES one. So the snippet
+    a reader is most likely to copy had never been run, and this one is easy to
+    get wrong: `display_pos` is `None` on controls the catalog does not place,
+    and `None` does not compare against an int.
     """
     model = catalog.parse_model_repo(make_payload(LAYOUT_XML))[9001]
 
