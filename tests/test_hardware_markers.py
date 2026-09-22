@@ -26,7 +26,7 @@ UNMARKED_OPERATIONS = {
 
     # -- the preset library: writes that would touch the owner's own presets ---
     # The scratch_preset fixture is what these would be built on - it saves a
-    # copy into a free User slot and deletes it again - but no test uses it yet.
+    # copy into a free User slot and deletes it again. The undo/redo test uses it.
     "save_current_preset": "the undo/redo test's scratch_preset fixture confirms a save into a free User slot, but the test verifies undo/redo rather than the save wire shape",
     "recall_preset": "no hardware test yet; a recall discards the loaded preset's unsaved edits, so it needs scratch_preset around it",
     "delete_preset": "the undo/redo test's scratch_preset teardown deletes its copy, but that delete is deliberately unconfirmed and a teardown asserts nothing",

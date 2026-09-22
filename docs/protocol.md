@@ -1795,8 +1795,9 @@ every entry for that id.
 **Undo and redo** are drivable: a sparse `UndoRedo{UPDATE, undo: true}`
 (`08 01 28 01`) reverses the last grid edit and `redo: true` (`08 01 30 01`)
 reapplies it. Measured 2026-09-03 on CorOS 4.0.1 by preset read-back, and by a
-contributor on 4.1.0. `undo()` and `redo()` drive it. `UndoRedo` also arrives
-after every accepted grid edit, which makes it an acceptance signal.
+contributor on 4.1.0. `undo()` and `redo()` send these messages. `UndoRedo`
+also arrives after every accepted grid edit, which makes it an acceptance
+signal.
 
 ## 12. What the unit announces, and when
 
@@ -2167,7 +2168,7 @@ wire, with no independent read-back.
 | `io_settings` / `set_input_level` / `set_output_level` | `IOSettings{READ}` / `{UPDATE, settings{in_port` or `out_port{port_id, level}}}` | read-back | also reports impedance, type, ground lift and `plugged` |
 | `global_eq` / `set_global_eq_bypassed` | `GlobalEQ{READ}` / `{UPDATE, bypassed}` | read-back | five bands reported as 28 parameters |
 | `mode` / `set_mode` | `Mode{READ}` / `{UPDATE, mode}` | read-back | a slot index; `available_modes` lists the configured slots |
-| `undo` / `redo` | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | read-back + on-unit | measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0; a bypass edit was reversed and reapplied on disposable preset copies; empty-history behaviour is unknown |
+| `undo` / `redo` | `UndoRedo{UPDATE, undo: true}` / `{redo: true}` | preset read-back | measured 2026-09-03 on CorOS 4.0.1 and by a contributor on 4.1.0; a bypass edit was reversed and reapplied on disposable preset copies; empty-history behaviour is unknown |
 | `preset_dirty` | `PresetDirty{READ}` | request_id echo | answers as `UPDATE` in 2 to 11 ms; `is_dirty` has no presence; pushed unsolicited only when the flag changes |
 | `set_gig_view` | `ShowGigView{UPDATE, show}` | read-back + on-unit | `show` has no presence |
 | `set_param(LaneInput(row), ...)` | `Grid{UPDATE, preset{chains{row, input_control{hash: 28000, params{index, param_values}}}}}` | read-back | `NOISE REDUCTION`, `BYPASS` and `INPUT GAIN`, per-scene included |
