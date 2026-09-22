@@ -48,6 +48,13 @@ With plain `pip`:
 python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 ```
 
+The test suite checks that environment against the pins in `pyproject.toml`. If
+you install a package outside its pin, `tests/test_packaging.py` fails and names
+it. CI installs from those pins, so a version outside them makes your run and
+CI's two different checks. Re-run the install command above to get back inside.
+If the newer version is the one the project should have, move the pin in the same
+pull request.
+
 ### The protobuf bindings
 
 The generated `pyquadcortex/protocol/proto/*_pb2.py` bindings and their `.pyi`
