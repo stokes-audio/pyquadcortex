@@ -43,9 +43,10 @@ _script = functools.cache(_load)
 #: catalog's recorded shape as `(models, factory models, factory categories)`.
 #: A new profile that saves its payload adds a row here, and is then held the
 #: same way. The shape lives in the row rather than in the test so that each
-#: payload carries its own; it is filled in from the payload being added, so it
-#: cannot fail then, and it earns its place later, when a row's file is
-#: replaced and the numbers say what moved.
+#: payload carries its own. It is filled in from the payload being added, so it
+#: cannot fail then; it earns its place later, as the only thing that notices a
+#: model the snapshot generates no constants for. See
+#: `test_the_payload_still_has_the_shape_its_row_records`.
 PAYLOADS = [
     ("coros_4_0_1", "tests/fixtures/catalog/model_repo_coros_4_0_1.bin", (533, 414, 22)),
 ]
