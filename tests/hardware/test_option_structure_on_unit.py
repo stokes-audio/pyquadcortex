@@ -191,11 +191,12 @@ def test_the_displayPos_counts_the_docs_quote_still_hold(live_catalog):
     Offline can only do it against a snapshot. Since ADR-0022 the 4.0.1 payload
     IS committed, at `tests/fixtures/catalog/model_repo_coros_4_0_1.bin`, so a
     count can be taken without a unit - but it is a count against that capture,
-    not against the catalog this unit is running, and a unit whose content has
-    moved is exactly what these numbers need checking against. So it happens
-    here, against the catalog the unit is actually running. A failure is a finding about the device, and it means the
-    numbers in `CLAUDE.md`, `docs/STEERING.md`, `docs/domain-model.md` and
-    `changelog.md` need re-deriving before anything else is trusted.
+    not against the catalog this unit is running, and a unit whose content
+    has moved is exactly what these numbers need checking against. So it happens
+    here, against the catalog the unit is actually running. A failure is a
+    finding about the device, and it means the numbers in `CLAUDE.md`,
+    `docs/STEERING.md`, `docs/domain-model.md` and `changelog.md` need
+    re-deriving before anything else is trusted.
     """
     placeable = [m for m in live_catalog
                  if not (m.hidden or m.internal or m.category_hidden)]

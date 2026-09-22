@@ -48,7 +48,9 @@ _script = functools.cache(_load)
 #: model the snapshot generates no constants for. See
 #: `test_the_payload_still_has_the_shape_its_row_records`.
 PAYLOADS = [
-    ("coros_4_0_1", "tests/fixtures/catalog/model_repo_coros_4_0_1.bin", (533, 414, 22)),
+    ("coros_4_0_1",
+     "tests/fixtures/catalog/model_repo_coros_4_0_1.bin",
+     (533, 414, 22)),
 ]
 
 #: Taken from `_snapshots.MODULES`, which with `EXPORTS` beside it is what the
@@ -95,8 +97,8 @@ def test_the_payload_still_generates_the_committed_snapshot(payload, name):
     if gen == com:                          # identical lines, so it is the tail
         pytest.fail(
             f"{snapshot}/{name}.py has the same lines as the payload generates "
-            f"but not the same bytes: {len(committed)} committed against "
-            f"{len(generated)} generated. Suspect the trailing newline.")
+            f"but not the same text: {len(committed)} characters committed "
+            f"against {len(generated)} generated. Suspect the trailing newline.")
     pytest.fail(
         f"{snapshot}/{name}.py no longer matches what the committed payload "
         f"generates. First difference at line {first + 1}:\n"
