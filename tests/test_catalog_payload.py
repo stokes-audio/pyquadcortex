@@ -24,10 +24,9 @@ import pathlib
 import pytest
 
 from pyquadcortex.protocol import catalog
+from test_generators import _load
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-
-from test_generators import _load  # noqa: E402
 
 #: `test_generators._load` is the one loader for these scripts, so this file
 #: borrows it rather than keeping a second copy. It does NOT cache: it re-execs
@@ -120,12 +119,25 @@ def test_every_committed_payload_has_a_row():
 
 
 def test_the_payload_still_has_the_shape_its_row_records(payload):
-    """A named shape, so a swapped payload says what changed and not just where.
+    """The shape its row records, which is the one thing the comparison misses.
 
-    This catches nothing the byte-for-byte test misses: a truncated payload
-    raises while the fixture parses it, and a different unit's reply already
-    fails the comparison above. What it adds is the failure message. "533 models
-    became 471" names the problem; "first difference at line 812" does not.
+    Nearly everything is caught above: a truncated payload raises while the
+    fixture parses it, and another unit's catalog fails the byte-for-byte
+    comparison. One thing is not. The snapshot holds FACTORY content only, by
+    design and by its own docstrings, so a model this repository generates no
+    constants for can appear in the catalog without moving a single generated
+    byte.
+
+    Measured, not supposed: adding one model that carries a `sku` and a
+    `plugin_id`, whose only parameter is a float and which therefore joins no
+    option list, leaves `models.py`, `params.py` and `options.py` byte for byte
+    identical. The model count is the only thing that moves.
+
+    That case is ADR-0022's first open question - whether a unit that has
+    bought an Archetype publishes anything the maintainer's unit does not - so
+    this assertion is the guard for it rather than a nicer error message. It is
+    also a nicer error message: "533 models became 534" names the problem where
+    "first difference at line 812" would not.
     """
     _, _, parsed, (models, factory_models, factory_categories) = payload
     factory = [m for m in parsed if m.is_factory]

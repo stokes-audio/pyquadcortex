@@ -9,7 +9,9 @@
     "tests/test_catalog_payload.py holds them out.",
     "comms_version is left out for a different reason. It is a protocol version",
     "and not an identity, and being a bytes field it has no faithful JSON",
-    "spelling."
+    "spelling. cortex_control_version and cortex_control_version_valid are left",
+    "out because they describe the host application that asked, not the unit",
+    "that answered."
   ],
   "captured_utc": "2026-09-22T18:30:21Z",
   "payload_bytes": 46695,
