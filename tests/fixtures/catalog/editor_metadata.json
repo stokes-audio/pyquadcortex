@@ -673,6 +673,57 @@
         ]
       },
       {
+        "model_id": 6016,
+        "model": "PCOM Tape Delay (ST)",
+        "missing": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "model_id": 6018,
+        "model": "Plini Delay",
+        "missing": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "model_id": 6019,
+        "model": "Gojira DLY",
+        "missing": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
         "model_id": 7034,
         "model": "Chief DC2W PCOM",
         "missing": [

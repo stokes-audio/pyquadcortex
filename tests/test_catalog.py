@@ -175,7 +175,7 @@ def test_real_catalog_editor_metadata_evidence_is_pinned():
                for row in midpoint_rows)
     assert facts["displayPos"]["carriers"] == 1446
     assert len(facts["displayPos"]["collision_models"]) == 5
-    assert len(facts["displayPos"]["gap_models"]) == 18
+    assert len(facts["displayPos"]["gap_models"]) == 21
     assert facts["displayPos"]["device_typo"] == {
         "model_id": 6010, "model": "Analog Delay (ST)", "index": 20,
         "raw": {"isplayPos": "18", "name": "FEEDBACK DEPTH"},
@@ -198,15 +198,19 @@ def test_real_catalog_editor_metadata_evidence_is_pinned():
 
 
 def test_self_referencing_toggle_metadata_is_preserved_not_interpreted():
+    preceding = "".join(
+        f'<Parameter name="P{index}" min="0" max="1" defaultValue="0"/>'
+        for index in range(15))
     xml = """<Models><Category id="1" name="Synth">
       <Model id="1" name="Mono Synth">
-        <Parameter name="OSC2 WAVE" toggleOn="0" min="0" max="1" defaultValue="0"/>
+        %s
+        <Parameter name="OSC2 WAVE" toggleOn="15" min="0" max="1" defaultValue="0"/>
       </Model>
-    </Category></Models>"""
+    </Category></Models>""" % preceding
 
-    parameter = catalog.parse_model_repo(make_payload(xml))[1].parameters[0]
+    parameter = catalog.parse_model_repo(make_payload(xml))[1].parameters[15]
 
-    assert parameter.toggle_on == (0,)
+    assert parameter.toggle_on == (15,)
 
 
 def test_a_labelled_end_control_carries_the_span_the_unit_draws():

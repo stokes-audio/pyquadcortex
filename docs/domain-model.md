@@ -1193,18 +1193,26 @@ hardware, host concerns or reference text with nothing for a host API to model.
 
 ## Catalog attributes
 
-The unit puts 24 distinct attributes on its `<Parameter>` elements. Seventeen are
+The unit puts 24 distinct attributes on its `<Parameter>` elements. Twenty are
 parsed. What follows is what is known about the ones that matter to a caller, and
-the seven that are not yet explained. Counts are from the CorOS 4.0.1 catalog,
+the four that are not yet explained. Counts are from the CorOS 4.0.1 catalog,
 3,809 parameters. Nothing here is guessed at: a control we do not understand is
 omitted with the reason written down.
+
+### Conditional editor metadata
+
+`toggleOn`, `toggleOff`, and `toggleStep` occur on 132 / 83 / 13 fields,
+212 parameters between them. They are exposed as `toggle_on`, `toggle_off`,
+and `toggle_steps` without assigning host behaviour. The catalog shape indicates
+that the first two name a conditional-visibility driver and the last names its
+option: Splitter's controls partition cleanly by `TYPE`. Three Mono Synth
+parameters self-reference, so those cases remain unexplained.
 
 ### Unexplained
 
 | attribute | on | what it looks like, and what is unknown |
 |---|---|---|
 | `replaces` | 462 | Distinct from the `<Model>` attribute of the same name. On a parameter it presumably names a superseded index, which would matter for reading an old preset. Untested |
-| `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, 212 parameters between them | Exposed as `toggle_on`, `toggle_off`, and `toggle_steps` without assigning behaviour. `toggleOn` carries a number on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a pair (`"0,1"`); three Mono Synth parameters self-reference, so the obvious visibility-driver reading is not universal |
 | `tooltip` | 126 | The help text the unit shows. Real prose, sometimes with content: a Vibrato's `MODE` warns that changing it causes a brief mute. The values contain HTML |
 | `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name, sometimes a token |
 | `isplayPos` | 1 | `displayPos` with the `d` missing. The catalog's own typo, recorded rather than silently accepted as an alias |

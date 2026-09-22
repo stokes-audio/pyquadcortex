@@ -2197,7 +2197,11 @@ wire, with no independent read-back.
   touchscreen's own assignment menu is the candidate and has not been checked.
   Whether the unit acts on an assignment stored against such a parameter needs
   audio, not a wire read.
-- **What `toggleOn`, `toggleOff` and `toggleStep` mean**, on 212 parameters.
+- **Three self-referencing conditional metadata entries** remain unexplained:
+  Mono Synth indexes 15 and 24 point `toggleOn` to themselves, and index 48
+  points `toggleOff` to itself. Elsewhere, CorOS 4.0.1 catalog shape indicates
+  `toggleOn` / `toggleOff` name a conditional-visibility driver and
+  `toggleStep` its option: Splitter's controls partition cleanly by `TYPE`.
 - **Whether a capture id denotes different content on a different unit** needs a
   second unit.
 - **Whether host writes are honoured during standby.**

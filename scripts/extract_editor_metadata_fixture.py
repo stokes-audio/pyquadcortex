@@ -84,10 +84,10 @@ def main():
                 "model": model.get("name"),
                 "positions": duplicates,
             })
-        # Positions that begin at 11 are partial plugin layouts, not gaps in a
-        # complete editor.  The remaining layouts start at 0 or 1; missing
-        # values through their maximum are the 18 gap models in this catalog.
-        if positions and min(positions) <= 1:
+        # Use the explicit all-parameter basis: every missing integer in
+        # 0..max(displayPos) is a gap. This produces 21 models on CorOS 4.0.1;
+        # a different origin or visibility filter produces a different count.
+        if positions:
             missing = sorted(set(range(max(positions) + 1)) - set(positions))
             if missing:
                 gap_models.append({
