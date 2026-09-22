@@ -7,11 +7,11 @@ an option means knowing its position. These name the positions::
 
     qc.set_param_option(block, 'DYN MODE', options.DynMode.GATE)
 
-110 enums cover 267 parameters, because the same list means
+110 enums cover 295 parameters, because the same list means
 the same thing wherever it appears - the note-length list is shared by
 ``SYNC NOTE``, ``SYNC NOTE L``, ``SYNC NOTE R`` and two more.
 
-**A two-option Off/On parameter gets no enum.** 247 parameters
+**A two-option Off/On parameter gets no enum.** 303 parameters
 offer exactly those, and ``True`` says everything ``OffOn.ON`` would::
 
     qc.set_param(block, 'SYNC', True)
@@ -1361,9 +1361,9 @@ class Scale(IntEnum):
 
 
 class Size(IntEnum):
-    """12 parameters use this list: SIZE
+    """40 parameters use this list: SIZE
 
-    On 12 models, among them Ambience, Dual (M), Dual (M) Lite.
+    On 40 models, among them Ambience, Cory Wong Cab 1 (M), Cory Wong Cab 1 (ST).
 
     NOT audited against the screen. These names are the
     catalog's ``stepNames``, which is not known to be the
@@ -2203,14 +2203,14 @@ OPTION_AUDIT = {
 #: LABELS, like the audit, so the three lists with no enum are in
 #: it too.
 #:
-#: Totals on this snapshot: 527
-#: parameters across 113 lists, of which 190 across
+#: Totals on this snapshot: 611
+#: parameters across 113 lists, of which 218 across
 #: 94 lists nobody has read. The work is long-tailed - the
-#: five biggest unread lists cover 54 of those 190.
+#: five biggest unread lists cover 82 of those 218.
 OPTION_USAGE = {
     ('OFF', 'MUTE', 'DOWN', 'ON'): 13,  # no enum
     ('OFF', 'ON'): 25,  # no enum
-    ('Off', 'On'): 222,  # no enum
+    ('Off', 'On'): 278,  # no enum
     ('Bypass', '90°', '180°'): 2,  # Adjust
     ('1/16', '1/8T', '1/16D', '1/8', '1/4T', '1/8D', '1/4', '1/2T', '1/4D', '1/2', '1/1T', '1/2D', '1/1'): 2,  # AnalogDelayMSyncNote
     ('Up', 'Down', 'Up & Down', 'Down & Up', 'Random'): 1,  # ArpPattern
@@ -2291,7 +2291,7 @@ OPTION_USAGE = {
     ('MULTI', 'HP', 'OUT 1/2', 'OUT 3/4', 'SEND 1/2'): 1,  # Routing
     ('Grid', 'In 1', 'In 2', 'Ret 1', 'Ret 2', 'In 1/2', 'Ret 1/2', 'Out1', 'Out2', 'Out3', 'Out4', 'Out1/2', 'Out3/4', 'Multi'): 1,  # RoutingMode
     ('Major', 'Minor'): 1,  # Scale
-    ('Small', 'Med', 'Large'): 12,  # Size
+    ('Small', 'Med', 'Large'): 40,  # Size
     ('1/64T', '1/64', '1/32T', '1/64D', '1/32', '1/16T', '1/32D', '1/16', '1/8T', '1/16D', '1/8'): 2,  # SlapbackDelayMSyncNote
     ('6dB/Oct', '12dB/Oct', '18dB/Oct', '24dB/Oct'): 1,  # Slope
     ('Clean', 'Crunch', 'Lead'): 1,  # SoldanoSlo100Channel
