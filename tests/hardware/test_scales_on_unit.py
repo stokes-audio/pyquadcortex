@@ -10,7 +10,8 @@ this way.
 
 A failure here means the fixture is out of date. Regenerate and READ the diff:
 
-    python scripts/extract_scale_fixture.py --payload <a saved payload>
+    python scripts/extract_scale_fixture.py \
+        --payload tests/fixtures/catalog/model_repo_coros_4_0_1.bin
 
 A changed bound or taper is a real protocol change and belongs in
 `docs/protocol.md` alongside the readings it invalidates.

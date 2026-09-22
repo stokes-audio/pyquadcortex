@@ -2,8 +2,8 @@
 
 `tests/fixtures/catalog/option_readings.json` holds what a human read off the
 screen, and `options.OPTION_AUDIT` stamps each list from it. Both are pinned to
-a SNAPSHOT of the catalog, and like the generated constants nothing offline can
-notice that snapshot going stale - a firmware that renames an option would leave
+a SNAPSHOT of the catalog, and like the generated constants no offline check can
+notice the UNIT moving away from it - a firmware that renames an option would leave
 every offline test green while the library published a word the unit no longer
 uses, now with "audited" beside it, which is worse than never having checked.
 
@@ -157,8 +157,10 @@ def test_the_hidden_attribute_is_still_shaped_the_way_it_was_counted(live_xml):
     block's `MOMENTARY` switch, which is the whole evidence that the catalog
     names the MODEL a parameter is hidden on, and a second independent sign that
     ATMA is the Mini. Both live in a docstring and in `docs/domain-model.md`,
-    and the parser turns the attribute into a bool, so nothing offline can see
-    either number go stale.
+    and the parser turns the attribute into a bool. Since ADR-0022 both counts
+    can be taken offline from the committed payload, and nothing takes them;
+    either way a count against that capture cannot see this unit's own catalog
+    move.
 
     A failure here is a finding about the device. If `atma` has spread to more
     parameters, `Parameter.hidden` answering only for a Quad Cortex matters more

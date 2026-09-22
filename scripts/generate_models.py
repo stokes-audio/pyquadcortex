@@ -18,7 +18,7 @@ Source: a device's ModelRepo payload, either live or previously saved.
 
     # from a saved payload, for reproducible regeneration
     python scripts/generate_models.py --snapshot coros_4_1_0 \
-        --payload model_repo_payload.bin
+        --payload tests/fixtures/catalog/model_repo_coros_4_0_1.bin
 
 Only identifiers and integers are emitted - no descriptions and no "Based on"
 attribution text.
