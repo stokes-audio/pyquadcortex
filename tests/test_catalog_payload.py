@@ -34,10 +34,10 @@ from test_generators import _load  # noqa: E402
 #: on every call, and every generator inserts the repo root and `scripts/` at
 #: `sys.path[0]` as it runs, two entries each, which nothing removes.
 #:
-#: The wrapper does nothing today. This module asks for four distinct names -
-#: three generators and `_snapshots` - so every call is a miss and each execs
-#: once, which is the minimum. It starts earning its place when `PAYLOADS`
-#: gains a second row and the same names are asked for again per payload.
+#: The wrapper saves exactly one exec today. This module makes five calls over
+#: four distinct names: the three generators once each, and `_snapshots` twice,
+#: for `GENERATORS` below and again in the provenance test. It earns more as
+#: `PAYLOADS` grows, because every row asks the same names again.
 _script = functools.cache(_load)
 
 #: Each committed payload, the snapshot package it generates, and that
@@ -51,9 +51,10 @@ PAYLOADS = [
     ("coros_4_0_1", "tests/fixtures/catalog/model_repo_coros_4_0_1.bin", (533, 414, 22)),
 ]
 
-#: Taken from `_snapshots.MODULES`, the one list of what a snapshot package
-#: holds, so a fourth generator joins this check by existing rather than by
-#: someone remembering to add it here.
+#: Taken from `_snapshots.MODULES`, which is the list the snapshot package's
+#: own `__init__` is built from and `tests/test_generators.py` pins. A fourth
+#: generator still has to be added there, but only there, instead of here as
+#: well.
 GENERATORS = _script("_snapshots").MODULES
 
 
@@ -101,6 +102,23 @@ def test_the_payload_still_generates_the_committed_snapshot(payload, name):
         f"Never edit a generated file by hand.")
 
 
+def test_every_committed_payload_has_a_row():
+    """`PAYLOADS` covers every payload in the fixture directory.
+
+    `CLAUDE.md` protects `tests/fixtures/catalog/*.bin` and says this file holds
+    each one to the snapshot it generates. That is only true while the two
+    agree: a payload committed with no row here is checked by nothing, while the
+    rule says it is covered. This is the assertion that keeps the sentence true.
+    """
+    directory = REPO / "tests" / "fixtures" / "catalog"
+    committed = {p.name for p in directory.glob("*.bin")}
+    listed = {(REPO / relative).name for _, relative, _ in PAYLOADS}
+    assert committed == listed, (
+        f"payloads with no PAYLOADS row: {sorted(committed - listed)}; "
+        f"rows with no payload: {sorted(listed - committed)}. Add the row, or "
+        f"the file is protected by CLAUDE.md and checked by nothing.")
+
+
 def test_the_payload_still_has_the_shape_its_row_records(payload):
     """A named shape, so a swapped payload says what changed and not just where.
 
@@ -129,7 +147,7 @@ def test_every_payload_records_which_unit_produced_it(payload):
     """
     snapshot, relative, _, _ = payload
     payload_path = REPO / relative
-    record = payload_path.with_suffix(".provenance.json")
+    record = payload_path.with_name(payload_path.stem + ".provenance.json")
     assert record.exists(), (
         f"{record.relative_to(REPO)} is missing. A payload with no provenance "
         f"record cannot be checked against the firmware it claims to be from.")
