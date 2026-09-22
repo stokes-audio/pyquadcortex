@@ -249,8 +249,8 @@ def test_request_times_out_when_no_response():
 
 def test_keepalive_is_sent_periodically():
     # With a tiny interval, the keepalive thread should emit the exact CorOS
-    # 4.0.1 Cortex Control opening payload, captured 44 times across three
-    # sessions before Cortex Control switches to `08 01 18 01`.
+    # 4.0.1 Cortex Control opening payload: 14 of these open each of the three
+    # captured sessions before Cortex Control switches to `08 01 18 01`.
     fake = FakeHid()
     t = transport.Transport(fake, keepalive_interval=0.02)
     t.start()
