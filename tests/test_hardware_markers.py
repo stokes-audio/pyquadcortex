@@ -22,17 +22,17 @@ UNMARKED_OPERATIONS = {
     "io_settings": "the input gain tests read it back as their instrument; nothing asserts the port listing against what the unit shows",
     "preset_dirty": "test_model_state.py calls it only to decide which branch to expect; nothing asserts the flag across a known-clean and known-dirty preset",
     "settings": "the global-settings echo test reads it only to find the value to flip; nothing asserts a settings() field against the unit's screen",
-    "list_presets": "read by the scratch_preset fixture, which no test uses yet; no test asserts on the listing itself",
+    "list_presets": "the undo/redo test's scratch_preset fixture uses it to find a free slot; no test asserts the listing itself against the unit's Directory",
 
     # -- the preset library: writes that would touch the owner's own presets ---
     # The scratch_preset fixture is what these would be built on - it saves a
-    # copy into a free User slot and deletes it again - but no test uses it yet.
-    "save_current_preset": "no hardware test yet; scratch_preset is the fixture for one, and it must save into a free User slot rather than over the owner's work",
+    # copy into a free User slot and deletes it again. The undo/redo test uses it.
+    "save_current_preset": "the undo/redo test's scratch_preset fixture confirms a save into a free User slot, but the test verifies undo/redo rather than the save wire shape",
     "recall_preset": "no hardware test yet; a recall discards the loaded preset's unsaved edits, so it needs scratch_preset around it",
-    "delete_preset": "no hardware test yet; only scratch_preset's teardown deletes anything, and a teardown asserts nothing",
+    "delete_preset": "the undo/redo test's scratch_preset teardown deletes its copy, but that delete is deliberately unconfirmed and a teardown asserts nothing",
     "copy_preset": "no hardware test yet; it writes into a second setlist, so a failed run leaves a stray preset in the owner's Directory",
     "move_preset": "no hardware test yet; it rearranges the slots a player has laid out for a gig, which a restore cannot make invisible mid-run",
-    "read_preset": "no hardware test yet; it RECALLS the preset it reads, so it is a write in disguise and needs scratch_preset",
+    "read_preset": "the undo/redo test reads its scratch copy to choose an edit, but verifies the history result rather than the read operation itself",
     "find_preset": "no hardware test yet; it needs a name that exists on the unit, which the loaded preset supplies - just not written",
     "wait_for_listing": "no hardware test yet; it is the polling wrapper round list_presets and says nothing until a write changes a listing",
     "create_setlist": "no hardware test yet; it adds a folder to the owner's Directory that a failed run would leave behind",
@@ -48,7 +48,7 @@ UNMARKED_OPERATIONS = {
     "favorites": "no hardware test yet; the FAVORITES list is the owner's and may be empty, so a test can only assert the shape",
     "recents": "no hardware test yet; RECENTS changes with every recall, so a test can only assert the shape",
     "pinned_models": "no hardware test yet; which models are pinned is the owner's choice, so a test can only assert the shape",
-    "loaded_position": "no hardware test yet; scratch_preset reads it, and asserting it needs a recall to a slot the test chose",
+    "loaded_position": "scratch_preset records it so teardown can return to the starting slot; no test independently verifies all fields against the unit",
     "read_current_preset_push": "no hardware test yet; it returns the RecallPreset wrapper round the same payload read_current_preset returns",
     "mode": "no hardware test yet; which footswitch mode slots exist is the owner's configuration",
     "mode_cycle": "no hardware test yet; the cycle order is the owner's configuration, so a test can only assert the shape",

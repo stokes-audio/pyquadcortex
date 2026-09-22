@@ -253,13 +253,14 @@ def test_the_4_1_profile_exposes_only_operations_with_contributed_evidence():
     assert issubclass(cls, client.QuadCortex)
     assert cls.MEASURED_ON == ("4.1.0",)
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
-    assert cls.VERIFIED == frozenset({"create_local_backup", "duplicate_setlist"})
+    assert cls.VERIFIED == frozenset({
+        "create_local_backup", "duplicate_setlist", "set_device_name"})
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
     assert isinstance(cls.models, support.NoSnapshot)
     with pytest.raises(AttributeError, match="coros_4_1_0"):
         cls.models.Delay
     assert cls(FakeTransport()).unverified_operations == (
-        client.QuadCortex.operations() - {"create_local_backup", "duplicate_setlist"}
+        client.QuadCortex.operations() - cls.VERIFIED
     )
 
 
