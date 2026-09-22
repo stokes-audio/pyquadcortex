@@ -51,10 +51,10 @@ PAYLOADS = [
     ("coros_4_0_1", "tests/fixtures/catalog/model_repo_coros_4_0_1.bin", (533, 414, 22)),
 ]
 
-#: Taken from `_snapshots.MODULES`, which is the list the snapshot package's
-#: own `__init__` is built from and `tests/test_generators.py` pins. A fourth
-#: generator still has to be added there, but only there, instead of here as
-#: well.
+#: Taken from `_snapshots.MODULES`, which with `EXPORTS` beside it is what the
+#: snapshot package's own `__init__` is built from, and what
+#: `tests/test_generators.py` pins. A fourth generator still has to be added
+#: there, but only there, instead of here as well.
 GENERATORS = _script("_snapshots").MODULES
 
 
@@ -111,8 +111,8 @@ def test_every_committed_payload_has_a_row():
     rule says it is covered. This is the assertion that keeps the sentence true.
     """
     directory = REPO / "tests" / "fixtures" / "catalog"
-    committed = {p.name for p in directory.glob("*.bin")}
-    listed = {(REPO / relative).name for _, relative, _ in PAYLOADS}
+    committed = {p.relative_to(REPO).as_posix() for p in directory.glob("*.bin")}
+    listed = {relative for _, relative, _ in PAYLOADS}
     assert committed == listed, (
         f"payloads with no PAYLOADS row: {sorted(committed - listed)}; "
         f"rows with no payload: {sorted(listed - committed)}. Add the row, or "

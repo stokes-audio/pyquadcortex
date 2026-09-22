@@ -47,7 +47,7 @@ generated bindings in `pyquadcortex/protocol/proto/`), the recovered schema in
 - **The lab repository.** Planning material, raw USB captures and the narrative
   history behind the documents here live in the private `quad-cortex`
   repository. This repository carries the library, its engineering documents,
-  and the `ModelRepo` payload each catalog snapshot is generated from
+  and the `ModelRepo` payloads its catalog snapshots are generated from
   (`tests/fixtures/catalog/`, ADR-0022).
 
 ## 3. Architecture Overview
