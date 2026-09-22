@@ -23,14 +23,21 @@ current-preset update before the request-id-correlated answer; the state cache
 models both as one normal read and no longer schedules an unnecessary reread.
 Version messages that only answer the Cortex Control compatibility announcement
 are likewise kept out of the device-identity cache.
+### Rename the unit, drive undo/redo, and read inhibited modules
+
+`set_device_name()` sends a sparse Version update. `undo()` and `redo()` drive
+the unit's native editable-preset history, and `inhibited_modules()` reads the
+explicit Global EQ/Input Gate load-inhibition flags. All three wire shapes are
+pinned offline and were exercised on CorOS 4.0.1 and 4.1.0 hardware.
 
 ### Preserve device-provided preset keys without adding a listing dependency
 
 `delete_preset()` and `move_preset()` now also accept the `ProductData` returned
 by `list_presets()`, validate that its key belongs to the requested setlist, and
-send that key unchanged. The exact-name form remains listing-free and preserves
-the measured CorOS 4.0.1 `<setlist>/<name>.pb` wire shape, including hardware
-cleanup when listing reads are silent. The captured move shape now also carries
+send that key unchanged. Both take `str | ProductData`, so a caller that passes
+anything else is a type error. The exact-name form remains listing-free and
+preserves the measured CorOS 4.0.1 `<setlist>/<name>.pb` wire shape, including
+hardware cleanup when listing reads are silent. The captured move shape carries
 its explicit `is_downloads: false` field. Unmeasured rename and occupied-slot
 swap behavior are deliberately not exposed.
 

@@ -666,7 +666,12 @@ def test_move_preset_uses_an_authoritative_key_and_the_captured_flag():
     assert not sent.to_folder.HasField("is_factory")
 
 
-def test_move_preset_matches_the_captured_cortex_builder_bytes():
+def test_move_preset_serializes_the_captured_field_order_and_flags():
+    # Pins field numbering, field ORDER and the explicit false flags against the
+    # shape measured in windows-session-02 frame 25825 (CorOS 4.0.1). The key
+    # below is this test's own string, not a device-supplied one, so this says
+    # nothing about which key the caller should send - see the tests above for
+    # that. It does catch is_downloads or is_factory going away.
     setlist = "/media/p4/Presets/My Presets"
     product_key = f"{setlist}/Numb.pb"
     listing = _preset_listing(
@@ -688,6 +693,38 @@ def test_move_preset_matches_the_captured_cortex_builder_bytes():
 
 
 # -- session hello -------------------------------------------------------------
+
+
+def test_set_device_name_sends_a_sparse_version_update():
+    qc = client.QuadCortex(FakeTransport())
+
+    qc.set_device_name("Stage QC")
+
+    sent = qc._t.sent[-1]
+    assert isinstance(sent, pa.VersionMessage)
+    assert sent.SerializeToString() == b"\x08\x01\x7a\x08Stage QC"
+
+    with pytest.raises(TypeError):
+        qc.set_device_name(None)
+    assert qc._t.sent[-1] is sent
+
+
+def test_undo_and_redo_send_the_confirmed_sparse_updates():
+    qc = client.QuadCortex(FakeTransport())
+
+    qc.undo()
+    undo = qc._t.sent[-1]
+    assert isinstance(undo, pa.UndoRedoMessage)
+    assert undo.SerializeToString() == b"\x08\x01\x28\x01"
+    assert undo.HasField("undo")
+    assert not undo.HasField("redo")
+
+    qc.redo()
+    redo = qc._t.sent[-1]
+    assert isinstance(redo, pa.UndoRedoMessage)
+    assert redo.SerializeToString() == b"\x08\x01\x30\x01"
+    assert redo.HasField("redo")
+    assert not redo.HasField("undo")
 
 
 def test_hello_performs_full_connect_handshake():
@@ -1047,17 +1084,19 @@ def test_file_operations_do_not_raise_when_the_device_stays_silent():
     # File ops are asynchronous and every host write is STALLed, so a missing reply
     # says nothing about success. Raising made callers wrap each one in
     # try/except and verify by re-reading anyway.
-    transport = TimingOutTransport()
-    transport.broadcast = _preset_listing(
+    # Both forms of ``preset``. The by-name form is the one hardware teardown
+    # uses (tests/hardware/conftest.py), and a silent device is exactly the case
+    # it has to survive, so testing only the ProductData form leaves that hole.
+    source = _preset_listing(
         str(Setlist.USER),
         {"index": 1, "name": "Some Preset",
          "key": f"{Setlist.USER}/opaque-source"},
-        {"index": 219, "name": "Unsaved"},
-    )
-    qc = client.QuadCortex(transport)
-    source = transport.broadcast.folder.files[0]
-    assert qc.delete_preset(Setlist.USER, source) is None
-    assert qc.move_preset(Setlist.USER, source, "28D") is None
+    ).folder.files[0]
+    for preset in ("Some Preset", source):
+        qc = client.QuadCortex(TimingOutTransport())
+        assert qc.delete_preset(Setlist.USER, preset) is None
+        assert qc.move_preset(Setlist.USER, preset, "28D") is None
+    qc = client.QuadCortex(TimingOutTransport())
     assert qc.save_current_preset(Setlist.USER, "30A", "Some Preset") == "Some Preset"
 
 
@@ -2369,6 +2408,23 @@ def test_settings_reads_general_settings_and_requires_a_full_push():
     match = qc._t.matches[-1]
     assert match(full) is True
     assert match(pa.GeneralSettingsMessage(screen_brightness=1)) is False
+
+
+def test_inhibited_modules_reads_both_explicit_states():
+    full = pa.CompilerInhibitedModulesMessage(action=pa.MessageAction.UPDATE,
+                                              global_gate=False,
+                                              global_eq=False)
+    qc = client.QuadCortex(StateTransport(full))
+    got = qc.inhibited_modules()
+    assert got is full
+    sent = qc._t.sent[-1]
+    assert isinstance(sent, pa.CompilerInhibitedModulesMessage)
+    assert sent.action == pa.MessageAction.READ
+    assert sent.SerializeToString() == b"\x08\x03"
+    match = qc._t.matches[-1]
+    assert match(full) is True
+    assert match(pa.CompilerInhibitedModulesMessage(global_gate=False)) is False
+    assert match(pa.CompilerInhibitedModulesMessage(global_eq=False)) is False
 
 
 def test_update_settings_sends_only_the_named_fields():

@@ -180,7 +180,7 @@ def pytest_collection_modifyitems(session, config, items):
             lambda dropped: config.hook.pytest_deselected(items=dropped)))
         return
     gated = sorted({
-        str(path.relative_to(ROOT))
+        path.relative_to(ROOT).as_posix()
         for path in map(_resolved, items)
         if path is not None and path.is_relative_to(SUITE)
     })
