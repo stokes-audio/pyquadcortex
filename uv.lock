@@ -390,6 +390,7 @@ dev = [
     { name = "grpcio-tools" },
     { name = "mypy" },
     { name = "mypy-protobuf" },
+    { name = "packaging" },
     { name = "pytest" },
 ]
 
@@ -399,6 +400,7 @@ requires-dist = [
     { name = "hid", specifier = ">=1.0.6" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15,<2" },
     { name = "mypy-protobuf", marker = "extra == 'dev'", specifier = ">=3.6" },
+    { name = "packaging", marker = "extra == 'dev'", specifier = ">=22" },
     { name = "protobuf", specifier = ">=7.35.1,<8" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "typing-extensions", specifier = ">=4.4" },

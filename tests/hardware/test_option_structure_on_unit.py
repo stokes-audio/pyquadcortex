@@ -21,8 +21,9 @@ verifies them all, so the cost is one read per position rather than one per
 parameter per position. On a full preset that is about 73 seconds.
 
 State-neutral by recall: nothing here saves, so the teardown reloads the preset
-and the grid returns to what the owner had. It refuses to start on a preset that
-already has unsaved edits, because a recall would discard the owner's own work.
+and the grid returns to what the owner had. It refuses to start when the preset
+already had unsaved edits before the session began, because a recall would
+discard the owner's own work. Edits made by earlier tests are the suite's own.
 """
 import time
 
@@ -68,51 +69,32 @@ def live_catalog(qc):
 
 
 @pytest.fixture
-def restored(qc, restores):
+def restored(restores, preset_dirty_at_start, reload_the_loaded_preset):
     """Reload the preset afterwards, which undoes every write this made.
 
     Goes through the `restores` fixture rather than doing its own teardown: that
     is where ADR-0005's one spelling of "COULD NOT RESTORE THE UNIT" lives, and
     a second copy of it here would be a second one to keep right. An earlier
-    version imported `_unrestored` from conftest directly, which loads conftest
-    a SECOND time under another module name - harmless for a pure function and a
-    trap for anything stateful beside it.
+    version imported `_unrestored` from conftest directly. pytest keeps one
+    module named `conftest` and it is whichever directory pytest walked into
+    last, so the name is not a stable way to reach the file beside this one.
 
-    A recall DISCARDS unsaved edits, so this refuses to run at all on a preset
-    that already has some - they would be the owner's, and nothing here could
-    put them back.
+    A recall DISCARDS unsaved edits, so this asks WHOSE they are rather than
+    whether there are any. Edits present before the session started are the
+    owner's and nothing here could put them back. Edits that appear during the
+    run are this suite's own: a module that writes a grid value restores the
+    value and leaves the preset marked edited. Six modules write one, and
+    `test_expression_targets.py` and `test_model_state.py` both sort ahead of
+    this one, so asking `preset_dirty()` here refused every full-suite run.
     """
-    assert qc.preset_dirty(timeout=15.0) is False, (
-        "the loaded preset already has unsaved edits. This test restores by "
-        "recalling, which would throw them away - save or reload the preset on "
-        "the unit and run again.")
-    before = qc.loaded_position()
+    assert preset_dirty_at_start is False, (
+        "the loaded preset already had unsaved edits when this session "
+        "started. This test restores by recalling, which would throw them "
+        "away - save or reload the preset on the unit and run again.")
 
-    def reload_it():
-        # Recalling the SAME slot does not reload it: the unit sees no change
-        # and does nothing. So this recalls a DIFFERENT slot first and comes
-        # back. `position` is a linear slot index, not an offset, so the other
-        # slot is 0 or 1 rather than a neighbour - any slot the unit actually
-        # loads will do, and the checks below prove one did rather than the
-        # comment claiming it.
-        other = 1 if before.position != 1 else 0
-        qc.recall_preset(before.folder_key, other, is_factory=before.is_factory)
-        time.sleep(6.0)
-        qc.recall_preset(before.folder_key, before.position,
-                         is_factory=before.is_factory)
-        time.sleep(8.0)
-        now = qc.loaded_position()
-        assert now.position == before.position, (
-            f"the unit is on slot {now.position}, not {before.position} where "
-            f"it started")
-        # Back on the right slot and still dirty means the reload was a no-op -
-        # the other slot was probably empty - and every write this test made is
-        # still on the owner's grid.
-        assert qc.preset_dirty(timeout=15.0) is False, (
-            f"slot {before.position} is still showing unsaved edits, so the "
-            f"reload did not take and this test's writes are still on the grid")
-
-    restores("the loaded preset", reload_it)
+    # One spelling of the recall-away-and-back dance, in conftest, because the
+    # session teardown that puts the edited flag back needs the same one.
+    restores("the loaded preset", reload_the_loaded_preset)
     yield
 
 

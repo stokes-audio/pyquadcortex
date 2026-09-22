@@ -71,6 +71,11 @@ offline modules do `from waiting import ...`, which works only while pytest puts
   fixture re-raises at the end naming every item it could not put back. Global
   settings are the ones to check first after a failure, since they survive a
   preset recall.
+- **The edited flag is put back once, at the end.** A write marks the preset
+  edited, and writing the original value back is another write, so the undo
+  callables put the grid right and leave the flag set. A session teardown clears
+  it with a recall, and only when the preset was clean before the first test:
+  unsaved edits that were already there are the owner's.
 - **It edits a scratch copy.** `scratch_preset` hands a test a disposable copy of
   the loaded preset. Nothing here saves a preset, so if a run dies badly,
   recalling any preset discards whatever it left on the grid.
@@ -79,10 +84,14 @@ offline modules do `from waiting import ...`, which works only while pytest puts
 
 - Quit Cortex Control. It holds the USB HID interface exclusively.
 - Expect the unit to be edited. The edits are real while they happen.
+- Do not touch the unit while a run is going. The suite reads the edited flag
+  once, before the first test, to tell your unsaved edits from its own; an edit
+  you make after that reads as the suite's and is discarded at the end.
 - `test_model_state.py` needs a loaded preset with no unsaved changes, because
   `PresetDirty` announces a change of the flag rather than an edit, so only the
-  first edit of a run produces one. The test skips with a message if the preset
-  arrives already dirty. Save or reload the preset on the unit and run again.
+  first edit of a run produces one. The `a_clean_preset` fixture reloads to get
+  it. It skips instead when the preset was already edited before the session
+  started, since clearing that would discard your work.
 
 ## One connection, and the connect burst
 

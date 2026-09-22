@@ -22,6 +22,16 @@ tree, tap a pixel, and send a bounded swipe. Gesture sequences are atomic and a
 capture primes the remote-control surface before input. The 4.0.1 profile keeps
 these operations visible but refuses them because they are unmeasured there.
 
+### Preserve device-provided preset keys without adding a listing dependency
+
+`delete_preset()` and `move_preset()` now also accept the `ProductData` returned
+by `list_presets()`, validate that its key belongs to the requested setlist, and
+send that key unchanged. The exact-name form remains listing-free and preserves
+the measured CorOS 4.0.1 `<setlist>/<name>.pb` wire shape, including hardware
+cleanup when listing reads are silent. The captured move shape now also carries
+its explicit `is_downloads: false` field. Unmeasured rename and occupied-slot
+swap behavior are deliberately not exposed.
+
 ### The screen shortens one control's words, and not because of the words
 
 A Mono Synth's oscillator tab draws `SIN` where the catalog says `Sine`. Whether
@@ -461,6 +471,13 @@ Nothing you install changes. The dev extra's `grpcio-tools` floor is `>=1.83.0`,
 the oldest release whose protoc emits the committed gencode 7.35.1, and
 `scripts/compile_protos.sh` refuses to install bindings older than the committed
 ones (ADR-0008).
+
+### A third runtime dependency: `typing-extensions`
+
+New since 0.40.0. `pip install` resolves it, so an upgrade needs no action. It
+carries the `TypeVar` defaults that `typing` gained in 3.13, while this package
+supports 3.11. Without them, binding a bare `Real` is a type error for anyone
+who type-checks their own code against `py.typed`.
 
 ## 0.40.0 - 2026-08-10
 
