@@ -75,7 +75,9 @@ message CortexMessageType {
     SetTestPresetInputOutputPorts = 68;
     SetTestPresetSplitMixPoints = 69;
     GenerateTestPreset = 70;
-    NumberOfMessageTypes = 71;
+    ModelPreset = 71;
+    RemoteControl = 72;
+    NumberOfMessageTypes = 73;
   }
 }
 message MessageAction {
@@ -2072,5 +2074,67 @@ message GenerateTestPresetMessage {
   oneof _grid_density {
     uint32 grid_density = 4;
   }
+}
+
+message ModelPresetID {
+  optional string value = 1;
+  optional bool is_factory = 2;
+  optional uint32 hash = 3;
+}
+
+message ModelPreset {
+  optional cortex_protobuf_v2.ModelPresetID id = 1;
+  optional string name = 2;
+  optional bool is_default = 3;
+  optional Model model = 4;
+}
+
+message ModelPresetMessage {
+  cortex_protobuf_v2.MessageAction.Enum action = 1;
+  optional uint64 request_id = 2;
+  repeated cortex_protobuf_v2.ModelPreset presets = 3;
+  optional int32 create_from_row = 4;
+  optional int32 create_from_column = 5;
+  optional int32 create_from_hash = 6;
+  optional int32 loaded_row = 7;
+  optional int32 loaded_column = 8;
+  optional int32 loaded_hash = 9;
+  optional int32 loaded_capture_version = 10;
+  optional cortex_protobuf_v2.ModelPresetID loaded_preset_id = 11;
+}
+
+message RemoteControlMouse {
+  float x = 1;
+  float y = 2;
+  enum Type {
+    PRESS = 0;
+    RELEASE = 1;
+    MOVE = 2;
+    TAP = 3;
+    DRAG = 4;
+  }
+  Type type = 3;
+  float to_x = 4;
+  float to_y = 5;
+}
+
+message RemoteControlScreenshot {
+  optional bytes payload = 1;
+  optional uint32 x = 2;
+  optional uint32 y = 3;
+  optional uint32 w = 4;
+  optional uint32 h = 5;
+}
+
+message RemoteControlGraphicsTree {
+  optional string payload = 1;
+}
+
+message RemoteControlMessage {
+  cortex_protobuf_v2.MessageAction.Enum action = 1;
+  optional uint64 request_id = 2;
+  optional cortex_protobuf_v2.RemoteControlMouse mouse = 3;
+  optional cortex_protobuf_v2.RemoteControlScreenshot screenshot = 4;
+  optional cortex_protobuf_v2.RemoteControlGraphicsTree graphics_tree = 5;
 }
 

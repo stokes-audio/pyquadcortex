@@ -15,6 +15,12 @@ sustained stretch without a correction.
 
 ## Unreleased
 
+### CorOS 4.1 physical-screen control is exposed
+
+`QuadCortex41` can capture the full 800 x 480 display, read the zenUI graphics
+tree, tap a pixel, and send a bounded swipe. Gesture sequences are atomic and a
+capture primes the remote-control surface before input. The 4.0.1 profile keeps
+these operations visible but refuses them because they are unmeasured there.
 ### Rename the unit, drive undo/redo, and read inhibited modules
 
 `set_device_name()` sends a sparse Version update. `undo()` and `redo()` drive

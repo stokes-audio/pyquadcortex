@@ -20,9 +20,11 @@ def test_everything_contains_any_name_and_says_what_it_is():
     assert repr(support.EVERYTHING) == "EVERYTHING"
 
 
-def test_hardware_is_frozen_and_takes_the_two_facts():
-    hw = support.Hardware(footswitches=8, expression_ports=2)
-    assert (hw.footswitches, hw.expression_ports) == (8, 2)
+def test_hardware_is_frozen_and_carries_profile_physical_facts():
+    hw = support.Hardware(
+        footswitches=8, expression_ports=2, display_size=(800, 480))
+    assert (hw.footswitches, hw.expression_ports, hw.display_size) == (
+        8, 2, (800, 480))
     with pytest.raises(dataclasses.FrozenInstanceError):
         hw.footswitches = 4  # type: ignore[misc]
 

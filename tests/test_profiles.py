@@ -33,7 +33,8 @@ def test_quadcortex_declares_the_4_0_1_profile():
     assert qc.MEASURED_ON == ("4.0.1",)
     assert qc.CC_VERSION == "4.0.1"
     assert qc.EVIDENCE is support.Evidence.MAINTAINER
-    assert qc.HARDWARE == support.Hardware(footswitches=8, expression_ports=2)
+    assert qc.HARDWARE == support.Hardware(
+        footswitches=8, expression_ports=2, display_size=(800, 480))
     assert qc.VERIFIED is support.EVERYTHING
     assert qc.models is coros_4_0_1.models
     assert qc.params is coros_4_0_1.params
@@ -253,13 +254,17 @@ def test_the_4_1_profile_exposes_only_operations_with_contributed_evidence():
     assert issubclass(cls, client.QuadCortex)
     assert cls.MEASURED_ON == ("4.1.0",)
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
-    assert cls.VERIFIED == frozenset({"create_local_backup", "set_device_name"})
+    verified = {
+        "capture_screen", "create_local_backup", "graphics_tree",
+        "set_device_name", "swipe_screen", "tap_screen",
+    }
+    assert cls.VERIFIED == frozenset(verified)
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
     assert isinstance(cls.models, support.NoSnapshot)
     with pytest.raises(AttributeError, match="coros_4_1_0"):
         cls.models.Delay
     assert cls(FakeTransport()).unverified_operations == (
-        client.QuadCortex.operations() - {"create_local_backup", "set_device_name"}
+        client.QuadCortex.operations() - verified
     )
 
 
