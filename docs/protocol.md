@@ -423,6 +423,12 @@ profile. Measured 2026-09-07: a `connect()` and its burst carry exactly three
 inbound `Version` messages, the full reply (15 fields, at +0.71 s), the unit's
 own `Version{READ}` about 1 ms behind it, and the answer to the announce
 (carrying `cortex_control_version_valid`, at +0.73 s).
+CorOS 4.1.0 produced the same three shapes in a contributed 2026-09-11 capture:
+identity `UPDATE`, the unit's action-only `READ`, then the compatibility
+`UPDATE`. Four narrower 4.1.0 connection observations on 2026-09-04 did not see
+that final answer before their observation windows ended. The later complete
+capture is why the missing answer is recorded here without treating it as a
+profile difference.
 
 ### 4.3 Keepalive and disconnect
 
@@ -1869,6 +1875,10 @@ A save clears the flag (watched flipping across a save). Writing an edited
 parameter back to its old value did not clear it within the same connection.
 `PresetDirty{READ}` answers as an `UPDATE` in 2 to 11 ms; `is_dirty` has no
 presence, so absent is false.
+
+One uncontrolled CorOS 4.1.0 run appeared to restate `is_dirty: true` during an
+already-dirty edit window. It did not establish whether this was unsolicited or
+a late read reply, so the controlled 4.0.1 rule above remains the protocol claim.
 
 ### 12.5 Standby, reboot, shutdown, and device loss
 

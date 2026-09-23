@@ -15,6 +15,19 @@ sustained stretch without a correction.
 
 ## Unreleased
 
+### CorOS 4.1 catalog and measured profile
+
+`QuadCortex41` now binds a generated CorOS 4.1.0 snapshot containing 422 factory
+models and its firmware-specific parameter and option constants. Contributor
+hardware runs on 2026-09-11 verified 16 inherited operations; the independently
+captured local-backup operation is retained as a seventeenth verified method.
+Unversioned `protocol.models`, `params`, and `options` remain the CorOS 4.0.1
+compatibility snapshot.
+
+The snapshots are intentionally distinct. Notably, Minivoicer mode value 2 is
+`CHROM` on 4.0.1 but `NATURAL_MINOR` on 4.1.0, and the 4.1 Overlord Synth scale
+is no longer a boolean-shaped control. Callers should use `qc.models`,
+`qc.params`, and `qc.options` from the connected profile.
 ### Rename the unit, drive undo/redo, and read inhibited modules
 
 `set_device_name()` sends a sparse Version update. `undo()` and `redo()` drive
@@ -44,9 +57,13 @@ all seven out, read on the unit 2026-09-16 with positions 0 and 3 driven from a
 host. The same word draws two ways on two controls, so nothing in the catalog's
 text predicts which.
 
-Nineteen controls have now been read. Two shorten a word, four draw circles
+Twenty controls have now been read. Three shorten a word, four draw circles
 instead of words, and the other thirteen match the catalog. `Osc1Wave` is still
-the only enum whose names are known to differ from what the screen shows.
+the only enum whose names are known to differ from what the screen shows. The
+CorOS 4.1 `Overlord Synth` rename was re-driven across all seven positions on
+2026-09-23; it confirms that catalog position 5 displays `WHT` and position 6
+displays `PNK`, so the 4.1 enum now carries the same guarded correction as the
+4.0.1 snapshot.
 
 ### New: `options.OPTION_USAGE` says how many parameters each option list decides
 

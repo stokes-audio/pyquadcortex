@@ -659,6 +659,15 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
     # below is exactly the kind that drifts, and one beside it already had.
     bools = sum(len(users) for labels, users in every.items()
                 if tuple(o.lower() for o in labels) in BOOLEAN_LISTS)
+    dynamic_parameters = sum(
+        1 for model in cat for parameter in model.parameters
+        if parameter.dynamic
+    )
+    # Spelled out at 12 so the committed 4.0.1 module regenerates byte for
+    # byte; every other count renders as a numeral.
+    dynamic_count = (
+        "Twelve" if dynamic_parameters == 12 else str(dynamic_parameters)
+    )
     status = {labels: audit_status(labels, readings) for labels in every}
     # Of the three lists with no enum, the parameters whose words are still
     # open. This was the literal 260 - every parameter those lists cover - and
@@ -697,7 +706,7 @@ def render(cat: catalog.ModelCatalog, snapshot: str) -> str:
         "",
         "    qc.set_param(block, 'SYNC', True)",
         "",
-        "**A dynamic list gets no enum either.** Twelve parameters build their",
+        f"**A dynamic list gets no enum either.** {dynamic_count} parameters build their",
         "list from the preset - it includes one entry per upstream block - so",
         "read those with :func:`~pyquadcortex.protocol.client.param_options`.",
         "",

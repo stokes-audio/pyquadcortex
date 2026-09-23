@@ -528,11 +528,13 @@ def test_only_the_mono_synth_shortens_a_word_on_screen():
               if r["screen"] and r["screen"] != r["labels"][r["index"]]}
     assert differ == {
         ("Mono Synth", "OSC1 WAVE"), ("Mono Synth", "OSC2 WAVE"),
+        ("Overlord Synth", "OSC1 WAVE"),
         ("Tempo page", "STEPSTATE0"), ("Tempo page", "STEPSTATE1"),
         ("Tempo page", "STEPSTATE2"), ("Tempo page", "STEPSTATE3"),
     }, (
         "the screen matches the catalog everywhere it has been read except the "
-        "Mono Synth's two oscillators, which shorten, and the metronome's four "
+        "Mono Synth's two oscillators and its CorOS 4.1 Overlord Synth rename, "
+        "which shorten, plus the metronome's four "
         "step cells, which draw circles. A new entry here means "
         "docs/domain-model.md needs rewriting, not this list extending")
 

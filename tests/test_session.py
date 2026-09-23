@@ -506,10 +506,11 @@ def test_connect_hands_back_the_4_1_class_for_a_4_1_unit(fake_stack):
     qc = session.connect()
     assert type(qc) is profiles.QuadCortex41
     assert qc.unverified_operations == (
-        client.QuadCortex.operations() - profiles.QuadCortex41.VERIFIED
-    )
+        client.QuadCortex.operations() - profiles.QuadCortex41.VERIFIED)
+    assert "switch_scene" not in qc.unverified_operations
+    assert "set_gig_view" in qc.unverified_operations
     with pytest.raises(errors.ControlNotDrivable):
-        qc.switch_scene(1)
+        qc.set_gig_view(True)
 
 
 def test_connect_refuses_an_unknown_unit_and_releases_the_device(fake_stack):

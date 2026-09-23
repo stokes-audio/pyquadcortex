@@ -248,18 +248,25 @@ def test_support_defaults_to_verified_and_is_readable():
     assert qc.support is support.Support.EXPERIMENTAL
 
 
-def test_the_4_1_profile_exposes_only_operations_with_contributed_evidence():
+def test_the_4_1_profile_connects_with_its_snapshot_and_measured_operations():
     cls = profiles.QuadCortex41
     assert issubclass(cls, client.QuadCortex)
     assert cls.MEASURED_ON == ("4.1.0",)
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
-    assert cls.VERIFIED == frozenset({"create_local_backup", "set_device_name"})
+    assert cls.VERIFIED == frozenset({
+        "active_scene", "clear_expression", "create_local_backup",
+        "read_current_preset", "set_bypass",
+        "set_chain_input", "set_device_name", "set_expression", "set_global_eq", "set_hold_timing",
+        "set_input_port", "set_param", "set_scene_color", "set_scene_label", "set_tempo_mode",
+        "switch_scene", "tempo_mode", "update_settings",
+    })
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
-    assert isinstance(cls.models, support.NoSnapshot)
-    with pytest.raises(AttributeError, match="coros_4_1_0"):
-        cls.models.Delay
-    assert cls(FakeTransport()).unverified_operations == (
-        client.QuadCortex.operations() - {"create_local_backup", "set_device_name"}
+    assert cls.models.__name__.endswith("catalogs.coros_4_1_0.models")
+    assert cls.params.__name__.endswith("catalogs.coros_4_1_0.params")
+    assert cls.options.__name__.endswith("catalogs.coros_4_1_0.options")
+    assert len(cls.models.ALL) == 422
+    assert len(cls(FakeTransport()).unverified_operations) == (
+        len(client.QuadCortex.operations()) - len(cls.VERIFIED)
     )
 
 

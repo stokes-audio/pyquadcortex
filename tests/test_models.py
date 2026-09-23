@@ -1,15 +1,26 @@
 """Tests for the generated factory-model constants (pyquadcortex.protocol.models).
 
 The constants are generated from a device's ModelRepo by
-``scripts/generate_models.py`` and cover only FACTORY models - the ones every
-Quad Cortex is guaranteed to have. Purchased plugin models and the player's own
-Neural Captures are deliberately absent: their ids are not portable, so they
-must be looked up at runtime through ``qc.catalog``.
+``scripts/generate_models.py`` and cover the FACTORY models in both committed
+firmware snapshots. Purchased plugin models and the
+player's own Neural Captures are deliberately absent: their ids are not
+portable, so they must be looked up at runtime through ``qc.catalog``.
 """
+
+import pathlib
 
 import pytest
 
 from pyquadcortex.protocol import models
+from pyquadcortex.protocol.catalogs.coros_4_0_1 import models as models_4_0_1
+from pyquadcortex.protocol.catalogs.coros_4_1_0 import models as models_4_1_0
+
+
+FIXTURES = pathlib.Path(__file__).parent / "fixtures/generated"
+SNAPSHOTS = [
+    ("coros_4_0_1", models_4_0_1, 414),
+    ("coros_4_1_0", models_4_1_0, 422),
+]
 
 
 def test_anchors_match_ids_confirmed_on_hardware():
@@ -56,17 +67,20 @@ def test_constants_are_usable_where_a_model_is_expected():
     assert int(some_id) == some_id
 
 
-def test_count_is_the_full_factory_set():
-    # 414 factory models on CorOS as captured; a drift here means the generator
-    # was re-run against a device with different content - re-check before
-    # updating this number.
-    #
-    # It was 412 until 2026-09-15. `Model.hidden` read the XML attribute by
-    # PRESENCE, and two amps carry `hidden="false"` - Bogna Uber Clean (1130)
-    # and Bogna Uber Lead (1131). Both were reported hidden, so `is_factory`
-    # dropped them and neither had a constant. The unit places both on request,
-    # which is how it was settled rather than by reading the attribute again.
-    assert len(models.ALL) == 414
+@pytest.mark.parametrize("snapshot,module,count", SNAPSHOTS,
+                         ids=[row[0] for row in SNAPSHOTS])
+def test_count_is_the_full_factory_set(snapshot, module, count):
+    assert len(module.ALL) == count
+
+
+@pytest.mark.parametrize("snapshot,module,count", SNAPSHOTS,
+                         ids=[row[0] for row in SNAPSHOTS])
+def test_the_published_model_names_and_ids_have_not_changed(
+        snapshot, module, count):
+    expected = (FIXTURES / f"model_members_{snapshot}.txt").read_text(
+        encoding="utf-8").splitlines()
+    actual = [f"{name}={model_id}" for name, model_id in sorted(module.ALL.items())]
+    assert actual == expected
 
 
 def test_unknown_attribute_raises():

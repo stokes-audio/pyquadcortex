@@ -261,6 +261,8 @@ def _carries_unknown_fields(message) -> bool:
 #: requires no unkept field). So ``needs_read`` stays set and first access still
 #: reads, which is the case section 9's third column exists for: where the
 #: unit's own push cannot be trusted whole, we ask.
+#: CorOS 4.1.0's corresponding Version shapes are recorded beside the 4.0.1
+#: measurement in ``docs/protocol.md`` section 4.2.
 #:
 #: **The read costs two messages, and only one of them says anything.** The
 #: protocol is symmetric, so the unit answers a ``Version`` READ and then asks

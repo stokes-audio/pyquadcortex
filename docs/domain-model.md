@@ -1299,8 +1299,8 @@ hidden, and they depart from the catalog anyway by drawing circles instead of
 words. Their model is `internal` and sits in a hidden category. Those are two
 more flags, and neither one is `Parameter.hidden`.
 
-Nineteen controls have been read - the fixture holds 24, but five of those are
-records of looking and finding no control. Two shorten a word and four draw
+Twenty controls have been read - the fixture holds 25, but five of those are
+records of looking and finding no control. Three shorten a word and four draw
 circles. The other thirteen match the catalog exactly.
 
 Two things stay unknown: whether a control nobody has looked at yet draws its own
@@ -1344,6 +1344,10 @@ say `"true"` and one says `"atma"` (the Freeze block's `MOMENTARY`), the Quad
 Cortex Mini's `device_type`, so the catalog names the model a parameter is hidden
 on. The Soldano carries two parameters called `CHANNEL`, one flagged and one not,
 and the screen draws the second only, so the unit honours the flag per parameter.
+
+CorOS 4.1 renames model 30001 to `Overlord Synth`; all seven `OSC1 WAVE`
+positions were driven there on 2026-09-23 and produced the same `SIN`, `TRI`,
+`SAW`, `SQR`, `PUL`, `WHT`, `PNK` screen sequence.
 
 ### `mid_string` is the label at the middle of the wire
 

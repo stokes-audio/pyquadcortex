@@ -222,8 +222,10 @@ qc.remove_block(Block(0, 5))
 qc.save_current_preset(Setlist.USER, "30A", "My Patch")
 ```
 
-`pyquadcortex.protocol.models` has constants for the **414 factory blocks** every
-unit has, grouped by category. Anything else, purchased plugin models and your own
+`pyquadcortex.protocol.models` is the CorOS 4.0.1 compatibility snapshot and
+has constants for its **414 factory blocks**. A connected client's `qc.models`
+uses that unit's profile; the contributed CorOS 4.1.0 snapshot exposes 422.
+Anything else, purchased plugin models and your own
 Neural Captures, has ids that differ per unit, so look those up on the connected
 unit through `qc.catalog`:
 
