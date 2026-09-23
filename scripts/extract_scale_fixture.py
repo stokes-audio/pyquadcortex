@@ -4,11 +4,14 @@
     python scripts/extract_scale_fixture.py --payload model_repo_payload.bin
 
 The offline suite has to prove that the device's own catalog reproduces every
-reading taken off the unit's screen. That needs real numbers, and the obvious
-way to get them - committing ``ModelRepo.xml`` - would republish 556 KB of the
-vendor's product catalog: every model name, every impulse-response name, every
-knob. ``tests/test_catalog.py`` has said "ships no vendor data" since it was
-written, and this keeps that true.
+reading taken off the unit's screen. That needs real numbers. Committing the
+catalog whole was once the thing this script existed to avoid; since ADR-0022
+the 4.0.1 payload IS committed, at
+``tests/fixtures/catalog/model_repo_coros_4_0_1.bin``, so that is no longer the
+reason. What remains is that the fixture is the data under test, read by tests
+that assert on a few dozen parameters and nothing else. Whether it should now
+be derived from the committed payload rather than distilled by hand is
+ADR-0022's third open question.
 
 So the fixture holds only the parameters the tests actually assert on: for each,
 its bounds, its taper and its floor. That is the data under test and nothing

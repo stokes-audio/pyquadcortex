@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Provenance for model_repo_coros_4_0_1.bin: the identifying fields of the",
+    "Version reply from the unit that produced it. The payload itself states",
+    "nothing about its own origin, so without this file nothing can tell which",
+    "firmware generated the snapshot beside it.",
+    "The serial number, MAC address and custom name are left out on purpose:",
+    "they identify one owner's unit and say nothing about the firmware, and",
+    "tests/test_catalog_payload.py holds them out.",
+    "comms_version is in the reply and is left out for a different reason: it is",
+    "a protocol version rather than an identity, and being a bytes field it has",
+    "no faithful JSON spelling.",
+    "cortex_control_version and cortex_control_version_valid are absent because",
+    "the unit's reply does not carry them, not because they were dropped. The",
+    "first is what the host announces TO the unit; the second comes back in a",
+    "later message of its own. See docs/protocol.md, the connect handshake."
+  ],
+  "captured_utc": "2026-09-22T18:30:21Z",
+  "payload_bytes": 46695,
+  "payload_sha256": "fdc30861953be15ce4e776f3e66d101fb55d7bb4ec6aa85f77e35e856777ac14",
+  "payload_sha256_note": "Identifies THIS capture only. Each read rotates the per-model blob tokens, so a later read of the same catalog has a different hash. Compare parsed catalogs, never this value.",
+  "version_reply": {
+    "zenos_git_hash": "4.0.1",
+    "device_type": "QC",
+    "app_fw_version": "d14e",
+    "bootloader_fw_version": "d14d",
+    "zencoder_fw_app": "d111",
+    "zencoder_fw_bootloader": "d10d",
+    "zenwireless_fw_version": "cf9daede4300aaae664fc527cede12ae",
+    "uboot_version": "U-Boot 2015.01 ADI-1.3.0 (Sep 30 2021 - 01:01:44)",
+    "linux_kernel_version": "Linux buildroot 4.0.0-ADI-1.3.0 #1 PREEMPT Fri Feb 20 12:30:04 UTC 2026 armv7l (none)",
+    "is_ess": true
+  }
+}

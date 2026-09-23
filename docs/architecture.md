@@ -520,6 +520,18 @@ On the unit it covers:
    differently is written into `protocol.md` next to the existing entry, dated and
    named, and overridden on the new class.
 
+Step 1 is the one you repeat. A generator change means regenerating, and without
+a saved reply that means borrowing the unit again. Each generator also takes
+`--payload`, a saved `ModelRepo` reply, so a snapshot can be rebuilt afterwards
+with nothing attached:
+
+    python scripts/generate_options.py --snapshot coros_4_0_1 \
+        --payload tests/fixtures/catalog/model_repo_coros_4_0_1.bin
+
+Save the new profile's payload beside that one with its provenance record, and
+add a row to `PAYLOADS` in `tests/test_catalog_payload.py`, which holds each
+committed payload to the snapshot it generates (ADR-0022).
+
 When measuring a new CorOS release, check these in order:
 
 1. **The schema.** Re-recover the `.proto` files from the matching Cortex
