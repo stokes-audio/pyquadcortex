@@ -382,13 +382,13 @@ def test_the_document_quotes_the_same_parameter_counts():
     per_status = collections.defaultdict(int)
     for labels, status in options.OPTION_AUDIT.items():
         per_status[status] += options.OPTION_USAGE[labels]
-    assert sum(per_status.values()) == 527
+    assert sum(per_status.values()) == 611
 
     text = " ".join(
         (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")
         .read_text(encoding="utf-8").split())
     read = per_status["audited"] + per_status["drawn"]
-    for phrase in (f"cover {read} of the 527", f"unread cover {per_status[None]}"):
+    for phrase in (f"cover {read} of the 611", f"unread cover {per_status[None]}"):
         assert phrase in text, (
             f"docs/domain-model.md does not say {phrase!r}. The parameter "
             f"counts moved and the document did not.")
@@ -408,7 +408,7 @@ def test_the_unread_work_is_long_tailed_and_the_document_says_so():
         key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
     total = sum(options.OPTION_USAGE[labels] for labels in unread)
     top5 = sum(options.OPTION_USAGE[labels] for labels in unread[:5])
-    assert (len(unread), total) == (94, 190)
+    assert (len(unread), total) == (94, 218)
 
     text = " ".join(
         (pathlib.Path(__file__).parents[1] / "docs" / "domain-model.md")

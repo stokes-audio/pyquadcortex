@@ -1972,10 +1972,13 @@ The XML is `<Models><Category id name><Model id name .../></Category></Models>`.
 
 - **`Model/@id` is the wire hash.** Ids are globally unique: category 4
   (Equalizer) holds 4000 to 4007, category 21 (Cabsim Bass) holds 21001 to 21009.
-- **`<Parameter>` children are in wire-index order**, each with `min`, `max`,
+- **Resolved `<Parameter>` children are in wire-index order**, each with `min`, `max`,
   `defaultValue`, `units`, `skew`, `steps`, `stepNames`, `type` and more. This is
-  what gives a parameter index meaning: writing index 0 of a cab moves no visible
-  knob because a cab's own entry lists internal `ir selector` parameters.
+  what gives a parameter index meaning. A model may declare `clones`; numeric
+  parameter `replaces` values place child metadata at inherited indexes and
+  child-only parameters extend the layout. Read-only CorOS 4.1 checks confirmed
+  the 21/31-parameter cab parent layouts and the cloned `Gojira REV` ordering; the
+  maintainer independently confirmed the same shapes on CorOS 4.0.1.
 - **Parameter values on the wire are normalized 0..1.** Sending `1.0` to a
   `THRESHOLD` whose catalog range is -60..+12 dB made the unit display +12.0 dB.
 
@@ -1986,6 +1989,7 @@ Attributes that classify a model:
 | `sku`, `plugin_id` | purchasable plugin content; a given unit may not have it |
 | `hidden`, `internal` | not user-facing; `hidden` also appears on whole categories. Read the value, not the presence: two ordinary amps ship `hidden="false"` (Bogna Uber Clean 1130, Bogna Uber Lead 1131) |
 | `replaces` | this model supersedes the listed id(s). Both stay in the catalog and can share a display name (two "Graphic-9" equalizers, 4005 replacing 4002) |
+| `clones` | this model inherits another model's parameter layout; numeric parameter-level `replaces` values override inherited wire indexes |
 
 Because the catalog comes from the unit it also covers Neural Captures
 (categories 14 and 20), which are user content. The library ships generated

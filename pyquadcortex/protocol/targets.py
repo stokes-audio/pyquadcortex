@@ -34,15 +34,6 @@ from dataclasses import dataclass
 from pyquadcortex.protocol.errors import ControlNotDrivable
 
 
-#: Catalog model ids for the containers whose model never varies.
-CABSIM_LAYOUT = 12000
-#: The categories whose models use the `Default Cabsim` layout. Enumerated
-#: rather than matched on a "Cabsim" prefix: this repo's precedent is
-#: `LANE_OUTPUT_UNASSIGNABLE` - "a MEASURED LIST, not a rule" - and a prefix
-#: would silently sweep in a future category whose layout may differ.
-#: `tests/hardware/test_generated_constants.py` holds the same four names.
-CABSIM_CATEGORIES = ("Cabsim Guitar (M)", "Cabsim Guitar (ST)",
-                     "Cabsim Bass (M)", "Cabsim Bass (ST)")
 LANE_OUTPUT_CONTROL = 23000
 INPUT_GATE_CONTROL = 28000
 TEMPO_CONTROL = 25000
@@ -133,10 +124,8 @@ class ParamTarget:
         spoken to a device. Ask for :meth:`spec_at` when the spec is actually
         needed.
 
-        The name resolves against :meth:`wire_model`, not against the model's
-        own entry, because the index this returns is a WIRE index. On a cab
-        those are different lists - see that method - and resolving against the
-        model's own one returned a number that addressed a different knob.
+        The name resolves against :meth:`wire_model`; ModelRepo clone
+        inheritance has already made that model's parameters wire-indexed.
         """
         if isinstance(param, str):
             source = self.wire_model(get_catalog, model)
@@ -156,11 +145,9 @@ class ParamTarget:
     def spec_at(self, index, get_catalog, model=None):
         """The catalog :class:`~pyquadcortex.protocol.catalog.Parameter` at ``index``.
 
-        ``index`` is a WIRE index, so this reads :meth:`wire_model` rather than
-        the model's own entry. There is one answer to "what sits at wire index
-        N" and every caller wants the same one - the unit check, the string
-        guard, the bool guard and the conversion. Two methods answering it two
-        ways is what ADR-0016's triage found twice.
+        ``index`` is a WIRE index, so this reads :meth:`wire_model`. There is
+        one answer to "what sits at wire index N" and every caller wants the
+        same one.
 
         ``None`` when the catalog does not describe it, which is a real case:
         the wire carries more parameters than the catalog documents on several
@@ -173,60 +160,13 @@ class ParamTarget:
         return source.parameters[index]
 
     def wire_model(self, get_catalog, model=None):
-        """The catalog :class:`Model` whose parameter list is WIRE-INDEXED here.
+        """This target's wire-indexed catalog model.
 
-        Usually the block's own model. The exception is a cab, and the reason is
-        not that the catalog under-describes it - it is that a cab's own entry
-        is a LOCAL list, numbered from zero over the parameters that model
-        contributes, and those numbers do not address the wire.
-
-        `Plini Cab (M)` (12053) is the whole argument. Its own entry reads
-        ``0:ir selector 1:ir selector 2:POSITION 3:DISTANCE 4:POSITION
-        5:DISTANCE``, and the shared `Default Cabsim` layout reads
-        ``0:bypass 1:ir selector 2:LEVEL 3:PAN 4:DISTANCE 5:POSITION``. They are
-        not the same list with holes in it; they are different numberings of
-        overlapping parameters. Writing wire index 2 on that block and reading
-        the screen settled which one the wire speaks: it showed ``LEVEL
-        -3.0 dB``, the layout's answer, with the block's own POSITION untouched
-        beside it. Recorded in `tests/test_scales.py`. 12 cabs name their own
-        index 2 that way - 8 call it DISTANCE and 4 POSITION - and on the other
-        157 it is absent, which is why the disagreement was invisible for so
-        long: 157 of 174 fail quietly rather than wrongly.
-
-        So the test is whether the model's own list can be wire-indexed at all,
-        and LENGTH answers it. 169 of the 174 cab models describe 2, 4 or 6
-        parameters against the layout's 21, and a list that short cannot be
-        numbering wire positions from 0 - if it were, index 2 would have read
-        POSITION on the unit, and it read LEVEL. The other 5 describe 21 or 31
-        and start at ``0:bypass`` exactly as the layout does, so they number the
-        wire themselves and are left alone.
-
-        Leaving those 5 alone matters beyond tidiness: the three 31-parameter
-        cabs DIVERGE from the layout at index 19, where the layout says
-        `IR NAME` and they say `ROOM MIX`. Borrowing for a model that already
-        numbers the wire would be this same bug facing the other way.
-
-        What the catalog adds beyond the reading: of the 16 LEVEL parameters
-        the 5 self-describing cabs carry between them, every one has
-        ``MIN_CABSIM_DB`` and ``skew="4.9594844"``, and those 5 include stereo
-        models. So the device states the law wherever it states anything, and
-        the 169 that state nothing are exactly the ones that borrow. Applying it
-        across the category is still an EXTRAPOLATION and saying otherwise would
-        overstate it - all four blocks read on hardware are mono, and 86 of the
-        174 are stereo.
-
-        Only cabs need this. `Parallax` is a Bass Overdrive carrying a cab
-        section and describes that section itself, which is why it is outside
-        CABSIM_CATEGORIES and why its own LEVEL carries the cab law - see
-        `tests/test_scales.py`.
+        :func:`parse_model_repo` resolves the device's declared ``clones`` and
+        parameter ``replaces`` relationships. Targets therefore need no cab
+        category heuristic or shared-layout borrowing.
         """
-        source = self.model(get_catalog, model)
-        if source is None or source.category not in CABSIM_CATEGORIES:
-            return source
-        layout = get_catalog().get(CABSIM_LAYOUT)
-        if layout is None or len(source.parameters) >= len(layout.parameters):
-            return source
-        return layout
+        return self.model(get_catalog, model)
 
     def normalize(self, index, real, get_catalog, spec=None):
         """Convert ``real``, in the parameter's own units, to the wire's 0..1.

@@ -1203,11 +1203,16 @@ omitted with the reason written down.
 
 | attribute | on | what it looks like, and what is unknown |
 |---|---|---|
-| `replaces` | 462 | Distinct from the `<Model>` attribute of the same name. On a parameter it presumably names a superseded index, which would matter for reading an old preset. Untested |
 | `toggleOn`, `toggleOff`, `toggleStep` | 132 / 83 / 13, 212 parameters between them | `toggleOn` carries a number on `float` parameters such as a tremolo's `LEVEL`, and `toggleStep` sometimes carries a pair (`"0,1"`). The obvious reading is the two values a footswitch toggle alternates between. Untested |
 | `tooltip` | 126 | The help text the unit shows. Real prose, sometimes with content: a Vibrato's `MODE` warns that changing it causes a brief mute. The values contain HTML |
 | `selfTestValue` | 66 | A value the unit uses during its self test. Sometimes an IR name, sometimes a token |
 | `isplayPos` | 1 | `displayPos` with the `d` missing. The catalog's own typo, recorded rather than silently accepted as an alias |
+
+Numeric parameter `replaces` values are inherited wire indexes on a model that
+declares `clones`; the parser resolves them before publishing the model.
+`Model/@clones` names the parent layout. The nonnumeric `replaces="INTENSITY"`
+on `MX Vibe` remains unexplained and makes only that model fall back to its local
+parameter order.
 
 ### `type` names the widget, and two of its values are readouts
 
@@ -1375,23 +1380,23 @@ against `Return 1/2`, `USB 5` against `USB input 5`).
 So every list's names are a hypothesis until a person reads them off the unit.
 `options.OPTION_AUDIT` publishes which have been, keyed by the labels rather than
 by the enum so the two Off/On lists and the metronome list, which get no enum
-and are 260 parameters between them, can be recorded too. The readings are in
+and are 316 parameters between them, can be recorded too. The readings are in
 `tests/fixtures/catalog/option_readings.json`, one row per position, and
 `scripts/generate_options.py` stamps each enum's docstring from them.
 
 **Where it stands (2026-09-16, CorOS 4.0.1): 13 audited, 1 drawn, 5 not drawn,
-94 unread**, of 113 fixed lists. The fourteen read lists cover 301 of the 527
-parameters that carry a fixed list. The 94 unread cover 190.
+94 unread**, of 113 fixed lists. The nineteen read lists cover 357 of the 611
+parameters that carry a fixed list. The 94 unread cover 218.
 
 What is left is not 94 equal jobs. Ranked by how many parameters each list
-decides, the tail falls away fast: the biggest five cover 54 of the 190.
+decides, the tail falls away fast: the biggest five cover 82 of the 218.
 `options.OPTION_USAGE` publishes the count for every list, so a session at the
 unit can be planned from the library rather than from a count taken once.
 
 | parameters | positions | list | somewhere it appears |
 |---|---|---|---|
+| 40 | 3 | `Small,Med,Large` | Ambience / `SIZE` |
 | 14 | 17 | a 17-entry `SYNC NOTE` | Vibrato / `SYNC NOTE` |
-| 12 | 3 | `Small,Med,Large` | Ambience / `SIZE` |
 | 11 | 3 | `Off,Duck,Gate` | Digital Delay (ST) / `DYN MODE` |
 | 9 | 14 | a 14-entry `SYNC NOTE` | Dual Chorus / `SYNC NOTE` |
 | 8 | 3 | `Normal,Thick,Thicker` | CA 1Star Clean 50W Normal / `EQ` |
@@ -1411,7 +1416,7 @@ defines.
 
 | list | parameters | how it was read |
 |---|---|---|
-| `Off,On` | 222 | a Circular Delay's `SYNC` and `TRAILS`, each position driven |
+| `Off,On` | 278 | a Circular Delay's `SYNC` and `TRAILS`, each position driven |
 | `SYNC NOTE` (21 entries) | 28 | the dial in order, anchored at 0 and 13 |
 | `OFF,ON` | 25 | the same block's `VINTAGE MODE`, each position driven |
 | `OFF,MUTE,DOWN,ON` | 13 | the metronome cells, re-driven as the control |

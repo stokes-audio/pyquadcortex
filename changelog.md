@@ -15,6 +15,12 @@ sustained stretch without a correction.
 
 ## Unreleased
 
+### ModelRepo clone layouts are resolved
+
+Models that declare `clones` now expose the inherited wire layout with numeric
+parameter replacements applied before child-only extensions. This fixes both
+ordinary and PCOM cab addressing and the cloned reverb families. A malformed
+model falls back locally without discarding the rest of the device catalog.
 ### Rename the unit, drive undo/redo, and read inhibited modules
 
 `set_device_name()` sends a sparse Version update. `undo()` and `redo()` drive
@@ -52,7 +58,7 @@ the only enum whose names are known to differ from what the screen shows.
 
 `OPTION_AUDIT` tells you whether anybody has held a list against the unit's
 screen. It does not tell you how much rides on the answer, and that is the other
-half of the question: `Off,On` decides 222 parameters and `CHO1,CHO2` decides
+half of the question: `Off,On` decides 278 parameters and `CHO1,CHO2` decides
 two, so 94 unread lists are not 94 equal jobs.
 
 `OPTION_USAGE` publishes the count for every fixed list, keyed by the labels
@@ -64,11 +70,11 @@ from pyquadcortex.protocol import options
 unread = [labels for labels, status in options.OPTION_AUDIT.items()
           if status is None]
 unread.sort(key=lambda labels: (-options.OPTION_USAGE[labels], len(labels), labels))
-options.OPTION_USAGE[unread[0]]   # 14 parameters - the biggest unread list
+options.OPTION_USAGE[unread[0]]   # 40 parameters - the biggest unread list
 ```
 
-On the CorOS 4.0.1 snapshot that is 527 parameters across 113 lists, of which
-190 across 94 lists are unread. `tests/test_option_audit.py` holds
+On the CorOS 4.0.1 snapshot that is 611 parameters across 113 lists, of which
+218 across 94 lists are unread. `tests/test_option_audit.py` holds
 `docs/domain-model.md` to those numbers, so they cannot be carried in prose from
 a count taken once.
 
@@ -261,9 +267,9 @@ covering all 533 models, and the readings that built it are now tests
 units needs a catalog, which comes from the unit; `protocol.bpm_to_tempo` and the
 other standalone helpers still work without one.
 
-**Option names were in the catalog all along.** 527 parameters use 113 distinct
+**Option names were in the catalog all along.** 611 parameters use 113 distinct
 lists, so `pyquadcortex.protocol.options` publishes them as enums
-(`options.DynMode3.GATE`, `options.HpfSlope.MINUS_12`); 247 parameters are plain
+(`options.DynMode3.GATE`, `options.HpfSlope.MINUS_12`); 303 parameters are plain
 Off/On and take a `bool`. `set_param_option` needs `source=` only for the twelve
 dynamic lists. The unit's own spelling stays on the wire (`Noral`).
 
