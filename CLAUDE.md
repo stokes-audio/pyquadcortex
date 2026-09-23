@@ -160,6 +160,10 @@ small documentation fixes.
   `qc.models`. (ADR-0020)
 - An observation from another profile goes beside the 4.0.1 record in
   `docs/protocol.md`, dated and named.
+- A profile overrides an operation when that firmware's own client sends a
+  different shape, even where the inherited shape still works. The override
+  records both: the client's shape, and what the inherited shape did on that
+  firmware. (ADR-0023)
 - A docstring states its evidence: confirmed on hardware, or inferred from the
   schema. Record a hardware verification in the docstring and in
   `docs/protocol.md`'s coverage table in the same change.

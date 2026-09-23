@@ -6,7 +6,7 @@ Architectural decisions for this repository are captured in this file, appended 
 
 ## Format
 
-Each ADR has: ID, Title, Status, Decision, Context, Options, Open Questions, Rationale, Consequences. A `Supersedes: ADR-NNNN` line appears only when the record replaces a prior decision. A `Settles with: ADR-NNNN` line appears when a record leaves an earlier decision standing but overturns the reasoning of one of its consequences, which `Supersedes` would overstate.
+Each ADR has: ID, Title, Status, Decision, Context, Options, Open Questions, Rationale, Consequences. A `Supersedes: ADR-NNNN` line appears only when the record replaces a prior decision. A `Settles with: ADR-NNNN` line appears when a record leaves an earlier decision standing but overturns the reasoning of one of its consequences, which `Supersedes` would overstate. A `Narrows: ADR-NNNN` line appears when a record leaves an earlier decision standing and fixes the reading of wording that turned out to carry two meanings.
 
 **Status** is one of `Proposed`, `Under Discussion`, `Decided`, `Superseded`, `Rejected`, optionally annotated: e.g. `Decided (confirmed 2026-08-03)` or `Superseded by ADR-NNNN (2026-08-03)`.
 
@@ -429,3 +429,39 @@ Records are append-only once `Decided` and built upon: a shipped decision is nev
   - A payload carries no statement of its own provenance: the XML root has no attributes and the tar member has no metadata. `model_repo_<snapshot>.provenance.json` records the identifying fields of the `Version` reply beside it, minus the serial number, MAC address and custom name, which are the owner's and not the firmware's.
   - Payload bytes are not reproducible between reads and must never be compared by hash; compare parsed catalogs. The one recorded comparison is the maintainer's, across reads on 2026-07-26 and 2026-09-22, identical once the `blob` attributes are blanked. The earlier payload is not committed, so that comparison cannot be repeated from this repository.
   - The claim that a snapshot does not vary with what a unit owns rests on one unit, which owns no plugin content. A payload from a unit that does own some would settle it; none has been read.
+
+## ADR-0023: A profile sends what its own firmware's client sends, even where the inherited shape still works
+
+- **Status:** Decided (2026-09-23)
+- **Decision:** A device profile overrides an operation when that firmware's own client is measured to send a different shape. It overrides whether or not the inherited shape also works there. The override's docstring and its row in [`protocol.md`](protocol.md) carry both measurements: what the firmware's client sends, and what the inherited shape did on the same firmware. Where the inherited shape was measured to work too, the record says so in the same place. A profile with no reading of its firmware's client does not override on suspicion.
+- **Context:** ADR-0020's rationale says a profile "overrides where it was measured to differ". Two readings of "differ" fit the words: differ on the wire, or differ in outcome. Nothing had parted them until #59. On CorOS 4.1.0, 2026-09-11, a contributor drove four setlist operations against disposable folders, each confirmed by a listing, both folders absent afterwards:
+
+  | shape sent | result on CorOS 4.1.0 |
+  |---|---|
+  | the 4.0.1 `create_setlist` shape | folder created |
+  | the 4.0.1 `delete_setlist` shape | folder removed |
+  | Cortex Control 4.1's create shape | folder created |
+  | Cortex Control 4.1's delete shape | folder removed |
+
+  So the shapes differ on the wire and not in outcome. That is a contributor's report on their own unit; the maintainer's runs CorOS 4.0.1 and stays there until the domain model is done, so it cannot be reproduced here.
+  The three CorOS 4.0.1 USB captures cannot narrow it. Across 15,675 logical messages they hold six host-to-device `File` messages: three `READ`, one preset save, one preset delete, one preset move. There is no folder create or delete in them, and neither `parent_key` under the presets root nor `delete_from_library` appears in either direction.
+- **Options:**
+  - **(a) Override where the firmware's own client differs on the wire - chosen.** The library then sends what that firmware's maintained client sends. A firmware that tightens what it accepts does not first appear here as a write that lands nowhere. Cost: two wire shapes for one operation, carried on evidence the maintainer cannot reproduce, including on delete, which has no undo.
+  - **(b) Override only where the inherited shape was measured to fail.** The cheaper rule, and the one ADR-0020's words invite: one shape until something breaks. Rejected for what it costs to satisfy. A shape the firmware stops accepting is a write the unit ignores, so the evidence this rule waits for is a delete that does nothing, found by a caller who believes the setlist is gone. That is bad enough on create, where a caller believes a setlist exists that does not. On delete it is worse: `delete_from_library` has no known meaning, and the inherited shape leaves it unset, which hands the choice to the firmware. While that is unknown, the shape that states its intent is the one to send.
+  - **(c) Always send the oldest shape any measured firmware accepts.** One shape for every profile, and the least code. Rejected: it drifts further from every unit's own client with each release, and the drift is invisible, because the unit does not reject a write it ignores.
+  - **(d) Send both shapes and compare.** Not available. A file operation returns no error, `_file_operation` treats silence as normal, and a delete cannot be tried a second time.
+- **Open Questions:**
+  - Whether a 4.1 unit ever rejects the 4.0.1 shapes. Unmeasured, and the reason this record exists instead of a measurement.
+  - What `delete_from_library` means when set true. Only false has been sent. The name suggests a second deletion somewhere, which is why nothing sends true.
+  - Whether a firmware's client can be read without a unit on that firmware. Cortex Control 4.1's shapes were read from the application, and confirming one still took a unit.
+- **Narrows: ADR-0020.** Its override trigger reads as outcome rather than wire in three places. The Decision names "the operations measured to behave differently". The Rationale names "the wire behaviours that were measured to differ" and "a profile overrides where it was measured to differ". All three are read here as differing on the wire. ADR-0020's decision stands and its status is unchanged: this record fixes the reading rather than replacing the record.
+- **Rationale:** The unit accepts and ignores a write it does not understand, and a file operation returns no error. So "the inherited shape still works" is one firmware, measured once, on one unit. True, and narrow. A firmware's own client is the other evidence, maintained by the people who change the firmware. Tracking it means a change in what a firmware expects arrives as a shape somebody can read.
+  Each override is a second code path on evidence the maintainer cannot check, and the first two are setlist create and delete. That cost is paid against option (b)'s: under (b) a shape goes wrong quietly, and the person who finds out believed a delete had happened.
+  Nothing else loosens. An override still needs a measurement, and still names its firmware, its date and whose unit it ran on. What changed is which measurement licenses it.
+- **Consequences:**
+  - #59 may override `create_setlist` and `delete_setlist` on `QuadCortex41` under this rule, if both records state that the 4.0.1 shapes also worked on CorOS 4.1.0.
+  - An override's evidence is two measurements, not one: the client's shape, and the inherited shape's outcome on that firmware. A record carrying only the first is incomplete.
+  - A profile may override an operation the inherited shape drives correctly. The reason goes in the docstring, so nobody reads the override as a fix for a failure that never happened.
+  - Nothing licenses an override from the schema alone, or from a client shape with no unit to confirm it. The rule in `CLAUDE.md` holds: the model never guesses.
+  - This rule covers a profile's operations, which is what `QuadCortex.operations()` lists. The keepalive is not one of them: it lives in the transport, and [`protocol.md`](protocol.md) 4.3 carries its own reasoning for holding the measured 4.0.1 shape.
+  - Reversal stays cheap while the overrides are few. Each one is a method, a test and a row.

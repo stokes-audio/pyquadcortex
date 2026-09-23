@@ -516,9 +516,11 @@ On the unit it covers:
    that passed. Put them in the class's `VERIFIED` set. `MEASURED_ON` lists the
    exact `zenos_git_hash` strings a suite run has covered; a patch release is
    added after a run confirms it.
-4. **Record differences beside the 4.0.1 record.** Anything that behaved
-   differently is written into `protocol.md` next to the existing entry, dated and
-   named, and overridden on the new class.
+4. **Record differences beside the 4.0.1 record.** Any operation whose shape
+   differs on the wire is written into `protocol.md` next to the existing entry,
+   dated and named, and overridden on the new class, even where the inherited
+   shape still works. The entry records both measurements: what the client
+   sends, and what the inherited shape did on that firmware (ADR-0023).
 
 Step 1 is the one you repeat. A generator change means regenerating, and without
 a saved reply that means borrowing the unit again. Each generator also takes

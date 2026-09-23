@@ -37,8 +37,11 @@ class QuadCortex41(QuadCortex):
     2. ``pytest tests/hardware --hardware --profile QuadCortex41``; the report
        at the end lists the operations whose tests passed. Put those names in
        ``VERIFIED``.
-    3. Record any operation that behaved differently in ``docs/protocol.md``
-       beside the 4.0.1 record, dated and named, and override it here.
+    3. Record any operation whose shape differs on the wire in
+       ``docs/protocol.md`` beside the 4.0.1 record, dated and named, and
+       override it here, even where the inherited shape still works. Record
+       both measurements: what the client sends, and what the inherited shape
+       did on that firmware (ADR-0023).
     """
 
     MEASURED_ON = ("4.1.0",)
