@@ -111,7 +111,7 @@ settled is in [capture.md](capture.md).
 | User folders / additional setlists | yes | `create_setlist()` makes them and `list_folders()` finds them; `list_presets()` accepts any key. MIDI CC#32's "User folders" 2 to 12 are created, not built in |
 | Create a folder, nested navigation | yes | `create_setlist(name)`. Setlists are siblings under `/media/p4/Presets`, not children of My Presets |
 | Favorites and Recents | yes | `recents()` and `favorites()` read the two lists. The request's `is_favorites` flag selects which; the reply never sets it, so correlate on `request_id`. `add_favorite()` and `remove_favorite()` write one entry at a time. Only presets can be favourited |
-| Bulk actions | partly | no host-drivable bulk copy; `BulkOperation` only narrates progress. `copy_preset()` and `duplicate_setlist()` do it by recall plus save, a few seconds per preset |
+| Bulk actions | partly | On the measured CorOS 4.1 profile, `duplicate_setlist()` sends Cortex Control's single firmware-side folder COPY, then verifies the asynchronously created destination without replaying the write; the CorOS 4.0.1 profile refuses and points to `copy_preset()`. `BulkOperation` only narrates progress |
 | Search | no | candidate `RecentSearches` |
 | Sort | n/a | client-side once a listing is in hand |
 | Neural Captures: list | yes | `captures()` browses the library, over 2000 entries. Not the catalog, which does not grow when a capture is saved |

@@ -1397,14 +1397,17 @@ does. So the MIDI documentation's "User folders" at bank-select LSB 2 to 12 are
 folders a player creates. **Deleting a setlist** is `File{DELETE, folder{key,
 name}}` against the setlist's own key.
 
-**There is no host-drivable copy.** The unit's duplicate action sends a `File`
-`CREATE` for the destination and then narrates itself through `BulkOperation`
-(`"Duplicating, please wait."`, a progress fraction, `finished`); doing the same
-from the host creates an empty destination. The unit's per-preset paste
-announces the same shape as a Save As pointed at another folder. So copying a
-preset is recall then save, and duplicating a setlist is that per preset, which is
-what `copy_preset()` and `duplicate_setlist()` do. Each one recalls the source on
-the unit.
+On CorOS 4.0.1, the unit's duplicate action sends a `File` `CREATE` and narrates
+progress through `BulkOperation`; replaying that `CREATE` from the host produced
+an empty destination. `copy_preset()` retains the measured recall-and-save
+fallback on that profile.
+
+On CorOS 4.1, Cortex Control sends one host-drivable sparse
+`File{COPY, type: 0, folder{key: <source>, is_factory: false}}`. Firmware chooses
+the collision-safe destination and performs the copy asynchronously.
+`duplicate_setlist()` sends `COPY` exactly once and uses read-only polling until
+two complete, identical 256-slot destination generations match the source.
+A contributed 4.1.0 hardware run verified a two-preset copy in 49.878 seconds.
 
 ### 10.4 Recents and Favorites
 
@@ -2151,6 +2154,7 @@ wire, with no independent read-back.
 | `delete_setlist` | `File{DELETE, folder{key, name}}` | read-back | removes the setlist and its contents |
 | `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root |
 | `copy_preset` / `duplicate_setlist` | recall then `File{CREATE}` per preset | read-back | compositions; each recalls the source on the unit |
+| `duplicate_setlist` (CorOS 4.1) | `File{COPY, folder{key: <source>, is_factory: false}}` | Cortex Control 4.1 binary + contributed hardware read-back | sends once, then stabilizes folder and complete 256-slot preset listings; CorOS 4.0.1 refuses because this shape has not been measured there |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | reported back in `mixBypass`; one write sets all eight scenes |
 | `set_stomp_assignment` / `clear_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence |
 | `set_stomp_momentary` | `Grid{UPDATE, preset{stomp_is_momentary{key, value}}}` | read-back + on-unit | keyed by footswitch; lands only on a switch driving exactly one block |
