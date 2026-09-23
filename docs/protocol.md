@@ -426,11 +426,23 @@ own `Version{READ}` about 1 ms behind it, and the answer to the announce
 
 ### 4.3 Keepalive and disconnect
 
-Cortex Control sends `KeepAlive{action: UPDATE}` about once per second. The
-library sends every 5 seconds; the unit tolerated 20-second idle gaps in the
-capture, so the interval is not critical. On quit, Cortex Control sends
-`Connection{connected: false}`, and so does this library, as the first step of
-teardown.
+Cortex Control 4.0.1 sends `KeepAlive{action: UPDATE}` about once per second:
+944 keepalives across three complete captured sessions all carried action
+`UPDATE` and no `request_id`. Each session opened with exactly 14 keepalives
+carrying payload `08 01`, then 14.2 seconds after the first one added
+`is_online: true` (`08 01 18 01`) and held it: 44 carried the short form and
+900 the long one, and the short form returned only twice, both in session 1.
+None of the three 4.0.1 captures contained `10 00 18 01`. The library keeps the
+measured opening shape. Cortex Control 4.1.0 was observed on 2026-09-11, with
+the connected unit reporting CorOS 4.1.0, using that different shape (explicit
+request id zero, `is_online: true`, action absent). The old 4.0.1-compatible
+shape has not been shown to fail on that CorOS version, so no wire change is
+made from that observation.
+
+The library sends every 5 seconds, and the unit tolerated 20-second
+idle gaps in the capture without dropping the session, so the exact interval is
+not critical. On quit, Cortex Control and this library send
+`Connection{connected: false}` as the first step of teardown.
 
 Abandoning a session without the goodbye leaks nothing observable. Measured: 12
 sessions opened and abandoned, then the seed push still arrived, subscriptions
