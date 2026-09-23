@@ -2161,7 +2161,9 @@ wire, with no independent read-back.
 | `master_volume` / `set_master_volume` | `MasterVolume{READ}` / `{UPDATE, volume}` | read-back + on-unit + by ear | takes `Encoded`; the screen shows `round(v * 100)`. Never add `calibrate` |
 | `pin_model` / `unpin_model` / `pinned_models` | `PinnedModels{models}` with no action / `{DELETE, models}` | read-back + on-unit | pinning appends and can duplicate; `DELETE` removes every entry for an id |
 | `delete_setlist` | `File{DELETE, folder{key, name}}` | read-back | removes the setlist and its contents |
+| `delete_setlist` on CorOS 4.1.0 | `File{DELETE, folder{key, is_factory: false}, delete_from_library: false}` | read-back | measured 2026-09-11 on a disposable setlist; the 4.0.1 shape above remains profile-local |
 | `create_setlist` | `File{CREATE, folder{key: "/media/p4/Presets/<name>", name}}` | read-back + on-unit | setlists are siblings under the presets root |
+| `create_setlist` on CorOS 4.1.0 | `File{CREATE, folder{key, parent_key: "/media/p4/Presets", name, is_factory: false}}` | read-back | measured 2026-09-11 on a disposable setlist; the 4.0.1 shape above remains profile-local |
 | `copy_preset` / `duplicate_setlist` | recall then `File{CREATE}` per preset | read-back | compositions; each recalls the source on the unit |
 | `set_split_mute` | `Grid{UPDATE, preset{chains{row, splitBypass{bypass}}}}` | read-back | reported back in `mixBypass`; one write sets all eight scenes |
 | `set_stomp_assignment` / `clear_stomp_assignment` | `Grid{DELETE, stomp_mode_assignments{row, column}}` then `Grid{UPDATE, ...{stomp_index}}` | read-back + on-unit | the unit's own two-message sequence |
