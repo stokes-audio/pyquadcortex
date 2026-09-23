@@ -170,6 +170,7 @@ Decisions are recorded in [`ADR.md`](ADR.md):
 | ADR-0020 | Connect resolves a device profile, and nothing else branches on firmware or model |
 | ADR-0021 | An approval stops counting once the pull request's code changes |
 | ADR-0022 | The payload a catalog snapshot is generated from is committed beside it |
+| ADR-0023 | A profile sends what its own firmware's client sends, even where the inherited shape still works |
 
 ## 8. Open Questions
 
@@ -232,6 +233,16 @@ access to the unit, not compute.
 Entries are short by design ([`writing.md`](writing.md)). The full narrative
 behind each one is in the lab repository,
 `doc/pyquadcortex/history/steering-change-log.md`, and in the pull requests.
+
+### 2026-09-23 - A profile matches its firmware's own client (ADR-0023)
+
+- **What changed:** a profile overrides an operation when that firmware's own
+  client sends a different shape, whether or not the inherited shape also works
+  there. The override records both measurements.
+- **Why:** ADR-0020's "measured to differ" read two ways, and #59 parted them.
+- **Scope:** `ADR.md`, `CLAUDE.md`, `architecture.md`, section 7 here, and
+  the `QuadCortex41` docstring that gave the old reading. Left alone:
+  `protocol.md`, which #59 changes.
 
 ### 2026-09-22 - A snapshot's input is committed beside it (ADR-0022)
 
