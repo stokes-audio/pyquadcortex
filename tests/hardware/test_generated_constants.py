@@ -2,8 +2,11 @@
 
 `models.py` and `params.py` are generated from a device's ModelRepo and then
 COMMITTED, so they are a snapshot. A firmware or content update can renumber a
-parameter or add a model, and nothing offline can notice - the generated file is
-its own yardstick. This regenerates from the connected unit and compares.
+parameter or add a model, and nothing offline can notice: since ADR-0022
+`tests/test_catalog_payload.py` holds the snapshot against the payload it was
+generated from, but that payload is a capture of one moment, so the two move
+together and agree while the unit has moved on. This regenerates from the
+connected unit and compares.
 
 Which snapshot it compares against comes from the CONNECTED PROFILE (ADR-0020)
 rather than from a fixed path, so a unit on some other firmware is held against

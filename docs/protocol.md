@@ -1962,7 +1962,9 @@ Named forms live in `pyquadcortex/protocol/enums.py` (`Input`, `Output`,
 
 `ModelRepo` is read during the connect burst as a readiness gate, and its
 payload is the unit's whole block catalog: gzip(tar(`ModelRepo.xml`)), about 46 KB
-compressed and 557 KB expanded. Cortex Control reads it as the third message
+compressed and 557 KB expanded. One such reply is committed, read from the 4.0.1
+unit on 2026-09-22: `tests/fixtures/catalog/model_repo_coros_4_0_1.bin`, with its
+firmware recorded beside it (ADR-0022). Cortex Control reads it as the third message
 type of every session, after `ResetCommsBuffers` and `Version`, and the reply
 lands about 1.2 s after the session's first message in all three lab captures.
 

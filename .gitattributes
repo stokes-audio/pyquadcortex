@@ -1,1 +1,2 @@
 tests/fixtures/surface/pre_flip_init.py.txt text eol=lf
+tests/fixtures/catalog/*.bin binary
