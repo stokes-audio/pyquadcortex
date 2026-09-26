@@ -235,8 +235,10 @@ def test_set_blocks_refusal_says_so_when_the_profile_measured_no_firmware(forget
     assert "CorOS )" not in caught.value.evidence
 
 
-def test_unverified_operations_is_empty_on_the_base_and_full_on_a_stub(forget_probes):
-    assert client.QuadCortex(FakeTransport()).unverified_operations == frozenset()
+def test_unverified_operations_reports_base_guard_and_full_on_a_stub(forget_probes):
+    assert client.QuadCortex(FakeTransport()).unverified_operations == frozenset({
+        "preset_screenshot",
+    })
     Probe = _profile(verified=frozenset({"switch_scene"}))
     got = Probe(FakeTransport()).unverified_operations
     assert got == client.QuadCortex.operations() - {"switch_scene"}

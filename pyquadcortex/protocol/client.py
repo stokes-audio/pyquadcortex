@@ -1662,18 +1662,37 @@ class QuadCortex:
         self, folder_name: str, position, is_factory: bool = False,
         timeout: float = 10.0,
     ) -> bytes:
-        """Refuse this unmeasured operation on the CorOS 4.0.1 profile."""
-        raise ControlNotDrivable(
-            "preset_screenshot",
-            "not measured on QuadCortex (CorOS 4.0.1).",
-            "Use QuadCortex41 for a CorOS 4.1.0 unit.",
-        )
+        """Refuse a preset screenshot on the CorOS 4.0.1 base profile.
+
+        This operation has contributed CorOS 4.1.0 evidence and has not been
+        measured on 4.0.1. Use :class:`~pyquadcortex.protocol.QuadCortex41`
+        when the connected unit identifies as that profile.
+        """
+        return self._preset_screenshot(
+            folder_name, position, is_factory=is_factory, timeout=timeout)
+
+    preset_screenshot = _guarded("preset_screenshot", preset_screenshot)
 
     def _preset_screenshot(
         self, folder_name: str, position, is_factory: bool = False,
         timeout: float = 10.0,
     ) -> bytes:
-        """Return the device-rendered preset view as PNG bytes."""
+        """Return the device-rendered preset view as PNG bytes.
+
+        ``folder_name`` is the display name (for example ``"My Presets"``),
+        not the folder key used by :meth:`recall_preset`. ``position`` is the
+        same zero-based linear slot index or display slot (for example
+        ``"28C"``) used by the other preset methods. Entries from
+        :meth:`list_folders` provide both ``name`` and ``is_factory`` when the
+        folder is not already known.
+
+        The address fields are mandatory in practice. A bare ``Screenshot``
+        READ is ignored, while a correctly addressed request replies with a
+        PNG (observed at 800 x 384) and echoes the request id. Measured by a
+        contributor with two user-preset slots on CorOS 4.1.0, not yet measured
+        on 4.0.1; this reads only and does not recall the preset or change the
+        screen.
+        """
         if not isinstance(folder_name, str) or not folder_name:
             raise ValueError("folder_name must be a non-empty display name")
         raw_position = position

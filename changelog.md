@@ -18,8 +18,13 @@ sustained stretch without a correction.
 ### CorOS 4.1 preset screenshots are readable
 
 `QuadCortex41.preset_screenshot()` sends the complete preset address and returns
-the device-rendered `PNG` bytes. The CorOS 4.0.1 profile refuses the operation
-because that wire shape has only been measured on 4.1.0.
+the 800 x 384 `PNG` the device renders for that preset, without recalling it or
+changing the unit's screen. The folder argument is its display name
+(`"My Presets"`), not its key; `list_folders()` supplies the name and the
+factory flag. The address is not optional on the wire: a bare `Screenshot{READ}`
+is ignored. The CorOS 4.0.1 profile refuses the operation because that wire
+shape has only been measured on 4.1.0.
+
 ### Rename the unit, drive undo/redo, and read inhibited modules
 
 `set_device_name()` sends a sparse Version update. `undo()` and `redo()` drive

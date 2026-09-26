@@ -484,8 +484,7 @@ Three code-level gaps matter to someone extending the library:
   client method plus tests. `GlobalTempo` is the awkward one: it alternates a
   clock shape with a 25-parameter shape, so a reader must match on a reply that
   carries parameters.
-- **Types not in the registry at all.** Whole areas remain untouched, excluding
-  the measured CorOS 4.1 preset `Screenshot` read:
+- **Types not in the registry at all.** Whole areas are untouched:
   `Diagnostics`, `CloudBackup`, `Confirmation`, `SuspendConnection`, the
   `*Forward` wrappers, and the production and test-farm messages. Nothing about
   them has been observed on the wire.

@@ -202,7 +202,18 @@ def test_preset_screenshot_refuses_on_the_unmeasured_base_profile():
         client.QuadCortex(FakeTransport()).preset_screenshot("My Presets", 3)
     assert caught.value.control == "preset_screenshot"
     assert "4.0.1" in caught.value.evidence
-    assert "QuadCortex41" in caught.value.workaround
+    assert "Support.EXPERIMENTAL" in caught.value.workaround
+
+
+def test_preset_screenshot_can_be_measured_on_the_base_with_experimental_support():
+    png = b"\x89PNG\r\n\x1a\n" + b"device image"
+    fake = FakeTransport({"ScreenshotMessage": pa.ScreenshotMessage(
+        folder_name="My Presets", index=3, png=png)})
+    qc = client.QuadCortex(fake, support=Support.EXPERIMENTAL)
+
+    assert qc.preset_screenshot("My Presets", 3) == png
+    assert isinstance(fake.sent[-1], pa.ScreenshotMessage)
+    assert fake.sent[-1].action == pa.MessageAction.READ
 
 
 def test_preset_screenshot_sends_the_complete_address_and_returns_png_bytes():
