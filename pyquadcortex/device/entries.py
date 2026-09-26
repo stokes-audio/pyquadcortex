@@ -118,9 +118,19 @@ class StateEntry:
             the unit's whole answer for this entry. Runs on the CALLER's thread,
             never the RX thread.
         feeds: message class -> :class:`FieldPlan`.
-    The read path normally expects one meaningful arrival. Exact duplicate
-    restatements of that answer may be discounted; a different concurrent push
-    always leaves the entry untrusted (ADR-0011).
+    Every entry's :attr:`read` is one request and one ANSWER, which the read
+    path relies on to tell its own answer apart from a push that arrived while
+    it was waiting. One answer is not the same as one message: a ``Version``
+    READ is answered by the unit's reply and then by a question of the unit's
+    own, and the read path survives that because a message that said nothing is
+    not counted. Said nothing means it applied no field this entry keeps AND
+    named none it does not - a plan with :attr:`FieldPlan.invalidates` set is
+    never in that case, because every message of its type makes the copy
+    untrusted whatever it carried. ``device/state.py``'s ``_apply_one`` decides
+    it. An entry whose read provokes a STREAM OF ANSWERS instead - a ``File``
+    enumeration, a preset dump - has to say how many messages that is, and this
+    class does not carry that yet because nothing needs it. It lands with the
+    first such entry, along with the test that a number other than one works.
     """
 
     name: str
@@ -239,6 +249,13 @@ def _carries_unknown_fields(message) -> bool:
 # -- the entries -------------------------------------------------------------
 
 
+def _version_describes_device(message) -> bool:
+    """Exclude the two Version shapes that are only handshake traffic."""
+    named = {field.name for field, _ in message.ListFields()}
+    host_handshake = SCAFFOLDING | {"cortex_control_version_valid"}
+    return bool(named - host_handshake) or _carries_unknown_fields(message)
+
+
 #: The unit's identity. Firmware and serial cannot change while a connection is
 #: up: the only thing that changes either is a firmware update, and the firmware
 #: `Updater` surface is permanently out of scope for this library (repo-root
@@ -270,13 +287,6 @@ def _carries_unknown_fields(message) -> bool:
 #: device's answer to the host's Cortex Control announcement is also a Version,
 #: but it carries only handshake validity and likewise says nothing about the
 #: unit's identity.
-def _version_describes_device(message) -> bool:
-    """Exclude the two Version shapes that are only handshake traffic."""
-    named = {field.name for field, _ in message.ListFields()}
-    host_handshake = SCAFFOLDING | {"cortex_control_version_valid"}
-    return bool(named - host_handshake) or _carries_unknown_fields(message)
-
-
 _VERSION_FOR_IDENTITY = FieldPlan(
     kept=frozenset({"app_fw_version", "device_serial_number"}),
     accepts=_version_describes_device,
@@ -509,7 +519,7 @@ SCENE = StateEntry(
 #: mark it for a read nobody had asked for.
 #:
 #: A future entry whose read provokes a stream of answers must declare how that
-#: stream completes. No directory entry exists yet; issue #12 still owns that
+#: stream completes. No directory entry exists yet; issue #25 still owns that
 #: design decision.
 ENTRIES = (IDENTITY, DIRTY, PRESET, SCENE, LOADED)
 
