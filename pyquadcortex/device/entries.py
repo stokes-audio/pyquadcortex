@@ -84,11 +84,15 @@ class FieldPlan:
             either has to decide for itself, and this flag is that decision
             written down. It does not widen :data:`SCAFFOLDING`, and it is set
             per entry and per message type rather than globally.
+        accepts: optional predicate for message types reused by independent
+            conversations. A rejected message says nothing about this entry;
+            it is neither applied nor counted as an arrival.
     """
 
     kept: frozenset = frozenset()
     no_presence: frozenset = frozenset()
     invalidates: bool = False
+    accepts: typing.Callable[[Message], bool] | None = None
 
     def voids_the_copy(self) -> bool:
         """Whether a message of this type makes the entry untrusted on its own.
@@ -98,6 +102,10 @@ class FieldPlan:
         carried cannot be seen.
         """
         return self.invalidates
+
+    def applies_to(self, message: Message) -> bool:
+        """Whether this same-type message belongs to the entry's conversation."""
+        return self.accepts is None or self.accepts(message)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -110,7 +118,6 @@ class StateEntry:
             the unit's whole answer for this entry. Runs on the CALLER's thread,
             never the RX thread.
         feeds: message class -> :class:`FieldPlan`.
-
     Every entry's :attr:`read` is one request and one ANSWER, which the read
     path relies on to tell its own answer apart from a push that arrived while
     it was waiting. One answer is not the same as one message: a ``Version``
@@ -242,6 +249,13 @@ def _carries_unknown_fields(message) -> bool:
 # -- the entries -------------------------------------------------------------
 
 
+def _version_describes_device(message) -> bool:
+    """Exclude the two Version shapes that are only handshake traffic."""
+    named = {field.name for field, _ in message.ListFields()}
+    host_handshake = SCAFFOLDING | {"cortex_control_version_valid"}
+    return bool(named - host_handshake) or _carries_unknown_fields(message)
+
+
 #: The unit's identity. Firmware and serial cannot change while a connection is
 #: up: the only thing that changes either is a firmware update, and the firmware
 #: `Updater` surface is permanently out of scope for this library (repo-root
@@ -269,9 +283,13 @@ def _carries_unknown_fields(message) -> bool:
 #: fields followed 0.5-0.8 ms later by a ``Version{READ}`` carrying ``action``
 #: alone. The question is not news about the unit and the cache does not count
 #: it - see ``_apply_one`` in ``device/state.py``, where counting it cost a
-#: second round trip whenever it landed before the reading thread woke.
+#: second round trip whenever it landed before the reading thread woke. The
+#: device's answer to the host's Cortex Control announcement is also a Version,
+#: but it carries only handshake validity and likewise says nothing about the
+#: unit's identity.
 _VERSION_FOR_IDENTITY = FieldPlan(
     kept=frozenset({"app_fw_version", "device_serial_number"}),
+    accepts=_version_describes_device,
 )
 
 
@@ -500,13 +518,9 @@ SCENE = StateEntry(
 #: a plan, not a fact, and every push mentioning a field it did not keep would
 #: mark it for a read nobody had asked for.
 #:
-#: The Directory's rows are the ones that need something this class does not
-#: have. Every read here is one request and one answer, which is how the read path
-#: tells its own answer apart from a push that arrived while it was waiting. A
-#: setlist listing is a STREAM - one `File` READ makes the unit enumerate its
-#: whole tree, several hundred messages over about fifteen seconds - so those
-#: entries land with the change to `StateEntry` that lets a read say how many
-#: messages it expects.
+#: A future entry whose read provokes a stream of answers must declare how that
+#: stream completes. No directory entry exists yet; issue #25 still owns that
+#: design decision.
 ENTRIES = (IDENTITY, DIRTY, PRESET, SCENE, LOADED)
 
 ENTRY_BY_NAME = {entry.name: entry for entry in ENTRIES}

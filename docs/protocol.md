@@ -585,7 +585,10 @@ not measured. `RecallReason` names them.
 **The live grid is readable without a recall.** `RecallPreset{READ, request_id}`
 answers with the preset as it is right now, unsaved edits included, with no side
 effects: the unsaved edit survives and the active scene does not move.
-`read_current_preset()` wraps it. `Scene{READ, request_id}` answers with
+CorOS 4.1.0 was measured sending an uncorrelated current-state update before
+the keyed reply, and its first request after connecting can be dropped.
+`read_current_preset()` therefore makes at most two attempts within the caller's
+single timeout and waits for the keyed answer. `Scene{READ, request_id}` answers with
 `selected_scene`; `active_scene()` wraps it. `SetlistPosition{READ, request_id}`
 answers with `folder_key`, `position` and `is_factory` in 3 ms (measured
 2026-08-15); `loaded_position()` wraps it. A `SetlistPosition` read must never
@@ -2122,7 +2125,7 @@ wire, with no independent read-back.
 | `inhibited_modules` | `CompilerInhibitedModules{READ}` | read-back | explicit false/false reply on CorOS 4.0.1 and 4.1.0; true semantics are schema-derived, not yet observed |
 | `create_local_backup` | `LocalBackup{CREATE}` then `LocalBackup{UPDATE, backup_json}` pushes, the last with `is_last_chunk` | captured only | section 10.5. `can_apply_backup` never appeared, so the refusal path is unverified |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
-| `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply with `reason` |
+| `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. Two bounded attempts share the caller's timeout; CorOS 4.1.0 was measured emitting an unkeyed duplicate before the keyed reply. The push variant hands back the whole reply with `reason` |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured |
 | `list_presets` | `File{action: READ}` then `File{folder{files[] = ProductData}}` | read-back | factory listing gzipped; 256 slots; listings lag after a `File` mutation |
 | `switch_scene` | `Scene{UPDATE, selected_scene}` | on-unit | zero-based |

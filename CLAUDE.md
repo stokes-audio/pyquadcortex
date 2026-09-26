@@ -86,6 +86,11 @@ small documentation fixes.
 
 ### The model never guesses
 
+- A state-cache read clears its reread mark only when concurrent messages
+  restate its answer exactly. `FieldPlan.accepts` separates independent
+  conversations sharing a protobuf type; it never suppresses fields within one
+  conversation. See ADR-0011.
+
 - The model shows what the unit shows, in the unit's words. A control we
   understand but cannot drive is modelled and refuses with
   `protocol.ControlNotDrivable(control, evidence, workaround)`, all three fields
