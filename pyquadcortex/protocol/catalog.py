@@ -958,13 +958,16 @@ def _parse_replaces(value: str | None) -> tuple[int, ...]:
 
 
 def _parse_indexes(value: str | None) -> tuple[int, ...]:
-    """Parse a comma-separated integer list, ignoring unfamiliar tokens."""
+    """Parse one integer, or a comma-separated list of integers.
+
+    Invalid parts are deliberately ignored: device catalogs are extensible,
+    and one unfamiliar token must not discard otherwise usable metadata.
+    """
     if not value:
         return ()
     indexes = []
     for part in value.split(","):
-        try:
-            indexes.append(int(part.strip()))
-        except ValueError:
-            continue
+        parsed = _as_int(part.strip())
+        if parsed is not None:
+            indexes.append(parsed)
     return tuple(indexes)

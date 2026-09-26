@@ -1366,6 +1366,10 @@ On `<Model>`, `blob` is unexplained: a same-length string that changes between
 reads, on 338 models and no others across the three lab captures. A per-read
 token, not content.
 
+`linkedSceneMode` appears 44 times in the contributed CorOS 4.1.0 catalog and
+zero times in 4.0.1. Its meaning and relationship, if any, to preset
+`scene_mode` are unknown, so it is recorded here and not exposed as shared API.
+
 On `<Option>` labels, the character `¤` (U+00A4) appears as a separator inside a
 label (`Triads¤Closed Triad (3-R-5)`) in 27 labels of the CorOS 4.1.0 catalog a
 contributor regenerated (PR #44), and in none of the 4.0.1 catalog. It reads like

@@ -85,8 +85,9 @@ def main():
                 "positions": duplicates,
             })
         # Use the explicit all-parameter basis: every missing integer in
-        # 0..max(displayPos) is a gap. This produces 21 models on CorOS 4.0.1;
-        # a different origin or visibility filter produces a different count.
+        # 0..max(displayPos) is a gap. This counts all 533 CorOS 4.0.1 models,
+        # including the two hidden models PCOM Tape Delay (ST) and Chief DC2W
+        # PCOM; excluding them gives 19 rather than 21 gap models.
         if positions:
             missing = sorted(set(range(max(positions) + 1)) - set(positions))
             if missing:

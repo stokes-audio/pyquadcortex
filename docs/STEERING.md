@@ -93,7 +93,8 @@ ADR-0012.
 - `examples/` - runnable scripts
 - `docs/` - the documents listed in [`writing.md`](writing.md)
 - `scripts/` - `compile_protos.sh`, `check_artifacts.py`, the three generators
-  and `_snapshots.py`, `extract_scale_fixture.py`
+  and `_snapshots.py`, `extract_scale_fixture.py`,
+  `extract_editor_metadata_fixture.py`
 - `.github/workflows/` - CI
 
 ## 5. Patterns in Use
