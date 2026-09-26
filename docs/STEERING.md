@@ -44,10 +44,11 @@ generated bindings in `pyquadcortex/protocol/proto/`), the recovered schema in
   which users install themselves (see the README).
 - **PyPI.** Published as `pyquadcortex` with the `qcctl` console script. Release
   process in [`releasing.md`](releasing.md).
-- **The lab repository.** Planning material, raw USB captures, the catalog dump,
-  and the narrative history behind the documents here live in the private
-  `quad-cortex` repository. This repository carries the library and its
-  engineering documents.
+- **The lab repository.** Planning material, raw USB captures and the narrative
+  history behind the documents here live in the private `quad-cortex`
+  repository. This repository carries the library, its engineering documents,
+  and the `ModelRepo` payloads its catalog snapshots are generated from
+  (`tests/fixtures/catalog/`, ADR-0022).
 
 ## 3. Architecture Overview
 
@@ -168,6 +169,7 @@ Decisions are recorded in [`ADR.md`](ADR.md):
 | ADR-0019 | The frame trailer's flags are read and reported; an encrypted payload is labelled, not decrypted |
 | ADR-0020 | Connect resolves a device profile, and nothing else branches on firmware or model |
 | ADR-0021 | An approval stops counting once the pull request's code changes |
+| ADR-0022 | The payload a catalog snapshot is generated from is committed beside it |
 
 ## 8. Open Questions
 
@@ -230,6 +232,18 @@ access to the unit, not compute.
 Entries are short by design ([`writing.md`](writing.md)). The full narrative
 behind each one is in the lab repository,
 `doc/pyquadcortex/history/steering-change-log.md`, and in the pull requests.
+
+### 2026-09-22 - A snapshot's input is committed beside it (ADR-0022)
+
+- **What changed:** the `ModelRepo` payload the 4.0.1 snapshot is generated from
+  is committed, with a provenance record and a test regenerating each snapshot
+  from its own payload. Section 2 corrected.
+- **Why:** regenerating needed the one unit on that firmware, blocking #45.
+- **Scope:** `tests/fixtures/catalog/`, `tests/test_catalog_payload.py`,
+  `.gitattributes`, `CLAUDE.md`, `ADR.md`, `architecture.md`, `protocol.md`,
+  sections 2 and 7 here, and docstrings in `extract_scale_fixture.py` and three
+  hardware tests that named the catalog's absence. Left alone: `domain-model.md`.
+  No library code, no generated file.
 
 ### 2026-09-21 - The hardware suite puts the edited flag back
 

@@ -65,6 +65,11 @@ small documentation fixes.
   footswitch index and a block's column are different numbers that usually agree.
 - `import hid` appears once, lazily, inside `session.open_device()`.
   `tests/test_import_cleanliness.py` proves it.
+- Never gitignore, delete or edit `tests/fixtures/catalog/*.bin`.
+  Each is the captured input its snapshot is generated from, and deleting one
+  puts regeneration back behind a unit nobody else has.
+  `tests/test_catalog_payload.py` holds each payload to the snapshot it
+  generates; a failure there means regenerating, never editing. (ADR-0022)
 - Never gitignore or delete `pyquadcortex/protocol/proto/*_pb2.py` or `*_pb2.pyi`.
   Regenerate only with `scripts/compile_protos.sh`, and bump the `protobuf` pin
   and the `grpcio-tools` floor in the same commit. Details in
