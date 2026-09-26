@@ -30,6 +30,7 @@ _BY_NAME = {
     "KeepAlive": pa.KeepAliveMessage,
     "GlobalTempo": pa.GlobalTempoMessage,
     "MasterVolume": pa.MasterVolumeMessage,
+    "Screenshot": pa.ScreenshotMessage,
     # Session hello (confirmed by capture).
     "ResetCommsBuffers": pa.ResetCommsBuffersMessage,
     "Connection": pa.ConnectionMessage,

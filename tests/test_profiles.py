@@ -235,8 +235,10 @@ def test_set_blocks_refusal_says_so_when_the_profile_measured_no_firmware(forget
     assert "CorOS )" not in caught.value.evidence
 
 
-def test_unverified_operations_is_empty_on_the_base_and_full_on_a_stub(forget_probes):
-    assert client.QuadCortex(FakeTransport()).unverified_operations == frozenset()
+def test_unverified_operations_reports_base_guard_and_full_on_a_stub(forget_probes):
+    assert client.QuadCortex(FakeTransport()).unverified_operations == frozenset({
+        "preset_screenshot",
+    })
     Probe = _profile(verified=frozenset({"switch_scene"}))
     got = Probe(FakeTransport()).unverified_operations
     assert got == client.QuadCortex.operations() - {"switch_scene"}
@@ -253,13 +255,14 @@ def test_the_4_1_profile_exposes_only_operations_with_contributed_evidence():
     assert issubclass(cls, client.QuadCortex)
     assert cls.MEASURED_ON == ("4.1.0",)
     assert cls.EVIDENCE is support.Evidence.CONTRIBUTED
-    assert cls.VERIFIED == frozenset({"create_local_backup", "set_device_name"})
+    assert cls.VERIFIED == frozenset({
+        "create_local_backup", "preset_screenshot", "set_device_name"})
     assert cls.CC_VERSION == "4.0.1", "inherited: the contributor's runs announced 4.0.1"
     assert isinstance(cls.models, support.NoSnapshot)
     with pytest.raises(AttributeError, match="coros_4_1_0"):
         cls.models.Delay
     assert cls(FakeTransport()).unverified_operations == (
-        client.QuadCortex.operations() - {"create_local_backup", "set_device_name"}
+        client.QuadCortex.operations() - cls.VERIFIED
     )
 
 

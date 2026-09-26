@@ -2123,6 +2123,7 @@ wire, with no independent read-back.
 | `create_local_backup` | `LocalBackup{CREATE}` then `LocalBackup{UPDATE, backup_json}` pushes, the last with `is_last_chunk` | captured only | section 10.5. `can_apply_backup` never appeared, so the refusal path is unverified |
 | `recall_preset` / `read_preset` | `SetlistPosition{UPDATE, folder_key, position, is_factory, request_id}` then a `RecallPreset` push | read-back | the push echoes the recall's `request_id` |
 | `read_current_preset` / `read_current_preset_push` | `RecallPreset{READ, request_id}` | read-back | the live grid, no side effects. The push variant hands back the whole reply with `reason` |
+| `preset_screenshot` (CorOS 4.1) | `Screenshot{READ, folder_name, is_factory, index}` | contributed hardware read-back | contributed measurement 2026-09-08 on a Quad Cortex, CorOS 4.1.0: an 800 x 384 PNG, the address and `request_id` echoed, and two slots returning distinct images with no recall; a bare `Screenshot{READ}` got no reply. Not measured on 4.0.1, where the profile refuses it |
 | `loaded_position` | `SetlistPosition{READ, request_id}` | read-back | which slot is loaded; 3 ms measured |
 | `list_presets` | `File{action: READ}` then `File{folder{files[] = ProductData}}` | read-back | factory listing gzipped; 256 slots; listings lag after a `File` mutation |
 | `switch_scene` | `Scene{UPDATE, selected_scene}` | on-unit | zero-based |

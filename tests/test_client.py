@@ -13,7 +13,7 @@ import re
 
 import pytest
 
-from pyquadcortex.protocol import catalog, client
+from pyquadcortex.protocol import catalog, client, profiles
 from pyquadcortex.protocol.enums import (Footswitch, Input, Instrument, MidiSource,
                                 Output, SceneBypassBehavior, Setlist, TempoMode)
 from pyquadcortex.protocol.proto import ProductionAutomation_pb2 as pa
@@ -21,6 +21,7 @@ from pyquadcortex.protocol.proto import Preset_pb2 as preset
 from pyquadcortex.protocol.targets import (Block, LaneInput, LaneOutput, Mixer, Splitter, Tempo)
 from pyquadcortex.protocol import units as units_module
 from pyquadcortex.protocol.errors import ControlNotDrivable
+from pyquadcortex.protocol.support import Support
 from pyquadcortex.protocol.values import Db, Encoded, Hertz, Milliseconds, Real
 
 
@@ -33,6 +34,7 @@ class FakeTransport:
         self.broadcast = None
         self.last_match = None  # the predicate the last type-matched read passed (read_preset, version)
         self.listeners = []
+        self.last_timeout = None
         self._ids = itertools.count(1)
 
     def send(self, msg):
@@ -40,6 +42,7 @@ class FakeTransport:
 
     def request(self, msg, timeout=5.0):
         self.sent.append(msg)
+        self.last_timeout = timeout
         return self.canned.get(type(msg).__name__)
 
     def next_request_id(self):
@@ -185,6 +188,110 @@ def test_list_presets_ignores_listings_for_other_setlists():
     empty = pa.FileMessage()
     empty.folder.key = str(Setlist.FACTORY)
     assert fake.last_match(empty) is False
+
+
+# -- preset screenshots ------------------------------------------------------
+
+
+def _screenshot_client(fake):
+    return profiles.QuadCortex41(fake, support=Support.EXPERIMENTAL)
+
+
+def test_preset_screenshot_refuses_on_the_unmeasured_base_profile():
+    with pytest.raises(ControlNotDrivable) as caught:
+        client.QuadCortex(FakeTransport()).preset_screenshot("My Presets", 3)
+    assert caught.value.control == "preset_screenshot"
+    assert "4.0.1" in caught.value.evidence
+    assert "Support.EXPERIMENTAL" in caught.value.workaround
+
+
+def test_preset_screenshot_can_be_measured_on_the_base_with_experimental_support():
+    png = b"\x89PNG\r\n\x1a\n" + b"device image"
+    fake = FakeTransport({"ScreenshotMessage": pa.ScreenshotMessage(
+        folder_name="My Presets", index=3, png=png)})
+    qc = client.QuadCortex(fake, support=Support.EXPERIMENTAL)
+
+    assert qc.preset_screenshot("My Presets", 3) == png
+    assert isinstance(fake.sent[-1], pa.ScreenshotMessage)
+    assert fake.sent[-1].action == pa.MessageAction.READ
+
+
+def test_preset_screenshot_sends_the_complete_address_and_returns_png_bytes():
+    png = b"\x89PNG\r\n\x1a\n" + b"device image"
+    reply = pa.ScreenshotMessage(
+        action=pa.MessageAction.UPDATE,
+        folder_name="Factory Library",
+        is_factory=True,
+        index=17,
+        png=png,
+    )
+    fake = FakeTransport({"ScreenshotMessage": reply})
+
+    result = _screenshot_client(fake).preset_screenshot(
+        "Factory Library", 17, is_factory=True, timeout=12.5)
+
+    assert result == png
+    sent = fake.sent[-1]
+    assert isinstance(sent, pa.ScreenshotMessage)
+    assert sent.action == pa.MessageAction.READ
+    assert sent.folder_name == "Factory Library"
+    assert sent.is_factory is True
+    assert sent.index == 17
+    assert fake.last_timeout == 12.5
+
+
+def test_preset_screenshot_accepts_a_display_slot_name():
+    png = b"\x89PNG\r\n\x1a\nimage"
+    fake = FakeTransport({"ScreenshotMessage": pa.ScreenshotMessage(
+        folder_name="My Presets", index=218, png=png)})
+
+    assert _screenshot_client(fake).preset_screenshot("My Presets", "28C") == png
+    assert fake.sent[-1].index == 218
+
+
+@pytest.mark.parametrize("folder_name, position", [("", 0), (None, 0), ("My Presets", -1),
+                                                    ("My Presets", 1.5),
+                                                    ("My Presets", True)])
+def test_preset_screenshot_rejects_invalid_addresses(folder_name, position):
+    with pytest.raises(ValueError):
+        _screenshot_client(FakeTransport()).preset_screenshot(folder_name, position)
+
+
+def test_preset_screenshot_rejects_a_reply_without_png_data():
+    fake = FakeTransport({
+        "ScreenshotMessage": pa.ScreenshotMessage(
+            folder_name="My Presets", index=3,
+        ),
+    })
+    with pytest.raises(client.ScreenshotError, match="did not contain PNG"):
+        _screenshot_client(fake).preset_screenshot("My Presets", 3)
+
+
+def test_preset_screenshot_rejects_non_png_data():
+    fake = FakeTransport({
+        "ScreenshotMessage": pa.ScreenshotMessage(
+            folder_name="My Presets", index=3, png=b"not an image",
+        ),
+    })
+    with pytest.raises(client.ScreenshotError, match="was not a PNG"):
+        _screenshot_client(fake).preset_screenshot("My Presets", 3)
+
+
+@pytest.mark.parametrize("changed", ["folder", "factory", "position"])
+def test_preset_screenshot_rejects_a_reply_for_another_preset(changed):
+    reply = pa.ScreenshotMessage(
+        folder_name="My Presets", is_factory=False, index=3,
+        png=b"\x89PNG\r\n\x1a\nimage",
+    )
+    if changed == "folder":
+        reply.folder_name = "Another Setlist"
+    elif changed == "factory":
+        reply.is_factory = True
+    else:
+        reply.index = 4
+    fake = FakeTransport({"ScreenshotMessage": reply})
+    with pytest.raises(client.ScreenshotError, match="different preset"):
+        _screenshot_client(fake).preset_screenshot("My Presets", 3)
 
 
 # -- input rerouting (Phase B) ------------------------------------------------
