@@ -1,0 +1,1071 @@
+{
+  "source": "Quad Cortex CorOS 4.0.1 ModelRepo payload",
+  "firmware": "CorOS 4.0.1",
+  "parameters": 3809,
+  "mid_string": {
+    "rows": [
+      {
+        "model_id": 3008,
+        "model": "Parallax",
+        "index": 17,
+        "raw": {
+          "displayPos": "11",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 3008,
+        "model": "Parallax",
+        "index": 25,
+        "raw": {
+          "displayPos": "15",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 7039,
+        "model": "Micro Processor (ST)",
+        "index": 14,
+        "raw": {
+          "displayPos": "5",
+          "max_string": "B",
+          "mid_string": "A/B",
+          "min_string": "A",
+          "name": "A/B PITCH MIX"
+        }
+      },
+      {
+        "model_id": 11000,
+        "model": "Mixer",
+        "index": 1,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN A"
+        }
+      },
+      {
+        "model_id": 11000,
+        "model": "Mixer",
+        "index": 3,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN B"
+        }
+      },
+      {
+        "model_id": 12000,
+        "model": "Default Cabsim",
+        "index": 3,
+        "raw": {
+          "displayPos": "3",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 12000,
+        "model": "Default Cabsim",
+        "index": 11,
+        "raw": {
+          "displayPos": "7",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 12114,
+        "model": "PCOM Core Cabsim",
+        "index": 3,
+        "raw": {
+          "displayPos": "3",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 12114,
+        "model": "PCOM Core Cabsim",
+        "index": 11,
+        "raw": {
+          "displayPos": "7",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 12100,
+        "model": "PCOM Default Cabsim",
+        "index": 3,
+        "raw": {
+          "displayPos": "3",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 12100,
+        "model": "PCOM Default Cabsim",
+        "index": 11,
+        "raw": {
+          "displayPos": "7",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 32000,
+        "model": "Default Cabsim (ST)",
+        "index": 3,
+        "raw": {
+          "displayPos": "3",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "BALANCE",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 32000,
+        "model": "Default Cabsim (ST)",
+        "index": 11,
+        "raw": {
+          "displayPos": "7",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "BALANCE",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 32100,
+        "model": "PCOM Default Cabsim (ST)",
+        "index": 3,
+        "raw": {
+          "displayPos": "3",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "BALANCE",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 32100,
+        "model": "PCOM Default Cabsim (ST)",
+        "index": 11,
+        "raw": {
+          "displayPos": "7",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "BALANCE",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 16005,
+        "model": "Gain",
+        "index": 1,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 18007,
+        "model": "Minivoicer",
+        "index": 8,
+        "raw": {
+          "displayPos": "4",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "V1 PAN"
+        }
+      },
+      {
+        "model_id": 18007,
+        "model": "Minivoicer",
+        "index": 12,
+        "raw": {
+          "displayPos": "9",
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "V2 PAN"
+        }
+      },
+      {
+        "model_id": 23000,
+        "model": "LaneOutputControl",
+        "index": 1,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN"
+        }
+      },
+      {
+        "model_id": 25000,
+        "model": "TempoControl",
+        "index": 5,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29001,
+        "model": "Single (M)",
+        "index": 6,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29001,
+        "model": "Single (M)",
+        "index": 14,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29002,
+        "model": "Single (ST)",
+        "index": 6,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29002,
+        "model": "Single (ST)",
+        "index": 14,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29003,
+        "model": "Dual (M)",
+        "index": 6,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29003,
+        "model": "Dual (M)",
+        "index": 14,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29004,
+        "model": "Dual (ST)",
+        "index": 6,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "BALANCE",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29004,
+        "model": "Dual (ST)",
+        "index": 14,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "BALANCE",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29005,
+        "model": "Single (M) Lite",
+        "index": 6,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29005,
+        "model": "Single (M) Lite",
+        "index": 14,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29006,
+        "model": "Single (ST) Lite",
+        "index": 6,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29006,
+        "model": "Single (ST) Lite",
+        "index": 14,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29007,
+        "model": "Dual (M) Lite",
+        "index": 6,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29007,
+        "model": "Dual (M) Lite",
+        "index": 14,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "PAN",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29008,
+        "model": "Dual (ST) Lite",
+        "index": 6,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "BALANCE",
+          "skew": "1"
+        }
+      },
+      {
+        "model_id": 29008,
+        "model": "Dual (ST) Lite",
+        "index": 14,
+        "raw": {
+          "max_string": "R",
+          "mid_string": "C",
+          "min_string": "L",
+          "name": "BALANCE",
+          "skew": "1"
+        }
+      }
+    ]
+  },
+  "displayPos": {
+    "carriers": 1446,
+    "collision_models": [
+      {
+        "model_id": 1170,
+        "model": "Soldano SLO-100\u00ae",
+        "positions": {
+          "11": [
+            {
+              "model_id": 1170,
+              "model": "Soldano SLO-100\u00ae",
+              "index": 6,
+              "raw": {
+                "displayPos": "11",
+                "name": "DEPTH"
+              }
+            },
+            {
+              "model_id": 1170,
+              "model": "Soldano SLO-100\u00ae",
+              "index": 10,
+              "raw": {
+                "displayPos": "11",
+                "name": "MUTE TRIG"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "model_id": 6004,
+        "model": "Tape Delay (ST)",
+        "positions": {
+          "11": [
+            {
+              "model_id": 6004,
+              "model": "Tape Delay (ST)",
+              "index": 12,
+              "raw": {
+                "displayPos": "11",
+                "name": "TRAILS"
+              }
+            },
+            {
+              "model_id": 6004,
+              "model": "Tape Delay (ST)",
+              "index": 14,
+              "raw": {
+                "displayPos": "11",
+                "name": "STEREO WIDTH",
+                "toggleOn": "5"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "model_id": 6008,
+        "model": "Slapback Delay (ST)",
+        "positions": {
+          "12": [
+            {
+              "model_id": 6008,
+              "model": "Slapback Delay (ST)",
+              "index": 13,
+              "raw": {
+                "displayPos": "12",
+                "name": "TRAILS"
+              }
+            },
+            {
+              "model_id": 6008,
+              "model": "Slapback Delay (ST)",
+              "index": 14,
+              "raw": {
+                "displayPos": "12",
+                "max_string": "Inf",
+                "name": "DYN DEPTH",
+                "skew": "0.6"
+              }
+            }
+          ],
+          "13": [
+            {
+              "model_id": 6008,
+              "model": "Slapback Delay (ST)",
+              "index": 15,
+              "raw": {
+                "displayPos": "13",
+                "name": "DYN MODE"
+              }
+            },
+            {
+              "model_id": 6008,
+              "model": "Slapback Delay (ST)",
+              "index": 22,
+              "raw": {
+                "displayPos": "13",
+                "name": "STEREO WIDTH",
+                "toggleOn": "4"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "model_id": 6010,
+        "model": "Analog Delay (ST)",
+        "positions": {
+          "12": [
+            {
+              "model_id": 6010,
+              "model": "Analog Delay (ST)",
+              "index": 13,
+              "raw": {
+                "displayPos": "12",
+                "name": "TRAILS"
+              }
+            },
+            {
+              "model_id": 6010,
+              "model": "Analog Delay (ST)",
+              "index": 14,
+              "raw": {
+                "displayPos": "12",
+                "max_string": "Inf",
+                "name": "DYN DEPTH",
+                "skew": "0.6"
+              }
+            }
+          ],
+          "13": [
+            {
+              "model_id": 6010,
+              "model": "Analog Delay (ST)",
+              "index": 15,
+              "raw": {
+                "displayPos": "13",
+                "name": "DYN MODE"
+              }
+            },
+            {
+              "model_id": 6010,
+              "model": "Analog Delay (ST)",
+              "index": 22,
+              "raw": {
+                "displayPos": "13",
+                "name": "STEREO WIDTH",
+                "toggleOn": "4"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "model_id": 18007,
+        "model": "Minivoicer",
+        "positions": {
+          "3": [
+            {
+              "model_id": 18007,
+              "model": "Minivoicer",
+              "index": 7,
+              "raw": {
+                "displayPos": "3",
+                "name": "V1 INTER",
+                "toggleOff": "15"
+              }
+            },
+            {
+              "model_id": 18007,
+              "model": "Minivoicer",
+              "index": 20,
+              "raw": {
+                "displayPos": "3",
+                "name": "V1 SEMIT",
+                "toggleOff": "15"
+              }
+            }
+          ],
+          "8": [
+            {
+              "model_id": 18007,
+              "model": "Minivoicer",
+              "index": 11,
+              "raw": {
+                "displayPos": "8",
+                "name": "V2 INTER",
+                "toggleOff": "15"
+              }
+            },
+            {
+              "model_id": 18007,
+              "model": "Minivoicer",
+              "index": 21,
+              "raw": {
+                "displayPos": "8",
+                "name": "V2 SEMIT",
+                "toggleOff": "15"
+              }
+            }
+          ],
+          "18": [
+            {
+              "model_id": 18007,
+              "model": "Minivoicer",
+              "index": 17,
+              "raw": {
+                "displayPos": "18",
+                "name": "OUTPUT",
+                "skew": "LIN_SKEW"
+              }
+            },
+            {
+              "model_id": 18007,
+              "model": "Minivoicer",
+              "index": 18,
+              "raw": {
+                "displayPos": "18",
+                "name": "V1 NOTE"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "gap_models": [
+      {
+        "model_id": 6010,
+        "model": "Analog Delay (ST)",
+        "missing": [
+          18
+        ]
+      },
+      {
+        "model_id": 6016,
+        "model": "PCOM Tape Delay (ST)",
+        "missing": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "model_id": 6018,
+        "model": "Plini Delay",
+        "missing": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "model_id": 6019,
+        "model": "Gojira DLY",
+        "missing": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "model_id": 7034,
+        "model": "Chief DC2W PCOM",
+        "missing": [
+          6
+        ]
+      },
+      {
+        "model_id": 8016,
+        "model": "Gojira REV",
+        "missing": [
+          0
+        ]
+      },
+      {
+        "model_id": 8018,
+        "model": "SLO-100\u00ae Reverb",
+        "missing": [
+          0
+        ]
+      },
+      {
+        "model_id": 8019,
+        "model": "Cory Wong The Wash",
+        "missing": [
+          0
+        ]
+      },
+      {
+        "model_id": 8021,
+        "model": "Nolly Reverb",
+        "missing": [
+          0
+        ]
+      },
+      {
+        "model_id": 12050,
+        "model": "Gojira Cab 1 (M)",
+        "missing": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "model_id": 12051,
+        "model": "Gojira Cab 2 (M)",
+        "missing": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "model_id": 12052,
+        "model": "Gojira Cab 3 (M)",
+        "missing": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "model_id": 12053,
+        "model": "Plini Cab (M)",
+        "missing": [
+          2,
+          3
+        ]
+      },
+      {
+        "model_id": 12054,
+        "model": "SLO-100\u00ae Cab (M)",
+        "missing": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "model_id": 32050,
+        "model": "Gojira Cab 1 (ST)",
+        "missing": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "model_id": 32051,
+        "model": "Gojira Cab 2 (ST)",
+        "missing": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "model_id": 32052,
+        "model": "Gojira Cab 3 (ST)",
+        "missing": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "model_id": 32053,
+        "model": "Plini Cab (ST)",
+        "missing": [
+          2,
+          3
+        ]
+      },
+      {
+        "model_id": 32055,
+        "model": "SLO-100\u00ae Cab (ST)",
+        "missing": [
+          0,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "model_id": 21007,
+        "model": "Parallax Cab (M)",
+        "missing": [
+          2,
+          3
+        ]
+      },
+      {
+        "model_id": 33007,
+        "model": "Parallax Cab (ST)",
+        "missing": [
+          2,
+          3
+        ]
+      }
+    ],
+    "device_typo": {
+      "model_id": 6010,
+      "model": "Analog Delay (ST)",
+      "index": 20,
+      "raw": {
+        "isplayPos": "18",
+        "name": "FEEDBACK DEPTH"
+      }
+    }
+  },
+  "toggle": {
+    "counts": {
+      "toggleOn": 132,
+      "toggleOff": 83,
+      "toggleStep": 13
+    },
+    "step_rows": [
+      {
+        "model_id": 7039,
+        "model": "Micro Processor (ST)",
+        "index": 7,
+        "raw": {
+          "displayPos": "13",
+          "name": "LFO RATE",
+          "skew": "0.3",
+          "toggleOn": "6",
+          "toggleStep": "0,1"
+        }
+      },
+      {
+        "model_id": 7039,
+        "model": "Micro Processor (ST)",
+        "index": 9,
+        "raw": {
+          "displayPos": "14",
+          "name": "ENV GAIN",
+          "skew": "LIN_SKEW",
+          "toggleOn": "6",
+          "toggleStep": "2,3"
+        }
+      },
+      {
+        "model_id": 10004,
+        "model": "Splitter",
+        "index": 2,
+        "raw": {
+          "name": "BALANCE",
+          "toggleOn": "0",
+          "toggleStep": "0"
+        }
+      },
+      {
+        "model_id": 10004,
+        "model": "Splitter",
+        "index": 3,
+        "raw": {
+          "min_string": "OFF",
+          "name": "LEVEL TO A",
+          "toggleOn": "0",
+          "toggleStep": "1"
+        }
+      },
+      {
+        "model_id": 10004,
+        "model": "Splitter",
+        "index": 4,
+        "raw": {
+          "min_string": "OFF",
+          "name": "LEVEL TO B",
+          "toggleOn": "0",
+          "toggleStep": "1"
+        }
+      },
+      {
+        "model_id": 10004,
+        "model": "Splitter",
+        "index": 5,
+        "raw": {
+          "name": "FREQUENCY",
+          "skew": "0.17722914651016206",
+          "toggleOn": "0",
+          "toggleStep": "2"
+        }
+      },
+      {
+        "model_id": 10004,
+        "model": "Splitter",
+        "index": 6,
+        "raw": {
+          "name": "MODE",
+          "toggleOn": "0",
+          "toggleStep": "2"
+        }
+      },
+      {
+        "model_id": 16016,
+        "model": "Phase Doctor",
+        "index": 2,
+        "raw": {
+          "name": "\u00d8 CENTER",
+          "toggleOn": "1",
+          "toggleStep": "1,2"
+        }
+      },
+      {
+        "model_id": 16016,
+        "model": "Phase Doctor",
+        "index": 3,
+        "raw": {
+          "name": "\u00d8 SHIFT",
+          "skew": "LIN_SKEW",
+          "toggleOn": "1",
+          "toggleStep": "1,2"
+        }
+      },
+      {
+        "model_id": 16016,
+        "model": "Phase Doctor",
+        "index": 7,
+        "raw": {
+          "name": "\u00d8 CENTER R",
+          "toggleOff": "4",
+          "toggleOn": "6",
+          "toggleStep": "1,2"
+        }
+      },
+      {
+        "model_id": 16016,
+        "model": "Phase Doctor",
+        "index": 8,
+        "raw": {
+          "name": "\u00d8 SHIFT R",
+          "skew": "LIN_SKEW",
+          "toggleOff": "4",
+          "toggleOn": "6",
+          "toggleStep": "1,2"
+        }
+      },
+      {
+        "model_id": 18009,
+        "model": "Gojira WOW",
+        "index": 0,
+        "raw": {
+          "name": "FATSO MIX",
+          "skew": "LIN_SKEW",
+          "toggleOn": "11",
+          "toggleStep": "2"
+        }
+      },
+      {
+        "model_id": 18013,
+        "model": "Pitch Correction",
+        "index": 0,
+        "raw": {
+          "name": "ROOT",
+          "toggleOff": "1",
+          "toggleStep": "2"
+        }
+      }
+    ],
+    "all_step_carriers_have_on_or_off": true,
+    "self_references": [
+      {
+        "model_id": 30001,
+        "model": "Mono Synth",
+        "index": 15,
+        "raw": {
+          "name": "OSC2 WAVE",
+          "toggleOn": "15"
+        },
+        "attribute": "toggleOn"
+      },
+      {
+        "model_id": 30001,
+        "model": "Mono Synth",
+        "index": 24,
+        "raw": {
+          "displayPos": "28",
+          "name": "SLOPE",
+          "toggleOn": "24"
+        },
+        "attribute": "toggleOn"
+      },
+      {
+        "model_id": 30001,
+        "model": "Mono Synth",
+        "index": 48,
+        "raw": {
+          "displayPos": "15",
+          "name": "FREE RATE",
+          "skew": "0.3",
+          "toggleOff": "48"
+        },
+        "attribute": "toggleOff"
+      }
+    ]
+  }
+}

@@ -232,6 +232,17 @@ class Parameter:
     #: Addressing a parameter keeps using the index. This says where a control
     #: is drawn, not what selects it.
     display_pos: int | None = None
+    #: Parameter indexes named by the catalog's conditional-editor metadata,
+    #: on 132 and 83 parameters. Inferred from the catalog's shape, not measured
+    #: on a unit: the Splitter is the clearest case, where the three options of
+    #: its ``TYPE`` switch partition the block - ``BALANCE`` on step 0, the two
+    #: ``LEVEL TO`` knobs on step 1, ``FREQUENCY`` and ``MODE`` on step 2.
+    #: Three Mono Synth parameters name their own index and are unexplained.
+    toggle_on: tuple[int, ...] = ()
+    #: The counterpart of :attr:`toggle_on`.
+    toggle_off: tuple[int, ...] = ()
+    #: Option indexes named by ``toggleStep``.
+    toggle_steps: tuple[int, ...] = ()
     #: Whether the unit keeps this parameter OFF the screen, from the XML's
     #: ``hidden``. It matters to anything that compares the catalog against what
     #: a person can see: a hidden parameter's option names are never drawn, so
@@ -878,6 +889,9 @@ def _parameter(index: int, p, model_name: str) -> Parameter:
         exp_assignable=p.get("expAssignable") != "false",
         show_as_integer=show_as_integer,
         display_pos=_as_int(p.get("displayPos")),
+        toggle_on=_parse_indexes(p.get("toggleOn")),
+        toggle_off=_parse_indexes(p.get("toggleOff")),
+        toggle_steps=_parse_indexes(p.get("toggleStep")),
         hidden=p.get("hidden") == "true",
     )
 
@@ -941,3 +955,19 @@ def _parse_replaces(value: str | None) -> tuple[int, ...]:
         if parsed is not None:
             ids.append(parsed)
     return tuple(ids)
+
+
+def _parse_indexes(value: str | None) -> tuple[int, ...]:
+    """Parse one integer, or a comma-separated list of integers.
+
+    Invalid parts are deliberately ignored: device catalogs are extensible,
+    and one unfamiliar token must not discard otherwise usable metadata.
+    """
+    if not value:
+        return ()
+    indexes = []
+    for part in value.split(","):
+        parsed = _as_int(part.strip())
+        if parsed is not None:
+            indexes.append(parsed)
+    return tuple(indexes)

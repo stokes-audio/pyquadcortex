@@ -5,8 +5,11 @@ a single ``ModelRepo.xml``. These tests build that container from a small
 synthetic XML fixture, so they run offline and ship no vendor data.
 """
 
+import collections
 import gzip
 import io
+import json
+import pathlib
 import tarfile
 
 import pytest
@@ -123,6 +126,91 @@ def test_parameters_are_ordered_and_carry_metadata(cat):
     gain = params[0]
     assert (gain.index, gain.minimum, gain.maximum, gain.default) == (0, 0.0, 10.0, 5.0)
     assert cat[5005].parameters[0].units == "dB"
+
+
+def test_parameter_carries_editor_and_conditional_metadata():
+    xml = """<Models><Category id="1" name="Test">
+      <Model id="1" name="Conditional Delay">
+        <Parameter name="MODE" min="0" max="2" defaultValue="0"/>
+        <Parameter name="PAN" min="0" max="10" defaultValue="5"
+          mid_string="C" displayPos="7" toggleOn="0, 4"
+          toggleOff="2" toggleStep="1,2"/>
+      </Model>
+    </Category></Models>"""
+
+    parameter = catalog.parse_model_repo(make_payload(xml))[1].parameters[1]
+
+    assert parameter.mid_label == "C"
+    assert parameter.display_pos == 7
+    assert parameter.toggle_on == (0, 4)
+    assert parameter.toggle_off == (2,)
+    assert parameter.toggle_steps == (1, 2)
+
+
+def test_absent_editor_metadata_has_neutral_defaults(cat):
+    parameter = cat[1].parameters[0]
+
+    assert parameter.mid_label == ""
+    assert parameter.display_pos is None
+    assert parameter.toggle_on == ()
+    assert parameter.toggle_off == ()
+    assert parameter.toggle_steps == ()
+
+
+def test_real_catalog_editor_metadata_evidence_is_pinned():
+    path = pathlib.Path(__file__).parent / "fixtures" / "catalog" / \
+        "editor_metadata.json"
+    facts = json.loads(path.read_text(encoding="utf-8"))
+
+    assert facts["firmware"] == "CorOS 4.0.1"
+    midpoint_rows = facts["mid_string"]["rows"]
+    assert len(midpoint_rows) == 36
+    assert collections.Counter(
+        row["raw"]["mid_string"] for row in midpoint_rows
+    ) == {"C": 35, "A/B": 1}
+    assert all(
+        "min_string" in row["raw"] and "max_string" in row["raw"]
+        for row in midpoint_rows)
+    assert all(float(row["raw"].get("skew", 1.0)) == 1.0
+               for row in midpoint_rows)
+    assert facts["displayPos"]["carriers"] == 1446
+    assert len(facts["displayPos"]["collision_models"]) == 5
+    assert len(facts["displayPos"]["gap_models"]) == 21
+    assert facts["displayPos"]["device_typo"] == {
+        "model_id": 6010, "model": "Analog Delay (ST)", "index": 20,
+        "raw": {"isplayPos": "18", "name": "FEEDBACK DEPTH"},
+    }
+    assert facts["toggle"]["counts"] == {
+        "toggleOn": 132, "toggleOff": 83, "toggleStep": 13}
+    assert len(facts["toggle"]["step_rows"]) == 13
+    assert all(
+        "toggleOn" in row["raw"] or "toggleOff" in row["raw"]
+        for row in facts["toggle"]["step_rows"])
+    assert facts["toggle"]["all_step_carriers_have_on_or_off"] is True
+    assert [
+        (row["model"], row["index"], row["raw"]["name"], row["attribute"])
+        for row in facts["toggle"]["self_references"]
+    ] == [
+        ("Mono Synth", 15, "OSC2 WAVE", "toggleOn"),
+        ("Mono Synth", 24, "SLOPE", "toggleOn"),
+        ("Mono Synth", 48, "FREE RATE", "toggleOff"),
+    ]
+
+
+def test_self_referencing_toggle_metadata_is_preserved_not_interpreted():
+    preceding = "".join(
+        f'<Parameter name="P{index}" min="0" max="1" defaultValue="0"/>'
+        for index in range(15))
+    xml = """<Models><Category id="1" name="Synth">
+      <Model id="1" name="Mono Synth">
+        %s
+        <Parameter name="OSC2 WAVE" toggleOn="15" min="0" max="1" defaultValue="0"/>
+      </Model>
+    </Category></Models>""" % preceding
+
+    parameter = catalog.parse_model_repo(make_payload(xml))[1].parameters[15]
+
+    assert parameter.toggle_on == (15,)
 
 
 def test_a_labelled_end_control_carries_the_span_the_unit_draws():
